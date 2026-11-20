@@ -26,6 +26,7 @@ workflow owner rather than chaining similarly named commands.
 | Task | Entry and owner |
 | --- | --- |
 | Compare two saved `members.tsv` tables from the same observations | `tools.diagnostics.grouping_experiment compare` — no snapshot or regrouping; [details](#grouping_experimentpy) |
+| Match finished batches without RAW, within-batch grouping or Backfill | `scripts.run_alignment pair-batches` from per-batch `--save-pairing-inputs` files; [capture and replay](../../docs/agent/local-execution.md#alignment-and-handoff) |
 | Rerun Backfill after a completed grouping, keeping competing rows together | `scripts.run_alignment backfill` from `--save-backfill-inputs`; [capture and replay](../../docs/agent/local-execution.md#alignment-and-handoff) |
 | Regroup from a saved `grouping-inputs.json.gz` snapshot | `scripts.run_alignment regroup` — no RAW or Backfill; [details](#grouping_experimentpy) |
 | Produce initial groups from a Discovery batch index and matching RAW files | `scripts.run_alignment --stop-after grouping`; add `--save-grouping-inputs` only to retain a replay snapshot; [details](#grouping_experimentpy) |

@@ -1435,7 +1435,7 @@ def test_grouping_count_is_not_a_full_cohort_launch(tmp_path, monkeypatch):
     monkeypatch.setattr(run_alignment.sys, "executable", str(tmp_path / "other-python"))
     reached = []
 
-    def group(request, context, *, save_snapshot, save_backfill_inputs):
+    def group(request, context, **_capture):
         reached.append(request.discovery_batch_index.path)
         return tmp_path
 
@@ -1864,12 +1864,18 @@ def test_run_alignment_stop_after_grouping_outputs_results_without_publication(
     captured = {}
 
     def fake_grouping(
-        request, context=None, *, save_snapshot=False, save_backfill_inputs=False
+        request,
+        context=None,
+        *,
+        save_snapshot=False,
+        save_backfill_inputs=False,
+        save_pairing_inputs=False,
     ):
         captured.update(
             request=request,
             save_snapshot=save_snapshot,
             save_backfill_inputs=save_backfill_inputs,
+            save_pairing_inputs=save_pairing_inputs,
         )
         output_dir.mkdir(parents=True, exist_ok=True)
         (output_dir / "members.tsv").write_text("sample_stem\towner_id\nA\tpeak-A\n")
@@ -1900,7 +1906,11 @@ def test_run_alignment_stop_after_grouping_outputs_results_without_publication(
             "--profile-output-dir",
             str(tmp_path / "profile"),
             *(
-                ["--save-grouping-inputs", "--save-backfill-inputs"]
+                [
+                    "--save-grouping-inputs",
+                    "--save-backfill-inputs",
+                    "--save-pairing-inputs",
+                ]
                 if save_inputs
                 else []
             ),
@@ -1909,6 +1919,7 @@ def test_run_alignment_stop_after_grouping_outputs_results_without_publication(
 
     assert code == 0
     assert captured["request"].peak_config.parallel_mode == "process"
+    assert captured["save_pairing_inputs"] is save_inputs
     assert captured["save_backfill_inputs"] is save_inputs
     assert captured["save_snapshot"] is save_inputs
     assert "Grouping results:" in capsys.readouterr().out

@@ -125,6 +125,21 @@ peak detection, batch-to-batch matching, Backfill or published quantities.
 See the [grouping diagnostic](../../tools/diagnostics/INDEX.md#grouping_experimentpy)
 for baseline comparisons and calibration options.
 
+To change **cross-batch pairing** without repeating within-batch grouping or
+Backfill, add `--stop-after grouping --save-pairing-inputs` to the usual
+Alignment command, with a declared `batch_id` in sample metadata. Capture
+each batch independently, or take the separate files from one multi-batch
+run. Pass one JSON per distinct batch, in any order:
+
+    .venv\Scripts\python.exe -m scripts.run_alignment pair-batches --inputs output/batch-A/pairing-inputs/batch-1.json output/batch-B/pairing-inputs/batch-1.json --output-dir output/pairing-trial
+
+Replay needs no RAW, DLL, Discovery index or previous pairing result. It
+chooses the reference using batch sizes and the saved latest acquisition
+times, then writes `batch_correspondence.tsv` (partners, unpaired reasons and
+competitors) and `summary.json` (reference and map diagnostics). It does not
+publish a Matrix. Group tables alone lack the calibrated feature coordinates
+and measured ISTD knots: capture once if these inputs were not retained.
+
 To change **Backfill** without repeating initial acquisition or grouping, add
 `--stop-after grouping --save-backfill-inputs` to the usual scalar CID-NL
 Alignment command once. Point the replay at that run's directory:

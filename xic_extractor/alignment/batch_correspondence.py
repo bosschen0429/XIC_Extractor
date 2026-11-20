@@ -89,6 +89,35 @@ class BatchIstd:
 
 
 @dataclass(frozen=True, slots=True)
+class GroupedBatch:
+    """All facts one finished batch contributes to correspondence."""
+
+    batch_id: str
+    sample_count: int
+    features: tuple[BatchFeature, ...]
+    istds: tuple[BatchIstd, ...]
+
+    @classmethod
+    def from_groups(
+        cls,
+        batch_id: str,
+        sample_count: int,
+        groups: Iterable[CrossSamplePeakGroupHypothesis],
+        calibration: BatchRtCalibration | None,
+    ) -> GroupedBatch:
+        return cls(
+            batch_id,
+            sample_count,
+            tuple(
+                batch_feature(batch_id, group, calibration)
+                for group in groups
+                if group.destination == "matrix"
+            ),
+            batch_istds(batch_id, calibration),
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class CorrespondenceAnchor:
     """One vote: (batch RT, reference-batch RT) and what measured it."""
 
@@ -195,6 +224,23 @@ def choose_reference_batch(
     if len(winners) != 1:
         raise ValueError("reference batch is ambiguous: equal size and acquisition")
     return winners[0]
+
+
+def pair_grouped_batches(
+    batches: Sequence[GroupedBatch],
+    *,
+    latest_acquisition: Callable[[str], object],
+    precursor_tolerance_ppm: float,
+) -> tuple[BatchCorrespondence, tuple[BatchFeature, ...]]:
+    sizes = {batch.batch_id: batch.sample_count for batch in batches}
+    features = tuple(item for batch in batches for item in batch.features)
+    return correspond_batches(
+        features,
+        (item for batch in batches for item in batch.istds),
+        batch_sizes=sizes,
+        reference_batch=choose_reference_batch(sizes, latest_acquisition),
+        precursor_tolerance_ppm=precursor_tolerance_ppm,
+    ), features
 
 
 def correspond_batches(

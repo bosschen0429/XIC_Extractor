@@ -2,27 +2,20 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable
 from contextlib import nullcontext
 from dataclasses import replace
+from functools import cache
 from pathlib import Path
 from typing import cast
 
 from xic_extractor.alignment.batch_correspondence import (
-    BatchCorrespondence,
-    BatchFeature,
-    batch_feature,
-    batch_istds,
-    choose_reference_batch,
+    GroupedBatch,
     compose_calibrations,
-    correspond_batches,
-)
-from xic_extractor.alignment.cross_sample.peak_groups import (
-    CrossSamplePeakGroupHypothesis,
+    pair_grouped_batches,
 )
 from xic_extractor.alignment.drift_evidence import KnownIstdReference
 from xic_extractor.alignment.grouping_experiment import combine_grouping_inputs
-from xic_extractor.alignment.sample_rt_calibration import BatchRtCalibration
 from xic_extractor.applications.untargeted.istd_reference import (
     extract_batch_known_istd_reference,
     read_known_istd_reference,
@@ -41,6 +34,7 @@ from xic_extractor.configuration.mass_recalibration import (
     serialize_mass_recalibration_result,
 )
 from xic_extractor.diagnostics.backfill_replay import BackfillCheckpoint
+from xic_extractor.diagnostics.batch_pairing import save_pairing_input
 from xic_extractor.diagnostics.grouping_experiment_io import (
     write_grouping_inputs,
     write_grouping_result,
@@ -241,18 +235,24 @@ def run_untargeted_application(
             should_cancel=context.should_cancel,
         )
     try:
-        correspondence, features = _correspond_batches(
-            request,
-            {
-                batch_id: (
+        batch_inputs = dict(batches)
+        grouped_batches = []
+        for batch_id, completed in completed_by_batch.items():
+            frame = completed.sample_rt_frame
+            grouped_batches.append(
+                GroupedBatch.from_groups(
+                    batch_id,
+                    len(batch_inputs[batch_id].sample_order),
                     completed.initial_groups,
-                    completed.sample_rt_frame.calibration_for_snapshot
-                    if completed.sample_rt_frame is not None
-                    else None,
+                    frame.calibration_for_snapshot if frame is not None else None,
                 )
-                for batch_id, completed in completed_by_batch.items()
-            },
-            dict(batches),
+            )
+        correspondence, features = pair_grouped_batches(
+            grouped_batches,
+            latest_acquisition=latest_acquisition_reader(
+                batch_inputs, raw_dir=request.raw_dir, dll_dir=request.dll_dir
+            ),
+            precursor_tolerance_ppm=request.discovery_settings.precursor_mz_tolerance_ppm,
         )
     except BaseException:
         for completed in completed_by_batch.values():
@@ -395,6 +395,7 @@ def run_untargeted_grouping(
     *,
     save_snapshot: bool = False,
     save_backfill_inputs: bool = False,
+    save_pairing_inputs: bool = False,
 ) -> Path:
     """Write the formal initial groups; optionally retain compact replay inputs.
 
@@ -404,18 +405,23 @@ def run_untargeted_grouping(
     context = context or UntargetedExecutionContext()
     recorder = context.timing_recorder or TimingRecorder.disabled("alignment")
     batch = _admitted_batch(request.discovery_batch_index, recorder)
+    directory = request.output_dir / "pairing-inputs"
+    snapshot = request.output_dir / GROUPING_SNAPSHOT_NAME
+    if (
+        (request.output_dir / "groups.tsv").exists()
+        or (save_snapshot and snapshot.exists())
+        or (save_pairing_inputs and directory.exists())
+    ):
+        raise ValueError(f"grouping output already exists: {request.output_dir}")
+    batches = split_discovery_batch(batch, request.sample_metadata)
+    if save_pairing_inputs and any(not batch_id for batch_id, _ in batches):
+        raise ValueError("Saving pairing inputs requires a batch_id in sample metadata")
     mass_recalibration_by_sample = _prepare_mass_recalibration(
         request, batch, recorder, context
     )
     known_istd_reference = _resolve_known_istd_reference(
         request, batch, recorder, mass_recalibration_by_sample
     )
-    snapshot = request.output_dir / GROUPING_SNAPSHOT_NAME
-    if (request.output_dir / "groups.tsv").exists() or (
-        save_snapshot and snapshot.exists()
-    ):
-        raise ValueError(f"grouping output already exists: {request.output_dir}")
-    batches = split_discovery_batch(batch, request.sample_metadata)
     with (
         (
             BackfillCheckpoint(request.output_dir / "backfill-inputs")
@@ -449,6 +455,34 @@ def run_untargeted_grouping(
         ),
         "initial_job_count": sum(item.initial_job_count for item in groupings.values()),
     }
+    pairing_batches = (
+        tuple(
+            GroupedBatch.from_groups(
+                batch_id,
+                len(batch_input.sample_order),
+                groupings[batch_id].groups,
+                groupings[batch_id].rt_calibration,
+            )
+            for batch_id, batch_input in batches
+        )
+        if save_pairing_inputs or len(groupings) > 1
+        else ()
+    )
+    latest = cache(
+        latest_acquisition_reader(
+            dict(batches), raw_dir=request.raw_dir, dll_dir=request.dll_dir
+        )
+    )
+    ppm = request.discovery_settings.precursor_mz_tolerance_ppm
+    if save_pairing_inputs:
+        directory.mkdir(parents=True, exist_ok=False)
+        for index, finished in enumerate(pairing_batches, start=1):
+            save_pairing_input(
+                directory / f"batch-{index}.json",
+                finished,
+                latest_acquisition=latest(finished.batch_id),
+                precursor_tolerance_ppm=ppm,
+            )
     if len(groupings) == 1:
         (grouping,) = groupings.values()
         inputs, groups, calibration = (
@@ -458,13 +492,10 @@ def run_untargeted_grouping(
         )
         correspondence_summary = None
     else:
-        correspondence, features = _correspond_batches(
-            request,
-            {
-                batch_id: (item.groups, item.rt_calibration)
-                for batch_id, item in groupings.items()
-            },
-            dict(batches),
+        correspondence, features = pair_grouped_batches(
+            pairing_batches,
+            latest_acquisition=latest,
+            precursor_tolerance_ppm=ppm,
         )
         inputs = combine_grouping_inputs([item.inputs for item in groupings.values()])
         groups = tuple(group for item in groupings.values() for group in item.groups)
@@ -548,41 +579,6 @@ def _group_batch(
             ),
         ),
     )
-
-
-def _correspond_batches(
-    request: UntargetedRequest,
-    grouped: Mapping[
-        str,
-        tuple[Iterable[CrossSamplePeakGroupHypothesis], BatchRtCalibration | None],
-    ],
-    batches: Mapping[str, DiscoveryBatchInput],
-) -> tuple[BatchCorrespondence, tuple[BatchFeature, ...]]:
-    """Pair each batch's Matrix groups with the reference batch's."""
-    features = tuple(
-        batch_feature(batch_id, group, calibration)
-        for batch_id, (groups, calibration) in grouped.items()
-        for group in groups
-        if group.destination == "matrix"
-    )
-    sizes = {batch_id: len(batch.sample_order) for batch_id, batch in batches.items()}
-    correspondence = correspond_batches(
-        features,
-        (
-            istd
-            for batch_id, (_groups, calibration) in grouped.items()
-            for istd in batch_istds(batch_id, calibration)
-        ),
-        batch_sizes=sizes,
-        reference_batch=choose_reference_batch(
-            sizes,
-            latest_acquisition_reader(
-                batches, raw_dir=request.raw_dir, dll_dir=request.dll_dir
-            ),
-        ),
-        precursor_tolerance_ppm=request.discovery_settings.precursor_mz_tolerance_ppm,
-    )
-    return correspondence, features
 
 
 # No level writes these any more. They stay owned so that a copy left by an

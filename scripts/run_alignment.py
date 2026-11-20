@@ -73,6 +73,32 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         return regroup_main(argv[1:])
 
+    if argv and argv[0] == "pair-batches":
+        from xic_extractor.diagnostics.batch_pairing import replay_pairing
+
+        parser = argparse.ArgumentParser(
+            usage="%(prog)s pair-batches --inputs FILE FILE ... --output-dir DIR",
+            description="Match finished batches without RAW or Backfill.",
+        )
+        parser.add_argument(
+            "--inputs",
+            required=True,
+            nargs="+",
+            type=Path,
+            help="One captured pairing-input JSON per batch (at least two).",
+        )
+        parser.add_argument("--output-dir", required=True, type=Path)
+        pairing = parser.parse_args(argv[1:])
+        try:
+            replay_pairing(pairing.inputs, pairing.output_dir)
+        except (OSError, ValueError) as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+        print(
+            f"Batch correspondence: {pairing.output_dir / 'batch_correspondence.tsv'}"
+        )
+        return 0
+
     if argv and argv[0] == "backfill":
         from xic_extractor.diagnostics.backfill_replay import replay_backfill
 
@@ -273,6 +299,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     context,
                     save_snapshot=args.save_grouping_inputs,
                     save_backfill_inputs=args.save_backfill_inputs,
+                    save_pairing_inputs=args.save_pairing_inputs,
                 )
             else:
                 outputs = run_untargeted_application(request, context)
@@ -311,6 +338,8 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.stop_after == "grouping":
         print(f"Grouping results: {grouping_output}")
+        if args.save_pairing_inputs:
+            print(f"Batch pairing inputs: {grouping_output / 'pairing-inputs'}")
         if args.save_backfill_inputs:
             print(f"Backfill inputs: {grouping_output / 'backfill-inputs'}")
         return 0
@@ -383,7 +412,8 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
             "Publish finalized pure CID-NL Alignment "
             "from an owner-closed discovery batch index. To recompute only grouping "
             "from a saved snapshot, use: %(prog)s regroup --help. "
-            "To rerun only Backfill, use: %(prog)s backfill --help."
+            "To rerun only Backfill, use: %(prog)s backfill --help. "
+            "To match finished batches, use: %(prog)s pair-batches --help."
         ),
     )
     parser.add_argument(
@@ -590,6 +620,11 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         action="store_true",
         help="With --stop-after grouping, save local inputs for Backfill replay.",
     )
+    parser.add_argument(
+        "--save-pairing-inputs",
+        action="store_true",
+        help="With --stop-after grouping, save one input per batch for pair-batches.",
+    )
     parser.add_argument("--emit-alignment-cells", action="store_true")
     parser.add_argument(
         "--retain-acquisition-cache",
@@ -640,6 +675,8 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         parser.error("--save-grouping-inputs requires --stop-after grouping")
     if args.save_backfill_inputs and args.stop_after != "grouping":
         parser.error("--save-backfill-inputs requires --stop-after grouping")
+    if args.save_pairing_inputs and args.stop_after != "grouping":
+        parser.error("--save-pairing-inputs requires --stop-after grouping")
     if args.save_backfill_inputs and not args.backfill:
         parser.error("--save-backfill-inputs cannot capture a --no-backfill plan")
     return args
