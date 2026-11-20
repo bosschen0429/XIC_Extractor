@@ -160,8 +160,8 @@ class FinalMatrixValues:
 class UntargetGroupRows:
     """One written group's TSV rows before the batch numbers its rows.
 
-    Each row is its formatted cells; the first cell of every row other than a
-    Matrix row is the ``feature_id`` slot, and a review row's second cell is
+    Matrix values stay numeric until serialization; other rows are formatted.
+    Their first cell is the ``feature_id`` slot, and a review row's second cell is
     its ``matrix_row_index`` slot. Physical peaks are named by their key and a
     digest of the measured signal that makes two peaks equal.
     """
@@ -170,6 +170,15 @@ class UntargetGroupRows:
     physical_peaks: tuple[tuple[str, str], ...]
     source_candidate_ids: tuple[str, ...]
     rows: tuple[tuple[str, tuple[tuple[str, ...], ...]], ...]
+    matrix: FinalMatrixValues | None
+
+    def formatted_rows(
+        self, sample_order: tuple[str, ...]
+    ) -> dict[str, tuple[tuple[str, ...], ...]]:
+        rows = dict(self.rows)
+        if self.matrix is not None:
+            rows["matrix"] = (self.matrix.row(sample_order),)
+        return rows
 
 
 @dataclass(frozen=True, slots=True)
@@ -207,8 +216,6 @@ def project_untarget_child_rows(
     outputs: Iterable[str],
     sample_order: tuple[str, ...],
     membership_risks_by_owner: Mapping[str, AcceptedMembershipRisk] | None = None,
-    capture_matrix: Callable[[UntargetGroupRows, FinalMatrixValues], None]
-    | None = None,
 ) -> tuple[UntargetGroupRows, ...]:
     """Format one child's groups for the requested TSVs (``matrix``,
     ``review``, ``backfill``, ``cells``, ``status``) without batch numbering."""
@@ -267,12 +274,10 @@ def project_untarget_child_rows(
             "group_center_rt": format_value(center_rt),
         }
         matrix_values = None
-        if group.destination == "matrix" and ("matrix" in requested or capture_matrix):
+        if group.destination == "matrix" and "matrix" in requested:
             matrix_values = FinalMatrixValues(
                 center_mz, center_rt, tuple(cell.value for cell in cells)
             )
-            if "matrix" in requested:
-                rows["matrix"] = [matrix_values.row(sample_order)]
         emit(
             "review",
             (
@@ -337,11 +342,10 @@ def project_untarget_child_rows(
                     (peak.physical_peak_key, peak_signal_digest(peak)) for peak in peaks
                 ),
                 source_candidate_ids=tuple(candidate_ids.values()),
+                matrix=matrix_values,
                 rows=tuple((name, tuple(values)) for name, values in rows.items()),
             )
         )
-        if capture_matrix is not None and matrix_values is not None:
-            capture_matrix(projected[-1], matrix_values)
     return tuple(projected)
 
 
@@ -401,7 +405,7 @@ def write_alignment_tsvs(
                             )
                     matrix_row_count += 1
                     matrix_row_index = format_value(matrix_row_count)
-                for name, rows in group.rows:
+                for name, rows in group.formatted_rows(sample_order).items():
                     row_writer = writers.get(name)
                     if row_writer is None:
                         continue
@@ -851,13 +855,14 @@ def write_batch_alignment_tsvs(
                     mapped_batch = (
                         source.batch_id if source.batch_id != reference_batch else None
                     )
+                    batch_rows = [
+                        (orders[batch_id], part.formatted_rows(orders[batch_id]))
+                        for batch_id, part in parts
+                    ]
                     for name, row_writer in writers.items():
                         rows = _merge_batch_rows(
                             name,
-                            [
-                                (orders[batch_id], dict(part.rows).get(name, ()))
-                                for batch_id, part in parts
-                            ],
+                            [(order, rows.get(name, ())) for order, rows in batch_rows],
                             global_order,
                             headers[name],
                             partial(_reference_rt_text, to_reference_rt, mapped_batch),

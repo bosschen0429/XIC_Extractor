@@ -5,11 +5,11 @@ from __future__ import annotations
 import json
 from collections.abc import Sequence
 from pathlib import Path
-from tempfile import TemporaryDirectory
 from typing import TYPE_CHECKING, Any
 
 from xic_extractor.alignment.batch_correspondence import BatchCorrespondence
 from xic_extractor.diagnostics.grouping_experiment_io import write_json
+from xic_extractor.output.alignment.pipeline_outputs import new_alignment_artifacts
 from xic_extractor.output.alignment.tsv_writer import (
     BatchRowSource,
     FinalMatrixValues,
@@ -48,9 +48,9 @@ class CompletedMatrixCells:
     def __init__(self, samples: dict[str, dict[str, int | None]]) -> None:
         if "" in samples:
             raise ValueError("Matrix replay requires declared batch IDs")
-        self.batches: dict[str, dict[str, Any]] = {
-            batch: {"samples": roster, "children": []}
-            for batch, roster in samples.items()
+        self.samples = samples
+        self.children: dict[str, list[tuple[str, list[dict[str, object]]]]] = {
+            batch_id: [] for batch_id in samples
         }
 
     def append(
@@ -59,31 +59,25 @@ class CompletedMatrixCells:
         samples: tuple[SampleMetadata, ...],
     ) -> None:
         order = untarget_sample_order(samples)
-        batch = self.batches[samples[0].batch_id]
+        children = self.children[samples[0].batch_id]
         key = feature_key_by_peaks(composition.initial_groups)
         for child in composition.children:
-            rows: list[dict[str, Any]] = []
-
-            def capture(
-                group: UntargetGroupRows,
-                values: FinalMatrixValues,
-                rows: list[dict[str, Any]] = rows,
-            ) -> None:
-                rows.append(
-                    {
-                        "key": key(group),
-                        "mz": values.mz,
-                        "rt": values.rt,
-                        "areas": dict(zip(order, values.areas, strict=True)),
-                        "physical_peaks": group.physical_peaks,
-                        "source_candidate_ids": group.source_candidate_ids,
-                    }
-                )
-
-            project_untarget_child_rows(
-                child, outputs=(), sample_order=order, capture_matrix=capture
+            groups = project_untarget_child_rows(
+                child, outputs=("matrix",), sample_order=order
             )
-            batch["children"].append((child.first_method_subject_id, rows))
+            rows: list[dict[str, object]] = [
+                {
+                    "key": key(group),
+                    "mz": group.matrix.mz,
+                    "rt": group.matrix.rt,
+                    "areas": dict(zip(order, group.matrix.areas, strict=True)),
+                    "physical_peaks": group.physical_peaks,
+                    "source_candidate_ids": group.source_candidate_ids,
+                }
+                for group in groups
+                if group.matrix is not None
+            ]
+            children.append((child.first_method_subject_id, rows))
 
     def write(self, path: Path) -> None:
         write_json(
@@ -92,16 +86,14 @@ class CompletedMatrixCells:
                 "schema": _BACKFILL,
                 "batches": {
                     batch_id: {
-                        "samples": batch["samples"],
+                        "samples": self.samples[batch_id],
                         "groups": [
                             group
-                            for _, rows in sorted(
-                                batch["children"], key=lambda child: child[0]
-                            )
+                            for _, rows in sorted(children, key=lambda child: child[0])
                             for group in rows
                         ],
                     }
-                    for batch_id, batch in self.batches.items()
+                    for batch_id, children in self.children.items()
                 },
             },
         )
@@ -157,7 +149,8 @@ def _batch_source(
             "matrix",
             tuple(_two_strings(v) for v in require_list(row["physical_peaks"])),
             tuple(require_text(v) for v in require_list(row["source_candidate_ids"])),
-            (("matrix", (values.row(order),)),),
+            rows=(),
+            matrix=values,
         )
         if group in keys:
             raise ValueError(f"Repeated Backfill row in {batch_id}")
@@ -180,8 +173,12 @@ def _two_strings(value: object) -> tuple[str, str]:
 
 def replay_matrix(backfill: Sequence[Path], pairing: Path, output_dir: Path) -> Path:
     output = output_dir / "alignment_matrix.tsv"
-    if output.exists():
-        raise FileExistsError(output)
+    with new_alignment_artifacts(output) as staged:
+        _render_matrix(backfill, pairing, staged[output])
+    return output
+
+
+def _render_matrix(backfill: Sequence[Path], pairing: Path, output: Path) -> None:
     try:
         join = _document(pairing, _PAIRING)
         reference = require_text(join["reference_batch"])
@@ -230,16 +227,11 @@ def replay_matrix(backfill: Sequence[Path], pairing: Path, output_dir: Path) -> 
         estimate = model.estimate_rt(rt) if model is not None else None
         return estimate.rt_min if estimate is not None else None
 
-    output_dir.mkdir(parents=True, exist_ok=True)
-    with TemporaryDirectory(dir=output_dir) as tmp:
-        staged = Path(tmp) / output.name
-        write_batch_alignment_tsvs(
-            {"matrix": staged},
-            sources,
-            reference_batch=reference,
-            partners=partners,
-            states={},
-            to_reference_rt=to_reference,
-        )
-        staged.replace(output)
-    return output
+    write_batch_alignment_tsvs(
+        {"matrix": output},
+        sources,
+        reference_batch=reference,
+        partners=partners,
+        states={},
+        to_reference_rt=to_reference,
+    )

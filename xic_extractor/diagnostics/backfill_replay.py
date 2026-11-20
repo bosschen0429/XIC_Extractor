@@ -9,7 +9,6 @@ import os
 from collections.abc import Iterator
 from dataclasses import replace
 from pathlib import Path
-from tempfile import NamedTemporaryFile
 from typing import cast
 
 from xic_extractor.configuration.atomic_write import atomic_write_text
@@ -19,6 +18,7 @@ from xic_extractor.execution._serialization import (
     owner_pickle_loads,
 )
 from xic_extractor.execution.workers import WorkerAdmissionPool
+from xic_extractor.output.alignment.pipeline_outputs import new_alignment_artifacts
 from xic_extractor.output.alignment.tsv_writer import cell_status
 from xic_extractor.sample_metadata import SampleMetadata
 from xic_extractor.untargeted_execution.execution import FrozenBackfillPartition
@@ -97,10 +97,7 @@ def replay_backfill(
     directory: Path, output_dir: Path, *, save_matrix_inputs: bool = False
 ) -> Path:
     """Write diagnostic row/sample decisions, never a production Matrix."""
-    output_dir.mkdir(parents=True, exist_ok=True)
     output = output_dir / "backfill-cells.tsv"
-    if output.exists():
-        raise FileExistsError(output)
     digests, samples = _load_receipt(directory)
     matrix = None
     if save_matrix_inputs:
@@ -110,14 +107,9 @@ def replay_backfill(
             )
         matrix = CompletedMatrixCells(samples)
     matrix_path = output_dir / "matrix-cells.json"
-    if matrix is not None and matrix_path.exists():
-        raise FileExistsError(matrix_path)
-    stream = NamedTemporaryFile(
-        mode="w", newline="", encoding="utf-8", dir=output_dir, delete=False
-    )
-    temporary = Path(stream.name)
-    try:
-        with stream:
+    paths = (output, matrix_path) if matrix is not None else (output,)
+    with new_alignment_artifacts(*paths) as staged:
+        with staged[output].open("w", newline="", encoding="utf-8") as stream:
             rows = csv.writer(stream, delimiter="\t", lineterminator="\n")
             rows.writerow(
                 (
@@ -158,8 +150,5 @@ def replay_backfill(
                                 )
                             )
         if matrix is not None:
-            matrix.write(matrix_path)
-        temporary.replace(output)
-    finally:
-        temporary.unlink(missing_ok=True)
+            matrix.write(staged[matrix_path])
     return output

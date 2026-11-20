@@ -73,90 +73,8 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         return regroup_main(argv[1:])
 
-    if argv and argv[0] == "matrix":
-        from xic_extractor.diagnostics.matrix_replay import replay_matrix
-
-        parser = argparse.ArgumentParser(
-            prog="run_alignment matrix",
-            description="Write only the Matrix from completed Backfill and pairing.",
-        )
-        parser.add_argument(
-            "--backfill",
-            required=True,
-            nargs="+",
-            type=Path,
-            help="Completed matrix-cells.json file(s)",
-        )
-        parser.add_argument(
-            "--pairing", required=True, type=Path, help="Completed matrix-join.json"
-        )
-        parser.add_argument("--output-dir", required=True, type=Path)
-        args = parser.parse_args(argv[1:])
-        try:
-            matrix = replay_matrix(args.backfill, args.pairing, args.output_dir)
-        except (OSError, ValueError) as exc:
-            print(str(exc), file=sys.stderr)
-            return 2
-        print(f"Matrix: {matrix}")
-        return 0
-
-    if argv and argv[0] == "pair-batches":
-        from xic_extractor.diagnostics.batch_pairing import replay_pairing
-
-        parser = argparse.ArgumentParser(
-            usage="%(prog)s pair-batches --inputs FILE FILE ... --output-dir DIR",
-            description="Match finished batches without RAW or Backfill.",
-        )
-        parser.add_argument(
-            "--inputs",
-            required=True,
-            nargs="+",
-            type=Path,
-            help="One captured pairing-input JSON per batch (at least two).",
-        )
-        parser.add_argument("--output-dir", required=True, type=Path)
-        pairing = parser.parse_args(argv[1:])
-        try:
-            replay_pairing(pairing.inputs, pairing.output_dir)
-        except (OSError, ValueError) as exc:
-            print(str(exc), file=sys.stderr)
-            return 2
-        print(
-            f"Batch correspondence: {pairing.output_dir / 'batch_correspondence.tsv'}"
-        )
-        return 0
-
-    if argv and argv[0] == "backfill":
-        from xic_extractor.diagnostics.backfill_replay import replay_backfill
-
-        parser = argparse.ArgumentParser(
-            usage="%(prog)s backfill --inputs DIR --output-dir DIR",
-            description="Rerun Backfill on a completed local grouping checkpoint.",
-        )
-        parser.add_argument(
-            "--inputs",
-            required=True,
-            type=Path,
-            help="Directory captured with --stop-after grouping --save-backfill-inputs",
-        )
-        parser.add_argument("--output-dir", required=True, type=Path)
-        parser.add_argument(
-            "--save-matrix-inputs",
-            action="store_true",
-            help="Save finalized values for Matrix replay.",
-        )
-        replay = parser.parse_args(argv[1:])
-        try:
-            output = replay_backfill(
-                replay.inputs,
-                replay.output_dir,
-                save_matrix_inputs=replay.save_matrix_inputs,
-            )
-            print(f"Backfill decisions: {output}")
-        except (OSError, ValueError, RawReaderError) as exc:
-            print(str(exc), file=sys.stderr)
-            return 2
-        return 0
+    if argv and argv[0] in {"matrix", "pair-batches", "backfill"}:
+        return _run_stage_replay(argv)
 
     args = _parse_args(argv)
     try:
@@ -440,6 +358,75 @@ def _resolve_istd_input(args: argparse.Namespace) -> KnownIstdReference | None:
         f"{selection.skipped_count} non-ISTD rows skipped)"
     )
     return None
+
+
+def _run_stage_replay(argv: Sequence[str]) -> int:
+    parser = argparse.ArgumentParser(prog="run_alignment")
+    stages = parser.add_subparsers(dest="stage", required=True)
+    backfill = stages.add_parser(
+        "backfill", description="Rerun Backfill on a local grouping checkpoint."
+    )
+    backfill.add_argument(
+        "--inputs",
+        required=True,
+        type=Path,
+        help="Directory captured with --stop-after grouping --save-backfill-inputs",
+    )
+    backfill.add_argument(
+        "--save-matrix-inputs",
+        action="store_true",
+        help="Save finalized values for Matrix replay.",
+    )
+    pairing = stages.add_parser(
+        "pair-batches", description="Match finished batches without RAW or Backfill."
+    )
+    pairing.add_argument(
+        "--inputs",
+        required=True,
+        nargs="+",
+        type=Path,
+        help="One captured pairing-input JSON per batch (at least two).",
+    )
+    matrix = stages.add_parser(
+        "matrix",
+        description="Write only the Matrix from completed Backfill and pairing.",
+    )
+    matrix.add_argument(
+        "--backfill",
+        required=True,
+        nargs="+",
+        type=Path,
+        help="Completed matrix-cells.json file(s)",
+    )
+    matrix.add_argument(
+        "--pairing", required=True, type=Path, help="Completed matrix-join.json"
+    )
+    for stage in (backfill, pairing, matrix):
+        stage.add_argument("--output-dir", required=True, type=Path)
+    args = parser.parse_args(argv)
+    try:
+        if args.stage == "backfill":
+            from xic_extractor.diagnostics.backfill_replay import replay_backfill
+
+            label = "Backfill decisions"
+            path = replay_backfill(
+                args.inputs, args.output_dir, save_matrix_inputs=args.save_matrix_inputs
+            )
+        elif args.stage == "pair-batches":
+            from xic_extractor.diagnostics.batch_pairing import replay_pairing
+
+            label = "Batch correspondence"
+            path = replay_pairing(args.inputs, args.output_dir)
+        else:
+            from xic_extractor.diagnostics.matrix_replay import replay_matrix
+
+            label = "Matrix"
+            path = replay_matrix(args.backfill, args.pairing, args.output_dir)
+    except (OSError, ValueError, RawReaderError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    print(f"{label}: {path}")
+    return 0
 
 
 def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:

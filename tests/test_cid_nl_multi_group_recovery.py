@@ -1904,51 +1904,27 @@ def test_matrix_preserves_empty_batch_sample_column(tmp_path, monkeypatch):
     application.run_untargeted_grouping(
         request, save_backfill_inputs=True, save_pairing_inputs=True
     )
-    out = tmp_path / "backfill"
-    assert (
-        main(
-            [
-                "backfill",
-                "--inputs",
-                str(request.output_dir / "backfill-inputs"),
-                "--output-dir",
-                str(out),
-                "--save-matrix-inputs",
-            ]
-        )
-        == 0
+
+    def replay(stage, *args):
+        out = tmp_path / stage
+        assert main([stage, *map(str, args), "--output-dir", str(out)]) == 0
+        return out
+
+    captured = request.output_dir
+    backfill = replay(
+        "backfill", "--inputs", captured / "backfill-inputs", "--save-matrix-inputs"
     )
-    batches = json.loads((out / "matrix-cells.json").read_text())["batches"]
+    cells = backfill / "matrix-cells.json"
+    batches = json.loads(cells.read_text())["batches"]
     assert batches["empty"] == {"samples": {"Missing": 3}, "groups": []}
-    pair = tmp_path / "pair"
-    assert (
-        main(
-            [
-                "pair-batches",
-                "--inputs",
-                *map(
-                    str, sorted((request.output_dir / "pairing-inputs").glob("*.json"))
-                ),
-                "--output-dir",
-                str(pair),
-            ]
-        )
-        == 0
+
+    pair = replay(
+        "pair-batches",
+        "--inputs",
+        *sorted((captured / "pairing-inputs").glob("*.json")),
     )
-    matrix = tmp_path / "matrix"
-    assert (
-        main(
-            [
-                "matrix",
-                "--backfill",
-                str(out / "matrix-cells.json"),
-                "--pairing",
-                str(pair / "matrix-join.json"),
-                "--output-dir",
-                str(matrix),
-            ]
-        )
-        == 0
+    matrix = replay(
+        "matrix", "--backfill", cells, "--pairing", pair / "matrix-join.json"
     )
     with (matrix / "alignment_matrix.tsv").open(newline="") as stream:
         rows = list(csv.DictReader(stream, delimiter="\t"))

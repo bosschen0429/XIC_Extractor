@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
 
@@ -15,14 +15,12 @@ from xic_extractor.alignment.batch_correspondence import (
 )
 from xic_extractor.diagnostics.grouping_experiment_io import write_json
 from xic_extractor.diagnostics.matrix_replay import save_matrix_join
-from xic_extractor.execution.timing import TimingRecorder
 from xic_extractor.output.alignment.batch_correspondence_table import (
     batch_correspondence_summary,
     write_batch_correspondence_table,
 )
 from xic_extractor.output.alignment.pipeline_outputs import (
-    alignment_artifact_collisions,
-    write_alignment_artifacts_atomic,
+    new_alignment_artifacts,
 )
 from xic_extractor.validation_primitives import (
     require_finite_real,
@@ -132,38 +130,32 @@ def _load(path: Path) -> tuple[GroupedBatch, datetime, float]:
         raise ValueError(f"Invalid pairing input {path}: {exc}") from exc
 
 
-def replay_pairing(inputs: Sequence[Path], output_dir: Path) -> None:
+def replay_pairing(inputs: Sequence[Path], output_dir: Path) -> Path:
     if len(inputs) < 2:
         raise ValueError("pair-batches requires at least two batch inputs")
     table = output_dir / "batch_correspondence.tsv"
     summary = output_dir / "summary.json"
     join = output_dir / "matrix-join.json"
-    artifacts = (join, table, summary)
-    if alignment_artifact_collisions(artifacts):
-        raise ValueError(f"Pairing output already exists: {output_dir}")
-    captures = [_load(path) for path in inputs]
-    latest = {batch.batch_id: date for batch, date, _ in captures}
-    if len(latest) != len(captures):
-        raise ValueError("Pairing inputs must have distinct batch IDs")
-    if len({ppm for _, _, ppm in captures}) != 1:
-        raise ValueError("Pairing inputs must use the same precursor_tolerance_ppm")
-    if len({date.utcoffset() is None for date in latest.values()}) > 1:
-        raise ValueError("Pairing input acquisition times use incompatible time zones")
-    result, features = pair_grouped_batches(
-        [batch for batch, _, _ in captures],
-        latest_acquisition=latest.__getitem__,
-        precursor_tolerance_ppm=captures[0][2],
-    )
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    def render(paths: Mapping[Path, Path]) -> None:
+    with new_alignment_artifacts(join, table, summary) as paths:
+        captures = [_load(path) for path in inputs]
+        latest = {batch.batch_id: date for batch, date, _ in captures}
+        if len(latest) != len(captures):
+            raise ValueError("Pairing inputs must have distinct batch IDs")
+        if len({ppm for _, _, ppm in captures}) != 1:
+            raise ValueError("Pairing inputs must use the same precursor_tolerance_ppm")
+        if len({date.utcoffset() is None for date in latest.values()}) > 1:
+            raise ValueError(
+                "Pairing input acquisition times use incompatible time zones"
+            )
+        result, features = pair_grouped_batches(
+            [batch for batch, _, _ in captures],
+            latest_acquisition=latest.__getitem__,
+            precursor_tolerance_ppm=captures[0][2],
+        )
         save_matrix_join(paths[join], result)
         write_batch_correspondence_table(paths[table], result, features)
         write_json(
             paths[summary],
             {"batch_correspondence": batch_correspondence_summary(result)},
         )
-
-    write_alignment_artifacts_atomic(
-        artifacts, render_all=render, recorder=TimingRecorder.disabled("pair-batches")
-    )
+    return table

@@ -106,80 +106,47 @@ docs/product/decision-policy.md; preset
 compatibility lives in docs/product/presets.md. Task-specific paths and accepted
 parameter values stay in the Issue or validation owner.
 
-For a grouping-only code or parameter change, replay measured observations
-instead of launching Alignment. From a bootstrapped worktree, this synthetic
-two-sample case needs no local data, preset or DLL. Use a new or empty output
-directory for each trial so an existing baseline cannot be overwritten:
+### Replay only the stage you changed
+
+Add `--stop-after grouping` and the relevant capture flags to the usual
+Alignment command once. Use a fresh output directory for each trial.
+
+| Stage | Input to retain | What to compare |
+| --- | --- | --- |
+| `regroup` | `--save-grouping-inputs` → `grouping-inputs.json.gz` | Initial groups, members and reassignments |
+| `backfill` | `--save-backfill-inputs` → `backfill-inputs/` | `backfill-cells.tsv`: competing rows, sample, area, decision and status |
+| `pair-batches` | `--save-pairing-inputs` → one JSON per declared batch | `batch_correspondence.tsv`: partners, competitors and unpaired reasons; `summary.json`: reference and RT map diagnostics |
+| `matrix` | `matrix-cells.json` from Backfill with `--save-matrix-inputs`, and `matrix-join.json` from pairing | Only `alignment_matrix.tsv`, from the formal writer |
+
+**Try regrouping without RAW, a preset or a DLL.** The two fixture observations
+fit the original 50 ppm window; at 20 ppm, `members.tsv` shows two singletons
+and `changes.tsv` shows both reassignments. For real observations, substitute
+your captured snapshot. See the [grouping diagnostic](../../tools/diagnostics/INDEX.md#grouping_experimentpy)
+for baseline comparisons and calibration options.
 
     .venv\Scripts\python.exe -m scripts.run_alignment regroup --inputs tests/fixtures/synthetic-grouping.json.gz --set max_ppm=20 --output-dir output/regroup-smoke
 
-The frozen masses (500.000 and 500.015 at the same apex) fit the snapshot's
-50 ppm window but not 20 ppm: inspect `members.tsv` for the two singleton
-groups and `changes.tsv` for both reassignments. This is an engineering check,
-not tissue validation.
+**Replay Backfill or pairing independently.** These examples use captures in
+`output/grouping`. Only Backfill may read RAW: it reuses initial assessments
+and grouping, not the measurements needed for new Backfill queries. Pairing
+accepts batches captured together or separately, in any order.
 
-For your own data, add `--stop-after grouping --save-grouping-inputs` to the
-usual Alignment command once, then pass its `grouping-inputs.json.gz` to
-`regroup` across edits or worktrees. A Discovery index or Matrix alone does
-not retain those observed owners. Replay tests initial membership, not new
-peak detection, batch-to-batch matching, Backfill or published quantities.
-See the [grouping diagnostic](../../tools/diagnostics/INDEX.md#grouping_experimentpy)
-for baseline comparisons and calibration options.
+    .venv\Scripts\python.exe -m scripts.run_alignment backfill --inputs output/grouping/backfill-inputs --save-matrix-inputs --output-dir output/backfill-trial
+    .venv\Scripts\python.exe -m scripts.run_alignment pair-batches --inputs output/grouping/pairing-inputs/batch-1.json output/grouping/pairing-inputs/batch-2.json --output-dir output/pairing-trial
 
-To change **cross-batch pairing** without repeating within-batch grouping or
-Backfill, add `--stop-after grouping --save-pairing-inputs` to the usual
-Alignment command, with a declared `batch_id` in sample metadata. Capture
-each batch independently, or take the separate files from one multi-batch
-run. Pass one JSON per distinct batch, in any order:
+Keep the Backfill checkpoint at its original absolute path, under the same
+user. Its Python objects are not exchange files: replay verifies the bytes
+against a user-local receipt in `~/.xic-extractor/backfill-v1/` before decoding.
+Recapture if upstream inputs or stored models change. A digest-only receipt
+can replay Backfill but lacks the sample roster needed to export Matrix inputs.
 
-    .venv\Scripts\python.exe -m scripts.run_alignment pair-batches --inputs output/batch-A/pairing-inputs/batch-1.json output/batch-B/pairing-inputs/batch-1.json --output-dir output/pairing-trial
-
-Replay needs no RAW, DLL, Discovery index or previous pairing result. It
-chooses the reference using batch sizes and the saved latest acquisition
-times, then writes `batch_correspondence.tsv` (partners, unpaired reasons and
-competitors) and `summary.json` (reference and map diagnostics). It does not
-publish a Matrix. Group tables alone lack the calibrated feature coordinates
-and measured ISTD knots: capture once if these inputs were not retained.
-
-To change **Backfill** without repeating initial acquisition or grouping, add
-`--stop-after grouping --save-backfill-inputs` to the usual scalar CID-NL
-Alignment command once. Point the replay at that run's directory:
-
-    .venv\Scripts\python.exe -m scripts.run_alignment backfill --inputs output/grouping/backfill-inputs --output-dir output/backfill-trial
-
-The diagnostic runs the current Backfill and cell-decision code with the
-captured settings and all competitors. `backfill-cells.tsv` identifies each
-group/sample, area (empty for no write), decision and status. No Matrix or
-cross-batch correspondence is published. Only Backfill can request RAW data;
-original RAW paths, the reader and source checks still apply. The acquisition
-cache is not a grouping checkpoint. Old group tables and membership snapshots
-cannot supply the initial assessments.
-
-Capture is opt-in. Keep the checkpoint at its original absolute path on the
-same machine/user. Its partition files are private Python execution objects,
-not exchange files: replay verifies the actual bytes against a separate
-user-local receipt under `~/.xic-extractor/backfill-v1/` before decoding.
-Other worktrees can read the original directory; capture again if upstream
-inputs or the stored Python models change.
-
-To change **Matrix output only**, retain finalized cells once by adding
-`--save-matrix-inputs` to `run_alignment backfill`. This writes
-`matrix-cells.json`: unrounded row coordinates, sample identities, injection
-order (including samples in batches with no candidates), and decided areas
-(null means no write). To export Matrix inputs, the grouping checkpoint must
-include the batch sample roster; digest-only checkpoints still replay Backfill.
-`pair-batches` writes
-`matrix-join.json`: batch-qualified partners and the fitted RT maps. To
-render a new Matrix after a writer edit:
+**After a Matrix writer edit, run only this command.** No RAW, grouping,
+Backfill or pair fitting is needed. Multiple `--backfill` inputs must share a
+canonical injection order. The inputs retain unrounded values, samples with
+no candidates, batch-qualified partners and fitted RT maps; old report TSVs
+cannot substitute for them.
 
     .venv\Scripts\python.exe -m scripts.run_alignment matrix --backfill output/backfill-trial/matrix-cells.json --pairing output/pairing-trial/matrix-join.json --output-dir output/matrix-trial
-
-Only `alignment_matrix.tsv` is written, using the formal writer. No RAW,
-Discovery, grouping, Backfill, or pair fitting is run. Separate Backfill files
-may be supplied together if they share one canonical injection order across
-batches. Feature or sample mismatches are errors, not implied missing values.
-Older decision and correspondence TSVs alone lack the publication order and
-fitted RT map; do not rebuild those facts from rounded report columns.
 
 RAW-backed Alignment requires a bound pure CID-NL preset. Its retained runtime owns
 acquisition and scheduling; CLI help defines supported execution options.
