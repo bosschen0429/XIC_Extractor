@@ -38,8 +38,8 @@ if TYPE_CHECKING:
         UntargetedPartitionComposition,
     )
 
-_BACKFILL = "finalized_matrix_cells_v1"
-_PAIRING = "matrix_batch_join_v1"
+_BACKFILL = "finalized_matrix_cells"
+_PAIRING = "matrix_batch_join"
 
 
 class CompletedMatrixCells:

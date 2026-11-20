@@ -28,7 +28,7 @@ from xic_extractor.validation_primitives import (
     require_text,
 )
 
-_SCHEMA = "batch_pairing_input_v1"
+_SCHEMA = "batch_pairing_input"
 
 
 def save_pairing_input(

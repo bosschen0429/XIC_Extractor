@@ -26,7 +26,7 @@ def test_matrix_only_joins_batch_qualified_groups_and_keeps_missing_cells(tmp_pa
         return save(
             batch,
             {
-                "schema": "finalized_matrix_cells_v1",
+                "schema": "finalized_matrix_cells",
                 "batches": {batch: {"samples": order, "groups": groups}},
             },
         )
@@ -47,7 +47,7 @@ def test_matrix_only_joins_batch_qualified_groups_and_keeps_missing_cells(tmp_pa
         ],
     )
     pairing = {
-        "schema": "matrix_batch_join_v1",
+        "schema": "matrix_batch_join",
         "reference_batch": "new",
         "rows": [[["new", "shared"], ["old", "shared"]], [["old", "solo"]]],
         "maps": {"old": None},
