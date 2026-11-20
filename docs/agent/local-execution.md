@@ -108,7 +108,8 @@ parameter values stay in the Issue or validation owner.
 
 For a grouping-only code or parameter change, replay measured observations
 instead of launching Alignment. From a bootstrapped worktree, this synthetic
-two-sample case needs no local data, preset or DLL:
+two-sample case needs no local data, preset or DLL. Use a new or empty output
+directory for each trial so an existing baseline cannot be overwritten:
 
     .venv\Scripts\python.exe -m scripts.run_alignment regroup --inputs tests/fixtures/synthetic-grouping.json.gz --set max_ppm=20 --output-dir output/regroup-smoke
 

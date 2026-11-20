@@ -80,7 +80,12 @@ def _add_replay_arguments(replay: argparse.ArgumentParser) -> None:
         type=Path,
         help="Snapshot saved with --stop-after grouping --save-grouping-inputs",
     )
-    replay.add_argument("--output-dir", required=True, type=Path)
+    replay.add_argument(
+        "--output-dir",
+        required=True,
+        type=Path,
+        help="New or empty directory for grouping results",
+    )
     replay.add_argument(
         "--set",
         action="append",
@@ -165,6 +170,10 @@ def _execute(parser: argparse.ArgumentParser, argv: Sequence[str] | None) -> int
             ):
                 raise ValueError(
                     "Comparison baseline must not be the replay output directory"
+                )
+            if any(args.output_dir.iterdir()):
+                raise ValueError(
+                    f"Regrouping requires an empty output directory: {args.output_dir}"
                 )
             inputs, provenance = read_grouping_inputs(args.inputs)
             config_values = asdict(inputs.alignment_config)

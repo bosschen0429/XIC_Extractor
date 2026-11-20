@@ -1037,3 +1037,16 @@ def test_grouping_anchor_table_lists_istd_knots_without_any_workset(
     assert [(r["kind"], r["istd_label"], r["reference_rt_min"]) for r in rows] == [
         ("istd", "ISTD1", "2.1")
     ]
+
+
+def test_regroup_cannot_overwrite_previous_results(tmp_path):
+    from scripts.run_alignment import main
+
+    snapshot = Path(__file__).parent / "fixtures" / "synthetic-grouping.json.gz"
+    args = ["regroup", "--inputs", str(snapshot), "--output-dir", str(tmp_path)]
+    assert main(args) == 0
+    before = {p: p.read_bytes() for p in tmp_path.iterdir()}
+    with pytest.raises(SystemExit) as error:
+        main([*args, "--set", "max_ppm=20", "--compare-to", str(tmp_path / "missing")])
+    assert error.value.code == 2
+    assert before == {p: p.read_bytes() for p in tmp_path.iterdir()}
