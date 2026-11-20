@@ -134,7 +134,7 @@ def test_shoulder_overlap_is_noted_with_its_own_area_without_raising_risk(tmp_pa
         report, SelectionRequest(strategy="query", group_ids=("G1",))
     ).payload["items"][0]
     samples = {sample["sample_id"]: sample for sample in item["samples"]}
-    assert samples["S1"]["area_notes"] == ["有肩峰或重疊"]
+    assert samples["S1"]["area_notes"] == ["肩峰／重疊"]
     assert "area_notes" not in samples["S2"]
     assert [samples[sid]["quantitative_value"] for sid in ("S1", "S2")] == [123, 456]
     assert [samples[sid]["risk_labels"] for sid in ("S1", "S2")] == [[], []]
