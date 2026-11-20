@@ -615,14 +615,14 @@ function renderIstd(result) {
   const selection = result.selection;
   $("istd-summary").textContent =
     result.message ||
-    `${selection.targets.length} 個適用內標；${selection.method_skipped.length} 個不適用此方法；略過 ${selection.skipped_count} 個一般目標。${selection.targets.length ? "" : "本次不使用內標參考。"}`;
+    `${selection.targets.length} 個適用 ISTD；${selection.method_skipped.length} 個不適用此方法；略過 ${selection.skipped_count} 個一般目標。${selection.targets.length ? "" : "本次不使用 ISTD 參考。"}`;
   const preview = $("istd-preview");
   preview.replaceChildren();
   if (!selection) return;
   const table = el("table");
   const head = el("tr");
   for (const label of [
-    "內標名稱",
+    "ISTD 名稱",
     "CID-NL 中性丟失（Da）",
     "m/z",
     "預期 RT (min)",
@@ -696,7 +696,7 @@ async function importIstdFiles(files) {
 }
 async function copyIstd() {
   const destination = await requestPath(
-    "另存可編輯內標副本",
+    "另存可編輯 ISTD 副本",
     `${state.config.config_dir}/my-targets.${$("u-targets_csv").value.split(".").pop() || "xlsx"}`,
   );
   if (!destination) return;
@@ -793,7 +793,7 @@ export function bindUntargeted() {
     $("untargeted-result").hidden = true;
     dirty("untargeted");
     focusField("u-raw_dir");
-    done("新批次沿用方法、內標與結果存放位置；請選擇 RAW 資料夾。");
+    done("新批次沿用方法、ISTD 與結果存放位置；請選擇 RAW 資料夾。");
   };
   $("u-raw_dir").addEventListener("input", () => {
     const nextRawDir = $("u-raw_dir").value;

@@ -364,44 +364,25 @@ def create_server(
             if self.headers.get_content_type() != "application/json":
                 raise ValueError("請以 JSON 傳送要求。")
             values = json.loads(body)
-            if not isinstance(values, dict):
-                raise ValueError("要求必須是 JSON 物件。")
             path = urlsplit(self.path).path
             if path == "/api/window":
-                window, closed = values.get("window"), values.get("closed", False)
-                if (
-                    set(values) - {"window", "closed"}
-                    or not isinstance(window, str)
-                    or not 1 <= len(window) <= 80
-                    or not isinstance(closed, bool)
-                ):
-                    raise ValueError("請提供瀏覽分頁識別。")
                 if browser_lifetime is not None:
-                    browser_lifetime.update(window, closed=closed)
+                    browser_lifetime.update(
+                        values["window"], closed=values.get("closed", False)
+                    )
                 self._send(200, {"ok": True})
                 return
             elif path == "/api/open":
-                if set(values) != {"source"}:
-                    raise ValueError("請提供結果位置。")
                 result = workspace.open(values["source"])
             elif path == "/api/query":
                 result = workspace.query(values)
             elif path == "/api/detail":
-                if set(values) != {"item_id"}:
-                    raise ValueError("請選擇一個檢閱項目。")
                 result = workspace.detail(values["item_id"])
             elif path == "/api/curves":
                 self._send(202, workspace.start_curves(values))
                 return
             elif path == "/api/pick":
-                kind, current = values.get("kind"), values.get("path", "")
-                if (
-                    set(values) - {"path", "kind"}
-                    or not isinstance(kind, str)
-                    or not isinstance(current, str)
-                ):
-                    raise ValueError("請選擇資料夾或檔案類型。")
-                result = {"path": choose_path(kind, current)}
+                result = {"path": choose_path(values["kind"], values.get("path", ""))}
             elif path == "/api/samples/preview":
                 from xic_workbench.samples import read_batch_samples
 
@@ -419,8 +400,6 @@ def create_server(
                 # holding the mutable workspace lock or blocking status/queries.
                 result = workspace.preview_curation(values)
             elif path == "/api/analysis/start":
-                if not isinstance(values.get("values"), dict):
-                    raise ValueError("請提供分析設定。")
                 self._send(
                     202, workspace.start_analysis(values["kind"], values["values"])
                 )

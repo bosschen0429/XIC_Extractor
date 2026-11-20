@@ -117,8 +117,8 @@ def test_benchmark_reads_clean_product_matrix_identity_sidecar(tmp_path: Path):
 
 def test_review_positive_reliability_never_enters_clean_benchmark_points() -> None:
     points = (
-        TargetedPoint("S1", "d3-A", 9.0, 100.0, ""),
-        TargetedPoint("S2", "d3-A", 9.1, 110.0, ""),
+        TargetedPoint("S1", "d3-A", 9.0, 100.0),
+        TargetedPoint("S2", "d3-A", 9.1, 110.0),
     )
     reliability = {
         ("S1", "d3-A"): TargetedReliabilityPoint(
@@ -740,7 +740,6 @@ def _write_targeted_workbook(
             "PeakStart",
             "PeakEnd",
             "PeakWidth",
-            "Reason",
         ]
     )
     for sample_index, sample in enumerate(samples, start=1):
@@ -759,7 +758,6 @@ def _write_targeted_workbook(
                     rt - 0.05,
                     rt + 0.05,
                     0.1,
-                    "",
                 ]
             )
     workbook.save(path)

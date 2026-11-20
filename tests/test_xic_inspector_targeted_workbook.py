@@ -42,8 +42,8 @@ def workbook(tmp_path):
             "Area",
             "PeakStart",
             "PeakEnd",
-            "Review Reason",
-            "Reason",
+            "依據",
+            "疑點",
             "Counted Detection",
         ]
     )
@@ -56,12 +56,14 @@ def workbook(tmp_path):
             "ND",
             "ND",
             "ND",
-            "Peak not found",
-            "No positive peak",
+            "未見 NL",
+            None,
             "FALSE",
         ]
     )
-    results.append(["Sample A", "A", "ISTD", 8.8, 0, 8.7, 8.9, None, None, "FALSE"])
+    results.append(
+        ["Sample A", "A", "ISTD", 8.8, 0, 8.7, 8.9, "無可用 MS1 峰", None, "FALSE"]
+    )
     results.append(
         [
             "Sample B",
@@ -71,12 +73,14 @@ def workbook(tmp_path):
             123.456,
             9.0,
             9.2,
-            "MS2 trigger missing",
+            "ISTD 位置",
             '<script>alert("unsafe")</script>',
             "TRUE",
         ]
     )
-    results.append(["Sample B", None, "ISTD", 9.0, None, 8.9, 9.1, None, None, "FALSE"])
+    results.append(
+        ["Sample B", None, "ISTD", 9.0, None, 8.9, 9.1, "無可用 MS1 峰", None, "FALSE"]
+    )
     metadata = book.create_sheet("Run Metadata")
     metadata.append(["Key", "Value"])
     metadata.append(["targeted_output_schema_version", "targeted_output"])
@@ -316,7 +320,7 @@ def test_nd_support_uses_saved_istd_rt_through_http(tmp_path, monkeypatch):
     assert workbook.read_bytes() == before
 
 
-@pytest.mark.parametrize("failure", ["missing_raw", "cancelled", "unknown_sample"])
+@pytest.mark.parametrize("failure", ["missing_raw", "cancelled"])
 def test_targeted_curve_failure_does_not_publish_or_modify_results(
     workbook, tmp_path, monkeypatch, failure
 ):
@@ -357,36 +361,30 @@ def test_targeted_curve_failure_does_not_publish_or_modify_results(
             "/api/curves",
             {
                 "item_id": item["id"],
-                "sample_ids": [
-                    "Unknown" if failure == "unknown_sample" else "Sample A"
-                ],
+                "sample_ids": ["Sample A"],
                 "raw_dir": str(tmp_path),
                 "dll_dir": str(tmp_path),
             },
         )
-        if failure == "unknown_sample":
-            assert status == 400
-        else:
-            assert status == 202
-            if failure == "cancelled":
-                try:
-                    assert entered.wait(10)
-                    status, job, _ = request(f"/api/jobs/{job['id']}/cancel", {})
-                    assert status == 200
-                    assert job["status"] == "cancelling"
-                finally:
-                    release.set()
-            deadline = time.monotonic() + 10
-            while (
-                job["status"] in {"running", "cancelling"}
-                and time.monotonic() < deadline
-            ):
-                time.sleep(0.02)
-                _, job, _ = request(f"/api/jobs/{job['id']}")
-            assert job["status"] == (
-                "cancelled" if failure == "cancelled" else "failed"
-            ), job
-            assert "view_id" not in job
+        assert status == 202
+        if failure == "cancelled":
+            try:
+                assert entered.wait(10)
+                status, job, _ = request(f"/api/jobs/{job['id']}/cancel", {})
+                assert status == 200
+                assert job["status"] == "cancelling"
+            finally:
+                release.set()
+        deadline = time.monotonic() + 10
+        while (
+            job["status"] in {"running", "cancelling"} and time.monotonic() < deadline
+        ):
+            time.sleep(0.02)
+            _, job, _ = request(f"/api/jobs/{job['id']}")
+        assert job["status"] == ("cancelled" if failure == "cancelled" else "failed"), (
+            job
+        )
+        assert "view_id" not in job
     if failure == "cancelled":
         assert closed == [True]
     assert workbook.read_bytes() == before
@@ -403,8 +401,8 @@ def test_targeted_http_review_preserves_values_scope_and_source(workbook):
         assert (
             overview["result_count"],
             overview["counted_count"],
-            overview["review_count"],
-        ) == (4, 1, 2)
+            overview["needs_look_count"],
+        ) == (4, 1, 4)
         assert overview["targets"][0]["median_area"] == 123.456
         assert [item["title"] for item in page["items"]] == ["Analyte", "ISTD"]
         assert all(not item["observed_sample_ids"] for item in page["items"])
@@ -417,7 +415,7 @@ def test_targeted_http_review_preserves_values_scope_and_source(workbook):
             ("Sample B", 123.456, None),
         ]
         assert records[1]["PeakStart"] == 9.0
-        assert records[1]["Reason"] == '<script>alert("unsafe")</script>'
+        assert records[1]["疑點"] == '<script>alert("unsafe")</script>'
         assert b'<script>alert("unsafe")</script>' not in html
         assert ["signal_processing_method", "gaussian"] in _payload(html)["summary"][
             "method_context"
@@ -436,12 +434,8 @@ def test_targeted_http_review_preserves_values_scope_and_source(workbook):
         _, html, _ = request(f"/reports/{detail['view_id']}.html")
         details = _payload(html)["items"][0]["details"]
         assert [r["SampleName"] for r in details["records"]] == ["Sample B"]
-        assert details["review_queue"] == [
-            {
-                "Sample": "Sample B",
-                "Target": "Analyte",
-                "Why": "MS2 trigger missing",
-            }
+        assert [(r["依據"], r["Counted Detection"]) for r in details["records"]] == [
+            ("ISTD 位置", "TRUE")
         ]
         _, zero, _ = request("/api/query", {"target_id": "ISTD"})
         _, detail, _ = request("/api/detail", {"item_id": zero["items"][0]["id"]})
@@ -514,7 +508,7 @@ def test_workbook_binding_and_ambiguous_directory(workbook):
 
 def test_review_filter_lists_targets_and_keeps_every_sample(workbook):
     book = load_workbook(workbook)
-    book["XIC Results"]["H4"] = None
+    book["XIC Results"]["I4"] = None
     book.save(workbook)
     book.close()
     report = prepare_report(

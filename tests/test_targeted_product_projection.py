@@ -17,13 +17,13 @@ def test_projection_counts_istd_dropout_without_legacy_nl_authority() -> None:
         rt=11.9888,
         area=1.55e7,
         support_reasons=("ms1_peak_present", "trace_coherent"),
-        review_reasons=("plausible_dda_nl_dropout",),
+        review_reasons=("plausible_nl_dropout_review",),
     )
 
     assert projection.product_state == "detected_flagged"
     assert projection.counted_detection is True
     assert projection.review_state == "flagged"
-    assert "plausible_dda_nl_dropout" in projection.review_reasons
+    assert "plausible_nl_dropout_review" in projection.review_reasons
 
 
 def test_same_nl_evidence_can_project_to_different_product_counts() -> None:
@@ -31,7 +31,7 @@ def test_same_nl_evidence_can_project_to_different_product_counts() -> None:
         "rt": 11.9888,
         "area": 1.55e7,
         "support_reasons": ("ms1_peak_present", "trace_coherent"),
-        "review_reasons": ("plausible_dda_nl_dropout",),
+        "review_reasons": ("plausible_nl_dropout_review",),
     }
 
     istd_projection = build_targeted_product_projection(
@@ -72,7 +72,7 @@ def test_expected_istd_without_required_nl_is_not_confirmed() -> None:
         rt=8.5,
         area=1234.5,
         support_reasons=("ms1_peak_present",),
-        review_reasons=("plausible_dda_nl_dropout",),
+        review_reasons=("plausible_nl_dropout_review",),
     )
     assert projection.counted_detection is False
     assert "cid_nl_method_not_supported" in projection.not_counted_reasons
@@ -143,17 +143,33 @@ def _istd(*, cid_nl: bool = True, backfill: bool = False) -> object:
 def test_paired_istd_identity_counts_an_analyte_without_its_own_nl() -> None:
     assert _analyte(cid_nl=False).counted_detection is False
     projection = _analyte(cid_nl=False, identity=True)
+    assert "paired_istd_identity" in projection.support_reasons
+    # Identity lets the peak count; the missing NL stays a doubt to read.
     assert (projection.counted_detection, projection.product_state) == (
         True,
-        "detected_clean",
+        "detected_flagged",
     )
-    assert "paired_istd_identity" in projection.support_reasons
-    # Identity resolves missing NL only; a shape concern still asks for review.
+    assert projection.not_counted_reasons == ()
+    assert projection.review_reasons == (
+        "plausible_nl_dropout_review",
+        "missing_nl_support_review",
+    )
     flagged = _analyte(cid_nl=False, identity=True, review=("trace_morphology_review",))
-    assert (flagged.counted_detection, flagged.review_reasons) == (
-        True,
-        ("trace_morphology_review",),
+    assert flagged.counted_detection is True
+    assert "trace_morphology_review" in flagged.review_reasons
+
+
+def test_identity_keeps_a_missing_ms2_as_its_review() -> None:
+    projection = build_targeted_product_projection(
+        TargetedProductContext(role="Analyte", neutral_loss_required=True),
+        rt=9.1,
+        area=2.0e5,
+        paired_istd_identity=True,
+        support_reasons=_COHERENT,
+        not_counted_reasons=("missing_ms2_policy_not_counted",),
     )
+    assert (projection.counted_detection, projection.review_state) == (True, "flagged")
+    assert projection.review_reasons == ("missing_ms2_not_observed",)
 
 
 @dataclass(frozen=True)

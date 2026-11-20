@@ -13,7 +13,10 @@ from zipfile import BadZipFile
 
 from xic_extractor.alignment_explanation.errors import ExplanationError
 from xic_extractor.configuration.delta_mass_table import DELTA_MASS_SHEET
-from xic_extractor.output.targeted_overview import summarize_targeted_results
+from xic_extractor.output.targeted_overview import (
+    rows_needing_look,
+    summarize_targeted_results,
+)
 from xic_inspector.selection.canonical import CanonicalItem, build_canonical_ref
 from xic_inspector.selection.sampler import sample_cross_sample_sha256
 
@@ -63,6 +66,11 @@ def _table(book, name: str, required: set[str]) -> list[dict[str, Any]]:
         if any(value is not None for value in row):
             records.append(dict(zip(headers, row, strict=True)))
     return records
+
+
+def _role(target: dict[str, Any]) -> str:
+    """The one reading of a saved Targets.Role cell."""
+    return str(target["Role"] or "").strip().casefold()
 
 
 class TargetedWorkbookSource:
@@ -138,21 +146,11 @@ class TargetedWorkbookSource:
                     "Area",
                     "PeakStart",
                     "PeakEnd",
-                    "Reason",
-                    "Review Reason",
+                    "依據",
+                    "疑點",
                     "Counted Detection",
                 },
             )
-            # A saved review reason is the review mark.
-            self.queue = [
-                {
-                    "Sample": row["SampleName"],
-                    "Target": row["Target"],
-                    "Why": row["Review Reason"],
-                }
-                for row in self.records
-                if row["Review Reason"]
-            ]
         finally:
             book.close()
         labels = [row["Label"] for row in self.targets]
@@ -180,15 +178,19 @@ class TargetedWorkbookSource:
             seen.add(pair)
         if not seen:
             raise ExplanationError("Targeted XLSX 沒有可檢閱的結果。")
-        if any((row["Sample"], row["Target"]) not in seen for row in self.queue):
-            raise ExplanationError("Targeted XLSX ReviewQueue 無法對應樣本／目標結果。")
         self._records_by_target = defaultdict(list)
-        self._queue_by_target = defaultdict(list)
         for row in self.records:
             self._records_by_target[row["Target"]].append(row)
-        for row in self.queue:
-            self._queue_by_target[row["Target"]].append(row)
-        overview = summarize_targeted_results(self.records, self.queue)
+        # A role belongs to the target; Targets.Role is its only saved record.
+        istd_targets = frozenset(
+            row["Label"] for row in self.targets if _role(row) == "istd"
+        )
+        # The saved labels say which results need a look.
+        overview = summarize_targeted_results(
+            self.records,
+            rows_needing_look(self.records, istd_targets),
+            istd_targets=istd_targets,
+        )
         # Group is recorded per sample; it colours that sample in every view.
         sample_groups: dict[str, str] = {}
         for row in self.records:
@@ -205,7 +207,6 @@ class TargetedWorkbookSource:
             "processing_attempt_id": digest,
             "method_context": metadata,
             "target_names": labels,
-            "review_record_count": len(self.queue),
             "overview": asdict(overview),
             "samples": [
                 {
@@ -224,8 +225,7 @@ class TargetedWorkbookSource:
         return [
             target["Label"]
             for target in self.targets
-            if isinstance(target["Role"], str)
-            and target["Role"].strip().casefold() == role.casefold()
+            if _role(target) == role.casefold()
         ]
 
     def curve_targets(
@@ -323,9 +323,6 @@ class TargetedWorkbookSource:
             ]
             if not records:
                 continue
-            queue = [
-                r for r in self._queue_by_target[label] if r["Sample"] in sample_ids
-            ]
             focus = self._focus[label]
             focus_samples = [s for s in focus.focus_samples if s in sample_ids]
             attention = bool(focus_samples)
@@ -365,7 +362,6 @@ class TargetedWorkbookSource:
                             and row["SampleName"] in sample_ids
                         ],
                         "records": records,
-                        "review_queue": queue,
                         "focus": {
                             "kind": focus.focus_kind,
                             "samples": focus_samples,

@@ -91,10 +91,10 @@ def _fabricate_run_output() -> RunOutput:
             counted_detection=True,
             review_state="flagged",
             projection_reason=(
-                "decision: detected_flagged; review: fixture_quality_flag"
+                "decision: detected_flagged; review: trace_morphology_review"
             ),
             support_reasons=("ms1_peak_present",),
-            review_reasons=("fixture_quality_flag",),
+            review_reasons=("trace_morphology_review",),
         ),
     )
     file_result = FileResult(
@@ -133,13 +133,14 @@ def test_extractor_no_longer_exposes_test_only_xlsx_writer() -> None:
     assert not hasattr(extractor_module, "_write_xlsx")
 
 
-def test_main_sheet_has_reason_without_confidence(tmp_path: Path) -> None:
+def test_main_sheet_has_labels_without_confidence(tmp_path: Path) -> None:
     out = _write_workbook(tmp_path)
     wb = load_workbook(out, read_only=True)
     ws = wb["XIC Results"]
     headers = [cell.value for cell in next(ws.iter_rows(max_row=1))]
     assert "Confidence" not in headers
-    assert "Reason" in headers
+    assert {"依據", "疑點"} <= set(headers)
+    assert "Reason" not in headers
 
 
 def test_output_rows_use_selection_apex_rt_for_reporting() -> None:

@@ -70,7 +70,7 @@ def resolve_istd(
         return read_istd_file(path), {"kind": "file", "label": str(path)}
     windows = read_run_istd(source)
     if windows:
-        return windows, {"kind": "run", "label": "本次分析宣告的內標清單"}
+        return windows, {"kind": "run", "label": "本次分析宣告的 ISTD 清單"}
     return None, None
 
 

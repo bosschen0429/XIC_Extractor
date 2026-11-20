@@ -67,6 +67,15 @@ from xic_extractor.untargeted_execution.input_planning import (
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    argv = sys.argv[1:] if argv is None else argv
+    if argv and argv[0] == "regroup":
+        from tools.diagnostics.grouping_experiment import regroup_main
+
+        return regroup_main(argv[1:])
+
+    if argv and argv[0] in {"matrix", "pair-batches", "backfill"}:
+        return _run_stage_replay(argv)
+
     args = _parse_args(argv)
     try:
         execution_profile = load_execution_profile(alignment_workers=args.raw_workers)
@@ -240,7 +249,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                 profiler.enable()
             if args.stop_after == "grouping":
                 grouping_output = run_untargeted_grouping(
-                    request, context, save_snapshot=args.save_grouping_inputs
+                    request,
+                    context,
+                    save_snapshot=args.save_grouping_inputs,
+                    save_backfill_inputs=args.save_backfill_inputs,
+                    save_pairing_inputs=args.save_pairing_inputs,
                 )
             else:
                 outputs = run_untargeted_application(request, context)
@@ -279,6 +292,10 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.stop_after == "grouping":
         print(f"Grouping results: {grouping_output}")
+        if args.save_pairing_inputs:
+            print(f"Batch pairing inputs: {grouping_output / 'pairing-inputs'}")
+        if args.save_backfill_inputs:
+            print(f"Backfill inputs: {grouping_output / 'backfill-inputs'}")
         return 0
     if outputs.review_tsv is not None:
         print(f"Alignment review TSV: {outputs.review_tsv}")
@@ -343,11 +360,84 @@ def _resolve_istd_input(args: argparse.Namespace) -> KnownIstdReference | None:
     return None
 
 
+def _run_stage_replay(argv: Sequence[str]) -> int:
+    parser = argparse.ArgumentParser(prog="run_alignment")
+    stages = parser.add_subparsers(dest="stage", required=True)
+    backfill = stages.add_parser(
+        "backfill", description="Rerun Backfill on a local grouping checkpoint."
+    )
+    backfill.add_argument(
+        "--inputs",
+        required=True,
+        type=Path,
+        help="Directory captured with --stop-after grouping --save-backfill-inputs",
+    )
+    backfill.add_argument(
+        "--save-matrix-inputs",
+        action="store_true",
+        help="Save finalized values for Matrix replay.",
+    )
+    pairing = stages.add_parser(
+        "pair-batches", description="Match finished batches without RAW or Backfill."
+    )
+    pairing.add_argument(
+        "--inputs",
+        required=True,
+        nargs="+",
+        type=Path,
+        help="One captured pairing-input JSON per batch (at least two).",
+    )
+    matrix = stages.add_parser(
+        "matrix",
+        description="Write only the Matrix from completed Backfill and pairing.",
+    )
+    matrix.add_argument(
+        "--backfill",
+        required=True,
+        nargs="+",
+        type=Path,
+        help="Completed matrix-cells.json file(s)",
+    )
+    matrix.add_argument(
+        "--pairing", required=True, type=Path, help="Completed matrix-join.json"
+    )
+    for stage in (backfill, pairing, matrix):
+        stage.add_argument("--output-dir", required=True, type=Path)
+    args = parser.parse_args(argv)
+    try:
+        if args.stage == "backfill":
+            from xic_extractor.diagnostics.backfill_replay import replay_backfill
+
+            label = "Backfill decisions"
+            path = replay_backfill(
+                args.inputs, args.output_dir, save_matrix_inputs=args.save_matrix_inputs
+            )
+        elif args.stage == "pair-batches":
+            from xic_extractor.diagnostics.batch_pairing import replay_pairing
+
+            label = "Batch correspondence"
+            path = replay_pairing(args.inputs, args.output_dir)
+        else:
+            from xic_extractor.diagnostics.matrix_replay import replay_matrix
+
+            label = "Matrix"
+            path = replay_matrix(args.backfill, args.pairing, args.output_dir)
+    except (OSError, ValueError, RawReaderError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    print(f"{label}: {path}")
+    return 0
+
+
 def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
             "Publish finalized pure CID-NL Alignment "
-            "from an owner-closed discovery batch index."
+            "from an owner-closed discovery batch index. To recompute only grouping "
+            "from a saved snapshot, use: %(prog)s regroup --help. "
+            "To rerun only Backfill, use: %(prog)s backfill --help. "
+            "To match finished batches, use: %(prog)s pair-batches --help. "
+            "To write only the Matrix, use: %(prog)s matrix --help."
         ),
     )
     parser.add_argument(
@@ -547,7 +637,17 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument(
         "--save-grouping-inputs",
         action="store_true",
-        help="With --stop-after grouping, save compact inputs for diagnostic replay.",
+        help="With --stop-after grouping, save grouping-inputs.json.gz for regroup.",
+    )
+    parser.add_argument(
+        "--save-backfill-inputs",
+        action="store_true",
+        help="With --stop-after grouping, save local inputs for Backfill replay.",
+    )
+    parser.add_argument(
+        "--save-pairing-inputs",
+        action="store_true",
+        help="With --stop-after grouping, save one input per batch for pair-batches.",
     )
     parser.add_argument("--emit-alignment-cells", action="store_true")
     parser.add_argument(
@@ -597,6 +697,12 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     args = parser.parse_args(argv)
     if args.save_grouping_inputs and args.stop_after != "grouping":
         parser.error("--save-grouping-inputs requires --stop-after grouping")
+    if args.save_backfill_inputs and args.stop_after != "grouping":
+        parser.error("--save-backfill-inputs requires --stop-after grouping")
+    if args.save_pairing_inputs and args.stop_after != "grouping":
+        parser.error("--save-pairing-inputs requires --stop-after grouping")
+    if args.save_backfill_inputs and not args.backfill:
+        parser.error("--save-backfill-inputs cannot capture a --no-backfill plan")
     return args
 
 

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable, Mapping, Sequence
-from contextlib import suppress
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -172,10 +172,15 @@ def write_completed_untargeted_outputs_atomic(
     if outputs.rt_anchors_tsv is not None:
         paths.append(outputs.rt_anchors_tsv)
     paths.extend(extra_tables or {})
-    row_count = 0
-
-    def render_all(temp_paths: Mapping[Path, Path]) -> None:
-        nonlocal row_count
+    recorder = (
+        timing_recorder
+        if timing_recorder.instrument_writers
+        else TimingRecorder.disabled("writer")
+    )
+    with (
+        timing_recorder.stage("alignment.write_outputs"),
+        _staged_alignment_artifacts(paths, recorder) as temp_paths,
+    ):
         row_temp_paths = {name: temp_paths[path] for name, path in row_paths.items()}
         if render_rows is not None:
             row_count = render_rows(row_temp_paths)
@@ -190,35 +195,46 @@ def write_completed_untargeted_outputs_atomic(
             _write_metadata_json(temp_paths[outputs.run_metadata_json], metadata)
         if outputs.rt_anchors_tsv is not None:
             write_rt_anchor_table(temp_paths[outputs.rt_anchors_tsv], rt_calibration)
-
-    with timing_recorder.stage("alignment.write_outputs"):
-        _write_artifacts_atomic(
-            paths,
-            recorder=(
-                timing_recorder
-                if timing_recorder.instrument_writers
-                else TimingRecorder.disabled("writer")
-            ),
-            render_all=render_all,
-        )
     return row_count
 
 
-def _write_artifacts_atomic(
-    final_paths: Sequence[Path],
-    *,
-    recorder: TimingRecorder,
-    render_all: Callable[[Mapping[Path, Path]], None],
-) -> None:
-    temp_paths = [_temp_path(final_path) for final_path in final_paths]
+def alignment_artifact_collisions(paths: Iterable[Path]) -> list[Path]:
+    """Existing final, staging or backup paths owned by this publication."""
+    return [
+        candidate
+        for path in paths
+        for candidate in (path, _temp_path(path), _backup_path(path))
+        if candidate.exists()
+    ]
+
+
+@contextmanager
+def new_alignment_artifacts(*paths: Path) -> Iterator[Mapping[Path, Path]]:
+    """Publish a replay's outputs together, without replacing a baseline."""
+    collisions = alignment_artifact_collisions(paths)
+    if collisions:
+        raise FileExistsError(f"Output already exists: {collisions[0]}")
+    for path in paths:
+        path.parent.mkdir(parents=True, exist_ok=True)
+    with _staged_alignment_artifacts(
+        paths, TimingRecorder.disabled("writer")
+    ) as staged:
+        yield staged
+
+
+@contextmanager
+def _staged_alignment_artifacts(
+    final_paths: Sequence[Path], recorder: TimingRecorder
+) -> Iterator[Mapping[Path, Path]]:
+    """Stage the whole artifact set and roll back failed publication."""
+    temp_paths = {path: _temp_path(path) for path in final_paths}
     backup_paths = [_backup_path(final_path) for final_path in final_paths]
     backups: list[tuple[Path, Path]] = []
     replaced_paths: list[Path] = []
     try:
         with recorder.stage("writer.streamed_rows.render"):
-            render_all({path: _temp_path(path) for path in final_paths})
-        for final_path in final_paths:
-            temp_path = _temp_path(final_path)
+            yield temp_paths
+        for final_path, temp_path in temp_paths.items():
             artifact = _writer_artifact_name(final_path)
             rendered_bytes = temp_path.stat().st_size if temp_path.exists() else None
             recorder.observe(
@@ -272,8 +288,7 @@ def _write_artifacts_atomic(
             if final_path.exists():
                 final_path.replace(backup_path)
                 backups.append((final_path, backup_path))
-        for final_path in final_paths:
-            temp_path = _temp_path(final_path)
+        for final_path, temp_path in temp_paths.items():
             artifact = _writer_artifact_name(final_path)
             with recorder.stage(f"writer.{artifact}.rename") as stage:
                 temp_path.replace(final_path)
@@ -306,7 +321,7 @@ def _write_artifacts_atomic(
             if backup_path.exists():
                 final_path.unlink(missing_ok=True)
                 backup_path.replace(final_path)
-        for temp_path in temp_paths:
+        for temp_path in temp_paths.values():
             temp_path.unlink(missing_ok=True)
         for backup_path in backup_paths:
             backup_path.unlink(missing_ok=True)

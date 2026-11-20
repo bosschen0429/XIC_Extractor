@@ -13,7 +13,6 @@ from xic_extractor.output.detection import (
     is_accepted_row_detection,
 )
 from xic_extractor.output.metadata import build_metadata_rows
-from xic_extractor.output.review_queue_model import review_queue_rows
 from xic_extractor.output.sheet_area_matrix import build_area_matrix_sheet
 from xic_extractor.output.sheet_diagnostic_events import build_diagnostic_events_sheet
 from xic_extractor.output.sheet_identification import build_identification_sheets
@@ -23,6 +22,7 @@ from xic_extractor.output.sheet_results import _build_data_sheet
 from xic_extractor.output.sheet_targets import _build_targets_sheet
 from xic_extractor.output.targeted_overview import (
     focus_worklist,
+    rows_needing_look,
     summarize_targeted_results,
 )
 from xic_extractor.output.workbook_inputs import (
@@ -46,8 +46,10 @@ def write_workbook_from_rows(
     identification_rows: list[dict] | None = None,
 ) -> Path:
     _require_product_projection(rows)
-    review_rows = review_queue_rows(rows, diagnostics)
-    overview = summarize_targeted_results(rows, review_rows)
+    istd_targets = {target.label for target in targets if target.is_istd}
+    overview = summarize_targeted_results(
+        rows, rows_needing_look(rows, istd_targets), istd_targets=istd_targets
+    )
     metadata_rows = build_metadata_rows(config)
     run = dict(metadata_rows)
     wb = Workbook()
@@ -56,14 +58,14 @@ def write_workbook_from_rows(
     build_overview_sheet(
         summary,
         overview,
-        worklist=focus_worklist(overview, rows, review_rows, diagnostics),
+        worklist=focus_worklist(overview, rows, diagnostics),
         provenance=f"XIC Extractor {run['app_version']}"
         f" · {str(run['generated_at'])[:10]}",
     )
     build_area_matrix_sheet(wb.create_sheet("面積"), rows)
     # The sheets below are the saved record that the workbench and tools read.
     # Only READING_SHEETS stay visible; the rest are hidden for tracing.
-    _build_data_sheet(wb.create_sheet("XIC Results"), rows, review_rows=review_rows)
+    _build_data_sheet(wb.create_sheet("XIC Results"), rows)
     _build_targets_sheet(wb.create_sheet("Targets"), targets)
     build_identification_sheets(wb, targets, identification_rows or [])
     _build_metadata_sheet(wb.create_sheet("Run Metadata"), metadata_rows)

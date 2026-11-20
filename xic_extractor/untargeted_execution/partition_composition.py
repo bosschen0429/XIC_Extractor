@@ -299,12 +299,7 @@ def compose_and_persist_untargeted_partition(
             check_cancellation()
             child = completion.complete(receipts)
             child_count += 1
-            child_order_keys.append(
-                min(
-                    provider.method_subject_id
-                    for provider in child.scientific_core.scope.evidence_providers
-                )
-            )
+            child_order_keys.append(child.first_method_subject_id)
             has_flagged_backfill_risk = has_flagged_backfill_risk or any(
                 risk.risk_flags
                 for _, _, risk in (

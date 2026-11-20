@@ -26,7 +26,10 @@ workflow owner rather than chaining similarly named commands.
 | Task | Entry and owner |
 | --- | --- |
 | Compare two saved `members.tsv` tables from the same observations | `tools.diagnostics.grouping_experiment compare` — no snapshot or regrouping; [details](#grouping_experimentpy) |
-| Regroup from a saved `grouping-inputs.json.gz` snapshot | `tools.diagnostics.grouping_experiment replay` — no RAW or Backfill; [details](#grouping_experimentpy) |
+| Regenerate only the Matrix from completed Backfill and cross-batch pairing | `scripts.run_alignment matrix` from finalized cells and the saved batch join; [capture and replay](../../docs/agent/local-execution.md#alignment-and-handoff) |
+| Match finished batches without RAW, within-batch grouping or Backfill | `scripts.run_alignment pair-batches` from per-batch `--save-pairing-inputs` files; [capture and replay](../../docs/agent/local-execution.md#alignment-and-handoff) |
+| Rerun Backfill after a completed grouping, keeping competing rows together | `scripts.run_alignment backfill` from `--save-backfill-inputs`; [capture and replay](../../docs/agent/local-execution.md#alignment-and-handoff) |
+| Regroup from a saved `grouping-inputs.json.gz` snapshot | `scripts.run_alignment regroup` — no RAW or Backfill; [details](#grouping_experimentpy) |
 | Produce initial groups from a Discovery batch index and matching RAW files | `scripts.run_alignment --stop-after grouping`; add `--save-grouping-inputs` only to retain a replay snapshot; [details](#grouping_experimentpy) |
 | Query measured candidates in a saved Discovery batch | `tools.diagnostics.grouping_experiment query` — no RAW or grouping; [details](#grouping_experimentpy) |
 | Build the QC sample metadata table from a method DOCX and RAW filenames | `tools.diagnostics.instrument_qc_sequence_manifest` — no RAW reader or trend extraction; [details](#instrument_qc_sequence_manifestpy) |
@@ -112,6 +115,26 @@ CrossSample and final disposition facts; does not recalculate decisions or grant
 Matrix authority. Existing `alignment_health_packet.py` summarizes machine-level
 health; it does not contain excluded candidate and initial weak-edge facts from
 default runs.
+
+### `nl_adduct_count.py`
+
+**Purpose**: Count adducts among one sample's neutral-loss Discovery candidates
+before Alignment: each compound once, with ions derived from another candidate
+(known Δm, synchronized peak shape) or from a nucleoside removed, and
+single-MS2 compounds listed as unconfirmed. Optional replicate controls give
+per-injection counts, cumulative distinct counts and compounds shared with the
+sample (RT mapped through nucleoside apices).
+**Topic group**: `nl_adduct_count.py` + package-owned
+`xic_extractor.diagnostics.nl_adduct_count` (rules) and
+`nl_adduct_count_acquisition` (RAW).
+**Input**: single-sample Discovery output directories, the RAW they name, and a
+nucleoside TSV (default `configuration/data/nl_adduct_nucleosides.tsv`). The
+`--preset` neutral-loss tags choose the same-sugar nucleosides (co-elution
+removes); other-sugar nucleosides remove only on a synchronized peak shape.
+**Output**: `nl_adduct_count.json` and per-candidate `nl_adduct_candidates.tsv`
+with each candidate's fate.
+**Status**: diagnostic_only. Screens Discovery candidates; Matrix Curation
+judges the published Matrix. A count, not chemical identity.
 
 ---
 
@@ -370,15 +393,15 @@ the formal grouping owner. Snapshot and table I/O live in
 
 **Usage and artifacts:** CLI help owns the arguments. Results stay under ignored task-specific `output/` directories.
 
-`python -m tools.diagnostics.grouping_experiment` provides a developer feedback
-loop over saved Discovery candidates for scalar CID-NL presets:
+Use the Alignment runner to regroup scalar CID-NL observations; use the diagnostic
+to query Discovery or compare already-written tables:
 
 ```powershell
 .venv/Scripts/python.exe -m tools.diagnostics.grouping_experiment compare --before output/baseline/members.tsv --after output/variant/members.tsv --output-dir output/diff
 .venv/Scripts/python.exe -m tools.diagnostics.grouping_experiment query --discovery-batch-index <index.csv> --mz-range 242.12:242.13 --output-dir output/query
 .venv/Scripts/python.exe -m scripts.run_alignment --stop-after grouping --save-grouping-inputs <usual Alignment arguments> --output-dir output/grouping
-.venv/Scripts/python.exe -m tools.diagnostics.grouping_experiment replay --inputs output/grouping/grouping-inputs.json.gz --set preferred_rt_sec=30 --output-dir output/grouping-tight
-.venv/Scripts/python.exe -m tools.diagnostics.grouping_experiment replay --inputs output/grouping/grouping-inputs.json.gz --calibrate --output-dir output/grouping-calibrated
+.venv/Scripts/python.exe -m scripts.run_alignment regroup --inputs output/grouping/grouping-inputs.json.gz --set preferred_rt_sec=30 --output-dir output/grouping-tight
+.venv/Scripts/python.exe -m scripts.run_alignment regroup --inputs output/grouping/grouping-inputs.json.gz --calibrate --output-dir output/grouping-calibrated
 ```
 
 Replay reads retained snapshots that still carry the retired owner

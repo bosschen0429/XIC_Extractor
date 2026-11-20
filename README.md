@@ -6,7 +6,7 @@ you can take downstream, and lets you check each area against its chromatogram.
 For example, run a batch of DNA adduct samples and get either:
 
 - **a known-target workbook (Targeted):** one area per target and sample, a
-  batch summary, and a list of results that need a second look; or
+  batch summary, and the results to look at first; or
 - **a feature × sample area matrix (Untargeted):** features discovered from
   CID neutral-loss evidence and matched across samples, where you can open any
   value or blank cell to see the saved decision and its reason, and, with the
@@ -14,119 +14,75 @@ For example, run a batch of DNA adduct samples and get either:
 
 ![Untargeted workspace in XIC Extractor](docs/user/assets/untargeted-workspace.png)
 
-Both workflows run on shared processing for peaks, areas and cross-sample
-correspondence; method-specific evidence still decides what each method
-accepts. They differ in what you ask for and what you receive.
-
 ## Use The Application
 
 ### Choose a workflow
 
 | Your question | Prepare | Start reviewing here |
 | --- | --- | --- |
-| **Targeted:** What happened to my known targets in this batch? | RAW files and a target list (XLSX, CSV or TSV): names, m/z, expected RT, CID-NL / Delta Mass specificity, and optional ISTD pairs | One Excel workbook: `摘要` for the batch conclusion and the results needing attention, `面積` for saved areas |
+| **Targeted:** What happened to my known targets in this batch? | RAW files and a target list (XLSX, CSV or TSV): names, m/z, expected RT, CID-NL / Delta Mass specificity, and optional ISTD pairs | One Excel workbook: `摘要` for the batch conclusion and the results to look at first, `面積` for saved areas |
 | **Untargeted:** Which features can I compare across samples? | RAW files and a CID-NL method (dR, R, MeR or custom neutral-loss tags); check sample information and any internal-standard list | `alignment_matrix.tsv` for feature × sample areas, then the workbench for evidence behind a feature or missing cell |
 
 The [Targeted guide](docs/user/targeted.md) and
-[Untargeted guide](docs/user/untargeted.md) take you from preparation
-through execution and result review. You do not need to read the processing
-contracts before running an analysis.
+[Untargeted guide](docs/user/untargeted.md) each take you from preparation
+through execution and result review on one page.
 
 ### Run the HTML workbench
 
-**Windows application ZIP:** download the `XIC_Extractor-Windows-*.zip` asset
-from [Releases](https://github.com/bosschen0429/XIC_Extractor/releases), not a
+Download the `XIC_Extractor-Windows-*.zip` asset from
+[Releases](https://github.com/bosschen0429/XIC_Extractor/releases), not a
 Source code archive. Extract the whole folder and double-click
-`XIC_Extractor.exe`; keep `_internal/` beside it. No Python, uv or Git installation
-is needed. Open `開始使用.html` for setup and the bundled offline guides. The
-application package does not contain the repository's development scripts or
-Python source. See the [user guide](docs/user/README.md).
-
-**From source:** the analysis workflow runs on **Windows 10 or 11** with Python **3.15**.
-Source commands, automation and validation are collected in the
-[developer guide](docs/development/README.md), separate from the application instructions.
-To run from source, install a current version of `uv`, then open PowerShell:
-
-```powershell
-git clone https://github.com/bosschen0429/XIC_Extractor.git
-cd XIC_Extractor
-uv sync --locked
-uv run xic-workbench
-```
-
-`uv` finds or downloads Python 3.15 automatically. If an older `uv` cannot find
-that version, update `uv` first. Windows release packages and all CI lanes use
-the same locked Python 3.15 dependency stack. Linux owns ordinary CI tests,
-including .NET/CoreCLR integration; Windows retains OS-specific, browser and
-packaging checks. This does not yet claim full Linux analysis or desktop-package
-support. See
-[testing](docs/agent/testing.md).
-
-The command opens a local browser workspace for analysis and result review.
-On later launches, double-click `launch_gui.vbs` for a console-free start, or
-use `launch_gui.bat` to keep a console visible. If you already have an installed
-package, run `xic-workbench`; a packaged Windows build starts with
-`XIC_Extractor.exe`. If you do not have a packaged build, use the source
-instructions above.
+`XIC_Extractor.exe`; keep `_internal/` beside it. No Python, uv, Git or
+Xcalibur installation is needed. A local browser workspace opens for analysis
+and result review; `開始使用.html` in the folder opens the offline
+[user guide](docs/user/README.md).
 
 RAW analysis also needs **.NET 8 or later** and **Thermo RawFileReader 8.0.42**.
 On first launch, follow the setup notice: read the linked Thermo license,
 check acceptance, then click **下載並設定 RawFileReader**. If .NET is missing,
-run the command shown by the notice and restart. Xcalibur is not required;
-its older DLLs are not supported. See [reader setup details](docs/user/README.md#第一次使用準備-rawfilereader)
+run the command shown by the notice and restart. Xcalibur's older DLLs are not
+supported. See [reader setup details](docs/user/README.md#第一次使用準備-rawfilereader)
 for using an already installed reader.
 
 Choose a workflow, select the batch inputs, load a method, and run. After
 completion, the same page shows the saved overview, review and downloads. Use
 **開啟既有結果** to reopen a completed result without RAW files. Settings edits
-apply to the next analysis, not the displayed result. Closing a tab does not cancel an active analysis; use the
-workspace's cancellation control. Use **結束工作區** when finished.
+apply to the next analysis, not the displayed result. Closing a tab does not
+cancel an active analysis; use the workspace's cancellation control. Use
+**結束工作區** when finished.
 
 ## Read Your Results
 
 **Targeted:** Open `xic_results_YYYYMMDD_HHMM.xlsx`. Start at `摘要`: its first
-line says how many results to look at first, listed right below, and use `面積`
-for saved sample × target areas. Open the XLSX in the workbench to inspect a target and
-sample; request its XIC when needed. [Workbook reading guide](docs/user/targeted.md#看結果).
+line says how many results to look at first (需先看), listed right below; use
+`面積` for saved sample × target areas. Open the XLSX in the workbench to
+inspect a target and sample. [Workbook reading guide](docs/user/targeted.md#看結果).
 
 **Untargeted:** Start at `alignment_matrix.tsv`. Rows are aligned features,
 columns are samples, and cells contain published areas. Use workbench review
 to investigate a feature, an unexpected value, or a missing cell. Optional
-**矩陣整理** writes a separate curated result without changing the source
-Matrix. Preview each step’s kept, removed, ISTD-protected and undetermined rows
-before exporting. Preview and export use the same curation decisions.
+**整理矩陣** writes a separate curated matrix without changing the source;
+preview each step's kept and removed rows before exporting.
 [Matrix reading guide](docs/user/untargeted.md#看結果).
 
-To reopen a completed batch or workbook:
-
-```powershell
-uv run xic-workbench "path/to/result-folder-or-workbook.xlsx"
-```
-
-Reviewing saved results and acquiring new XIC curves are different operations:
-saved Targeted values can be read without RAW files; acquiring curves needs
-the source RAW and reader. Review does not silently change saved decisions.
+Saved values can be read without RAW files; acquiring XIC curves needs the
+source RAW and reader. Review does not silently change saved decisions.
 
 ## Follow The Evidence
 
 Finding a candidate, matching it across samples, measuring an area, and counting
 a detection are different judgments. An area is not proof of chemical identity;
-a blank cell is not automatically zero or proof of absence.
+a blank cell is not automatically zero or proof of absence. The
+[interpretation guide](docs/user/concepts.md#從-raw-到矩陣) walks through one
+example step by step.
 
-For an explanation, follow the [interpretation guide](docs/user/concepts.md#從-raw-到矩陣):
-two samples have candidate peaks, a third has a missing cell, and each step
-answers a different question before a value can be used.
-
-The Untargeted Matrix currently comes from CID-NL Discovery. Other Discovery
-methods, such as Delta Mass / Pt pattern, produce diagnostic candidates for
-review and do not yet publish a Matrix; a diagnostic candidate or review plot
-alone does not establish support for quantitative output. Exact rules are in the
-[product topic index](docs/product/README.md).
+The Untargeted Matrix currently comes from CID-NL Discovery. Delta Mass / Pt
+pattern methods produce diagnostic candidates for review and do not yet publish
+a Matrix. Exact rules are in the [product topic index](docs/product/README.md).
 
 ## Get Help
 
-Use the [user guide index](docs/user/README.md) to find setup, operation,
-field references, and explanations. Start troubleshooting with your workflow:
+Start troubleshooting with your workflow:
 [Targeted](docs/user/targeted.md#遇到問題) or
 [Untargeted](docs/user/untargeted.md#遇到問題).
 
@@ -137,12 +93,6 @@ analysis task you want to complete.
 
 ## Work On The Source
 
-Start with the [repository layout](docs/project-layout.md#repository-tree)
-and [architecture reading guide](docs/architecture-contract.md#reading-the-code).
-Coding agents start at [AGENTS.md](AGENTS.md); developer worktree setup and
-validation use [Local Execution](docs/agent/local-execution.md#runner-and-environment).
-
-For local changes, run `.venv\Scripts\python.exe -m tools.testing.test_selection`
-by default. Known test files or failing nodes can be run directly; plain
-`pytest` without a target still collects the whole suite. See
-[test selection](docs/agent/testing.md#affected-test-selection).
+Running from source, the Python and CI support matrix, and test commands are in
+the [developer guide](docs/development/README.md). Coding agents start at
+[AGENTS.md](AGENTS.md).

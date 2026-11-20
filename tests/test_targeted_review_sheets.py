@@ -4,6 +4,7 @@ from xic_extractor.output.sheet_area_matrix import build_area_matrix_sheet
 from xic_extractor.output.sheet_overview import build_overview_sheet
 from xic_extractor.output.targeted_overview import (
     focus_worklist,
+    rows_needing_look,
     summarize_targeted_results,
 )
 
@@ -30,17 +31,6 @@ def _saved_rows():
         ]
         for target, role in [("Standard", "ISTD"), ("Common", "Analyte")]
     ]
-
-
-def _review(sample, target, why):
-    return {
-        "Sample": sample,
-        "Target": target,
-        "Outcome": "未計入",
-        "Why": why,
-        "RT": "9",
-        "Area": "13.5",
-    }
 
 
 def _worklist_values(sheet):
@@ -117,50 +107,65 @@ def test_summary_headline_counts_events_without_a_result():
         "Issue": "FILE_ERROR",
         "Reason": "RAW file could not be opened",
     }
-    overview = summarize_targeted_results(rows, [])
-    worklist = focus_worklist(overview, rows, [], [failed])
+    overview = summarize_targeted_results(rows, [], istd_targets=set())
+    worklist = focus_worklist(overview, rows, [failed])
     sheet = Workbook().active
     build_overview_sheet(sheet, overview, worklist=worklist, provenance="v1")
     # The failed RAW file is on the worklist, so the headline cannot say "none".
     assert sheet["A1"].value == "先看 1 筆結果"
-    [(_, sample, outcome, why, _, _)] = _worklist_values(sheet)[1:]
-    # No XIC view can explain a RAW file that failed to open; its message stays.
-    assert (sample, outcome) == ("S2", "未記錄判定")
-    assert why == "RAW 處理失敗：RAW file could not be opened"
+    [(_, sample, outcome, basis, doubts, _, _)] = _worklist_values(sheet)[1:]
+    # It has no result; its message stays on 診斷事件.
+    assert (sample, outcome, basis, doubts) == ("S2", "", "RAW 失敗", "")
 
 
 def test_worklist_lists_only_results_that_differ_from_the_majority():
-    rows = _saved_rows()
-    reviews = [
-        _review("S3", "Common", "沒有 MS2"),
-        # A saved condition on a uniform target stays in XIC Results only.
-        _review("S1", "Standard", "峰形需檢查"),
+    labels = {
+        ("S3", "Common"): ("無 MS2", ""),
+        # A doubt on a uniform target stays in XIC Results only.
+        ("S1", "Standard"): ("NL 確認", "峰形不完整"),
+    }
+    rows = [
+        row
+        | dict(
+            zip(
+                ("依據", "疑點"),
+                labels.get((row["SampleName"], row["Target"]), ("NL 確認", "")),
+                strict=True,
+            )
+        )
+        for row in _saved_rows()
     ]
-    overview = summarize_targeted_results(rows, reviews)
-    worklist = focus_worklist(overview, rows, reviews, [])
+    look = rows_needing_look(rows, {"Standard"})
+    overview = summarize_targeted_results(rows, look, istd_targets={"Standard"})
+    assert overview.needs_look_count == 2
+    worklist = focus_worklist(overview, rows, [])
     sheet = Workbook().active
     build_overview_sheet(sheet, overview, worklist=worklist, provenance="v1")
     values = _worklist_values(sheet)
-    assert values[0] == ("目標", "樣本", "結果", "原因", "RT (min)", "Area")
-    assert [row[:4] for row in values[1:]] == [("Common", "S3", "未計入", "沒有 MS2")]
+    assert values[0] == ("目標", "樣本", "結果", "依據", "疑點", "RT (min)", "Area")
+    assert [row[:5] for row in values[1:]] == [("Common", "S3", "未計入", "無 MS2", "")]
 
 
-def test_minority_counted_without_saved_review_names_its_supporting_evidence():
+def test_minority_counted_without_a_doubt_shows_its_identity_basis():
     rows = [
         r
         | {
             "Counted Detection": "TRUE" if r["SampleName"] == "S3" else "FALSE",
-            "Projection Support Reasons": "ms1_coherent;paired_istd_identity",
+            "依據": "ISTD 位置" if r["SampleName"] == "S3" else "未見 NL",
+            "疑點": "",
         }
         for r in _saved_rows()
         if r["Target"] == "Common"
     ]
-    overview = summarize_targeted_results(rows, [])
-    [record] = focus_worklist(overview, rows, [], [])
-    assert record["Sample"] == "S3"
-    assert record["Outcome"] == "已計入"
-    # The reader tests the evidence the saved count rests on.
-    assert record["Why"] == "多數樣本未計入；此樣本：MS1 峰形合格，位於配對 ISTD 位置"
+    overview = summarize_targeted_results(rows, [], istd_targets=set())
+    [record] = focus_worklist(overview, rows, [])
+    # Listed for its outcome; the reader tests the identity its count rests on.
+    assert (record["Sample"], record["Outcome"], record["依據"], record["疑點"]) == (
+        "S3",
+        "已計入",
+        "ISTD 位置",
+        "",
+    )
     assert record["Area"] == "13.5"
 
 
@@ -176,14 +181,14 @@ def test_summary_counts_analytes_and_names_only_istds_missing_somewhere():
         {
             "SampleName": sample,
             "Target": target,
-            "Role": role,
             "Counted Detection": "TRUE" if sample in hits else "FALSE",
         }
-        for (target, role), hits in counted.items()
+        for (target, _), hits in counted.items()
         for sample in samples
     ]
-    overview = summarize_targeted_results(rows, [])
-    worklist = focus_worklist(overview, rows, [], [])
+    istds = {target for target, role in counted if role == "ISTD"}
+    overview = summarize_targeted_results(rows, [], istd_targets=istds)
+    worklist = focus_worklist(overview, rows, [])
     sheet = Workbook().active
     build_overview_sheet(sheet, overview, worklist=worklist, provenance="v1")
     assert sheet["A1"].value == "先看 2 筆結果"
@@ -204,14 +209,3 @@ def test_summary_counts_analytes_and_names_only_istds_missing_somewhere():
     assert not sheet.merged_cells.ranges
     assert not sheet._charts
     assert not any(cell.hyperlink for row in sheet for cell in row)
-
-
-def test_reasons_never_send_the_reader_to_a_hidden_sheet():
-    from xic_extractor.output.reason_display import _REASON_TEXT
-
-    hidden = ("XIC Results", "Targets", "Run Metadata", "Method Evidence", "Delta Mass")
-    # Reasons reach 摘要 and the workbench; a pointer to a hidden record sheet
-    # sends the reader nowhere.
-    assert not [
-        text for text in _REASON_TEXT.values() if any(name in text for name in hidden)
-    ]

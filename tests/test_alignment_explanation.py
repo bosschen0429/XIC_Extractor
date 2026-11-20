@@ -46,7 +46,7 @@ def test_missing_report_is_unavailable(tmp_path):
         read_alignment_explanation,
     )
 
-    with pytest.raises(ExplanationUnavailableError, match="unavailable"):
+    with pytest.raises(ExplanationUnavailableError, match="找不到這份結果的檢閱資料"):
         read_alignment_explanation(tmp_path / "missing.sqlite")
 
 

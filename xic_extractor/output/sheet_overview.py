@@ -29,12 +29,13 @@ _WORKLIST = (
     ("目標", "Target"),
     ("樣本", "Sample"),
     ("結果", "Outcome"),
-    ("原因", "Why"),
+    ("依據", "依據"),
+    ("疑點", "疑點"),
     ("RT (min)", "RT"),
     ("Area", "Area"),
 )
 _ANALYTES = ("分析物", "計入樣本數")
-_WIDTHS = (22, 32, 10, 46, 9, 11)
+_WIDTHS = (22, 32, 10, 16, 28, 9, 11)
 _FIRST_TABLE_ROW = 4
 
 
@@ -92,7 +93,7 @@ def build_overview_sheet(
     ws.cell(row + 2, 1, "逐峰檢查：在工作台開啟此檔看 XIC。").font = _font(SOFT, size=9)
     for column, width in enumerate(_WIDTHS, 1):
         ws.column_dimensions[get_column_letter(column)].width = width
-    ws.print_area = f"A1:F{row + 2}"
+    ws.print_area = f"A1:{get_column_letter(len(_WIDTHS))}{row + 2}"
 
 
 def _write_worklist(ws, header_row: int, worklist) -> int:
@@ -120,9 +121,10 @@ def _write_worklist(ws, header_row: int, worklist) -> int:
             if measured and _is_number(value):
                 cell.number_format = _number_format(key)
         lines = max(
-            _prose_line_count(record.get("Why", ""), 44),
+            _prose_line_count(record.get("疑點", ""), 26),
             _prose_line_count(record.get("Sample", ""), 30),
         )
         ws.row_dimensions[row].height = LINE_HEIGHT * lines + 4
-    _add_table(ws, "TargetedReview", f"A{header_row}:F{row}")
+    last = get_column_letter(len(_WORKLIST))
+    _add_table(ws, "TargetedReview", f"A{header_row}:{last}{row}")
     return row

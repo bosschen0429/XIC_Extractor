@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 from math import isfinite
 from statistics import median
 
-from xic_extractor.output.reason_display import decision_basis
-from xic_extractor.output.review_queue_model import review_queue_rows
+from xic_extractor.output.result_labels import needs_look
 
 # A detection outcome shared by at most this share of a target's recorded
 # decisions is the unusual one: it is where a wrong peak or a missed peak hides.
@@ -23,7 +22,7 @@ class TargetOverview:
     total: int
     counted: int
     count_unknown: int
-    review: int
+    needs_look: int
     focus_kind: str
     focus_samples: tuple[str, ...]
     median_area: float | None
@@ -37,8 +36,7 @@ class TargetedOverview:
     result_count: int
     counted_count: int
     count_unknown: int
-    review_count: int
-    review_sample_count: int
+    needs_look_count: int
     focus_count: int
     focus_target_count: int
     minority_share: float
@@ -49,17 +47,37 @@ class TargetedOverview:
     targets: tuple[TargetOverview, ...]
 
 
+def rows_needing_look(
+    rows: Sequence[Mapping[str, object]], istd_targets: Collection[str]
+) -> list[Mapping[str, object]]:
+    """The results whose saved labels ask for a look (`result_labels`)."""
+    return [
+        row
+        for row in rows
+        if needs_look(
+            row.get("依據"),
+            row.get("疑點"),
+            is_istd=str(row.get("Target")) in istd_targets,
+        )
+    ]
+
+
 def summarize_targeted_results(
     rows: Sequence[Mapping[str, object]],
-    review_rows: Sequence[Mapping[str, object]],
+    look_rows: Sequence[Mapping[str, object]],
+    *,
+    istd_targets: Collection[str],
 ) -> TargetedOverview:
-    """Count recorded decisions once; never infer missing decisions from values."""
+    """Count recorded decisions once; never infer missing decisions from values.
+
+    A role belongs to the target, so the caller names its ISTD targets.
+    """
     by_target: dict[str, list[Mapping[str, object]]] = defaultdict(list)
-    review_by_target: dict[str, list[Mapping[str, object]]] = defaultdict(list)
+    look_by_target: dict[str, list[Mapping[str, object]]] = defaultdict(list)
     for row in rows:
         by_target[str(row["Target"])].append(row)
-    for row in review_rows:
-        review_by_target[str(row["Target"])].append(row)
+    for row in look_rows:
+        look_by_target[str(row["Target"])].append(row)
     targets = []
     for label, records in by_target.items():
         counted = [row for row in records if _counted(row) == "TRUE"]
@@ -67,18 +85,18 @@ def summarize_targeted_results(
         rts = [_number(row.get("RT")) for row in counted]
         numeric_areas = [value for value in areas if value is not None]
         numeric_rts = [value for value in rts if value is not None]
-        review = review_by_target[label]
-        focus_kind, focus_samples = _review_focus(records, review)
+        look = look_by_target[label]
+        focus_kind, focus_samples = _focus(records, look)
         targets.append(
             TargetOverview(
                 label=label,
-                role=str(records[0].get("Role") or ""),
+                role="ISTD" if label in istd_targets else "Analyte",
                 total=len(records),
                 counted=len(counted),
                 count_unknown=sum(
                     _counted(row) not in {"TRUE", "FALSE"} for row in records
                 ),
-                review=len(review),
+                needs_look=len(look),
                 focus_kind=focus_kind,
                 focus_samples=focus_samples,
                 median_area=median(numeric_areas) if numeric_areas else None,
@@ -93,13 +111,12 @@ def summarize_targeted_results(
         result_count=len(rows),
         counted_count=sum(target.counted for target in targets),
         count_unknown=sum(target.count_unknown for target in targets),
-        review_count=len(review_rows),
-        review_sample_count=len({row["Sample"] for row in review_rows}),
+        needs_look_count=len(look_rows),
         focus_count=sum(len(target.focus_samples) for target in targets),
         focus_target_count=sum(bool(target.focus_samples) for target in targets),
         minority_share=MINORITY_SHARE,
-        analyte_counted=sum(t.counted for t in targets if t.role != "ISTD"),
-        analyte_total=sum(t.total for t in targets if t.role != "ISTD"),
+        analyte_counted=sum(t.counted for t in targets if t.role == "Analyte"),
+        analyte_total=sum(t.total for t in targets if t.role == "Analyte"),
         istd_counted=sum(t.counted for t in targets if t.role == "ISTD"),
         istd_total=sum(t.total for t in targets if t.role == "ISTD"),
         targets=tuple(targets),
@@ -109,17 +126,15 @@ def summarize_targeted_results(
 def focus_worklist(
     overview: TargetedOverview,
     result_rows: Sequence[Mapping[str, object]],
-    review_rows: Sequence[Mapping[str, object]],
     diagnostics: list[dict[str, str]],
 ) -> list[dict[str, object]]:
     """List the results the reader should look at first, in summary order.
 
-    A minority outcome without a saved review condition states the evidence
-    its saved decision rests on against the majority; it is not a new
-    scientific flag. Events with
-    no delivered result (a RAW file that failed to open) stay visible here.
+    Each row shows its saved labels; a minority outcome is listed for its
+    outcome, not given a new flag. A RAW file that failed before any result
+    was delivered stays visible here as `RAW 失敗`; its message is on
+    `診斷事件`.
     """
-    reviews = {(str(r["Sample"]), str(r["Target"])): r for r in review_rows}
     records = {(str(r["SampleName"]), str(r["Target"])): r for r in result_rows}
     sample_order = {key[0]: index for index, key in reversed(list(enumerate(records)))}
     worklist: list[dict[str, object]] = []
@@ -127,45 +142,39 @@ def focus_worklist(
         for sample in sorted(
             target.focus_samples, key=lambda s: sample_order.get(s, len(sample_order))
         ):
-            key = (sample, target.label)
-            if key in reviews:
-                worklist.append(dict(reviews[key]))
-                continue
-            record = records[key]
-            counted = _counted(record) == "TRUE"
+            record = records[(sample, target.label)]
             worklist.append(
                 {
                     "Sample": sample,
                     "Target": target.label,
-                    "Outcome": "已計入" if counted else "未計入",
-                    "Why": f"多數樣本{'未' if counted else ''}計入；"
-                    f"此樣本：{decision_basis(record).text}",
+                    "Outcome": "已計入" if _counted(record) == "TRUE" else "未計入",
+                    "依據": record.get("依據", ""),
+                    "疑點": record.get("疑點", ""),
                     "RT": record.get("RT", ""),
                     "Area": record.get("Area", ""),
                 }
             )
-    orphans: dict[tuple[str, str], list[str]] = defaultdict(list)
-    for event in diagnostics:
-        key = (str(event.get("SampleName", "")), str(event.get("Target", "")))
-        if key not in records:
-            orphans[key].append(str(event.get("Reason", "")))
-    orphan_rows = [{"SampleName": key[0], "Target": key[1]} for key in orphans]
-    for review in review_queue_rows(orphan_rows, diagnostics):
-        messages = orphans[(review["Sample"], review["Target"])]
-        entry: dict[str, object] = dict(review)
-        entry["Why"] = f"{review['Why']}：{'；'.join(messages)}"
-        worklist.append(entry)
+    orphans = dict.fromkeys(
+        (str(event.get("SampleName", "")), str(event.get("Target", "")))
+        for event in diagnostics
+        if event.get("Issue") == "FILE_ERROR"
+    )
+    worklist.extend(
+        {"Sample": sample, "Target": label, "依據": "RAW 失敗"}
+        for sample, label in orphans
+        if (sample, label) not in records
+    )
     return worklist
 
 
-def _review_focus(
+def _focus(
     records: Sequence[Mapping[str, object]],
-    review: Sequence[Mapping[str, object]],
+    look: Sequence[Mapping[str, object]],
 ) -> tuple[str, tuple[str, ...]]:
     """Return the samples whose saved outcome departs from the target's majority.
 
-    An outcome every sample shares is the batch fact and needs no review. Without
-    a clear majority, the saved review conditions remain the reading order.
+    An outcome every sample shares is the batch fact and needs no focus.
+    Without a clear majority, the results whose labels need a look come first.
     """
     counted = [str(r["SampleName"]) for r in records if _counted(r) == "TRUE"]
     missed = [str(r["SampleName"]) for r in records if _counted(r) == "FALSE"]
@@ -176,7 +185,7 @@ def _review_focus(
         return "minority_counted", tuple(counted)
     if len(missed) <= MINORITY_SHARE * decided:
         return "minority_not_counted", tuple(missed)
-    return "mixed", tuple(dict.fromkeys(str(row["Sample"]) for row in review))
+    return "mixed", tuple(dict.fromkeys(str(row["SampleName"]) for row in look))
 
 
 def _counted(row: Mapping[str, object]) -> str:

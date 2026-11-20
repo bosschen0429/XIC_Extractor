@@ -351,10 +351,8 @@ def test_delta_mass_reaches_finalized_workbook_and_readonly_inspector(
             "Delta Mass -2.0000"
         )
         results = list(book["XIC Results"].values)
-        reasons = [
-            dict(zip(results[0], row, strict=True))["Reason"] for row in results[1:]
-        ]
-        assert any("特異性條件" in reason for reason in reasons)
+        bases = {dict(zip(results[0], row, strict=True))["依據"] for row in results[1:]}
+        assert "特異性條件" in bases
     finally:
         book.close()
     source = TargetedWorkbookSource(path)

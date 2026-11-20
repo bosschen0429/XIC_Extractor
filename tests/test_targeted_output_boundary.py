@@ -599,16 +599,16 @@ def test_service_publishes_finalized_numeric_values_without_counting_detection(
             "RT",
             "IntSmoothed",
             "Counted Detection",
-            "Review Reason",
+            "依據",
+            "疑點",
         ):
             index = headers.index(header) + 1
             assert not any(
                 dimension.hidden and dimension.min <= index <= dimension.max
                 for dimension in sheet.column_dimensions.values()
             )
+        assert {"Reason", "Review Reason", "NL Evidence"}.isdisjoint(headers)
         for header in (
-            "Reason",
-            "NL Evidence",
             "PeakStart",
             "PeakEnd",
             "Int",
@@ -646,13 +646,10 @@ def test_service_publishes_finalized_numeric_values_without_counting_detection(
             assert long_rows[sample_name][field] == expected_text
             assert workbook_rows[sample_name][field] == float(expected_text)
         for row in (long_rows[sample_name], workbook_rows[sample_name]):
-            assert row["NL Evidence"] == (
-                "所選峰未見預期的中性丟失"
-                if nl_status == "NL_FAIL"
-                else "所選峰沒有對應的 MS2"
-            )
-            assert row["Reason"] == "未設定配對 ISTD，無法確認身分。"
-            assert "Not counted" not in row["Reason"]
+            # Without a paired ISTD, the selected peak's NL observation decided.
+            assert row["依據"] == ("未見 NL" if nl_status == "NL_FAIL" else "無 MS2")
+            # The peak is still reported, so its own concerns stay listed.
+            assert row["疑點"] == "證據單薄"
             assert row["Counted Detection"] == "FALSE"
         assert long_rows[sample_name]["Product State"] == "not_counted"
         assert long_rows[sample_name]["Review State"] == "review_required"
@@ -663,8 +660,6 @@ def test_service_publishes_finalized_numeric_values_without_counting_detection(
         assert (
             long_rows[sample_name]["Projection Reason"] == projection.projection_reason
         )
-        # Under CID the neutral-loss status does not set the review level.
-        assert workbook_rows[sample_name]["Review Reason"]
         for field in ("Int", "IntSmoothed"):
             assert workbook_rows[sample_name][field] == float(
                 long_rows[sample_name][field]
@@ -741,8 +736,7 @@ def test_service_publishes_no_numeric_for_finalized_no_observation(
         assert row["Counted Detection"] == "FALSE"
     assert long_row["Review State"] == "review_required"
     assert long_row["Projection Reason"] == "finalized_searched_no_observation"
-    assert workbook_row["Review Reason"]
-    assert workbook_row["Reason"] == long_row["Reason"]
+    assert workbook_row["依據"] == long_row["依據"] == "無可用 MS1 峰"
 
 
 def test_publication_retires_equal_area_legacy_selection_authority(
@@ -794,9 +788,8 @@ def test_neutral_loss_disabled_target_publishes_ms1_backfill(
     assert request.excel_output_path.is_file()
     row = _run_output_to_long_rows(published.output, [target])[0]
     assert row["NL"] == ""
-    assert row["NL Evidence"] == "未設定"
     assert row["Area"] != "ND"
-    assert row["Reason"] == "有 MS1 峰；此目標不要求中性丟失。"
+    assert row["依據"] == "僅 MS1 峰"
 
 
 def test_workbench_summary_consumes_the_finalized_publication_view(
@@ -1009,10 +1002,10 @@ def test_concurrent_non_replacing_publications_are_collision_atomic(
     assert set(winning.paths) == expected_paths
     assert all(path.is_file() for path in winning.paths)
     workbook = load_workbook(request.excel_output_path, read_only=True)
-    worklist_text = str(list(workbook["摘要"].values))
+    events_text = str(list(workbook["診斷事件"].values))
     workbook.close()
     assert (
-        sum(marker in worklist_text for marker in ("concurrent-a", "concurrent-b")) == 1
+        sum(marker in events_text for marker in ("concurrent-a", "concurrent-b")) == 1
     )
     assert not list(config.output_csv.parent.glob(".xic-targeted-publish-*"))
     assert not (config.output_csv.parent / ".xic-targeted-publish.lock").exists()
@@ -1483,7 +1476,7 @@ def test_cancellation_during_input_preparation_skips_acquisition_and_finalizatio
     assert execution.published_paths == ()
 
 
-@pytest.mark.parametrize("sample_review", [False, True])
+@pytest.mark.parametrize("gap_review", [False, True])
 @pytest.mark.parametrize(
     "missing_pair, istd_backfill, hint_window",
     [
@@ -1499,7 +1492,7 @@ def test_formal_targeted_backfill_uses_confirmed_peers_and_paired_istd(
     missing_pair: bool,
     istd_backfill: bool,
     hint_window: bool,
-    sample_review: bool,
+    gap_review: bool,
 ) -> None:
     from contextlib import nullcontext
 
@@ -1612,7 +1605,7 @@ def test_formal_targeted_backfill_uses_confirmed_peers_and_paired_istd(
                 )
             ),
         )
-        if sample_review:
+        if gap_review:
             for sample, file in context.results_by_sample:
                 if sample.raw_stem == "SampleC":
                     extraction = file.results["Analyte"]
@@ -1623,7 +1616,10 @@ def test_formal_targeted_backfill_uses_confirmed_peers_and_paired_istd(
                             projection,
                             review_reasons=tuple(
                                 dict.fromkeys(
-                                    (*projection.review_reasons, "sample_review")
+                                    (
+                                        *projection.review_reasons,
+                                        "targeted_acquired_signal_gaps",
+                                    )
                                 )
                             ),
                         ),
@@ -1737,16 +1733,11 @@ def test_formal_targeted_backfill_uses_confirmed_peers_and_paired_istd(
             for r in TargetedWorkbookSource(workbook_path).records
             if r["SampleName"] == "SampleC" and r["Target"] == "Analyte"
         )
-        assert saved["Review Reason"] == row["Review Reason"]
-        if counted and sample_review:
-            assert row["Review Reason"] == "證據需檢查"
-            assert (
-                "sample_review" in rendered.targeted_product_projection.review_reasons
-            )
-        elif counted:
-            assert row["Review Reason"] is None
-        else:
-            assert "回填" in str(row["Review Reason"])
+        assert (saved["依據"], saved["疑點"]) == (row["依據"], row["疑點"])
+        # Identity names its source; the missing MS2 stays a doubt beside any
+        # quality concern the sample carries.
+        assert row["依據"] == ("回填" if istd_backfill else "ISTD 位置")
+        assert row["疑點"] == ("無 MS2、訊號缺口" if gap_review else "無 MS2")
         assert any(
             (record.sample_name, record.target_label, record.issue)
             == ("SampleC", "Analyte", "BACKFILL_ACCEPTED")
@@ -1894,30 +1885,38 @@ def test_paired_position_rejects_remote_nl_peak_in_workbook_and_inspector(
     assert rows["Far"]["Counted Detection"] == "FALSE"
     assert rows["Far"]["Area"] == "ND"
     assert rows["Far"]["RT"] == "ND"
-    assert rows["Far"]["Review Reason"] is None
-    assert rows["Near"]["Review Reason"] is None
+    # The paired ISTD identifies Near; its missing MS2 stays a doubt. A peak
+    # off the ISTD position is reported as ND and is a finished result.
+    assert {s: (r["依據"], r["疑點"]) for s, r in rows.items()} == {
+        "Near": ("ISTD 位置", "無 MS2"),
+        "Far": ("偏離 ISTD 位置", None),
+        "Spike": ("偏離 ISTD 位置", None),
+    }
     assert rows["Spike"]["Counted Detection"] == "FALSE"
     assert rows["Spike"]["Area"] == "ND"
-    assert rows["Spike"]["Review Reason"] is None
     assert any(
         record.sample_name == "Spike"
         and record.issue == "PAIRED_POSITION_SUPPORT_REJECTED"
         and "insufficient_original_xic_support" in record.reason
         for record in execution.active_output.diagnostics
     )
-    from xic_extractor.output.review_queue_model import review_queue_rows
+    from xic_extractor.output.targeted_overview import rows_needing_look
 
-    queue = review_queue_rows(
-        _run_output_to_long_rows(execution.active_output, [analyte, istd]), []
+    look = rows_needing_look(
+        _run_output_to_long_rows(execution.active_output, [analyte, istd]),
+        {istd.label},
     )
-    assert not any(row["Target"] == "Analyte" for row in queue)
+    assert [r["SampleName"] for r in look if r["Target"] == "Analyte"] == ["Near"]
     saved = {
         r["SampleName"]: r
         for r in TargetedWorkbookSource(path).records
         if r["Target"] == "Analyte"
     }
     for sample in ("Near", "Far", "Spike"):
-        assert saved[sample]["Review Reason"] == rows[sample]["Review Reason"]
+        assert (saved[sample]["依據"], saved[sample]["疑點"]) == (
+            rows[sample]["依據"],
+            rows[sample]["疑點"],
+        )
     for column in ("RT", "Area", "Counted Detection"):
         assert saved["Far"][column] == rows["Far"][column]
 

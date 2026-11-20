@@ -84,6 +84,13 @@ def neutral_loss_match(
     return error_da, window_da, error_da <= window_da
 
 
+def log_ppm_scale(mz: npt.NDArray[np.floating]) -> npt.NDArray[np.floating]:
+    """Return m/z on a log scale where a 1 ppm m/z difference is one unit."""
+    import numpy as np
+
+    return np.log(mz) * 1e6
+
+
 def ppm_scale_factor(shift_ppm: float) -> float:
     """Return the multiplicative m/z scale of a ``shift_ppm`` mass shift."""
 

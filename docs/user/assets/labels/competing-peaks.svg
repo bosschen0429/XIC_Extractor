@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 112" width="240" height="112">
+  <rect x="0.5" y="0.5" width="239" height="111" rx="6" fill="#fbfaf7" stroke="#d9d4c7"/>
+  <path d="M12,88 H228" stroke="#c9c4b8" stroke-width="1"/>
+  <path d="M12,88 L38,88 C49,88 53.4,44 60,44 C66.6,44 71,88 82,88 L98,88 C109,88 113.4,36 120,36 C126.6,36 131,88 142,88 L158,88 C169,88 173.4,42 180,42 C186.6,42 191,88 202,88 H228" fill="none" stroke="#2563a8" stroke-width="2" stroke-linejoin="round"/>
+  <path d="M98,88 C109,88 113.4,36 120,36 C126.6,36 131,88 142,88 Z" fill="#2563a8" fill-opacity="0.18"/>
+</svg>

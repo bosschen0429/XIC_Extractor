@@ -9,6 +9,7 @@ from xic_extractor.output.alignment.tsv_writer import (
     ALIGNMENT_CELLS_COLUMNS,
     ALIGNMENT_REVIEW_COLUMNS,
     BatchRowSource,
+    FinalMatrixValues,
     UntargetGroupRows,
     write_batch_alignment_tsvs,
 )
@@ -78,13 +79,14 @@ def _group(batch_id, key, rt, *, destination="matrix", detected=None):
         accepted_cell_count=str(len(detected)),
         accepted_backfill_count="0",
     )
+    areas = {s: 10 * int(key[1:]) + ORDER[s] for s in detected}
     cells = tuple(
         (
             "",
             stem,
             "detected" if stem in detected else "absent",
             *(
-                f"{key}-{stem}" if column == "area" else ""
+                str(areas[stem]) if stem in areas and column == "area" else ""
                 for column in ALIGNMENT_CELLS_COLUMNS[3:]
             ),
         )
@@ -94,8 +96,8 @@ def _group(batch_id, key, rt, *, destination="matrix", detected=None):
         destination=destination,
         physical_peaks=tuple((f"{key}:{stem}", "d") for stem in detected),
         source_candidate_ids=tuple(f"{key}:{stem}" for stem in detected),
+        matrix=FinalMatrixValues(300.0, rt, tuple(areas.get(s) for s in stems)),
         rows=(
-            ("matrix", (("300", str(rt), *(f"{key}-{s}" for s in stems)),)),
             ("cells", cells),
             ("status", (("", "dR", "300", str(rt), *("detected" for _ in stems)),)),
             ("review", (tuple(review[column] for column in ALIGNMENT_REVIEW_COLUMNS),)),
@@ -117,7 +119,9 @@ def _source(batch_id, groups):
             return None
         return rows.physical_peaks[0][0].split(":")[0]
 
-    return BatchRowSource(batch_id, completed, feature_key)
+    return BatchRowSource(
+        batch_id, completed.canonical_samples, completed.child_outputs, feature_key
+    )
 
 
 def _write(tmp_path, sources, partners):
@@ -154,10 +158,12 @@ def test_paired_rows_share_one_row_and_single_batch_rows_keep_their_batch(tmp_pa
     assert count == 3
     matrix = tables["matrix"]
     assert matrix[0] == ["Mz", "RT", "o1", "o2", "n1", "n2", "n3"]
-    assert matrix[1] == ["300", "10.0", "O1-o1", "O1-o2", "N1-n1", "N1-n2", "N1-n3"]
-    assert matrix[2] == ["300", "30.0", "", "", "N2-n1", "N2-n2", "N2-n3"]
-    # A single-batch row of the other batch is written in the reference RT.
-    assert matrix[3] == ["300", "20", "O2-o1", "O2-o2", "", "", ""]
+    # An unpaired old row keeps its own areas but uses the reference batch's RT.
+    assert [[float(v) if v else None for v in row] for row in matrix[1:]] == [
+        [300, 10, 11, 12, 13, 14, 15],
+        [300, 30, None, None, 23, 24, 25],
+        [300, 20, 21, 22, None, None, None],
+    ]
 
     status = tables["status"]
     assert status[3][4:] == ["detected", "detected"] + ["not_searched"] * 3

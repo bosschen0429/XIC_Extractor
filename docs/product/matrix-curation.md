@@ -1,7 +1,7 @@
 # Matrix Curation
 
 Matrix curation runs independently switchable steps on a published Alignment
-Matrix and writes the result to a new folder. The workbench **矩陣整理** page
+Matrix and writes the result to a new folder. The workbench **整理矩陣** page
 and `xic-matrix-curation` share the same owner: `xic_extractor.matrix_curation`
 holds the steps, export and RAW-header sample reading, and
 `xic_workbench.matrix_curation` adds the workbench's own sample sources. Curation reads only the published files. It does not reopen RAW
@@ -94,30 +94,44 @@ and recorded in the summary. It needs the run's `alignment_explanation.sqlite` i
 the current table layout (compact review or full audit) and is unavailable
 without its published cell values.
 
-Evidence counts only directly detected cells (`discovery_support`) and their
-observation apex:
+Evidence uses each published cell's recorded apex. Directly detected cells
+(`discovery_support`) come first; backfilled cells only complete evidence that
+direct detections leave insufficient:
 
-- **Co-elution:** a supporting sample has both rows detected directly with
-  apices at most 3 s apart. A pair needs at least 3 supporting samples and at
-  least 80% of the samples where both rows were detected directly. Row RT is not
-  used. Backfilled cells never count; when they alone would complete the
-  co-elution, the pair is reviewed. A backfilled cell without a recorded apex is
-  counted as unavailable.
+- **Co-elution:** a supporting sample has both cells' apices at most 5.5 s
+  apart: two MS1 scans of the ~2.5 s CID-NL cycle. In 8RAW, mass-related pairs
+  are as enriched over shifted-mass decoys at 3–5.5 s as at 1–3 s (local
+  evidence, not cross-batch validation). A pair needs at least 3 supporting samples, at least one of them with both
+  rows detected directly, and at least 80% of the samples where both rows were
+  detected directly must support it. Row RT is not used. When the direct
+  samples alone meet these conditions, they are the pair's whole evidence and
+  backfilled cells are not consulted. Otherwise a backfilled cell with a
+  recorded apex counts like a direct one; one without is counted as
+  unavailable. Backfill searches near each sample's expected RT, so a
+  backfilled apex is weaker co-elution evidence; the ratio and abundance checks
+  below include those samples and guard it, but never overturn sufficient
+  direct evidence.
 - **Mass relation:** `e_ppm = 1e6 × (observed − predicted) / predicted` with
   `|e_ppm| ≤ 10`, where the predicted heavier m/z comes from the lighter row.
   Both use the Review's `group_center_mz` (the group's centre m/z, the mean
   of its members' m/z); this is not per-sample mass evidence. `precursor_mz` is
   never used as MS1 m/z.
-- **Ratio screening:** on supporting samples whose published values are finite
-  and positive, the median absolute deviation of `log10(light/heavy)` (no scale
-  constant) is at most 0.1 for isotopes and 0.15 otherwise, over at least 3
-  samples. A variable monomer-adduct ratio can instead use the independently
-  supported carrier evidence below; isotope ratio checks are never waived.
+- **Isotope ratio screening:** on all supporting samples whose published
+  values are finite and positive, the median absolute deviation of
+  `log10(light/heavy)` (no scale constant) is at most 0.1, over at least 3
+  samples. Adducts, salt clusters and multimers have no ratio check: their
+  yield follows each sample's salt content and concentration, so a varying
+  ratio is no evidence of different compounds. In 8RAW, dropping the former
+  adduct limit (0.15) added about one shifted-mass decoy pair per twenty new
+  real pairs.
 - **Isotope abundance:** every supporting sample's heavy/light ratio stays at
   or under `n·(p13/p12)` (13C), `C(n,2)·(p13/p12)²` (13C₂) or `n·(p15/p14)`
   (15N), with `n = floor(M/12)` or `floor(M/14)` and `M` the neutral mass at
-  the relation's charge assuming a proton. This is a loose upper bound; a stable
-  median does not hide one sample's contradiction.
+  the relation's charge assuming a proton. When the lighter row has a supported
+  `M+2_unassigned` companion (below), a single-heavy-atom ceiling also admits
+  25Mg from two Mg atoms (`+2·(p25/p24)`, NIST Mg), the most those models
+  allow. This is a loose upper bound; a stable median does not hide one
+  sample's contradiction.
 
 The single-pair rules remove the heavier row when it relates to the lighter one by:
 
@@ -157,34 +171,6 @@ derivatives are excluded by the single-pair checks, but they do not establish
 the lighter row as [M+H]⁺. They are not interchangeable with the Mg-formate/
 acetate mass differences.
 
-#### Variable monomer-adduct ratios
-
-A cross-sample adduct ratio above the MAD limit is not, by itself, evidence
-that the rows are different compounds. A Na/K/NH₄/Mg/Ca monomer-adduct pair
-that fails only ratio stability can still contribute to exclusion when:
-
-- the same reference has at least two **other, different** monomer carrier
-  forms that independently pass the original mass, co-elution and stable-ratio
-  checks;
-- the reference, candidate and those two witness rows all co-elute directly,
-  with at least three jointly supporting samples. Two rows of the same carrier
-  do not count as two forms; backfill and transitive co-elution do not count.
-
-The original single-pair outcomes supply the witnesses. A newly corroborated
-variable-ratio row cannot bootstrap another candidate. Neutral salt additions,
-dimers and isotopes do not use this exception; their existing single-pair or
-joint-family rules remain in force. The final direct-co-elution check with an
-ultimate root still applies, so corroboration does not rescue a row whose only
-connection to that root is through intervening rows.
-
-The relation outcome is `collapse_corroborated_adduct`; its actual ratio MAD
-remains in the table. Review kind `variable_ratio_adduct_supported` records
-the reference, witness feature IDs, ratio MAD and final step decision, including
-`decision=drop` when excluded. No output columns or RAW-reading path are added.
-This is multi-ion evidence from the published Matrix, not a claim that normal
-curation has read within-peak curves or MS2. Bounded 8RAW trace/mass checks
-support the rule, not cross-batch validation.
-
 #### Ion families without a detected [M+H]⁺
 
 A joint neutral-mass hypothesis can exclude non-[M+H]⁺ rows even when the
@@ -199,8 +185,9 @@ protonated monomer has no Matrix row. It requires all of:
   the seed monomer and the protonated dimer. A chain of co-eluting rows is not
   sufficient.
 
-Cross-sample adduct ratios need not be constant for this joint hypothesis;
-the ratio screen and isotope thresholds are unchanged. A compatible
+For any ion family, its `M+2_unassigned` witness must pass co-elution and
+isotope-ratio checks on direct detections alone. Backfill can still support
+single-pair collapse. A compatible
 metal dimer (`[2M-H+Mg]+`, `[2M-H+Ca]+`, `[2M-2H+Na+Mg]+`,
 `[2M-2H+2Mg+HCOO]+` or `[2M-2H+2Mg+CH3COO]+`) can join an established family
 only with its own supported `M+2_unassigned` companion and direct co-elution
@@ -241,24 +228,29 @@ relation table. ≈1.998 pairs not explained by either isotope rule are reviewed
 
 Representatives are rows that no folding relation derives from another row. A
 row is removed when folding relations, each passing its own checks, reach it
-from at least one root and it co-elutes directly with that root by the rule
-above. With one directly co-eluting root its representative is recorded. With
-several, it is still excluded: its representative field is blank, its reason
-is `derived_representative_undetermined`, and its candidate roots are recorded
-in the review with `decision=drop`. The candidate roots are not merged or
-arbitrarily selected. A sodium adduct's 13C isotope is therefore
-removed into the protonated row through the adduct, while a row that co-elutes
-with the representative only through other rows (A–B and B–C 2.4 s apart, A–C
-4.8 s) is kept and reviewed. When
+from a root. Its representative is the one root whose direct detections do not
+contradict co-elution with it: at least one sample has both detected directly
+and co-eluting, and at least 80% of their both-direct samples co-elute. A root
+sparse enough to share fewer than 3 samples still qualifies. With several such
+roots, or none, the row is still excluded: its representative field is blank,
+its reason is `derived_representative_undetermined`, and its candidate roots
+(the qualifying ones, else every root reaching it) are recorded in the review
+with `decision=drop`. The candidate roots are not merged or arbitrarily
+selected. A sodium adduct's 13C isotope is therefore removed into the
+protonated row through the adduct. A row that co-elutes with the root only
+through other rows (A–B and B–C 4.4 s apart, A–C 8.8 s) is removed without a
+representative. In 8RAW, shifted-mass decoy relations mixed with the real ones
+removed the same rows with or without a root co-elution requirement, while the
+requirement kept derivatives of saturated peaks whose apices scatter. When
 several relations fit one pair they are all recorded and
 `same_compound_relation_undetermined` is TRUE. Results depend on m/z and cell
 evidence only, never on row order, `feature_id` or the order of the relation
 list.
 
 A representative's ion form is `confirmed_[M+H]+` when an adduct or dimer row
-(other than a neutral salt cluster) derived directly from it was removed into it,
-or a supported family assigns
-it only the [M+H]⁺ form, and `unconfirmed` otherwise.
+(other than a neutral salt cluster) derives directly from it and is assigned to
+it after family resolution, or a supported family assigns it only the [M+H]⁺
+form. Otherwise it is `unconfirmed`.
 Isotopes are not evidence of the ion form, and no other form is inferred.
 `unconfirmed` is not reviewed. Retained unclassified roots are not claimed to
 be known [M+H]⁺; this step does not perform complete ion identification.
@@ -316,8 +308,8 @@ the source folder.
 | --- | --- |
 | `analysis_matrix.tsv` | Kept rows in original order with original tokens and all sample columns |
 | `feature_decisions.tsv` | Every source row: `source_matrix_row_index`, `feature_id`, `Mz`, `RT`, `istd_label`, each enabled step's columns, the final `decision` and `decision_reason` (`kept_by_all_steps`, `dropped_by:<steps>` or `istd_protected`) |
-| `same_compound_relations.tsv` | Each mass-related row pair that co-elutes in some sample: relation, `e_ppm`, direct, supporting and backfill sample counts, largest apex difference, median light/heavy ratio, log-ratio MAD, outcome and whether it contributed to excluding the heavier row; an excluded row need not have a unique parent |
-| `same_compound_review.tsv` | Pairs and groups to review: unstable ratio, ≈1.998 unexplained by the isotope rules, review-only relation, backfill-only co-elution, representative ≥10× weaker than a removed member, excluded derivatives with unassigned parent (`decision=drop`), supported non-[M+H]⁺ families (neutral mass, models and witnesses), no direct co-elution with a root, an ion family removed by a later feature filter, and recurring unexplained mass differences between rows this step keeps, most frequent first. A pair already inside one group, or between two removed ions, is not reviewed again |
+| `same_compound_relations.tsv` | Each mass-related row pair that co-elutes in some sample: relation, `e_ppm`, both-direct samples, supporting samples (backfilled ones only when direct co-elution is insufficient), the backfilled share of them, backfilled samples without an apex, largest apex difference, median light/heavy ratio, log-ratio MAD, outcome and whether it contributed to excluding the heavier row; an excluded row need not have a unique parent |
+| `same_compound_review.tsv` | Pairs and groups to review: unstable isotope ratio, ≈1.998 unexplained by the isotope rules, review-only relation, representative ≥10× weaker than a removed member, excluded derivatives with unassigned parent (`decision=drop`), supported non-[M+H]⁺ families (neutral mass, models and witnesses), an ion family removed by a later feature filter, and recurring unexplained mass differences between rows this step keeps, most frequent first. A pair already inside one group, or between two removed ions, is not reviewed again |
 | `sample_metadata.tsv` | Matrix column → sample identity, role, group, order and exclusion |
 | `matrix_curation_summary.json` | Enabled steps and parameters, input paths, sample data source and counts |
 
@@ -338,7 +330,7 @@ how many rows were removed into it, a note rather than a threshold). Its two
 tables are written only when it runs. The summary records each step's
 parameters and counts, including the `same_compound` thresholds, removals by
 relation, removals through the group, `removed_representative_undetermined_count`,
-`removed_non_protonated_family_count`, `used_variable_ratio_adduct_pair_count`,
+`removed_non_protonated_family_count`,
 review counts and `empty_group_count` (uniquely assigned groups with no row left), and
 the internal standard source and protected count.
 `source_matrix_row_index` is the 1-based row position in the source Matrix;
@@ -378,7 +370,9 @@ pairs incompatible with the intensity models), per-sample abundance, direct co-e
 representative, removal through the group, ion-form
 labels, unassigned isotope and parent exclusion, ion families with/without a
 protonated row, missing/indirect family witnesses, metal dimers, rule-order,
-row-order and ID invariance, backfill exclusion, internal
+row-order and ID invariance, backfilled co-elution and its ratio, abundance
+and direct-anchor limits, sufficient direct evidence not overturned by
+backfill, internal
 standard matching and derivative-before-feature-filter ordering. Its thresholds come from a read-only
 dr95 diagnostic, not cross-batch validation.
 `tests/test_matrix_curation.py` checks independently calculated fractions and

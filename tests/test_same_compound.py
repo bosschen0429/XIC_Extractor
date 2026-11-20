@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -29,6 +30,8 @@ from xic_extractor.tabular_io import read_tsv_with_header, write_tsv
 
 SAMPLES = tuple(f"s{index}" for index in range(1, 7))
 SAMPLE_SCALE = (1.0, 2.0, 3.0, 5.0, 8.0, 13.0)
+# Two directly co-eluting samples, too few alone; four backfilled samples.
+TWO_DIRECT = (True, True, False, False, False, False)
 
 
 def row(
@@ -161,6 +164,38 @@ def test_each_sample_must_fit_the_isotope_abundance_ceiling():
     assert outcome(result, "13C_M+1") == {"isotope_abundance_exceeded"}
 
 
+@pytest.mark.parametrize(
+    ("companion", "heavy_scale", "expected"),
+    [
+        # m/z 400 allows heavy/light <= 0.357 from carbon alone; two 25Mg add
+        # 0.253.
+        (True, 0.38, "collapse"),
+        (False, 0.38, "isotope_abundance_exceeded"),
+        (True, 0.7, "isotope_abundance_exceeded"),
+    ],
+)
+def test_a_metal_carrier_m1_ceiling_admits_25mg(companion, heavy_scale, expected):
+    rows = [row("L", 400.0), row("H", 401.003355, scale=heavy_scale)]
+    if companion:
+        # Two-Mg 26Mg model: light/heavy 3.587.
+        rows.append(row("M2", 401.997551, scale=1 / 3.587))
+    decisions, result = decide(*rows)
+
+    assert decisions["H"][0] is (expected != "collapse")
+    found = relation_row_between(result, "L", "H", "13C_M+1")
+    assert found["outcome"] == expected
+
+
+def relation_row_between(result, light, heavy, relation):
+    (found,) = (
+        row
+        for row in result.relation_rows
+        if (row["light_feature_id"], row["heavy_feature_id"], row["relation"])
+        == (light, heavy, relation)
+    )
+    return found
+
+
 def test_dr116_difference_is_only_annotated():
     decisions, result = decide(row("L", 300.0), row("H", 416.04734, scale=0.5))
 
@@ -226,20 +261,21 @@ def test_element_uncertainty_follows_a_derivative_path():
     assert result.decisions[2].undetermined is True
 
 
-def test_removed_row_coelutes_directly_with_its_representative():
-    # A-B and B-C co-elute 2.4 s apart; A-C are 4.8 s apart.
+def test_a_derivative_contradicting_its_root_has_no_representative():
+    # A-B and B-C co-elute 4.4 s apart; A-C are 8.8 s apart.
     decisions, result = decide(
         row("A", 300.0),
-        row("B", 301.003355, scale=0.15, shift_sec=2.4),
-        row("C", 302.006710, scale=0.15 * 0.15, shift_sec=4.8),
+        row("B", 301.003355, scale=0.15, shift_sec=4.4),
+        row("C", 302.006710, scale=0.15 * 0.15, shift_sec=8.8),
     )
 
     assert decisions["A"][:2] == (True, "representative")
     assert decisions["B"][:3] == (False, "derived_from_representative", "A")
-    # C is reached from A only through B and never co-elutes with A.
-    assert decisions["C"][:2] == (True, "no_direct_coelution_with_representative")
+    # C derives from B, but never co-elutes with A: excluded, unattributed.
+    assert decisions["C"][:3] == (False, "derived_representative_undetermined", None)
     assert outcome(result, "13C2_M+2") == set()
-    assert review_kinds(result) == [("no_direct_coelution_with_representative", "C")]
+    assert result.review_rows[0]["review_kind"] == "derived_representative_undetermined"
+    assert result.review_rows[0]["related_feature_ids"] == "A"
 
 
 def test_protonated_row_with_sodium_adduct_and_isotopes_is_confirmed_and_kept():
@@ -320,6 +356,7 @@ def test_competing_representatives_do_not_rescue_a_supported_derivative():
     assert result.decisions[2].undetermined is True
     assert ("derived_representative_undetermined", "H") in review_kinds(result)
     assert decisions["A"][0] is decisions["B"][0] is True
+    assert decisions["A"][4] == decisions["B"][4] == UNCONFIRMED
     assert all(r["used_for_collapse"] == "TRUE" for r in result.relation_rows)
 
 
@@ -399,7 +436,54 @@ def test_mass_compatible_family_requires_independent_dimer_and_isotope_witnesses
     assert all(d[1] != "non_protonated_ion_family" for d in decisions.values())
 
 
-@pytest.mark.parametrize("direct", [False, (True, True, False, False, False, False)])
+def test_a_family_member_does_not_confirm_its_previous_adduct_root():
+    # The Na row can also be a potassium adduct of a lower-mass ion, but the
+    # family takes precedence and does not assign Na to that candidate root.
+    decisions, result = decide(row("Candidate", 212.123944602091), *sodium_family())
+
+    assert relation_row_between(result, "Candidate", "Na", "[M+K]+")["outcome"] == (
+        "collapse"
+    )
+    assert decisions["Na"][:3] == (False, "non_protonated_ion_family", None)
+    assert decisions["Candidate"][0] is True
+    assert decisions["Candidate"][4] == UNCONFIRMED
+
+
+@pytest.mark.parametrize(
+    ("carrier", "kept"),
+    [
+        ("MgFA", ("Na", "MgFA", "MgAc", "DimerH", "MetalDimer")),
+        ("MetalDimer", ("MetalDimer",)),
+    ],
+)
+def test_backfill_can_collapse_a_metal_isotope_but_not_support_a_family(carrier, kept):
+    companion = carrier + "_M2"
+    rows = [
+        (
+            feature,
+            {
+                sample: replace(cell, direct=direct)
+                for (sample, cell), direct in zip(
+                    cells.items(), TWO_DIRECT, strict=True
+                )
+            },
+        )
+        if feature.feature_id == companion
+        else (feature, cells)
+        for feature, cells in sodium_family()
+    ]
+    decisions, result = decide(*rows)
+
+    assert all(decisions[name][0] for name in kept)
+    assert decisions[companion][:3] == (False, "derived_from_representative", carrier)
+    pair = relation_row_between(result, carrier, companion, "M+2_unassigned")
+    assert pair["backfill_coeluting_samples"] == 4
+    assert pair["outcome"] == "collapse"
+    if carrier == "MetalDimer":
+        assert decisions["Na"][:2] == (False, "non_protonated_ion_family")
+
+
+@pytest.mark.parametrize("direct", [False, TWO_DIRECT])
 def test_backfilled_dimer_cannot_establish_an_ion_family(direct):
     rows = [r for r in sodium_family() if r[0].feature_id != "DimerH"]
     rows.append(row("DimerH", 455.188488252321, scale=0.3, direct=direct))
@@ -409,10 +493,10 @@ def test_backfilled_dimer_cannot_establish_an_ion_family(direct):
 
 def test_ion_family_does_not_use_transitive_coelution_to_delete_a_member():
     rows = [r for r in sodium_family() if r[0].feature_id != "MgAc"]
-    # Na and DimerH are 4.8 s apart: the metal rows must not bridge that gap.
+    # Na and DimerH are 8.8 s apart: the metal rows must not bridge that gap.
     rows = [r for r in rows if r[0].feature_id != "DimerH"]
-    rows.append(row("DimerH", 455.188488252321, scale=0.3, shift_sec=4.8))
-    rows.append(row("MgAc", 310.088403352921, scale=0.8, shift_sec=2.4))
+    rows.append(row("DimerH", 455.188488252321, scale=0.3, shift_sec=8.8))
+    rows.append(row("MgAc", 310.088403352921, scale=0.8, shift_sec=4.4))
     decisions, _ = decide(*rows)
     assert decisions["Na"][0] is True
 
@@ -473,10 +557,16 @@ def test_family_never_assigns_a_removed_protonated_candidate_as_representative()
 
 
 @pytest.mark.parametrize(
-    ("isotope_supported", "calcium_shift"), [(False, 0.0), (True, 0.0), (True, 4.8)]
+    ("isotope_direct", "calcium_shift", "qualified"),
+    [
+        (None, 0.0, False),
+        (True, 0.0, True),
+        (True, 8.8, False),
+        (TWO_DIRECT, 0.0, False),
+    ],
 )
 def test_parallel_metal_multimers_can_support_a_variable_adduct_ratio(
-    isotope_supported, calcium_shift
+    isotope_direct, calcium_shift, qualified
 ):
     # C10H13N5O4 neutral: two different metal carriers constrain the same trimer.
     neutral = 267.09675390
@@ -495,17 +585,17 @@ def test_parallel_metal_multimers_can_support_a_variable_adduct_ratio(
             shift_sec=calcium_shift,
         ),
     ]
-    if isotope_supported:
+    if isotope_direct is not None:
         rows.append(
             row(
                 "MgTrimer_M2",
                 3 * neutral + 22.976668084861 + 1.997551271,
                 scale=0.3 * 0.1101 / 0.7899,
+                direct=isotope_direct,
             )
         )
     decisions, _ = decide(*rows)
     assert decisions["MH"][0] is True
-    qualified = isotope_supported and calcium_shift == 0.0
     assert decisions["MgTrimer"][0] is (not qualified)
     assert decisions["CaTrimer"][0] is (not qualified)
     if qualified:
@@ -513,31 +603,142 @@ def test_parallel_metal_multimers_can_support_a_variable_adduct_ratio(
         assert decisions["MgTrimer_M2"][2] == "MH"
 
 
-def test_competing_paths_still_need_direct_coelution_with_a_root():
+def test_competing_paths_without_a_coeluting_root_list_every_root():
     decisions, result = decide(
         row("A", 300.0),
         row("B", 279.021411),
-        row("P", 301.003355, scale=0.15, shift_sec=2.4),
-        row("H", 302.006710, scale=0.0225, shift_sec=4.8),
+        row("P", 301.003355, scale=0.15, shift_sec=4.4),
+        row("H", 302.006710, scale=0.0225, shift_sec=8.8),
     )
     assert decisions["P"][:3] == (False, "derived_representative_undetermined", None)
-    assert decisions["H"][:2] == (True, "no_direct_coelution_with_representative")
-    assert ("no_direct_coelution_with_representative", "H") in review_kinds(result)
+    assert decisions["H"][:3] == (False, "derived_representative_undetermined", None)
+    assert {
+        row["related_feature_ids"]
+        for row in result.review_rows
+        if row["review_kind"] == "derived_representative_undetermined"
+    } == {"A;B"}
 
 
-def test_backfilled_cells_never_count_toward_coelution():
+def only_in(scenario, samples):
+    feature, cells = scenario
+    return feature, {sample: cells[sample] for sample in samples}
+
+
+def test_a_sparse_root_without_contradiction_still_represents_the_chain():
+    # The protonated root shares only s1 with the sodium adduct's 13C row,
+    # where they co-elute; each folding edge has its own supporting samples.
+    decisions, _ = decide(
+        only_in(row("L", 300.0), SAMPLES[:3]),
+        row("N", 321.981944, scale=0.5),
+        only_in(row("H", 322.985299, scale=0.08), SAMPLES[:1] + SAMPLES[3:]),
+    )
+
+    assert decisions["N"][:3] == (False, "derived_from_representative", "L")
+    assert decisions["H"][:3] == (False, "derived_through_group", "L")
+
+
+def without_apex(scenario, samples):
+    feature, cells = scenario
+    return feature, {
+        sample: replace(cell, apex_rt_min=None) if sample in samples else cell
+        for sample, cell in cells.items()
+    }
+
+
+def relation_row(result, relation):
+    (found,) = (row for row in result.relation_rows if row["relation"] == relation)
+    return found
+
+
+def test_backfilled_apices_complete_direct_coelution():
+    decisions, result = decide(
+        row("L", 300.0), row("H", 321.981944, scale=0.5, direct=TWO_DIRECT)
+    )
+
+    assert decisions["H"][:3] == (False, "derived_from_representative", "L")
+    found = relation_row(result, "[M+Na]+")
+    assert found["outcome"] == "collapse"
+    assert found["both_direct_samples"] == 2
+    assert found["support_samples"] == found["ratio_samples"] == 6
+    assert found["backfill_coeluting_samples"] == 4
+    assert review_kinds(result) == []
+
+
+def test_backfilled_ratios_must_stay_stable():
+    # The two direct samples agree; the backfilled ones scatter fourfold.
+    unstable = row(
+        "H",
+        301.003355,
+        ratios=(0.05, 0.05, 0.2, 0.2, 0.2, 0.05),
+        direct=TWO_DIRECT,
+    )
+    decisions, result = decide(row("L", 300.0), unstable)
+
+    assert decisions["H"][0] is True
+    assert outcome(result, "13C_M+1") == {"ratio_unstable"}
+
+
+def test_backfilled_isotope_ratio_obeys_the_abundance_ceiling():
+    # m/z 300 allows at most 24 carbons: heavy/light <= 0.26. One backfilled
+    # sample at 0.5 leaves the median and MAD unchanged.
+    exceeded = row(
+        "H",
+        301.003355,
+        ratios=(0.15, 0.15, 0.15, 0.15, 0.5, 0.15),
+        direct=TWO_DIRECT,
+    )
+    decisions, result = decide(row("L", 300.0), exceeded)
+
+    assert decisions["H"][0] is True
+    assert outcome(result, "13C_M+1") == {"isotope_abundance_exceeded"}
+
+
+@pytest.mark.parametrize(
+    ("relation", "heavy_mz", "ratios"),
+    [
+        # Backfilled ratios scatter fourfold around the direct ones.
+        ("13C_M+1", 301.003355, (0.05, 0.05, 0.05, 0.2, 0.2, 0.2)),
+        # Backfilled heavy/light exceeds the 24-carbon ceiling of m/z 300.
+        ("13C_M+1", 301.003355, (0.15, 0.15, 0.15, 0.5, 0.5, 0.5)),
+    ],
+)
+def test_backfill_never_overrides_sufficient_direct_evidence(
+    relation, heavy_mz, ratios
+):
+    three_direct = (True, True, True, False, False, False)
+    decisions, result = decide(
+        row("L", 300.0), row("H", heavy_mz, ratios=ratios, direct=three_direct)
+    )
+
+    assert decisions["H"][:3] == (False, "derived_from_representative", "L")
+    found = relation_row(result, relation)
+    assert found["outcome"] == "collapse"
+    assert found["support_samples"] == found["ratio_samples"] == 3
+    assert found["backfill_coeluting_samples"] == 0
+
+
+def test_backfill_alone_never_establishes_coelution():
     only_backfill = row("H", 321.981944, scale=0.5, direct=False)
     decisions, result = decide(row("L", 300.0), only_backfill)
-    assert decisions["H"][0] is True
-    assert review_kinds(result) == [("backfill_only_coelution", "H")]
 
-    # Two direct samples plus four backfilled ones are still too few.
-    mixed = row(
-        "H", 321.981944, scale=0.5, direct=(True, True, False, False, False, False)
+    assert decisions["H"][0] is True
+    found = relation_row(result, "[M+Na]+")
+    assert found["outcome"] == "coelution_insufficient"
+    assert found["support_samples"] == found["backfill_coeluting_samples"] == 6
+    assert review_kinds(result) == []
+
+
+def test_backfilled_cells_without_an_apex_do_not_count():
+    mixed = without_apex(
+        row("H", 321.981944, scale=0.5, direct=TWO_DIRECT), SAMPLES[2:]
     )
     decisions, result = decide(row("L", 300.0), mixed)
+
     assert decisions["H"][0] is True
-    assert review_kinds(result) == [("backfill_only_coelution", "H")]
+    found = relation_row(result, "[M+Na]+")
+    assert found["outcome"] == "coelution_insufficient"
+    assert found["support_samples"] == 2
+    assert found["backfill_apex_unavailable_samples"] == 4
 
 
 def test_coelution_needs_most_shared_direct_samples():
@@ -557,8 +758,8 @@ def test_coelution_needs_most_shared_direct_samples():
     assert outcome(result, "[M+Na]+") == {"coelution_insufficient"}
 
 
-def test_unstable_ratio_and_review_only_relations_are_reviewed():
-    unstable = row("U", 321.981944, ratios=(0.5, 2.0, 0.5, 2.0, 0.5, 2.0))
+def test_unstable_isotope_ratio_and_review_only_relations_are_reviewed():
+    unstable = row("U", 301.003355, ratios=(0.05, 0.2, 0.05, 0.2, 0.05, 0.2))
     methylated = row("M", 314.01565, scale=0.5)
     decisions, result = decide(row("L", 300.0), unstable, methylated)
 
@@ -567,6 +768,24 @@ def test_unstable_ratio_and_review_only_relations_are_reviewed():
         ("review_only_relation", "M"),
         ("unstable_ratio", "U"),
     ]
+
+
+@pytest.mark.parametrize(
+    ("heavy_mz", "relation", "removed"),
+    [
+        (321.981944, "[M+Na]+", True),
+        (2 * 300.0 - 1.00727647, "[2M+H]+", True),
+        (382.003073617830, "+NaCH3COO", True),
+        (301.003355, "13C_M+1", False),
+    ],
+)
+def test_only_isotopes_need_a_stable_cross_sample_ratio(heavy_mz, relation, removed):
+    # Adduct and cluster yields follow each sample's salt and concentration.
+    varying = row("H", heavy_mz, ratios=(0.05, 0.2, 0.05, 0.2, 0.05, 0.2))
+    decisions, result = decide(row("L", 300.0), varying)
+
+    assert decisions["H"][0] is not removed
+    assert outcome(result, relation) == {"collapse" if removed else "ratio_unstable"}
 
 
 def variable_adduct_family(
@@ -600,128 +819,6 @@ def variable_adduct_family(
     )
 
 
-def test_two_supported_carriers_can_corroborate_a_variable_adduct_ratio():
-    decisions, result = decide(*variable_adduct_family())
-    assert decisions["ratio_MH"][0] is True
-    assert decisions["ratio_Mg"][:3] == (
-        False,
-        "derived_from_representative",
-        "ratio_MH",
-    )
-    assert decisions["ratio_Mg_M2"][:3] == (False, "derived_through_group", "ratio_MH")
-    assert outcome(result, "[M+Mg+CH3COO]+") == {"collapse_corroborated_adduct"}
-    relation = next(
-        r for r in result.relation_rows if r["relation"] == "[M+Mg+CH3COO]+"
-    )
-    assert relation["used_for_collapse"] == "TRUE"
-    proof = next(
-        r
-        for r in result.review_rows
-        if r["review_kind"] == "variable_ratio_adduct_supported"
-    )
-    assert proof["feature_id"] == "ratio_Mg"
-    assert set(str(proof["related_feature_ids"]).split(";")) == {
-        "ratio_MH",
-        "ratio_Na",
-        "ratio_K",
-    }
-
-
-@pytest.mark.parametrize(
-    ("direct", "shift"),
-    [
-        (False, 0.0),
-        ((True, True, False, False, False, False), 0.0),
-        (True, 4.8),
-    ],
-)
-def test_a_single_backfilled_or_noncoeluting_carrier_cannot_rescue_an_adduct(
-    direct, shift
-):
-    decisions, result = decide(
-        *variable_adduct_family(potassium_direct=direct, potassium_shift=shift)
-    )
-    assert decisions["ratio_Mg"][0] is True
-    assert outcome(result, "[M+Mg+CH3COO]+") == {"ratio_unstable"}
-
-
-def test_two_rows_of_the_same_carrier_are_not_independent_corroboration():
-    rows = [r for r in variable_adduct_family() if r[0].feature_id != "ratio_K"]
-    decisions, _ = decide(*rows, row("second_Na", 621.982, scale=0.4, base_rt=80.0))
-    assert decisions["ratio_Mg"][0] is True
-
-
-@pytest.mark.parametrize("has_second_other_carrier", [False, True])
-def test_candidate_carrier_does_not_count_as_another_supported_form(
-    has_second_other_carrier,
-):
-    rows = [
-        *variable_adduct_family()[:3],
-        row("variable_Na", 621.984, ratios=(0.5, 2.0) * 3, base_rt=80.0),
-    ]
-    if has_second_other_carrier:
-        rows.append(row("stable_Mg", 681.990521, scale=0.4, base_rt=80.0))
-    decisions, result = decide(*rows)
-
-    assert decisions["variable_Na"][0] is (not has_second_other_carrier)
-    relation = next(
-        r for r in result.relation_rows if r["heavy_feature_id"] == "variable_Na"
-    )
-    assert relation["outcome"] == (
-        "collapse_corroborated_adduct" if has_second_other_carrier else "ratio_unstable"
-    )
-    assert relation["used_for_collapse"] == (
-        "TRUE" if has_second_other_carrier else "FALSE"
-    )
-    reviews = [
-        r
-        for r in result.review_rows
-        if r["review_kind"] == "variable_ratio_adduct_supported"
-        and r["feature_id"] == "variable_Na"
-    ]
-    if has_second_other_carrier:
-        assert set(reviews[0]["related_feature_ids"].split(";")) == {
-            "ratio_MH",
-            "ratio_K",
-            "stable_Mg",
-        }
-    else:
-        assert reviews == []
-
-
-def test_carrier_corroboration_needs_mutual_not_only_reference_coelution():
-    decisions, _ = decide(
-        *variable_adduct_family(potassium_shift=2.4, magnesium_shift=-2.4)
-    )
-    # Each witness co-elutes with the reference, but K and Mg are 4.8 s apart.
-    assert decisions["ratio_Mg"][0] is True
-
-
-@pytest.mark.parametrize(
-    ("mz", "relation"),
-    [
-        (601.003355, "13C_M+1"),
-        (1198.99272353, "[2M+H]+"),
-        (682.00307361783, "+NaCH3COO"),
-    ],
-)
-def test_monomer_carriers_do_not_override_isotope_dimer_or_salt_ratio_checks(
-    mz, relation
-):
-    rows = variable_adduct_family()[:3]
-    decisions, result = decide(
-        *rows,
-        row(
-            "variable_other",
-            mz,
-            base_rt=80.0,
-            ratios=(0.05, 0.15, 0.05, 0.15, 0.05, 0.15),
-        ),
-    )
-    assert decisions["variable_other"][0] is True
-    assert outcome(result, relation) == {"ratio_unstable"}
-
-
 def test_representative_much_weaker_than_removed_member_is_reviewed():
     decisions, result = decide(row("L", 300.0), row("Na", 321.981944, scale=20.0))
 
@@ -751,8 +848,8 @@ def _scenario():
     return (
         (
             row("A", 300.0),
-            row("B", 301.003355, scale=0.15, shift_sec=2.4),
-            row("C", 302.006710, scale=0.0225, shift_sec=4.8),
+            row("B", 301.003355, scale=0.15, shift_sec=4.4),
+            row("C", 302.006710, scale=0.0225, shift_sec=8.8),
             row("MH", 400.0, base_rt=20.0),
             row("MH_13C", 401.003355, scale=0.15, base_rt=20.0),
             row("Na", 421.981944, scale=0.5, base_rt=20.0),
@@ -1068,13 +1165,15 @@ def test_export_excludes_unassigned_derivative_without_inventing_a_parent(
     assert decisions["F000003"]["decision"] == "drop"
     assert decisions["F000003"]["same_compound_representative_feature_id"] == ""
     assert decisions["F000003"]["same_compound_via_feature_ids"] == "F000001;F000002"
+    assert decisions["F000001"]["same_compound_ion_form"] == UNCONFIRMED
+    assert decisions["F000002"]["same_compound_ion_form"] == UNCONFIRMED
     _, kept = read_tsv_with_header(output / "analysis_matrix.tsv")
     assert [r["Mz"] for r in kept] == ["300.0000", "279.0214"]
     _, reviews = read_tsv_with_header(output / "same_compound_review.tsv")
     assert reviews[0]["related_feature_ids"] == "F000001;F000002"
     assert reviews[0]["detail"] == "decision=drop"
     assert summary["steps"][0]["removed_representative_undetermined_count"] == 1
-    assert summary["steps"][0]["confirmed_mh_count"] == 1
+    assert summary["steps"][0]["confirmed_mh_count"] == 0
 
 
 def test_derivatives_are_removed_before_feature_filtering_and_istd_is_protected(

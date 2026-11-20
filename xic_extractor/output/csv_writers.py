@@ -3,10 +3,7 @@ from typing import Protocol
 
 from xic_extractor.configuration.models import Target
 from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence, NLResult
-from xic_extractor.output.reason_display import (
-    display_measurement_reason,
-    display_nl_evidence,
-)
+from xic_extractor.output.result_labels import result_labels
 from xic_extractor.output.schema import (
     TARGETED_PRODUCT_PROJECTION_HEADERS,
 )
@@ -108,34 +105,29 @@ def _long_output_rows(
             "RT": "",
             "Area": "",
             "NL": "",
-            "NL Evidence": "",
             "Int": "",
             "IntSmoothed": "",
             "PeakStart": "",
             "PeakEnd": "",
             "PeakWidth": "",
-            "Reason": "",
+            "依據": "",
+            "疑點": "",
             **{header: "" for header in TARGETED_PRODUCT_PROJECTION_HEADERS},
         }
         if file_result.error is not None:
             _set_long_ms1_values(row, "ERROR")
             row["NL"] = "ERROR" if target.neutral_loss_da is not None else ""
-            row["NL Evidence"] = display_nl_evidence(
-                "ERROR", configured=target.neutral_loss_da is not None
-            )
-            row["Reason"] = "RAW 檔無法處理。"
             row.update(_error_projection_fields())
+            row["依據"], row["疑點"] = result_labels(row)
         else:
             result = file_result.results[target.label]
             _set_long_peak_values(row, result)
             row["NL"] = (
                 result.nl_token or "" if target.neutral_loss_da is not None else ""
             )
-            row["NL Evidence"] = display_nl_evidence(
-                result.nl_token, configured=target.neutral_loss_da is not None
-            )
             row.update(_projection_fields(result.targeted_product_projection))
-            row["Reason"] = _display_reason(result, row)
+            if result.targeted_product_projection is not None:
+                row["依據"], row["疑點"] = result_labels(row)
         rows.append(row)
     return rows
 
@@ -157,17 +149,6 @@ def _projection_fields(
         "Projection Exclusion Reasons": _join_reasons(projection.exclusion_reasons),
         "Benchmark Eligibility State": projection.benchmark_eligibility_state,
     }
-
-
-def _display_reason(result: ExtractionResultLike, row: dict[str, str]) -> str:
-    """Explain the finished projection already rendered into `row`."""
-    if result.targeted_product_projection is not None:
-        return display_measurement_reason(
-            row,
-            has_quantifiable_peak=_has_reported_peak(result),
-            concerns=dict(result.score_breakdown).get("Concerns", ""),
-        )
-    return result.reason
 
 
 def _error_projection_fields() -> dict[str, str]:

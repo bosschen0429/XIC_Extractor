@@ -220,3 +220,116 @@ def test_search_window_follows_the_map_error_of_neighboring_istds():
     assert _state(result, "old", "early").partners == (("new", "early"),)
     assert _state(result, "new", "early_rival").state == "unpaired_outside_window"
     assert _state(result, "old", "late").state == "unpaired_ambiguous"
+
+
+def test_pair_finished_batches_from_independent_four_sample_files(tmp_path):
+    import csv
+    import json
+    from dataclasses import replace
+    from datetime import datetime
+
+    from scripts.run_alignment import main
+    from xic_extractor.alignment.batch_correspondence import GroupedBatch
+    from xic_extractor.diagnostics.batch_pairing import save_pairing_input
+
+    features = [replace(item, sample_count=4) for item in _anchor_features()] + [
+        BatchFeature("old", "solo", "dR", 900, 20, 1),
+        BatchFeature("old", "amb", "dR", 800, 20 + SHIFT, 1),
+        BatchFeature("new", "c1", "dR", 800, 19.95, 1),
+        BatchFeature("new", "c2", "dR", 800, 20.05, 1),
+    ]
+    inputs = []
+    for batch, year in (("new", 2026), ("old", 2024)):
+        path = tmp_path / f"{batch}.json"
+        save_pairing_input(
+            path,
+            GroupedBatch(
+                batch,
+                4,
+                tuple(f for f in features if f.batch_id == batch),
+                tuple(i for i in _istds() if i.batch_id == batch),
+            ),
+            latest_acquisition=datetime(year, 1, 1),
+            precursor_tolerance_ppm=20,
+        )
+        inputs.append(str(path))
+    output = tmp_path / "paired"
+    assert main(["pair-batches", "--inputs", *inputs, "--output-dir", str(output)]) == 0
+    with (output / "batch_correspondence.tsv").open(
+        encoding="utf-8", newline=""
+    ) as stream:
+        rows = {r["group_id"]: r for r in csv.DictReader(stream, delimiter="\t")}
+    assert rows["o0"]["state"] == "paired" and rows["o0"]["partner_group_id"] == "n0"
+    assert rows["solo"]["state"] == "unpaired_no_candidate"
+    assert rows["amb"]["state"] == "unpaired_ambiguous"
+    assert set(rows["amb"]["competitor_group_ids"].split(";")) == {"c1", "c2"}
+    summary = json.loads((output / "summary.json").read_text())
+    assert summary["batch_correspondence"]["reference_batch"] == "new"
+
+
+@pytest.mark.parametrize(
+    ("other_id", "other_ppm", "reason"),
+    [
+        ("A", 10, "distinct batch IDs"),
+        ("B", 20, "same precursor_tolerance_ppm"),
+    ],
+)
+def test_pairing_rejects_incompatible_captures(tmp_path, other_id, other_ppm, reason):
+    from datetime import datetime
+
+    from xic_extractor.alignment.batch_correspondence import GroupedBatch
+    from xic_extractor.diagnostics.batch_pairing import (
+        replay_pairing,
+        save_pairing_input,
+    )
+
+    inputs = [tmp_path / "first.json", tmp_path / "second.json"]
+    for path, batch, ppm in zip(inputs, ("A", other_id), (10, other_ppm), strict=True):
+        save_pairing_input(
+            path,
+            GroupedBatch(batch, 4, (), ()),
+            latest_acquisition=datetime(2026, 1, 1),
+            precursor_tolerance_ppm=ppm,
+        )
+    with pytest.raises(ValueError, match=reason):
+        replay_pairing(inputs, tmp_path / "output")
+
+
+def test_pairing_without_map_publishes_all_artifacts_together(tmp_path, monkeypatch):
+    import csv
+    import json
+    from datetime import datetime
+
+    from xic_extractor.alignment.batch_correspondence import GroupedBatch
+    from xic_extractor.diagnostics import batch_pairing
+
+    inputs = []
+    for name, year in (("old", 2024), ("new", 2026)):
+        feature = BatchFeature(name, "one", "dR", 300, 10, 2)
+        path = tmp_path / f"{name}.json"
+        batch_pairing.save_pairing_input(
+            path,
+            GroupedBatch(name, 4, (feature,), ()),
+            latest_acquisition=datetime(year, 1, 1),
+            precursor_tolerance_ppm=20,
+        )
+        inputs.append(path)
+
+    out = tmp_path / "paired"
+
+    def disk_full(*args):
+        raise OSError("disk full")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(batch_pairing, "write_json", disk_full)
+        with pytest.raises(OSError, match="disk full"):
+            batch_pairing.replay_pairing(inputs, out)
+    assert not list(out.glob("*"))
+    batch_pairing.replay_pairing(inputs, out)
+    summary = json.loads((out / "summary.json").read_text())["batch_correspondence"]
+    assert summary["batches"]["old"]["coarse_half_width_min"] is None
+    with (out / "batch_correspondence.tsv").open(newline="") as stream:
+        assert [row["state"] for row in csv.DictReader(stream, delimiter="\t")] == [
+            "unpaired_no_map"
+        ] * 2
+    assert (out / "matrix-join.json").is_file()

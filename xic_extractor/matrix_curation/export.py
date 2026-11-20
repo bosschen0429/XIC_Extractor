@@ -166,7 +166,7 @@ def read_sample_metadata_file(path: Path) -> tuple[SampleMetadata, ...]:
         path
     ):
         raise ValueError(
-            f"樣本資料需為含 schema_version 與 sample_name 欄的 TSV/CSV：{path}"
+            f"請選擇從工作區樣本編輯器匯出的樣本資料（TSV 或 CSV）：{path}"
         )
     return load_sample_metadata(path)
 
@@ -266,9 +266,6 @@ def describe_steps(
 def _step_parameters(
     step: CurationStep, values: Mapping[str, object]
 ) -> dict[str, float]:
-    unknown = sorted(set(values) - {parameter.key for parameter in step.parameters})
-    if unknown:
-        raise ValueError(f"{step.label}不支援參數：{unknown[0]}")
     parsed = {}
     for parameter in step.parameters:
         raw = values.get(parameter.key)
@@ -324,10 +321,6 @@ def prepare_matrix_curation(
     Remove supported derivative ions first, then filter the remaining features.
     Internal standards remain protected at every step. Sources are never modified.
     """
-    by_key = {step.key: step for step in STEPS}
-    unknown = sorted(set(steps) - set(by_key))
-    if unknown:
-        raise ValueError(f"不支援的整理步驟：{unknown[0]}")
     enabled = [step for step in STEPS if step.key in steps]
     if not enabled:
         raise ValueError("請至少啟用一個整理步驟。")

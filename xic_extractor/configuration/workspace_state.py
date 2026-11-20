@@ -68,8 +68,8 @@ def read_workspace(config_dir: Path) -> dict:
         return state
     except (OSError, ValueError, TypeError, ConfigError) as exc:
         raise ConfigError(
-            f"{path}: 工作狀態無法讀取；原檔保留。"
-            f"請手動修正欄位後重跑；舊設定檔請刪除 version 那一行。{exc}"
+            f"{path}: 工作區設定檔無法讀取，原檔已保留。刪除或改名這個檔案後重新啟動，"
+            "工作區會用預設值重新建立；目前儲存的批次設定與目標清單會清空。"
         ) from exc
 
 

@@ -186,7 +186,7 @@ function applyPublishedCuration() {
   if (!state.page || key(state.page.source.replace(/[\\/][^\\/]+$/, "")) !== key(result)) return;
   if (state.page.curation && key($("source").value) === key(state.page.curation.path))
     $("source").value = result;
-  action(loadBatch, "正在套用新的矩陣整理…");
+  action(loadBatch, "正在套用新的整理結果…");
 }
 function controls() {
   applyPublishedCuration();
@@ -290,7 +290,7 @@ function selectionEmpty(title, description) {
   $("selection-empty-title").textContent = title;
   $("selection-empty-description").textContent = description;
 }
-const reviewScopes = {matrix: "矩陣群組", unresolved: "多峰留空的群組", archive: "未採用群組", curation_removed: "整理時移除", candidates: "未分組候選"};
+const reviewScopes = {matrix: "矩陣 feature", unresolved: "多峰留空的 feature", archive: "未採用的 feature", curation_removed: "整理時移除", candidates: "未分組候選"};
 function emptyResultGuidance() {
   const filters = state.filters, parts = [];
   if (state.page.source_kind !== "targeted_workbook") {
@@ -434,10 +434,10 @@ function renderTargetedOverview(summary) {
     switch (target.focus_kind) {
       case "minority_counted": return "是否抓錯峰";
       case "minority_not_counted": return "是否漏抓";
-      case "mixed": return target.focus_samples.length ? "沒有明顯多數，看檢閱註記" : "";
+      case "mixed": return target.focus_samples.length ? "沒有明顯多數，看需要看的結果" : "";
       default:
-        // Quality notes on counted peaks affect quantitation; they stay one level down.
-        return target.counted && target.review ? `${target.review} 筆檢閱註記` : "";
+        // Labels that need a look on counted peaks affect quantitation; they stay one level down.
+        return target.counted && target.needs_look ? `${target.needs_look} 筆需要看` : "";
     }
   };
   for (const target of summary.targets) {
@@ -484,9 +484,9 @@ function renderUntargetedOverview(summary) {
   };
   const lead = node("div", undefined, "overview-lead");
   const heading = node("div", undefined, "overview-heading");
-  heading.append(node("h2", `${count(summary.matrix_count)} 組進入矩陣`));
+  heading.append(node("h2", `${count(summary.matrix_count)} 個 feature 進入矩陣`));
   const actions = node("div", undefined, "overview-actions");
-  openScope("瀏覽矩陣群組", "matrix", actions, "primary");
+  openScope("瀏覽矩陣 feature", "matrix", actions, "primary");
   heading.append(actions);
   const metrics = node("div", undefined, "overview-metrics");
   const complete = node("div"); complete.append(node("strong", count(summary.complete_count)), node("span", "全部樣本都有值")); metrics.append(complete);
@@ -503,7 +503,7 @@ function renderUntargetedOverview(summary) {
   lead.append(heading, metrics);
   host.append(lead);
   const table = node("table", undefined, "overview-table overview-coverage");
-  const head = node("tr"); head.append(node("th", "樣本"), node("th", "有定量值的矩陣群組")); table.append(head);
+  const head = node("tr"); head.append(node("th", "樣本"), node("th", "有定量值的 feature")); table.append(head);
   for (const sample of summary.samples) {
     const row = node("tr"), cell = node("td");
     cell.append(meter(sample.numeric_count, summary.matrix_count));
@@ -512,9 +512,9 @@ function renderUntargetedOverview(summary) {
   host.append(table);
   const more = node("details", undefined, "overview-more"); more.append(node("summary", "未進入矩陣的紀錄"));
   const archived = node("div", undefined, "overview-actions");
-  openScope(`${count(summary.archive_count)} 組未採用`, "archive", archived);
+  openScope(`${count(summary.archive_count)} 個未採用`, "archive", archived);
   if (summary.curation_removed_count)
-    openScope(`${count(summary.curation_removed_count)} 組整理時移除`, "curation_removed", archived);
+    openScope(`${count(summary.curation_removed_count)} 個整理時移除`, "curation_removed", archived);
   openScope(`${count(summary.candidate_count)} 筆未分組候選`, "candidates", archived);
   more.append(archived);
   host.append(more);
@@ -567,7 +567,7 @@ function renderPage(page) {
   $("batch-description").title = page.source;
   // A curated result names the curation whose Matrix the page follows.
   $("batch-curation").hidden = !page.curation;
-  $("batch-curation").textContent = page.curation ? `依矩陣整理 ${page.curation.name}` : "";
+  $("batch-curation").textContent = page.curation ? `依整理結果 ${page.curation.name}` : "";
   $("batch-curation").title = page.curation?.path || "";
   const download = $("result-download");
   download.hidden = !page.result_artifact;
@@ -583,21 +583,21 @@ function renderPage(page) {
   }
   $("batch-count").hidden = false;
   $("batch-count").textContent = page.overview?.kind === "untargeted"
-    ? `${count(page.samples.length)} 樣本 · ${count(page.overview.matrix_count)} 組`
+    ? `${count(page.samples.length)} 樣本 · ${count(page.overview.matrix_count)} 個 feature`
     : `${count(page.samples.length)} 樣本 · ${count(page.run_total)} ${targeted ? "目標" : "項目"}`;
   const filtered = page.matched_count !== page.run_total;
   const untargetedScope = page.overview?.kind === "untargeted";
   const scopeName = reviewScopes[page.review_scope];
   $("list-summary").replaceChildren(
     node("strong", untargetedScope ? scopeName || "所有紀錄" : noun),
-    node("span", untargetedScope ? `${count(page.matched_count)} 組`
+    node("span", untargetedScope ? `${count(page.matched_count)} 筆`
       : filtered ? `${count(page.matched_count)} / ${count(page.run_total)}` : count(page.run_total)),
   );
   // The list itself shows the ordering through each row's distance.
   if (nearest) $("list-summary").append(node("span", `≈ m/z ${page.nearest_mz}`, "list-sort"));
   $("nearest-results-note").hidden = !(nearest && page.missing_mz_count);
   $("nearest-results-note").textContent = nearest && page.missing_mz_count
-    ? `${count(page.missing_mz_count)} 組缺少有效 m/z，未排序`
+    ? `${count(page.missing_mz_count)} 筆缺少有效 m/z，未排序`
     : "";
   const list = $("item-list");
   list.replaceChildren();
@@ -904,7 +904,7 @@ async function startCurves() {
     const ids = curveSequence(), index = ids.indexOf($("xic-sample").value);
     $("xic-position").textContent = index < 0 ? "" : `${index + 1} / ${ids.length}`;
     const note = state.curveNotes?.[$("xic-sample").value];
-    $("xic-note").textContent = note && note !== "—" ? `檢閱註記：${note}` : "";
+    $("xic-note").textContent = note || "";
     $("xic-note").hidden = !$("xic-note").textContent;
   }
   if (targeted && !$("xic-dialog").open) {

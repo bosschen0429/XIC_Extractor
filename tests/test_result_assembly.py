@@ -519,8 +519,6 @@ def test_istd_nl_dropout_waits_for_backfill_even_when_ms1_coherent() -> None:
     assert "targeted_rt_conflict" not in projection.conflict_reasons
     assert "targeted_rt_review" not in projection.review_reasons
     assert "cid_nl_method_not_supported" in projection.not_counted_reasons
-    assert "istd_nl_fail_without_dropout_support" not in projection.not_counted_reasons
-    assert "role_aware_istd_expected_present" not in projection.support_reasons
 
 
 def test_analyte_trace_quality_is_review_not_identity() -> None:
@@ -729,7 +727,7 @@ def test_confirmed_rt_drift_is_context_not_review(is_istd) -> None:
 
 
 @pytest.mark.parametrize("quality_review", [(), ("trace_morphology_review",)])
-def test_confirmed_backfill_resolves_dropout_review_but_not_quality(quality_review):
+def test_confirmed_backfill_counts_and_keeps_missing_nl_as_review(quality_review):
     from xic_extractor.extraction.targeted_product_projection import (
         build_targeted_product_projection,
     )
@@ -744,13 +742,17 @@ def test_confirmed_backfill_resolves_dropout_review_but_not_quality(quality_revi
             "targeted_rt_review",
             "plausible_nl_dropout_review",
             "missing_ms2_not_observed",
-            "backfill_identity_confirmed",
             *quality_review,
         ),
     )
     assert projection.counted_detection is True
-    assert projection.review_reasons == quality_review
-    assert projection.review_state == ("flagged" if quality_review else "none")
+    # Backfill identity lets the ISTD count; its missing NL stays to be read.
+    assert projection.review_reasons == (
+        "plausible_nl_dropout_review",
+        "missing_ms2_not_observed",
+        *quality_review,
+    )
+    assert projection.review_state == "flagged"
     assert "cross_sample_backfill_identity" in projection.support_reasons
 
 

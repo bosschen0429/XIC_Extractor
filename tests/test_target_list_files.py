@@ -135,7 +135,7 @@ def test_unknown_delta_mass_setting_is_rejected(tmp_path):
     path = tmp_path / "list.xlsx"
     files.save_target_list(files.create_target_list(targeted_rows()), path)
     _sheet(path, "Delta Mass Settings", [["key", "value"], ["strategy", "cid-nl"]])
-    with pytest.raises(ConfigError, match="不支援的設定 'strategy'"):
+    with pytest.raises(ConfigError, match="不支援的設定「strategy」"):
         files.load_target_list(path)
 
 
