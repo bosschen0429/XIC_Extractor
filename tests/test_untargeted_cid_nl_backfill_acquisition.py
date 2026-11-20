@@ -656,8 +656,20 @@ def test_backfill_containing_peak_closes_assessment_outside_apex_window(
     )
 
 
-@pytest.mark.parametrize("query,eligible", [(8.0, True), (8.55, False)])
-def test_reused_hold_peak_needs_its_own_group_window(tmp_path, query, eligible):
+@pytest.mark.parametrize(
+    "centers,held_apexes,query,reused_apex",
+    [
+        ((7.98, 8.0, 8.02), (8.0,), 8.0, 8.0),
+        ((7.98, 8.0, 8.02), (8.0,), 8.55, None),
+        # Re-asked at one peak's query, the other peak's record selects this
+        # peak's segment too; only the record that measured it is reused.
+        ((8.0, 8.3), (8.0, 8.3), 8.0, 8.0),
+        ((8.0, 8.3), (8.0, 8.3), 8.3, 8.3),
+    ],
+)
+def test_reused_hold_peak_needs_its_own_group_window(
+    tmp_path, centers, held_apexes, query, reused_apex
+):
     from tests.untargeted_cid_nl_real_data_adapter_fixtures import (
         build_sample_adapter_scenario,
     )
@@ -666,7 +678,7 @@ def test_reused_hold_peak_needs_its_own_group_window(tmp_path, query, eligible):
     )
 
     scenario = build_sample_adapter_scenario(tmp_path)
-    source = _FakeRaw((7.98, 8.0, 8.02))
+    source = _FakeRaw(centers)
     source.scans = tuple(replace(scan, precursor_mz=500.5) for scan in source.scans)
     peaks = scenario.discover(source)
     raw, _ = scenario.open_raw(source)
@@ -685,13 +697,20 @@ def test_reused_hold_peak_needs_its_own_group_window(tmp_path, query, eligible):
         source=scenario.fixture.source(scenario.fixture.sample("S1")),
         peak_config=scenario.peak_config,
     )
-    assert (attempt is not None) is eligible
+    assert [
+        peak.integration.rt_apex_min for peak in original.candidate_peaks
+    ] == pytest.approx(held_apexes, abs=0.005)
+    assert (attempt is not None) is (reused_apex is not None)
     if attempt is not None:
+        (measured,) = (
+            peak
+            for peak in original.candidate_peaks
+            if peak.integration.rt_apex_min == pytest.approx(reused_apex, abs=0.005)
+        )
         assert attempt.group_hypothesis_id == "bounded-group"
         assert attempt.acquisition is capture.acquisition
         assert is_ms1_only_cid_nl_backfill_assessment(attempt.assessment)
-        assert (
-            attempt.assessment.candidate_peaks[0].integration
-            == original.candidate_peaks[0].integration
+        assert attempt.assessment.candidate_peaks[0].integration == (
+            measured.integration
         )
         assert not is_ms1_only_cid_nl_backfill_assessment(original)
