@@ -126,8 +126,9 @@ they do not qualify as independent seeds. The complete envelope does not
 establish one chemical component or individual component areas.
 
 An unresolved shoulder remains a review condition (`physical_shoulder_overlap`).
-Targeted carries it into the product review reasons; Untargeted retains it as
-provisional evidence and excludes it from independent owner quantification.
+Targeted carries it into the product review reasons; Untargeted quantifies the
+envelope when the peak otherwise qualifies and carries the same reason on that
+cell.
 NL evidence does not change this physical definition. Targeted uses the same
 owner for NL and no-NL inputs; its acquisition context includes one configured
 window width on each side, while only apexes inside the original selection

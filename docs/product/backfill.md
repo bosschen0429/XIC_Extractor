@@ -232,7 +232,9 @@ continuity; smoothing it into a peak does not supply missing acquired support.
 
 1. An eligible missing Untargeted cell can yield
    `ms1_only_backfill_observation` when the cell has exactly one
-   group-bounded MS1 peak and no same-sample CID-NL evidence.
+   group-bounded MS1 peak and no qualifying CID-NL relation. The peak can be
+   newly measured or a measured HOLD peak without a unique qualifying relation;
+   that sample's NL events stay recorded but do not support the value.
 2. `ProductionCellDecision` can write the area of that observation as a
    `backfilled` cell.
 3. A backfilled sample does not become a detected member of the group.
