@@ -2653,8 +2653,6 @@ def test_curve_history_restores_snapshot_after_pending_load(
     expect(page.locator("#status")).to_contain_text(
         "診斷曲線已載入", timeout=BACKGROUND_JOB_TIMEOUT_MS
     )
-    # Closing during payload loading must not mount the response into a hidden
-    # drawer; Forward can request that same completed curve snapshot again.
     view_id = page.locator("#xic-download").get_attribute("href").split("/")[-1]
     view_id = view_id.split(".")[0]
     view_url = f"**/api/views/{view_id}"
@@ -2667,8 +2665,6 @@ def test_curve_history_restores_snapshot_after_pending_load(
             route.continue_()
 
     if filter_pending:
-        # This history entry was captured while acquisition was still pending.
-        # Replacing live detail must not lose its eventual view ID.
         page.locator("#target-id").select_option("ISTD")
         expect(page.locator("#item-title")).to_contain_text("ISTD")
         expect(page.locator("#target-id")).to_be_enabled()
@@ -2899,7 +2895,6 @@ def test_delayed_cached_curve_cannot_replace_current_sample_feedback(
         else:
             with page.expect_response(old_url):
                 old.fulfill(response=old.fetch())
-        # Flush the released payload's consumer before checking visible authority.
         page.evaluate("""() => new Promise(resolve =>
             requestAnimationFrame(() => requestAnimationFrame(resolve)))""")
         expect(page.locator("#xic-sample")).to_have_value("S4")
@@ -3789,7 +3784,6 @@ def test_delayed_review_payload_cannot_replace_newer_sample_selection(
     page.locator("#source").fill(str(workbook))
     page.locator("#open-form button[type=submit]").click()
     page.locator("#targeted-overview td button", has_text="Analyte").click()
-    # Payload loading must not prevent a newer query from becoming authoritative.
     expect(page.locator("#target-sample")).to_be_enabled()
     page.wait_for_function(
         "() => !document.querySelector('#recorded-review').children.length"
@@ -3805,7 +3799,6 @@ def test_delayed_review_payload_cannot_replace_newer_sample_selection(
     assert current_view and old_view != current_view
     with page.expect_response(lambda response: response.url.endswith(old_view)):
         delayed[0].fulfill(response=delayed[0].fetch())
-    # Let the response consumer run before checking its obsolete data never mounts.
     page.evaluate("""() => new Promise(resolve =>
         requestAnimationFrame(() => requestAnimationFrame(resolve)))""")
     expect(saved).to_have_attribute("data-view-id", current_view)
