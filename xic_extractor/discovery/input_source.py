@@ -14,6 +14,7 @@ from xic_extractor.discovery.batch_contract import validate_discovery_peak_artif
 from xic_extractor.discovery.csv_reader import (
     DiscoveryBatchInput,
     _machine_field,
+    _parse_bool,
     _parse_peak_row,
     parse_discovery_event_row,
     require_current_discovery_columns,
@@ -35,6 +36,7 @@ class CandidateLocation:
     peak_mz: float
     neutral_loss_tag: str
     admitted: bool
+    requires_overlap_review: bool
     offset: int
     byte_size: int
     row_number: int
@@ -119,6 +121,7 @@ class DiscoveryInputSource(Mapping[str, tuple[DiscoveryPeak, ...]]):
                         mz,
                         row["neutral_loss_tag"],
                         row["status"] == "admitted",
+                        _parse_bool(path, row_number, row, "requires_overlap_review"),
                         offset,
                         stream.tell() - offset,
                         row_number,

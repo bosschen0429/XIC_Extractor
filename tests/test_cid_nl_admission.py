@@ -77,11 +77,13 @@ def test_alignment_and_delta_mass_read_one_peak_mass(tmp_path, apex_mz):
 
 
 @pytest.mark.parametrize("with_supported", [False, True], ids=["all_review", "mixed"])
-def test_review_rows_never_become_alignment_roots(
-    tmp_path, monkeypatch, with_supported
-):
-    stems = ("Rescued", "Overlap", "Orphan") + (
-        ("Clean1", "Clean2") if with_supported else ()
+def test_held_rows_never_become_alignment_roots(tmp_path, monkeypatch, with_supported):
+    """Discovery holds peaks without NL support; an overlap-review peak is
+    admitted and its review travels with the observation."""
+    stems = (
+        ("Rescued", "Overlap", "Orphan", "Clean1", "Clean2")
+        if with_supported
+        else ("Rescued", "Orphan")
     )
     paths = tuple(tmp_path / f"{stem}.raw" for stem in stems)
     for path in paths:
@@ -127,12 +129,13 @@ def test_review_rows_never_become_alignment_roots(
                 peak.status
                 == {
                     "Rescued": "no_nl_event",
-                    "Overlap": "overlap",
+                    "Overlap": "admitted",
                     "Clean1": "admitted",
                     "Clean2": "admitted",
                 }[path.stem]
             )
             (expected_ids if peak.admitted else rejected_ids).add(peak.peak_id)
+            assert peak.requires_overlap_review == (path.stem == "Overlap")
         folder = tmp_path / path.stem
         folder.mkdir()
         receipts.update(
@@ -179,12 +182,16 @@ def test_review_rows_never_become_alignment_roots(
     )
     assert {cid for cid, _ in plan.subject_batch.candidate_memberships} == expected_ids
     if with_supported:
+        assert plan.rt_reference_subjects is not None
+        assert {cid for cid, _ in plan.rt_reference_subjects.candidate_memberships} == {
+            peak.peak_id for stem in ("Clean1", "Clean2") for peak in candidates[stem]
+        }
         partition = materialize_untargeted_partition(plan, plan.subject_batch)
         assert {
             c.peak_id for job in partition.jobs for c in job.candidates
         } == expected_ids
         assert all(not job.support_candidates for job in partition.jobs)
-        # An accepted root does not authorize an unresolved MS1-only refill.
+        # A Backfill measurement that needs overlap review keeps its peak.
         sample = next(s for s in plan.context.samples if s.raw_stem == "Overlap")
         raw = raws[paths[1]]
         evaluations = []
@@ -211,7 +218,8 @@ def test_review_rows_never_become_alignment_roots(
             evaluations[0].state == "available"
             and evaluations[0].requires_overlap_review
         )
-        assert observation is None
+        assert observation is not None
+        assert observation.physical_evaluation is evaluations[0]
     result = execute_untargeted_plan(
         plan,
         output_dir=tmp_path / "alignment",
@@ -237,9 +245,9 @@ def test_review_rows_never_become_alignment_roots(
 def test_alignment_measurement_decides_admission_through_the_whole_run(
     tmp_path, monkeypatch, alignment_signal
 ):
-    """Discovery admits Clean2's peak; RAW read by Alignment no longer holds an
-    available, unshouldered peak there, so that peak does not enter Alignment
-    and the run and its explanation complete."""
+    """Discovery admits Clean2's peak and Alignment measures it again. A flat
+    trace there holds no available peak, so the peak does not enter Alignment;
+    an overlapping trace keeps the peak and its cell carries the review."""
     from tests.alignment_pipeline_helpers import render
     from tests.cid_nl_runtime_fixtures import (
         load_plan_inputs,
@@ -325,12 +333,16 @@ def test_alignment_measurement_decides_admission_through_the_whole_run(
         for evidence in completed.capture_evidence
         if evidence.capture_stage == "initial_capture"
     }
-    assert measured == {kept.peak_id}
-    # The batch still accounts for every declared peak exactly once.
-    (exclusion,) = completed.application_result.excluded_candidates
-    assert exclusion.candidate_id == dropped.peak_id
-    assert exclusion.peak_status == "admitted"
-    assert exclusion.reason_code == "discovery_candidate_not_search_eligible"
+    if alignment_signal == "flat":
+        assert measured == {kept.peak_id}
+        # The batch still accounts for every declared peak exactly once.
+        (exclusion,) = completed.application_result.excluded_candidates
+        assert exclusion.candidate_id == dropped.peak_id
+        assert exclusion.peak_status == "admitted"
+        assert exclusion.reason_code == "discovery_candidate_not_search_eligible"
+    else:
+        assert measured == {kept.peak_id, dropped.peak_id}
+        assert not completed.application_result.excluded_candidates
     matrix = render("matrix", tmp_path / "matrix.tsv", completed.application_result)
     loaded = load_plan_inputs(plan)
     report = write_alignment_explanation(
@@ -345,6 +357,21 @@ def test_alignment_measurement_decides_admission_through_the_whole_run(
         full_audit=True,
     )
     assert report.exists()
+    if alignment_signal == "overlap":
+        import json
+        import sqlite3
+
+        with sqlite3.connect(report) as db:
+            reviews = dict(
+                db.execute(
+                    "SELECT s.sample_key, c.review_reasons FROM cells c "
+                    "JOIN samples s ON s.id=c.sample WHERE c.value IS NOT NULL"
+                )
+            )
+        assert {key: json.loads(value) for key, value in reviews.items()} == {
+            "Clean1": [],
+            "Clean2": ["physical_shoulder_overlap"],
+        }
 
 
 def test_alignment_rejects_raw_replaced_after_discovery_without_recalibration(

@@ -39,6 +39,7 @@ from xic_extractor.untargeted_execution.partition.cid_nl_backfill_acquisition im
     UntargetedCidNlBackfillTarget,
     UntargetedCidNlBackfillTraceBatch,
     backfill_untargeted_cid_nl_sample_subject,
+    reuse_cid_nl_backfill_peak,
 )
 from xic_extractor.untargeted_execution.partition.cid_nl_sample_acquisition import (
     CidNlAcquisitionResult,
@@ -59,23 +60,29 @@ class _RuntimeJobState:
     error: Exception | None = None
     adapter_result: CidNlAcquisitionResult | None = None
     backfill_support: _BackfillSupportContext | None = None
-    backfill_input: UntargetedCidNlBackfillInput | None = None
     backfill_attempts: tuple[UntargetedCidNlBackfillAttemptResult, ...] = ()
     backfill_targets: tuple[UntargetedCidNlBackfillTarget, ...] = ()
 
-    def apply_backfill_decision(self, decision: CidNlBackfillDecision) -> None:
-        """Translate a resolved scientific decision into runtime work only.
+    @property
+    def backfill_input(self) -> UntargetedCidNlBackfillInput | None:
+        if len(self.backfill_attempts) == 1:
+            return self.backfill_attempts[0].backfill_input
+        return None
 
-        Initial assessments already carry reused HOLD candidates. Once any group
-        searches, the scalar reuse carrier yields to the per-group attempts.
-        """
-        if decision.action == "reuse" and not self.backfill_targets:
-            self.backfill_input = UntargetedCidNlBackfillInput(
-                sample=self.job.sample, candidate_assessment=decision.assessment
+    def apply_backfill_decision(self, decision: CidNlBackfillDecision) -> None:
+        """Keep a measured revisit bound to the group which authorized it."""
+        target = UntargetedCidNlBackfillTarget.from_question(decision.question)
+        if decision.action == "reuse":
+            assert self.adapter_result is not None
+            attempt = reuse_cid_nl_backfill_peak(
+                target=target,
+                capture=self.adapter_result,
+                source=self.job.acquisition_source_expectation.source,
+                peak_config=self.job.peak_config,
             )
+            if attempt is not None:
+                self.backfill_attempts += (attempt,)
         elif decision.action == "search":
-            self.backfill_input = None
-            target = UntargetedCidNlBackfillTarget.from_question(decision.question)
             self.backfill_targets = tuple(
                 sorted(
                     (*self.backfill_targets, target),
@@ -193,6 +200,7 @@ def _execute_initial_assessment(state: _RuntimeJobState) -> None:
                 settings=job.settings,
                 peak_config=job.peak_config,
                 raw=None,
+                rt_reference_only=job.rt_reference_only,
                 signal_processing_profile=job.signal_processing_profile,
             )
     except Exception as exc:
@@ -251,6 +259,7 @@ def _execute_initial_assessment_batch(
                 peak_config=state.job.peak_config,
                 raw=raw,
                 _preacquired_traces=trace_batch,
+                rt_reference_only=state.job.rt_reference_only,
                 signal_processing_profile=state.job.signal_processing_profile,
             )
     except Exception as exc:
@@ -443,8 +452,6 @@ def _execute_backfill_batch(phase: _BatchSamplePhaseState) -> None:
                     _preacquired_traces=trace_batch,
                 )
                 state.backfill_attempts += (backfill,)
-            if len(state.backfill_attempts) == 1:
-                state.backfill_input = state.backfill_attempts[0].backfill_input
     except Exception as exc:
         for state in pending:
             state.error = exc
@@ -550,7 +557,6 @@ class _SampleBackfillWorkerRequest:
 class _BackfillJobOutcome:
     work_unit_key: str
     backfill_attempts: tuple[UntargetedCidNlBackfillAttemptResult, ...]
-    backfill_input: UntargetedCidNlBackfillInput | None
     error: Exception | None
 
 
@@ -569,10 +575,7 @@ class _SampleBackfillWorkerResponse:
         )
         for outcome in self.job_outcomes:
             state = states[outcome.work_unit_key]
-            if outcome.backfill_attempts:
-                state.backfill_attempts = outcome.backfill_attempts
-            if outcome.backfill_input is not None:
-                state.backfill_input = outcome.backfill_input
+            state.backfill_attempts += outcome.backfill_attempts
             if state.error is None:
                 state.error = outcome.error
 
@@ -586,13 +589,15 @@ def _execute_backfill_sample_phase(
         for state in local.states
         if state.error is None and state.backfill_targets
     )
+    for state in pending:
+        # The response transports only newly acquired attempts, not parent-local reuse.
+        state.backfill_attempts = ()
     _execute_backfill_batch(local)
     return _SampleBackfillWorkerResponse(
         job_outcomes=tuple(
             _BackfillJobOutcome(
                 work_unit_key=state.job.work_unit_key,
                 backfill_attempts=state.backfill_attempts,
-                backfill_input=state.backfill_input,
                 error=state.error,
             )
             for state in pending

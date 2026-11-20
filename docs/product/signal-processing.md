@@ -126,8 +126,9 @@ they do not qualify as independent seeds. The complete envelope does not
 establish one chemical component or individual component areas.
 
 An unresolved shoulder remains a review condition (`physical_shoulder_overlap`).
-Targeted carries it into the product review reasons; Untargeted retains it as
-provisional evidence and excludes it from independent owner quantification.
+Targeted carries it into the product review reasons; Untargeted quantifies the
+envelope when the peak otherwise qualifies and carries the same reason on that
+cell.
 NL evidence does not change this physical definition. Targeted uses the same
 owner for NL and no-NL inputs; its acquisition context includes one configured
 window width on each side, while only apexes inside the original selection
@@ -195,6 +196,21 @@ The robust MAD aggregation and qualification factor here are product policy;
 that paper does not validate this chromatographic gate or its threshold.
 These checks address missing acquired support and insufficient local contrast,
 not every form of noise or chemical identity.
+
+### Overlap surroundings
+
+Top ripples flag a peak with a shoulder and a slice of a continuous plateau
+alike. Missing scans can cut such a plateau, and a slice whose boundaries sit
+on them passes local relief. Discovery and Backfill therefore qualify an
+overlap-review peak only when it rises above the acquired signal just outside
+it. Each side's level is the median of the nonzero raw scans within 0.5 min
+outside the selected segment; zero scans are missing observations, and a
+shorter acquired context supplies what it has. When the higher side's level is
+at least half the segment's raw apex, the peak fails with
+`overlap_not_above_surroundings`. A neighboring peak inside that flank raises
+the level as background does. Peaks without overlap review keep local relief
+only. The flank and the one-half limit are product policy chosen on a reviewed
+sample of overlap peaks, not a calibrated error rate.
 
 Known-reference ISTD localization answers a narrower question than discovering
 local maxima: small surface ripples should not erase a supported broad contour

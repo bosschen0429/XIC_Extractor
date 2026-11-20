@@ -48,6 +48,7 @@ _CELL_FIELDS = frozenset(
         "evidence_states",
         "reason_codes",
         "signal_quality",
+        "review_reasons",
         "membership_risks",
         "observation",
     }
@@ -446,6 +447,7 @@ class ExplanationReportWriter:
                 _ordered_json(list(cell.get("evidence_states", ()))),
                 _ordered_json(list(cell.get("reason_codes", ()))),
                 _ordered_json(signal_quality),
+                _ordered_json(list(cell.get("review_reasons", ()))),
                 _compressed([self._risk_references(risk) for risk in risks])
                 if risks
                 else None,
@@ -616,7 +618,7 @@ class ExplanationReportWriter:
             ),
         )
         db.executemany(
-            "INSERT INTO cells VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO cells VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (
                 (self._groups[group_id][0], self._samples[sample], *row)
                 for (group_id, sample), row in self._cells.items()

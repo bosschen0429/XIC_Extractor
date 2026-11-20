@@ -30,9 +30,10 @@ terminology remains owned by the [Domain Glossary](domain-glossary.md).
   choose an arbitrary winner.
 - Each finalized group has exactly one disposition: `established`,
   `provisional`, `unresolved` or `rejected`. Established requires accepted
-  members from at least two distinct samples; a singleton is always
-  provisional. Low support alone is not rejection. Disposition and output
-  inclusion are separate decisions.
+  members from at least two distinct samples, at least one of them a peak not
+  measured on an unresolved shoulder or overlap; a singleton, or a group made
+  only of such peaks, is provisional. Low support alone is not rejection.
+  Disposition and output inclusion are separate decisions.
 - `feature_id` is not identity. Discovery's `feature_id` labels candidates that
   share one MS1 peak within one sample. Alignment's `feature_id` (`F000001`)
   numbers the published groups of one report in raw measured member order, never

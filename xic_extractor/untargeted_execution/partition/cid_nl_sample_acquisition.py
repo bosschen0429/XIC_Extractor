@@ -328,6 +328,7 @@ def adapt_current_discovery_sample_subject(
     method_subject: CidNlMethodSubject,
     peaks: tuple[DiscoveryPeak, ...],
     support_candidates: tuple[DiscoveryPeak, ...] = (),
+    rt_reference_only: bool = False,
     settings: DiscoverySettings,
     peak_config: ExtractionConfig,
     raw: CidNlRawSource | None,
@@ -421,6 +422,7 @@ def adapt_current_discovery_sample_subject(
         source=source,
         signal_processing_profile=signal_processing_profile,
         evidence_sink=capture_evidence,
+        rt_reference_only=rt_reference_only,
         _preacquired_traces=_preacquired_traces,
     )
     evidence_refs: list[CidNlEvidenceObservation] = []
@@ -540,6 +542,7 @@ def _adopt_peak_observations(
     source,
     signal_processing_profile: SignalProcessingProfile,
     evidence_sink: list[RetainedCaptureEvidence] | None = None,
+    rt_reference_only: bool = False,
     _preacquired_traces: UntargetedCidNlSampleTraceBatch | None = None,
 ) -> tuple[TraceAcquisitionBatch | None, tuple[tuple[str, PeakObservation], ...]]:
     if not peaks:
@@ -578,13 +581,15 @@ def _adopt_peak_observations(
                 f"planned={requests[index]!r}"
             )
     # Alignment's own measurement decides admission: a peak whose measurement
-    # is not available or needs overlap review does not enter Alignment.
+    # is not available does not enter Alignment. Overlap review travels with
+    # the observation instead of holding the peak.
     admitted = tuple(
         (peak, acquired, evaluation)
         for peak, acquired, evaluation in zip(
             peaks, acquired_traces, evaluations, strict=True
         )
-        if evaluation.state == "available" and not evaluation.requires_overlap_review
+        if evaluation.state == "available"
+        and not (rt_reference_only and evaluation.requires_overlap_review)
     )
     observations: list[tuple[str, PeakObservation]] = []
     for peak, acquired, evaluation in admitted:

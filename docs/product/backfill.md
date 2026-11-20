@@ -155,9 +155,10 @@ segment whose own boundaries contain the query center. Mere overlap with the
 search window is insufficient. Multiple containing segments remain ambiguous;
 one containing segment must pass the existing complete-context, acquired-support,
 continuity, and background-contrast checks. An evaluation requiring overlap
-review does not mint a Backfill observation, even when its envelope is measurable
-and an admitted group authorized the query. Clean MS1-only observations remain
-eligible for the existing cell policy; rejected Discovery rows supply neither
+review mints the Backfill observation when it
+[rises above its surroundings](signal-processing.md#overlap-surroundings), as
+in Discovery; its cell carries the review reason `physical_shoulder_overlap`. MS1-only observations
+remain eligible for the existing cell policy; rejected Discovery rows supply neither
 new roots nor borrowed NL evidence. This candidate recovery neither
 changes the RT tolerance nor bypasses downstream ownership and duplicate-peak
 decisions. Queries with an in-window apex keep their existing selection behavior.
@@ -232,7 +233,9 @@ continuity; smoothing it into a peak does not supply missing acquired support.
 
 1. An eligible missing Untargeted cell can yield
    `ms1_only_backfill_observation` when the cell has exactly one
-   group-bounded MS1 peak and no same-sample CID-NL evidence.
+   group-bounded MS1 peak and no qualifying CID-NL relation. The peak can be
+   newly measured or a measured HOLD peak without a unique qualifying relation;
+   that sample's NL events stay recorded but do not support the value.
 2. `ProductionCellDecision` can write the area of that observation as a
    `backfilled` cell.
 3. A backfilled sample does not become a detected member of the group.

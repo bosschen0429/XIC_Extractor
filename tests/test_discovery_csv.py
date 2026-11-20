@@ -34,6 +34,7 @@ def test_peak_table_writes_each_peak_fact_once() -> None:
     # Alignment's, from these capture conditions.
     assert DISCOVERY_PEAK_COLUMNS == (
         "status",
+        "requires_overlap_review",
         "evidence_score",
         "attached_event_count",
         "peak_id",
@@ -62,13 +63,15 @@ def test_event_table_ends_with_the_located_peak_and_attachment() -> None:
 def test_peak_csv_round_trips_through_the_reader(tmp_path: Path) -> None:
     peak = _peak(
         matched_tag_names=("DNA_dR", "R"),
-        status="overlap",
+        status="no_nl_event",
+        requires_overlap_review=True,
         ms1_apex_mz=258.1083,
     )
     path = write_discovery_peaks_csv(tmp_path / "nested" / "peaks.csv", [peak])
 
     (row,) = _read_csv(path)
-    assert row["status"] == "overlap"
+    assert row["status"] == "no_nl_event"
+    assert row["requires_overlap_review"] == "TRUE"
     assert row["matched_tag_names"] == "DNA_dR;R"
     (restored,) = read_discovery_peaks_csv(path)
     assert restored == peak

@@ -115,6 +115,22 @@ class ProductionCellDecision:
             return self.payload.source
         return ""
 
+    @property
+    def review_reasons(self) -> tuple[str, ...]:
+        """Peak-shape review of the valued peak; the value is kept either way."""
+        evidence = self.evidence
+        if self.value is None or not isinstance(evidence, FinalGroupCellObservation):
+            return ()
+        for cell in evidence.effective_cells:
+            observation = cell.peak_observation
+            if (
+                observation is not None
+                and observation.integration is self.selected_integration
+                and observation.requires_overlap_review
+            ):
+                return ("physical_shoulder_overlap",)
+        return ()
+
 
 def decide_target_cell_population(
     projection: TargetPreCellProjection,

@@ -511,6 +511,7 @@ def _candidate_row(**overrides: str) -> dict[str, str]:
         "status": "admitted",
         "evidence_score": "82",
         "attached_event_count": "3",
+        "requires_overlap_review": "FALSE",
         "peak_id": "Sample_1@mz500.123456_rt8.4800",
         "sample_stem": "Sample_1",
         "peak_mz": "500.123456",

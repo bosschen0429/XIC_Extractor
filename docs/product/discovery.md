@@ -113,7 +113,6 @@ this table wins.
 | --- | --- | --- |
 | `blank` | Demoted by [blank qualification](#blank-qualification) | No |
 | `doubly_charged` | The MS1 ion reads as a doubly charged isotope ([accurate-mass reading](#accurate-mass-reading)) | No |
-| `overlap` | A shoulder or overlapping envelope whose MS2 cannot be attributed to one peak | No |
 | `no_nl_event` | A measurable MS1 peak without an [attached](#cid-nl-support-relations), precursor-verified NL event | No; review only |
 | `admitted` | At least one attached event and none of the above | Yes |
 
@@ -123,6 +122,22 @@ support scans or authorize Backfill. A legitimate group can still find a new
 MS1-only observation in another sample through [Backfill](backfill.md); that
 observation cannot resurrect a rejected peak or create a new group. A batch with
 no admitted peak completes with no subjects and an empty Matrix.
+
+A shoulder or overlapping envelope alone does not hold a peak. Top ripples also
+flag a slice of a continuous plateau cut out by missing scans, so such a peak
+must [rise above its surroundings](signal-processing.md#overlap-surroundings);
+otherwise it is held as `overlap_not_above_surroundings`. A qualified peak's
+area is measured on the unresolved envelope, and its cell carries the review
+reason `physical_shoulder_overlap`. The Workbench curve view shows the reason after that
+sample's published area when the sample is hovered or focused; it is not a
+sample risk, and the Matrix holds only the value. A group made only of such
+peaks stays [provisional](alignment.md#group-identity-and-disposition) and does
+not reach the Matrix.
+Discovery records its own physical assessment in
+`requires_overlap_review` independently of admission. Alignment needs this
+column to form the reference population of its RT calibration and drift model;
+regenerate an older peak table
+without it rather than treating missing review information as a clean peak.
 
 ### Physical qualification
 

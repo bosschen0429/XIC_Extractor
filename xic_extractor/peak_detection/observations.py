@@ -65,6 +65,8 @@ class PeakObservation:
     signal_processing_profile: SignalProcessingProfile | None = field(
         default=None, compare=False
     )
+    # Curve-free replay retains the selected-peak fact without the evaluation.
+    retained_overlap_review: bool = field(default=False, compare=False)
 
     def __post_init__(self) -> None:
         mz = _finite_float(self.mz, field="mz")
@@ -92,6 +94,13 @@ class PeakObservation:
         object.__setattr__(self, "mz", mz)
         object.__setattr__(self, "rt", rt)
         object.__setattr__(self, "intensity", intensity)
+
+    @property
+    def requires_overlap_review(self) -> bool:
+        """Whether this peak was measured on an unresolved shoulder or overlap."""
+        if self.physical_evaluation is not None:
+            return self.physical_evaluation.requires_overlap_review
+        return self.retained_overlap_review
 
     @property
     def physical_identity(self) -> PeakObservation:
@@ -291,6 +300,7 @@ def _owner_minted_peak_observation(
     object.__setattr__(observation, "generation_provenance", generation_provenance)
     object.__setattr__(observation, "source_trace", source_trace)
     object.__setattr__(observation, "physical_evaluation", physical_evaluation)
+    object.__setattr__(observation, "retained_overlap_review", False)
     object.__setattr__(
         observation, "signal_processing_profile", signal_processing_profile
     )

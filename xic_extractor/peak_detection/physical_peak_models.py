@@ -112,6 +112,15 @@ class PhysicalSegment:
     # Completed readers decode retained answers and never rebuild this live map.
     raw_component: RawPeakComponent | None = field(default=None, compare=False)
 
+    @property
+    def requires_overlap_review(self) -> bool:
+        """A shoulder or overlapping envelope whose area needs review."""
+        return (
+            self.segment_class == "shoulder_candidate"
+            or self.boundary_stop_reason == "shoulder_overlap_review"
+            or "shoulder_overlap" in self.evidence_sources
+        )
+
 
 @dataclass(frozen=True, slots=True)
 class RawPeakComponent:
@@ -187,8 +196,4 @@ class PhysicalPeakEvaluation:
     @property
     def requires_overlap_review(self) -> bool:
         segment = self.answer.selected_segment
-        return segment is not None and (
-            segment.segment_class == "shoulder_candidate"
-            or segment.boundary_stop_reason == "shoulder_overlap_review"
-            or "shoulder_overlap" in segment.evidence_sources
-        )
+        return segment is not None and segment.requires_overlap_review
