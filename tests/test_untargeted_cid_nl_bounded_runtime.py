@@ -31,18 +31,18 @@ from tests.cid_nl_runtime_fixtures import (
 )
 from tests.discovery_csv_fixtures import representative_event
 from tests.untargeted_alignment_entry_fixtures import (
+    PUBLISHED_TABLES,
     SETTINGS,
     discover,
     publish_alignment,
     published_cells,
+    published_tables,
     raw_paths,
     read_tsv,
 )
 from tests.untargeted_cid_nl_bounded_runtime_fixtures import (
     _plan,
-    known_istd_workbook,
-    scenario_acquisitions,
-    scenario_settings,
+    entry_scenario,
 )
 from tests.untargeted_partition_fixtures import (
     children_of,
@@ -78,39 +78,6 @@ def _phase_partitions(adapter, store, *, reverse_initial=False):
         if index == 0 and reverse_initial:
             partitions = tuple(reversed(partitions))
         yield from partitions
-
-
-PUBLISHED_TABLES = (
-    "alignment_matrix.tsv",
-    "alignment_review.tsv",
-    "alignment_cells.tsv",
-    "alignment_rt_anchors.tsv",
-)
-
-
-def _published_tables(output: Path) -> dict[str, bytes]:
-    return {name: (output / name).read_bytes() for name in PUBLISHED_TABLES}
-
-
-def _entry_scenario(tmp_path, scenario, sample_count=4):
-    stems = tuple(f"S{i}" for i in range(sample_count))
-    paths = raw_paths(tmp_path, stems)
-    settings = scenario_settings(scenario, SETTINGS)
-    raws, peaks = scenario_acquisitions(
-        tuple(paths.values()), settings=settings, scenario=scenario
-    )
-    return dict(
-        paths=paths,
-        raws={path.stem: raw for path, raw in raws.items()},
-        peaks=peaks,
-        settings=settings,
-        alignment_config=AlignmentConfig(anchor_min_seed_events=1),
-        known_istd_reference_workbook=(
-            known_istd_workbook(tmp_path / "reference.xlsx", stems)
-            if scenario == "istd"
-            else None
-        ),
-    )
 
 
 def _shifted_feature_raws(tmp_path, *, samples, features, shifts, spacing):
@@ -191,7 +158,7 @@ def test_partition_capacity_keeps_batch_calibration_and_grouping(tmp_path, monke
         **inputs,
     )
 
-    assert _published_tables(separate) == _published_tables(together)
+    assert published_tables(separate) == published_tables(together)
     matrix = read_tsv(together / "alignment_matrix.tsv")
     assert len(matrix) == 12
     assert all(all(float(row[stem]) > 0 for stem in paths) for row in matrix)
@@ -243,7 +210,7 @@ def test_backfill_is_partition_invariant_and_never_supplies_ms2_support(
         **inputs,
     )
 
-    assert _published_tables(separate) == _published_tables(together)
+    assert published_tables(separate) == published_tables(together)
     review = {
         row["feature_id"]: row for row in read_tsv(together / "alignment_review.tsv")
     }
@@ -260,7 +227,7 @@ def test_backfill_is_partition_invariant_and_never_supplies_ms2_support(
 def test_execution_profile_does_not_change_published_alignment(
     tmp_path, monkeypatch, scenario
 ):
-    inputs = _entry_scenario(tmp_path, scenario)
+    inputs = entry_scenario(tmp_path, scenario)
     samples = len(inputs["paths"])
     baseline = publish_alignment(
         tmp_path,
@@ -269,7 +236,7 @@ def test_execution_profile_does_not_change_published_alignment(
         execution_changes={"max_partition_jobs": 3 * samples},
         **inputs,
     )
-    tables = _published_tables(baseline)
+    tables = published_tables(baseline)
     # A known ISTD joins all three subjects into one workset, which a partition
     # cannot split.
     for index, (subjects, workers) in enumerate(((1, 1), (1, 2), (1, 4), (2, 2))):
@@ -288,7 +255,7 @@ def test_execution_profile_does_not_change_published_alignment(
             },
             **inputs,
         )
-        assert _published_tables(variant) == tables
+        assert published_tables(variant) == tables
 
     rows = read_tsv(baseline / "alignment_matrix.tsv")
     assert rows
@@ -315,7 +282,7 @@ def test_execution_profile_does_not_change_published_alignment(
 def test_bounded_runtime_skips_subjects_without_ms1_features(
     tmp_path, monkeypatch, scenario, raw_workers
 ):
-    inputs = _entry_scenario(tmp_path, scenario)
+    inputs = entry_scenario(tmp_path, scenario)
     admitted = {
         stem
         for stem, peaks in inputs["peaks"].items()
@@ -355,7 +322,7 @@ def test_bounded_runtime_skips_subjects_without_ms1_features(
 def test_bounded_runtime_failure_never_publishes_completed_batch(
     tmp_path, monkeypatch, overlap
 ):
-    inputs = _entry_scenario(tmp_path, "positive")
+    inputs = entry_scenario(tmp_path, "positive")
     read = _FakeThermoRaw.GetChromatogramData
     failing = inputs["raws"]["S2"]
 

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import csv
 from collections import Counter
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import replace
 from pathlib import Path
 
@@ -94,13 +94,15 @@ def publish_alignment(
     opened_samples: set[str] | None = None,
     peak_config_changes: Mapping[str, object] | None = None,
     execution_changes: Mapping[str, object] | None = None,
+    should_cancel: Callable[[], bool] | None = None,
+    timing_recorder: TimingRecorder | None = None,
 ) -> Path:
     """Run the formal Untargeted Alignment entry and return its output folder.
 
     Every run also checks the replaced RAW boundary and the timing record:
     an acquisition is opened at most once and serves all of its traces in one
     batched request, and no stage runs twice for the same sample. ``opened_samples``
-    receives the stems whose RAW was opened.
+    receives the stems whose RAW was opened, also when the run raises.
     """
     stems = tuple(paths)
     discovery = persist_discovery_batch(
@@ -116,54 +118,64 @@ def publish_alignment(
     )
     output_dir = tmp_path / name
     raw_dir = tmp_path / "raw"
-    recorder = TimingRecorder("alignment")
-    run_untargeted_application(
-        UntargetedRequest(
-            discovery_batch_index=DiscoveryBatchIndex(
-                path=tmp_path / f"{name}-discovery" / "discovery_batch_index.csv",
-                sample_order=discovery.sample_order,
-                peak_csvs=discovery.peak_csvs,
-                raw_files=discovery.raw_files,
-                event_csvs=discovery.event_csvs,
-                peak_receipts=discovery.peak_receipts,
-            ),
-            raw_dir=raw_dir,
-            dll_dir=tmp_path,
-            output_dir=output_dir,
-            alignment_config=alignment_config
-            or AlignmentConfig(anchor_min_seed_events=1),
-            peak_config=replace(
-                untargeted_peak_config(
-                    raw_dir=raw_dir,
-                    dll_dir=tmp_path,
-                    output_dir=output_dir,
-                    discovery_settings=settings,
+    recorder = timing_recorder or TimingRecorder("alignment")
+    try:
+        run_untargeted_application(
+            UntargetedRequest(
+                discovery_batch_index=DiscoveryBatchIndex(
+                    path=tmp_path / f"{name}-discovery" / "discovery_batch_index.csv",
+                    sample_order=discovery.sample_order,
+                    peak_csvs=discovery.peak_csvs,
+                    raw_files=discovery.raw_files,
+                    event_csvs=discovery.event_csvs,
+                    peak_receipts=discovery.peak_receipts,
                 ),
-                **(peak_config_changes or {}),
-            ),
-            discovery_settings=settings,
-            sample_metadata=sample_metadata or sample_metadata_for(stems),
-            known_istd_reference_workbook=known_istd_reference_workbook,
-            execution=replace(
-                UntargetedExecutionPolicy(
-                    profile=ExecutionProfile(
-                        alignment_workers=1, backend="thread", overlap_partitions=False
+                raw_dir=raw_dir,
+                dll_dir=tmp_path,
+                output_dir=output_dir,
+                alignment_config=alignment_config
+                or AlignmentConfig(anchor_min_seed_events=1),
+                peak_config=replace(
+                    untargeted_peak_config(
+                        raw_dir=raw_dir,
+                        dll_dir=tmp_path,
+                        output_dir=output_dir,
+                        discovery_settings=settings,
                     ),
-                    acquisition_cache_dir=tmp_path / f"{name}-facts",
+                    **(peak_config_changes or {}),
                 ),
-                **(execution_changes or {}),
+                discovery_settings=settings,
+                sample_metadata=sample_metadata or sample_metadata_for(stems),
+                known_istd_reference_workbook=known_istd_reference_workbook,
+                execution=replace(
+                    UntargetedExecutionPolicy(
+                        profile=ExecutionProfile(
+                            alignment_workers=1,
+                            backend="thread",
+                            overlap_partitions=False,
+                        ),
+                        acquisition_cache_dir=tmp_path / f"{name}-facts",
+                    ),
+                    **(execution_changes or {}),
+                ),
+                publication=UntargetedPublicationPolicy(
+                    output_level=output_level,
+                    emit_alignment_cells=True,
+                    emit_alignment_explanation=True,
+                ),
             ),
-            publication=UntargetedPublicationPolicy(
-                output_level=output_level,
-                emit_alignment_cells=True,
-                emit_alignment_explanation=True,
+            UntargetedExecutionContext(
+                timing_recorder=recorder, should_cancel=should_cancel
             ),
-        ),
-        UntargetedExecutionContext(timing_recorder=recorder),
-    )
-    handles = {
-        stem: opened.get(paths[stem], []) for stem in stems if opened.get(paths[stem])
-    }
+        )
+    finally:
+        handles = {
+            stem: opened.get(paths[stem], [])
+            for stem in stems
+            if opened.get(paths[stem])
+        }
+        if opened_samples is not None:
+            opened_samples.update(handles)
     repeated = {
         stem: windows
         for stem, opens in handles.items()
@@ -173,9 +185,19 @@ def publish_alignment(
     assert repeated == {}, repeated
     stages = Counter((r.stage, r.sample_stem) for r in recorder.records)
     assert [stage for stage, count in stages.items() if count > 1] == []
-    if opened_samples is not None:
-        opened_samples.update(handles)
     return output_dir
+
+
+PUBLISHED_TABLES = (
+    "alignment_matrix.tsv",
+    "alignment_review.tsv",
+    "alignment_cells.tsv",
+    "alignment_rt_anchors.tsv",
+)
+
+
+def published_tables(output: Path) -> dict[str, bytes]:
+    return {name: (output / name).read_bytes() for name in PUBLISHED_TABLES}
 
 
 def read_tsv(path: Path) -> list[dict[str, str]]:

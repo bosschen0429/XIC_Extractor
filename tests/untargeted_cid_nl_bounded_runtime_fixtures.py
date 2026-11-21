@@ -19,7 +19,9 @@ from tests.cid_nl_runtime_fixtures import (
     prepare_persisted_discovery_plan,
     representative_precursors,
 )
+from tests.untargeted_alignment_entry_fixtures import SETTINGS, raw_paths
 from tests.untargeted_cid_nl_batch_runtime_fixtures import _nearby_subject_candidates
+from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.applications.untargeted.istd_reference import (
     read_known_istd_reference,
 )
@@ -139,6 +141,28 @@ def known_istd_workbook(path: Path, stems) -> Path:
         results.append([stem, "known", "ISTD", 7.98, -999])
     workbook.save(path)
     return path
+
+
+def entry_scenario(tmp_path, scenario, sample_count=4):
+    """Synthetic RAW and Discovery inputs of ``scenario`` for ``publish_alignment``."""
+    stems = tuple(f"S{i}" for i in range(sample_count))
+    paths = raw_paths(tmp_path, stems)
+    settings = scenario_settings(scenario, SETTINGS)
+    raws, peaks = scenario_acquisitions(
+        tuple(paths.values()), settings=settings, scenario=scenario
+    )
+    return dict(
+        paths=paths,
+        raws={path.stem: raw for path, raw in raws.items()},
+        peaks=peaks,
+        settings=settings,
+        alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+        known_istd_reference_workbook=(
+            known_istd_workbook(tmp_path / "reference.xlsx", stems)
+            if scenario == "istd"
+            else None
+        ),
+    )
 
 
 def _plan(
