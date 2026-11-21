@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from xic_extractor.configuration.execution_profile import in_process_execution
 from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.instrument_qc.models import InstrumentQCStatus, SDOLEKTrendRow
 from xic_extractor.instrument_qc.pipeline_contracts import XICSource
@@ -123,5 +124,6 @@ def _peak_config(data_dir: Path, dll_dir: Path) -> ExtractionConfig:
         peak_min_prominence_ratio=0.05,
         ms2_precursor_tol_da=0.5,
         nl_min_intensity_ratio=0.01,
+        execution=in_process_execution(),
         resolver_mode="local_minimum",
     )

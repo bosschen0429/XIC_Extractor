@@ -25,6 +25,7 @@ from xic_extractor.alignment.ownership_models import (
 from xic_extractor.alignment.result.scientific_alignment import (
     ObservedSearchSubject,
 )
+from xic_extractor.configuration.execution_profile import in_process_execution
 from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.discovery.batch_contract import (
     DISCOVERY_BATCH_INDEX_COLUMNS,
@@ -496,6 +497,7 @@ def peak_config() -> ExtractionConfig:
         peak_min_prominence_ratio=0.1,
         ms2_precursor_tol_da=1.6,
         nl_min_intensity_ratio=0.01,
+        execution=in_process_execution(),
     )
 
 

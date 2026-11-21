@@ -43,6 +43,7 @@ def _peak_config() -> ExtractionConfig:
         peak_min_prominence_ratio=0.10,
         ms2_precursor_tol_da=0.5,
         nl_min_intensity_ratio=0.01,
+        execution=in_process_execution(),
     )
 
 

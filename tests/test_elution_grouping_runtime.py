@@ -9,7 +9,7 @@ from tests.alignment_pipeline_helpers import (
     written_cells,
     written_source_candidates,
 )
-from tests.cid_nl_raw_fixture import _FakeRaw, _open_bound_raw, _peak_config, _settings
+from tests.cid_nl_raw_fixture import _FakeRaw, _open_bound_raw, _settings
 from tests.cid_nl_runtime_fixtures import (
     install_runtime_raws,
     prepare_persisted_discovery_plan,
@@ -53,7 +53,6 @@ def test_crowded_doublet_uses_context_before_grouping_and_preserves_query_lineag
         precursor_mz_tolerance_ppm=20.0,
     )
     profile = SignalProcessingProfile()
-    config = _peak_config(tmp_path)
     raws, candidates = {}, {}
     expected_initial = {}
     expected_query = {}
@@ -105,7 +104,6 @@ def test_crowded_doublet_uses_context_before_grouping_and_preserves_query_lineag
             for index, path in enumerate(paths)
         ),
         settings=settings,
-        peak_config=config,
         peaks_by_sample=candidates,
         root=tmp_path / "persisted",
         dll_dir=tmp_path,
@@ -269,7 +267,6 @@ def test_review_only_input_leaves_each_group_cell_for_independent_backfill(
         precursor_mz_tolerance_ppm=20.0,
     )
     profile = SignalProcessingProfile()
-    config = _peak_config(tmp_path)
     raws, candidates = {}, {}
     for index, sample in enumerate(samples):
         path = fixture.source_paths[sample]
@@ -317,7 +314,6 @@ def test_review_only_input_leaves_each_group_cell_for_independent_backfill(
             for index, path in enumerate(paths)
         ),
         settings=settings,
-        peak_config=config,
         peaks_by_sample=candidates,
         root=tmp_path / "persisted",
         dll_dir=tmp_path,

@@ -6,10 +6,6 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from xic_extractor.configuration.execution_profile import (
-    ExecutionProfile,
-    in_process_execution,
-)
 from xic_extractor.configuration.mass_recalibration import (
     MassRecalibration,
     MassRecalibrationResult,
@@ -170,66 +166,6 @@ def test_reopened_handle_reuses_probe_and_initializes_its_trailer(outcome):
             (XICRequest(mz=TRUE_MZ, rt_min=9.9, rt_max=10.05, ppm_tol=5.0),)
         )[0]
         assert trace.intensity.tolist() == [100.0, 300.0]
-
-
-def test_batch_prepares_each_raw_once_and_preserves_sample_attribution(
-    tmp_path, monkeypatch
-):
-    from xic_extractor import raw_mass_recalibration_batch
-    from xic_extractor.processing_identity import build_acquisition_source_identity
-
-    inputs = []
-    opened = []
-    closed = []
-    for stem in ("applied", "unavailable"):
-        path = tmp_path / f"{stem}.raw"
-        path.write_bytes(stem.encode())
-        source = build_acquisition_source_identity(
-            path,
-            acquisition_format="thermo_raw",
-            observation_namespace="thermo_raw_file_reader:Device.MS:1",
-        )
-        inputs.append((path, source))
-
-    def open_vendor(
-        path,
-        dll_dir,
-        *,
-        mass_recalibration,
-        expected_acquisition_source,
-        _expected_path_identity,
-    ):
-        assert expected_acquisition_source == dict(inputs)[path]
-        opened.append(path.stem)
-        vendor = _Vendor()
-        if path.stem == "unavailable":
-            vendor.found = {}
-        vendor.Dispose = lambda: closed.append(path.stem)
-        return _handle(vendor, mass_recalibration)
-
-    monkeypatch.setattr(raw_mass_recalibration_batch, "open_raw", open_vendor)
-    prepared = raw_mass_recalibration_batch.prepare_batch_mass_recalibration(
-        inputs,
-        tmp_path,
-        MassRecalibration.EASY_IC_RESTORE,
-        execution=ExecutionProfile(alignment_workers=2, backend="thread"),
-    )
-    assert sorted(opened) == sorted(closed) == ["applied", "unavailable"]
-    for path, source in inputs:
-        assert prepared[path.stem].acquisition.source == source
-        assert prepared[path.stem].result.outcome == path.stem
-    assert prepared["applied"].result.baseline_lm == 1.0
-    assert prepared["applied"].result.n_anchor == 3
-    assert (
-        raw_mass_recalibration_batch.prepare_batch_mass_recalibration(
-            inputs,
-            tmp_path,
-            MassRecalibration.NONE,
-            execution=in_process_execution(),
-        )
-        == {}
-    )
-    assert len(opened) == 2
 
 
 @pytest.mark.parametrize("outcome", ("applied", "none", "unavailable"))

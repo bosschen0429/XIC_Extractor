@@ -4,6 +4,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from xic_extractor.configuration.execution_profile import in_process_execution
 from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence, NLResult
 from xic_extractor.extraction.result_models import ExtractionResult
@@ -259,6 +260,7 @@ def _config() -> ExtractionConfig:
         peak_min_prominence_ratio=0.1,
         ms2_precursor_tol_da=1.6,
         nl_min_intensity_ratio=0.01,
+        execution=in_process_execution(),
     )
 
 

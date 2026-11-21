@@ -16,7 +16,6 @@ def _nearby_subject_candidates(
     raw_path: Path,
     *,
     settings,
-    peak_config,
 ) -> tuple[_FakeRaw, tuple[DiscoveryPeak, ...]]:
     first_raw = _FakeRaw((7.98,))
     second_raw = _FakeRaw(

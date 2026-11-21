@@ -36,6 +36,9 @@ from xic_extractor.peak_detection.physical_peak_evaluation import (
     prepare_physical_signal,
 )
 from xic_extractor.untargeted_execution.partition import workers as partition_workers
+from xic_extractor.untargeted_execution.partition.models import (
+    BACKFILL_HALF_WINDOW_MIN,
+)
 
 
 @pytest.mark.parametrize(
@@ -453,7 +456,8 @@ def test_profile_replay_retains_positive_and_empty_backfill_evidence(
         support_policy=DdaCidNlPeakSupportPolicy(
             precursor_tolerance_da=0.01, neutral_loss_tolerance_ppm=10.0
         ),
-        peak_config=inputs.peak_config,
+        half_window_min=BACKFILL_HALF_WINDOW_MIN,
+        resolver_mode=inputs.settings.resolver_mode,
         raw=recovery_raw,
         settings=inputs.settings,
         signal_processing_profile=inputs.profile,

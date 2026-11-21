@@ -9,6 +9,7 @@ from types import SimpleNamespace
 import numpy as np
 
 from xic_extractor.configuration.cid_nl_profile import NeutralLossProfile
+from xic_extractor.configuration.execution_profile import in_process_execution
 from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
@@ -126,6 +127,7 @@ def _peak_config(tmp_path: Path) -> ExtractionConfig:
         ms2_precursor_tol_da=0.5,
         nl_min_intensity_ratio=0.01,
         resolver_mode="local_minimum",
+        execution=in_process_execution(),
     )
 
 

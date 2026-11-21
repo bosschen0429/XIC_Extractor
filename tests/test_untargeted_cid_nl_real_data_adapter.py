@@ -14,7 +14,6 @@ from tests.cid_nl_raw_fixture import (
     _FakeRaw,
     _multi_tag_settings,
     _open_bound_raw,
-    _peak_config,
     _settings,
 )
 from tests.discovery_csv_fixtures import located_scan_ids, representative_event
@@ -619,7 +618,6 @@ def test_adapter_closes_empty_subject_universe_as_not_evaluated_without_xic(
         method_subject=fixture.method_subject,
         peaks=(),
         settings=_settings(),
-        peak_config=_peak_config(tmp_path),
         raw=raw,
         signal_processing_profile=TEST_PROFILE,
     )
@@ -645,7 +643,6 @@ def test_auto_range_empty_subject_has_no_fabricated_query_and_needs_no_raw(
         method_subject=fixture.method_subject,
         peaks=(),
         settings=replace(_settings(), rt_min=None, rt_max=None),
-        peak_config=_peak_config(tmp_path),
         raw=None,
         signal_processing_profile=TEST_PROFILE,
     )
@@ -717,7 +714,6 @@ def test_adapter_does_not_read_raw_for_orphan_only_support(tmp_path: Path) -> No
         peaks=(),
         support_candidates=(support,),
         settings=settings,
-        peak_config=_peak_config(tmp_path),
         raw=None,
         signal_processing_profile=TEST_PROFILE,
     )
@@ -753,7 +749,6 @@ def test_adapter_requires_raw_to_preserve_inferred_physical_observations(
             method_subject=scenario.fixture.method_subject,
             peaks=candidates,
             settings=scenario.settings,
-            peak_config=scenario.peak_config,
             raw=None,
             signal_processing_profile=TEST_PROFILE,
         )

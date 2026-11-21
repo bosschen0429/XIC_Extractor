@@ -14,7 +14,6 @@ from xic_extractor.applications.untargeted.full_analysis import (
     UntargetedAnalysis,
 )
 from xic_extractor.configuration.execution_profile import ExecutionProfile
-from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.output.alignment.pipeline_outputs import (
     AlignmentRunOutputs as _AlignmentRunOutputs,
 )
@@ -99,10 +98,8 @@ def test_full_analysis_applies_default_runtime(
 
     settings = captured_alignment["request"].discovery_settings
     assert settings.nl_tolerance_ppm == 15.0
-    peak_config = captured_alignment["request"].peak_config
-    assert isinstance(peak_config, ExtractionConfig)
-    assert peak_config.nl_min_intensity_ratio == 0.02
-    assert peak_config.resolver_mode == "savgol"
+    assert settings.nl_min_intensity_ratio == 0.02
+    assert settings.resolver_mode == "savgol"
     assert captured_alignment["request"].alignment_config == AlignmentConfig()
     assert captured_alignment["request"].execution.profile == request.execution_profile
     assert captured_alignment["request"].publication.output_level == "machine"

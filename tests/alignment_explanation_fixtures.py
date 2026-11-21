@@ -51,7 +51,6 @@ def run_alignment_fixture(tmp_path, monkeypatch, scenario):
         TEST_PROFILE,
         _current_candidates,
         _FakeRaw,
-        _peak_config,
     )
     from tests.cid_nl_runtime_fixtures import (
         install_runtime_raws,
@@ -79,7 +78,6 @@ def run_alignment_fixture(tmp_path, monkeypatch, scenario):
         encoding="utf-8",
     )
     settings = apply_to_discovery(load_preset(str(preset)))
-    peak_config = _peak_config(tmp_path)
     paths = tuple(tmp_path / f"S{i}.raw" for i in (1, 2))
     sources, candidates = {}, {}
     for path, loss in zip(paths, (116.0474, 132.0423), strict=True):
@@ -104,7 +102,6 @@ def run_alignment_fixture(tmp_path, monkeypatch, scenario):
             for i, p in enumerate(paths)
         ),
         settings=settings,
-        peak_config=peak_config,
         peaks_by_sample=candidates,
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,

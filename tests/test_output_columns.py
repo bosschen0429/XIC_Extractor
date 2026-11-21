@@ -3,6 +3,7 @@ from pathlib import Path
 from openpyxl import load_workbook
 
 from xic_extractor import extractor as extractor_module
+from xic_extractor.configuration.execution_profile import in_process_execution
 from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.extraction.result_models import (
     ExtractionResult,
@@ -117,6 +118,7 @@ def _config(tmp_path: Path) -> ExtractionConfig:
         peak_min_prominence_ratio=0.1,
         ms2_precursor_tol_da=1.6,
         nl_min_intensity_ratio=0.01,
+        execution=in_process_execution(),
     )
 
 
