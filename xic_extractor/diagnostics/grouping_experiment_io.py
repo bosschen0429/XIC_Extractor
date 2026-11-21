@@ -25,6 +25,7 @@ from xic_extractor.alignment.feature_membership_inference import (
 from xic_extractor.alignment.grouping_experiment import GroupingInputs, GroupingWorkset
 from xic_extractor.alignment.ownership_models import IdentityEvent, SampleLocalMS1Owner
 from xic_extractor.alignment.peak_trajectories import ordered_pattern_contexts
+from xic_extractor.alignment.rt_anchors import BatchRtModelInputs, RtAnchorObservation
 from xic_extractor.alignment.rt_drift import RtDriftModel
 from xic_extractor.alignment.rt_frame import RtFrame
 from xic_extractor.alignment.sample_rt_calibration import (
@@ -57,7 +58,12 @@ from xic_extractor.rt_calibration_codec import (
 from xic_extractor.tabular_io import read_delimited_rows, write_delimited_rows
 from xic_extractor.validation_primitives import require_boolean
 
-_RtModel = tuple[BatchRtWarp | None, BatchRtCalibration | None, RtDriftModel | None]
+_RtModel = tuple[
+    BatchRtWarp | None,
+    BatchRtCalibration | None,
+    RtDriftModel | None,
+    BatchRtModelInputs | None,
+]
 
 
 def query_discovery(
@@ -106,7 +112,7 @@ def write_grouping_inputs(
 ) -> None:
     """Persist replay facts; share batch models and curve-free pattern contexts."""
     rt_models: list[dict[str, Any]] = []
-    model_indices: dict[tuple[int, int, int], int] = {}
+    model_indices: dict[tuple[int, int, int, int], int] = {}
     contexts: list[SampleElutionContext] = []
     context_indices: dict[SampleElutionContext, int] = {}
     worksets = []
@@ -115,6 +121,7 @@ def write_grouping_inputs(
             id(workset.rt_warp),
             id(workset.rt_calibration),
             id(workset.rt_drift),
+            id(workset.rt_model_inputs),
         )
         if identity not in model_indices:
             model = {
@@ -126,6 +133,9 @@ def write_grouping_inputs(
                 else None,
                 "rt_drift": rt_drift_payload(workset.rt_drift)
                 if workset.rt_drift is not None
+                else None,
+                "rt_model_inputs": _rt_model_inputs_payload(workset.rt_model_inputs)
+                if workset.rt_model_inputs is not None
                 else None,
             }
             index = next(
@@ -214,7 +224,7 @@ def read_grouping_inputs(path: Path) -> tuple[GroupingInputs, dict[str, Any]]:
     )
     worksets = []
     for value in payload["worksets"]:
-        warp, calibration, drift = (
+        warp, calibration, drift, model_inputs = (
             _snapshot_item(rt_models, value["rt_model_index"], "RT model")
             if "rt_model_index" in value
             else _read_rt_model(value)
@@ -229,6 +239,7 @@ def read_grouping_inputs(path: Path) -> tuple[GroupingInputs, dict[str, Any]]:
                 rt_warp=warp,
                 rt_calibration=calibration,
                 rt_drift=drift,
+                rt_model_inputs=model_inputs,
                 elution_contexts=(
                     tuple(
                         _snapshot_item(contexts, index, "elution context")
@@ -290,6 +301,38 @@ def _read_rt_model(value: Mapping[str, Any]) -> _RtModel:
         rt_drift_from_payload(value["rt_drift"])
         if value.get("rt_drift") is not None
         else None,
+        _read_rt_model_inputs(value["rt_model_inputs"])
+        if value.get("rt_model_inputs") is not None
+        else None,
+    )
+
+
+def _rt_model_inputs_payload(inputs: BatchRtModelInputs) -> dict[str, Any]:
+    return {
+        "sample_stems": list(inputs.sample_stems),
+        "sample_cohorts": dict(inputs.sample_cohorts),
+        "injection_order": dict(inputs.injection_order),
+        "qc_samples": sorted(inputs.qc_samples),
+        "measured_istds": [list(item) for item in inputs.measured_istds],
+        "anchor_batches": [
+            [asdict(anchor) for anchor in batch] for batch in inputs.anchor_batches
+        ],
+    }
+
+
+def _read_rt_model_inputs(value: Mapping[str, Any]) -> BatchRtModelInputs:
+    return BatchRtModelInputs(
+        sample_stems=tuple(value["sample_stems"]),
+        sample_cohorts=value["sample_cohorts"],
+        injection_order=value["injection_order"],
+        qc_samples=frozenset(value["qc_samples"]),
+        measured_istds=tuple(
+            (label, sample, rt) for label, sample, rt in value["measured_istds"]
+        ),
+        anchor_batches=tuple(
+            tuple(RtAnchorObservation(**anchor) for anchor in batch)
+            for batch in value["anchor_batches"]
+        ),
     )
 
 
@@ -486,20 +529,51 @@ def write_rt_calibration(path: Path, calibration: BatchRtCalibration) -> None:
     write_json(path, _rt_calibration_payload(calibration))
 
 
+_GroupDecision = tuple[tuple[str, ...], str, str, str, str]
+
+
 def group_signature(groups: Sequence[CrossSamplePeakGroupHypothesis]) -> tuple:
     """Compare scientific decisions, independent of display row numbering."""
-    return tuple(
-        sorted(
-            (
-                tuple(sorted(group.owner_ids)),
-                group.disposition,
-                group.evidence,
-                group.inference_basis.basis if group.inference_basis else "",
-                group.inference_basis.reason if group.inference_basis else "",
-            )
-            for group in groups
-        )
+    return tuple(sorted(_group_decision(group) for group in groups))
+
+
+def _group_decision(group: CrossSamplePeakGroupHypothesis) -> _GroupDecision:
+    basis = group.inference_basis
+    return (
+        tuple(sorted(group.owner_ids)),
+        group.disposition,
+        group.evidence,
+        basis.basis if basis else "",
+        basis.reason if basis else "",
     )
+
+
+def _baseline_from_tables(directory: Path) -> dict[str, tuple[str, _GroupDecision]]:
+    """Each owner's group and decision as written in groups.tsv and members.tsv."""
+    groups = {
+        row["group_id"]: row
+        for row in read_delimited_rows(
+            directory / "groups.tsv",
+            required_columns=("group_id", "disposition", "evidence", "basis", "reason"),
+        )
+    }
+    owners: dict[str, list[str]] = defaultdict(list)
+    for row in read_delimited_rows(
+        directory / "members.tsv", required_columns=("group_id", "owner_id")
+    ):
+        owners[row["group_id"]].append(row["owner_id"])
+    baseline: dict[str, tuple[str, _GroupDecision]] = {}
+    for group_id, members in owners.items():
+        row = groups[group_id]
+        decision = (
+            tuple(sorted(members)),
+            row["disposition"],
+            row["evidence"],
+            row["basis"],
+            row["reason"],
+        )
+        baseline.update(dict.fromkeys(members, (group_id, decision)))
+    return baseline
 
 
 def _members_by_owner(
@@ -622,11 +696,22 @@ def write_grouping_result(
     inputs: GroupingInputs,
     groups: Sequence[CrossSamplePeakGroupHypothesis],
     *,
-    baseline: Sequence[CrossSamplePeakGroupHypothesis] = (),
+    baseline: Sequence[CrossSamplePeakGroupHypothesis] | Path = (),
     compare_to: Path | None = None,
     rt_coordinates: RtFrame | None = None,
 ) -> dict[str, Any]:
-    before = {owner.owner_id: group for group in baseline for owner in group.owners}
+    """Write the replay tables; ``changes.tsv`` compares with ``baseline``, the
+    grouping or a directory holding its ``groups.tsv`` and ``members.tsv``.
+    """
+    before = (
+        _baseline_from_tables(baseline)
+        if isinstance(baseline, Path)
+        else {
+            owner.owner_id: (group.group_hypothesis_id, _group_decision(group))
+            for group in baseline
+            for owner in group.owners
+        }
+    )
     members = []
     changes = []
     group_rows = []
@@ -638,6 +723,7 @@ def write_grouping_result(
     }
     for group in groups:
         basis = group.inference_basis
+        signature = _group_decision(group)
         risks = {
             decision.owner_id: decision.accepted_risk
             for decision in group.inference_decisions
@@ -688,20 +774,19 @@ def write_grouping_result(
                 }
             )
             old = before.get(owner.owner_id)
-            if old is not None and group_signature((old,)) != group_signature((group,)):
+            if old is not None and old[1] != signature:
+                old_group, (old_owners, *_, old_reason) = old
                 changes.append(
                     {
                         "owner_id": owner.owner_id,
                         "sample_stem": owner.sample_stem,
                         "mz": owner.peak.mz,
                         "observed_rt": owner.peak.integration.rt_apex_min,
-                        "before_group": old.group_hypothesis_id,
+                        "before_group": old_group,
                         "after_group": group.group_hypothesis_id,
-                        "before_members": len(old.owner_ids),
+                        "before_members": len(old_owners),
                         "after_members": len(group.owner_ids),
-                        "before_reason": old.inference_basis.reason
-                        if old.inference_basis
-                        else "",
+                        "before_reason": old_reason,
                         "after_reason": basis.reason if basis else "",
                     }
                 )

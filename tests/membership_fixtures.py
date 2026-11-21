@@ -9,6 +9,7 @@ from xic_extractor.alignment.ownership_models import (
 )
 from xic_extractor.alignment.rt_anchors import RtAnchorObservation
 from xic_extractor.peak_detection.cid_nl_method_subject import (
+    CidNlMethodSubject,
     mint_untargeted_cid_nl_method_subject,
 )
 
@@ -66,7 +67,7 @@ def agreed_group_observations(
     Each owner is measured in the DNA_dR channel at its event precursor m/z.
     """
     return tuple(
-        RtAnchorObservation(
+        subject_anchor(
             mint_untargeted_cid_nl_method_subject(
                 precursor_mz=owner.primary_identity_event.precursor_mz,
                 precursor_tolerance_ppm=10.0,
@@ -79,4 +80,23 @@ def agreed_group_observations(
         )
         for index, group in enumerate(groups)
         for owner in group
+    )
+
+
+def subject_anchor(
+    subject: CidNlMethodSubject,
+    sample_stem: str,
+    owner_id: str,
+    rt_min: float,
+    bootstrap_group_id: str | None,
+) -> RtAnchorObservation:
+    """An anchor observation measured in ``subject``'s method channel."""
+    return RtAnchorObservation(
+        subject.method_subject_id,
+        subject.precursor_mz,
+        subject.neutral_loss_da,
+        sample_stem,
+        owner_id,
+        rt_min,
+        bootstrap_group_id,
     )

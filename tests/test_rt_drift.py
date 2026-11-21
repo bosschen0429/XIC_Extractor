@@ -5,7 +5,6 @@ from __future__ import annotations
 import math
 from itertools import combinations
 from statistics import median
-from types import SimpleNamespace
 
 import pytest
 
@@ -327,23 +326,17 @@ def test_several_supported_peaks_leave_that_channel_sample_unknown():
         sample_cohorts=dict.fromkeys(SAMPLES, ""), injection_order=ORDERS
     )
 
-    def subject(channel):
-        return SimpleNamespace(method_subject_id=channel)
+    def anchor(channel, sample, owner_id, rt_min):
+        return RtAnchorObservation(channel, 500.0, None, sample, owner_id, rt_min, None)
 
     accumulator.add_observations(
-        RtAnchorObservation(
-            subject(f"c{channel}"),
-            sample,
-            f"{sample}:{channel}",
-            10.0 * (channel + 1) + shift,
-            None,
+        anchor(
+            f"c{channel}", sample, f"{sample}:{channel}", 10.0 * (channel + 1) + shift
         )
         for channel in range(2)
         for sample, shift in SHIFT.items()
     )
-    accumulator.add_observations(
-        (RtAnchorObservation(subject("c0"), "s00", "s00:second", 10.5, None),)
-    )
+    accumulator.add_observations((anchor("c0", "s00", "s00:second", 10.5),))
     identity = BatchRtCalibration.from_coordinate_knots(
         tuple((sample, ((0.0, 0.0), (60.0, 60.0))) for sample in SAMPLES)
     )

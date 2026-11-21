@@ -9,15 +9,12 @@ from typing import get_args
 
 import pytest
 
-from tests.membership_fixtures import cid_nl_owner
+from tests.membership_fixtures import cid_nl_owner, subject_anchor
 from xic_extractor.alignment.cid_nl_initial_grouping import CidNlBatchGrouping
 from xic_extractor.alignment.feature_membership_inference import (
     FeatureMembershipBasis,
 )
-from xic_extractor.alignment.rt_anchors import (
-    RtAnchorObservation,
-    rt_anchor_observations,
-)
+from xic_extractor.alignment.rt_anchors import rt_anchor_observations
 from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.alignment.sample_rt_calibration import (
     BatchRtCalibrationAccumulator,
@@ -47,7 +44,7 @@ def _subject(precursor_mz: float):
 
 
 def _observation(sample, group, rt, *, precursor_mz=500.0):
-    return RtAnchorObservation(
+    return subject_anchor(
         _subject(precursor_mz), sample, f"{group}-{sample}", rt, group
     )
 
@@ -80,7 +77,7 @@ def test_published_map_and_drift_are_measured_on_the_reference_population():
                 )
             )
     movers = tuple(
-        RtAnchorObservation(_subject(m), s, f"{s}-{m}", base + (n - 5.5) * 0.1, None)
+        subject_anchor(_subject(m), s, f"{s}-{m}", base + (n - 5.5) * 0.1, None)
         for m, base in ((510.0, 10.0), (520.0, 22.0))
         for s, n in samples.items()
     )

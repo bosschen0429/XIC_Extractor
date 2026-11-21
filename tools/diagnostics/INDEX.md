@@ -401,7 +401,6 @@ to query Discovery or compare already-written tables:
 .venv/Scripts/python.exe -m tools.diagnostics.grouping_experiment query --discovery-batch-index <index.csv> --mz-range 242.12:242.13 --output-dir output/query
 .venv/Scripts/python.exe -m scripts.run_alignment --stop-after grouping --save-grouping-inputs <usual Alignment arguments> --output-dir output/grouping
 .venv/Scripts/python.exe -m scripts.run_alignment regroup --inputs output/grouping/grouping-inputs.json.gz --set preferred_rt_sec=30 --output-dir output/grouping-tight
-.venv/Scripts/python.exe -m scripts.run_alignment regroup --inputs output/grouping/grouping-inputs.json.gz --calibrate --output-dir output/grouping-calibrated
 ```
 
 Replay reads retained snapshots that still carry the retired owner
@@ -425,8 +424,10 @@ Add `--save-grouping-inputs` only when later regrouping needs a retained input;
 it writes `grouping-inputs.json.gz` without reading or replaying it again.
 
 The compressed `grouping-inputs.json.gz` retains scalar observations, exact
-member identities, measured member peaks, frozen batch calibration, elution
-landmarks, local peak-shape descriptors and configuration. Batch models and
+member identities, measured member peaks, each batch's frozen RT calibration
+and drift model with the anchor observations and ISTD coordinates they were
+fitted from, elution landmarks, local peak-shape descriptors and
+configuration. Batch models and
 contexts are shared across worksets. Context RT/intensity arrays are omitted;
 their tie priority is retained as context order. Older snapshots
 without shape descriptors cannot test shape-aware membership; a new
@@ -435,9 +436,14 @@ Backfill acquisition windows are not grouping inputs. The snapshot reader also
 accepts retained snapshots carrying that extra metadata, without using it for
 membership; new snapshots omit it.
 Replay needs only that snapshot, with no RAW, DLL, acquisition or Backfill.
+Worksets replay in parallel processes, one fewer than the CPU count.
 `--compare-to <previous replay dir>` compares group membership with another
-replay of the same snapshot, such as one produced by another commit, and writes
-`membership-diff.tsv` (merges and splits with their owners, samples and apex RT gap).
+replay or the capture output of the same snapshot, such as one produced by
+another commit, and writes `membership-diff.tsv` (merges and splits with their
+owners, samples and apex RT gap). A variant (`--set` or a changed RT model)
+compares `changes.tsv` with that directory's tables, so its changes include any
+grouping-code difference from that run; without `--compare-to` it replays the
+frozen snapshot a second time as its baseline.
 If both tables already exist, use `compare` instead. Both commands compare shared
 owner IDs, report unmatched counts, and reject a comparison with no common owner.
 Saved tables can only resolve gaps to the precision of their observed RT values.
@@ -445,9 +451,13 @@ Saved tables can only resolve gaps to the precision of their observed RT values.
 grouping affect replay. Owner detection and integration changes require a new
 snapshot.
 
-`--calibrate` calls the formal sample RT calibration owner on established
-baseline groups with at least three measured members. `--loess-fraction` controls
-its local regression neighborhood; `--rt-calibration` instead supplies an
+Replay refits each batch's RT calibration and drift model from its retained
+anchors with the current code and groups against the refit; `summary.json`
+reports `rt_model` and `rt_model_changed`. A snapshot without retained anchors
+(`rt_model: snapshot`) reuses its frozen models.
+Which peaks become anchors (initial assessment, bootstrap grouping and the
+calibration reference population) is fixed at capture; changing it needs a new
+capture. `--rt-calibration` instead supplies an
 existing `sample_rt_calibration` JSON. Replay preserves the map's measured
 support and explicit weak estimates without promoting them to strong support.
 Calibration does not change measured RT or area. Historical frozen offset maps
