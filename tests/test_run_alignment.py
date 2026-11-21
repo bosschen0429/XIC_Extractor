@@ -143,138 +143,6 @@ def test_run_alignment_cli_rejects_unsupported_signal_processing_method() -> Non
     assert exc_info.value.code == 2
 
 
-def test_run_alignment_accepts_asls_baseline_integration_method_override(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    batch_index = tmp_path / "discovery_batch_index.csv"
-    _write_empty_batch_index(batch_index)
-    raw_dir = tmp_path / "raws"
-    raw_dir.mkdir()
-    dll_dir = tmp_path / "dll"
-    dll_dir.mkdir()
-    output_dir = tmp_path / "alignment"
-    captured = {}
-
-    def fake_run_alignment(request, context=None):
-        captured.update(request=request, context=context)
-        output_dir.mkdir(parents=True, exist_ok=True)
-        review = output_dir / "alignment_review.tsv"
-        matrix = output_dir / "alignment_matrix.tsv"
-        for path in (review, matrix):
-            path.write_text("x\n", encoding="utf-8")
-        return AlignmentRunOutputs(
-            review_tsv=review,
-            matrix_tsv=matrix,
-            cells_tsv=None,
-            status_matrix_tsv=None,
-        )
-
-    monkeypatch.setattr(run_alignment, "run_untargeted_application", fake_run_alignment)
-
-    code = run_alignment.main(
-        [
-            "--preset",
-            "dna_dr",
-            "--discovery-batch-index",
-            str(batch_index),
-            "--raw-dir",
-            str(raw_dir),
-            "--dll-dir",
-            str(dll_dir),
-            "--output-dir",
-            str(output_dir),
-            "--baseline-integration-method",
-            "asls",
-        ]
-    )
-
-    assert code == 0
-    assert captured["request"].peak_config.baseline_integration_method == "asls"
-
-
-def test_run_alignment_rejects_retired_linear_edge_baseline_override(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    batch_index = tmp_path / "discovery_batch_index.csv"
-    _write_empty_batch_index(batch_index)
-    raw_dir = tmp_path / "raws"
-    raw_dir.mkdir()
-    dll_dir = tmp_path / "dll"
-    dll_dir.mkdir()
-    output_dir = tmp_path / "alignment"
-
-    def fake_run_alignment(request, context=None):
-        raise AssertionError("run_alignment should not be called")
-
-    monkeypatch.setattr(run_alignment, "run_untargeted_application", fake_run_alignment)
-
-    code = run_alignment.main(
-        [
-            "--preset",
-            "dna_dr",
-            "--discovery-batch-index",
-            str(batch_index),
-            "--raw-dir",
-            str(raw_dir),
-            "--dll-dir",
-            str(dll_dir),
-            "--output-dir",
-            str(output_dir),
-            "--baseline-integration-method",
-            "linear_edge",
-        ]
-    )
-
-    assert code == 2
-    assert (
-        "linear_edge baseline integration is retired; use asls"
-        in capsys.readouterr().err
-    )
-
-
-def test_run_alignment_rejects_retired_linear_edge_baseline_env(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    batch_index = tmp_path / "discovery_batch_index.csv"
-    _write_empty_batch_index(batch_index)
-    raw_dir = tmp_path / "raws"
-    raw_dir.mkdir()
-    dll_dir = tmp_path / "dll"
-    dll_dir.mkdir()
-
-    def fake_run_alignment(request, context=None):
-        raise AssertionError("run_alignment should not be called")
-
-    monkeypatch.setattr(run_alignment, "run_untargeted_application", fake_run_alignment)
-    monkeypatch.setenv("BASELINE_INTEGRATION_METHOD", "linear_edge")
-
-    code = run_alignment.main(
-        [
-            "--preset",
-            "dna_dr",
-            "--discovery-batch-index",
-            str(batch_index),
-            "--raw-dir",
-            str(raw_dir),
-            "--dll-dir",
-            str(dll_dir),
-            "--output-dir",
-            str(tmp_path / "alignment"),
-        ]
-    )
-
-    assert code == 2
-    assert (
-        "linear_edge baseline integration is retired; use asls"
-        in capsys.readouterr().err
-    )
-
-
 @pytest.mark.parametrize("raw_workers", [1, 2])
 def test_run_alignment_cli_accepts_output_level_debug(
     monkeypatch: pytest.MonkeyPatch,
@@ -539,13 +407,8 @@ nl_min_intensity_ratio = 0.37
 
     assert code == 0
     settings = captured["request"].discovery_settings
-    peak_config = captured["request"].peak_config
-    assert peak_config.resolver_mode == settings.resolver_mode == "savgol"
-    assert (
-        peak_config.nl_min_intensity_ratio
-        == settings.nl_min_intensity_ratio
-        == pytest.approx(0.37)
-    )
+    assert settings.resolver_mode == "savgol"
+    assert settings.nl_min_intensity_ratio == pytest.approx(0.37)
 
 
 def test_run_alignment_cli_rejects_explicit_retired_backfill_replay_preset(

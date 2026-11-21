@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from xic_extractor.configuration import execution_profile as execution_settings
+from xic_extractor.configuration.execution_profile import in_process_execution
 from xic_extractor.configuration.models import ExtractionConfig
 
 
@@ -66,6 +67,7 @@ def test_extraction_config_default_factory_uses_shared_parallel_budget(
         peak_min_prominence_ratio=0.1,
         ms2_precursor_tol_da=1.6,
         nl_min_intensity_ratio=0.01,
+        execution=in_process_execution(),
     )
 
     assert config.execution == execution_settings.ExecutionProfile(

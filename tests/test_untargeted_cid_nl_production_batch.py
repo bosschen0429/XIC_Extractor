@@ -24,7 +24,6 @@ from tests.cid_nl_raw_fixture import (
     TEST_PROFILE,
     _current_candidates,
     _FakeRaw,
-    _peak_config,
     _settings,
 )
 from tests.cid_nl_runtime_fixtures import (
@@ -94,7 +93,6 @@ def test_completed_empty_recovery_preserves_each_compatible_source_subject(
     settings = replace(
         _settings(), neutral_loss_profile=None, precursor_mz_tolerance_ppm=20.0
     )
-    peak_config = _peak_config(tmp_path)
     source_raws = {}
     selected_candidates = {}
     for raw_path, precursor_mz in zip(
@@ -129,7 +127,6 @@ def test_completed_empty_recovery_preserves_each_compatible_source_subject(
             for index, stem in enumerate(stems, start=1)
         ),
         settings=settings,
-        peak_config=peak_config,
         peaks_by_sample=peaks_by_sample,
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,
@@ -240,11 +237,9 @@ def test_sample_job_builder_binds_shared_inputs_to_each_subject(
     settings = replace(
         _settings(), neutral_loss_profile=None, precursor_mz_tolerance_ppm=1.0
     )
-    peak_config = _peak_config(tmp_path)
     _source_raw, candidates = _nearby_subject_candidates(
         raw_path,
         settings=settings,
-        peak_config=peak_config,
     )
     batch = build_dense_partition(
         raw_paths=(raw_path,),
@@ -257,7 +252,6 @@ def test_sample_job_builder_binds_shared_inputs_to_each_subject(
             ),
         ),
         settings=settings,
-        peak_config=peak_config,
         peaks_by_sample={"S1": candidates},
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,
@@ -289,11 +283,9 @@ def test_alignment_adapter_prepares_and_executes_bounded_once(
     raw_path = tmp_path / "S1.raw"
     raw_path.write_bytes(b"alignment-adapter:S1")
     settings = _settings()
-    peak_config = _peak_config(tmp_path)
     _source_raw, candidates = _nearby_subject_candidates(
         raw_path,
         settings=settings,
-        peak_config=peak_config,
     )
     receipts = build_discovery_receipts(
         tmp_path,
@@ -353,7 +345,6 @@ def test_alignment_adapter_prepares_and_executes_bounded_once(
         dll_dir=tmp_path,
         output_dir=tmp_path / "out",
         settings=settings,
-        peak_config=peak_config,
         alignment_config=AlignmentConfig(),
         sample_metadata=(
             SampleMetadata(
@@ -395,11 +386,9 @@ def test_production_batch_executes_one_atomic_sample_phase(
     settings = replace(
         _settings(), neutral_loss_profile=None, precursor_mz_tolerance_ppm=1.0
     )
-    peak_config = _peak_config(tmp_path)
     source_raw, candidates = _nearby_subject_candidates(
         raw_path,
         settings=settings,
-        peak_config=peak_config,
     )
     batch = build_dense_partition(
         raw_paths=(raw_path,),
@@ -412,7 +401,6 @@ def test_production_batch_executes_one_atomic_sample_phase(
             ),
         ),
         settings=settings,
-        peak_config=peak_config,
         peaks_by_sample={"S1": candidates},
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,
@@ -502,7 +490,7 @@ def test_production_batch_executes_one_atomic_sample_phase(
             raw_dir=tmp_path,
             dll_dir=tmp_path,
             output_level="machine",
-            peak_config=peak_config,
+            resolver_mode="local_minimum",
         ),
     )
     assert {path.name for path in writer_dir.iterdir() if path.is_file()} == {
@@ -547,7 +535,6 @@ def test_discovery_review_rows_cannot_become_alignment_roots(
     settings = replace(
         _settings(), neutral_loss_profile=None, precursor_mz_tolerance_ppm=1.0
     )
-    peak_config = _peak_config(tmp_path)
 
     def observation_only_raw(peak_rts: tuple[float, ...]) -> _FakeRaw:
         raw = _FakeRaw(tuple(rt - 0.01 for rt in peak_rts))
@@ -641,7 +628,6 @@ def test_discovery_review_rows_cannot_become_alignment_roots(
             for index, stem in enumerate(stems, start=1)
         ),
         settings=settings,
-        peak_config=peak_config,
         peaks_by_sample=peaks_by_sample,
         root=tmp_path / "persisted",
         dll_dir=tmp_path,
@@ -711,7 +697,6 @@ def test_production_initial_groups_use_complete_feature_inference_batch(
     stems = ("Early", "Middle", "Late")
     paths = tuple(tmp_path / f"{stem}.synthetic" for stem in stems)
     settings = replace(_settings(), neutral_loss_profile=None)
-    peak_config = _peak_config(tmp_path)
     raws = {path: _FakeRaw((8.0 + index * 0.1,)) for index, path in enumerate(paths)}
     candidates = {}
     for index, path in enumerate(paths):
@@ -735,7 +720,6 @@ def test_production_initial_groups_use_complete_feature_inference_batch(
             for index, stem in enumerate(stems, start=1)
         ),
         settings=settings,
-        peak_config=peak_config,
         peaks_by_sample=candidates,
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,
@@ -826,7 +810,6 @@ def test_known_istd_reference_closes_drifting_group_and_cell_proof(
         precursor_mz_tolerance_ppm=20.0,
         rt_max=10,
     )
-    peak_config = _peak_config(tmp_path)
     raws = {
         path: _FakeRaw(
             (8.0,),
@@ -861,7 +844,6 @@ def test_known_istd_reference_closes_drifting_group_and_cell_proof(
             for i, p in enumerate(paths)
         ),
         settings=settings,
-        peak_config=peak_config,
         peaks_by_sample=candidates,
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,
@@ -990,7 +972,6 @@ def test_production_composition_closes_recovered_observation_without_candidate(
     for raw_path in raw_paths:
         raw_path.write_bytes(f"production-recovery:{raw_path.stem}".encode())
     settings = _settings()
-    peak_config = _peak_config(tmp_path)
     source_raws = {
         raw_path: _FakeRaw((apex_rt,))
         for raw_path, apex_rt in zip(
@@ -1024,7 +1005,6 @@ def test_production_composition_closes_recovered_observation_without_candidate(
             for index, stem in enumerate(sample_stems, start=1)
         ),
         settings=settings,
-        peak_config=peak_config,
         peaks_by_sample=peaks_by_sample,
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,
@@ -1221,7 +1201,7 @@ def test_production_composition_closes_recovered_observation_without_candidate(
                 raw_dir=tmp_path,
                 dll_dir=tmp_path,
                 output_level="machine",
-                peak_config=peak_config,
+                resolver_mode="local_minimum",
             ),
         )
 
@@ -1245,7 +1225,6 @@ def test_atomic_publication_preserves_ms1_only_backfill_and_no_peak(
     sample_stems = ("Support1", "Support2", "Support3", "MS1Only", "NoPeak")
     raw_paths = tuple(tmp_path / f"{stem}.synthetic" for stem in sample_stems)
     settings = _settings()
-    peak_config = _peak_config(tmp_path)
     source_raws = {}
     for index, (raw_path, apex_rt) in enumerate(
         zip(raw_paths, (7.97, 7.99, 8.01, 8.03, 8.05), strict=True),
@@ -1292,7 +1271,6 @@ def test_atomic_publication_preserves_ms1_only_backfill_and_no_peak(
             for index, stem in enumerate(sample_stems, start=1)
         ),
         settings=settings,
-        peak_config=peak_config,
         peaks_by_sample=peaks_by_sample,
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,
@@ -1352,7 +1330,7 @@ def test_atomic_publication_preserves_ms1_only_backfill_and_no_peak(
             raw_dir=tmp_path,
             dll_dir=tmp_path,
             output_level="machine",
-            peak_config=peak_config,
+            resolver_mode="local_minimum",
         ),
     )
     assert outputs.matrix_tsv is not None

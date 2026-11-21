@@ -83,7 +83,7 @@ def plan_grouped_cid_nl_backfills(
     sample_population: tuple[SampleMetadata, ...],
     alignment_config: AlignmentConfig,
     rt_frame: SampleRtFrame,
-    half_windows_by_sample: Mapping[str, float],
+    backfill_half_window_min: float,
 ) -> tuple[CidNlBackfillQuestion, ...]:
     """Resolve subject, trajectory and window facts from frozen workset membership."""
     samples = {sample.sample_name: sample for sample in sample_population}
@@ -122,7 +122,7 @@ def plan_grouped_cid_nl_backfills(
                     owner.sample_stem for owner in group.owners
                 ),
                 rt_frame=rt_frame,
-                backfill_half_window_min=half_windows_by_sample[min(target_ids)],
+                backfill_half_window_min=backfill_half_window_min,
                 drift_offsets=_group_drift_offsets(group, rt_frame),
             )
             questions.extend(

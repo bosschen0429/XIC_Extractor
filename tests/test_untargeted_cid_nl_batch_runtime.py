@@ -7,7 +7,6 @@ import pytest
 from tests.cid_nl_raw_fixture import (
     TEST_PROFILE,
     _FakeRaw,
-    _peak_config,
     _settings,
 )
 from tests.cid_nl_runtime_fixtures import (
@@ -49,14 +48,12 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
             f"real-data-runtime-batch-recovery:{raw_path.stem}".encode()
         )
     settings = _settings()
-    peak_config = _peak_config(tmp_path)
     source_raws: dict[Path, _FakeRaw] = {}
     peaks_by_sample: dict[str, tuple[DiscoveryPeak, ...]] = {}
     for raw_path in raw_paths[:2]:
         source_raw, candidates = _nearby_subject_candidates(
             raw_path,
             settings=settings,
-            peak_config=peak_config,
         )
         source_raws[raw_path] = source_raw
         peaks_by_sample[raw_path.stem] = candidates
@@ -66,7 +63,6 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
         source_raw, candidates = _nearby_subject_candidates(
             raw_paths[2],
             settings=settings,
-            peak_config=peak_config,
         )
         source_raws[raw_paths[2]] = source_raw
         peaks_by_sample["Missing"] = candidates
@@ -120,7 +116,6 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
         ),
         method_subject=subject_batch,
         settings=settings,
-        peak_config=peak_config,
         peaks_by_sample=peaks_by_sample,
         discovery_receipts_by_sample=build_discovery_receipts(
             tmp_path,
@@ -146,7 +141,6 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
             candidates=context.peaks_by_sample[sample.raw_stem],
             discovery_receipt=context.discovery_receipts_by_sample[sample.raw_stem],
             settings=context.settings,
-            peak_config=context.peak_config,
             raw_path=context.raw_paths_by_sample[sample.raw_stem],
             dll_dir=tmp_path,
             work_unit_key=(

@@ -12,7 +12,6 @@ import xic_extractor.applications.untargeted.application as application_module
 import xic_extractor.applications.untargeted.publication as publication_module
 import xic_extractor.output.alignment.pipeline_outputs as output_owner
 from tests.alignment_explanation_fixtures import explanation_discovery_facts
-from tests.alignment_pipeline_helpers import peak_config as _peak_config
 from tests.alignment_pipeline_helpers import write_batch as _write_batch
 from tests.cid_nl_raw_fixture import _FakeRaw, _settings
 from tests.cid_nl_runtime_fixtures import (
@@ -23,9 +22,6 @@ from tests.cid_nl_runtime_fixtures import (
 from tests.discovery_pipeline_fixtures import (
     _OwnerBoundFakeRawHandle,
     _scan_event,
-)
-from tests.discovery_pipeline_fixtures import (
-    _peak_config as _discovery_peak_config,
 )
 from tests.discovery_pipeline_fixtures import (
     _settings as _discovery_settings,
@@ -179,7 +175,6 @@ def test_pure_cid_nl_wrapper_reports_retained_route_and_typed_handoff(
                     dll_dir=tmp_path / "dll",
                     output_dir=tmp_path / "out",
                     alignment_config=AlignmentConfig(),
-                    peak_config=_peak_config(),
                     discovery_settings=_settings(),
                     execution=UntargetedExecutionPolicy(
                         profile=ExecutionProfile(alignment_workers=raw_workers)
@@ -200,7 +195,6 @@ def test_pure_cid_nl_wrapper_reports_retained_route_and_typed_handoff(
             dll_dir=tmp_path / "dll",
             output_dir=tmp_path / "out",
             alignment_config=AlignmentConfig(),
-            peak_config=_peak_config(),
             discovery_settings=_settings(),
             sample_metadata=retained_sample_metadata,
             known_istd_reference_workbook=tmp_path / "reference.xlsx"
@@ -264,7 +258,6 @@ def test_pure_cid_nl_cancellation_after_completion_skips_publication(
                 dll_dir=tmp_path / "dll",
                 output_dir=tmp_path / "out",
                 alignment_config=AlignmentConfig(),
-                peak_config=_peak_config(),
                 discovery_settings=_settings(),
             ),
             UntargetedExecutionContext(should_cancel=lambda: next(cancellation_checks)),
@@ -314,7 +307,6 @@ def test_pure_cid_nl_cancellation_during_projection_skips_publication(
                 dll_dir=tmp_path / "dll",
                 output_dir=tmp_path / "out",
                 alignment_config=AlignmentConfig(),
-                peak_config=_peak_config(),
                 discovery_settings=_settings(),
             ),
             UntargetedExecutionContext(should_cancel=lambda: next(cancellation_checks)),
@@ -347,7 +339,6 @@ def test_pure_cid_nl_runtime_failure_uses_alignment_error_boundary(
                 dll_dir=tmp_path / "dll",
                 output_dir=tmp_path / "out",
                 alignment_config=AlignmentConfig(),
-                peak_config=_peak_config(),
                 discovery_settings=_settings(),
             )
         )
@@ -375,7 +366,6 @@ def test_pure_cid_nl_collision_rejects_before_retained_runtime(
                 dll_dir=tmp_path / "dll",
                 output_dir=output_dir,
                 alignment_config=AlignmentConfig(),
-                peak_config=_peak_config(),
                 discovery_settings=_settings(),
                 execution=UntargetedExecutionPolicy(
                     profile=ExecutionProfile(alignment_workers=2)
@@ -425,7 +415,6 @@ def test_pure_cid_nl_projection_failure_publishes_no_owned_outputs(
                 dll_dir=tmp_path / "dll",
                 output_dir=output_dir,
                 alignment_config=AlignmentConfig(),
-                peak_config=_peak_config(),
                 discovery_settings=_settings(),
             )
         )
@@ -610,7 +599,6 @@ def test_pipeline_publishes_projected_children_and_cleans_up(
                 dll_dir=tmp_path,
                 output_dir=output_dir,
                 alignment_config=config,
-                peak_config=_peak_config(),
                 discovery_settings=_settings(),
                 publication=UntargetedPublicationPolicy(
                     emit_alignment_explanation=emit_explanation
@@ -655,12 +643,9 @@ def test_pipeline_publishes_projected_children_and_cleans_up(
         completed.close()
 
 
-@pytest.mark.parametrize("canonical_window, override_window", ((21, 15), (15, 21)))
-def test_pipeline_rejects_profile_config_conflict_before_read_or_raw(
+def test_pipeline_rejects_unsupported_profile_before_read_or_raw(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    canonical_window: int,
-    override_window: int,
 ) -> None:
     touched = False
 
@@ -673,7 +658,7 @@ def test_pipeline_rejects_profile_config_conflict_before_read_or_raw(
         application_module, "complete_untargeted_alignment", fail_if_touched
     )
 
-    with pytest.raises(ValueError, match="conflicts with peak_config"):
+    with pytest.raises(ValueError, match="does not support legacy Alignment"):
         application_module.run_untargeted_application(
             UntargetedRequest(
                 execution=UntargetedExecutionPolicy(profile=in_process_execution()),
@@ -682,13 +667,9 @@ def test_pipeline_rejects_profile_config_conflict_before_read_or_raw(
                 dll_dir=tmp_path / "dll",
                 output_dir=tmp_path / "out",
                 alignment_config=AlignmentConfig(),
-                peak_config=replace(
-                    _peak_config(),
-                    signal_processing_window_points=canonical_window,
-                ),
                 discovery_settings=_settings(),
                 signal_processing_profile=resolve_signal_processing_profile(
-                    signal_processing_window_points=override_window,
+                    signal_processing_window_points=21,
                 ),
             )
         )
@@ -730,7 +711,6 @@ def test_pipeline_rejects_owned_output_collision_before_raw(
                 dll_dir=tmp_path / "dll",
                 output_dir=output_dir,
                 alignment_config=AlignmentConfig(),
-                peak_config=_peak_config(),
                 discovery_settings=_settings(),
             )
         )
@@ -766,7 +746,6 @@ def test_pipeline_rejects_unsupported_discovery_before_acquisition_or_output(
                 dll_dir=tmp_path / "missing-dll",
                 output_dir=output_dir,
                 alignment_config=AlignmentConfig(),
-                peak_config=_peak_config(),
                 discovery_settings=settings,
             )
         )
@@ -808,11 +787,6 @@ def test_pure_cid_nl_targets_csv_integration(
     )
     monkeypatch.setattr(
         application_module,
-        "prepare_batch_mass_recalibration",
-        lambda *args, **kwargs: {},
-    )
-    monkeypatch.setattr(
-        application_module,
         "complete_untargeted_alignment",
         lambda **kwargs: (
             captured.update(kwargs) or _bind_mock_publication_inputs(completed, kwargs)
@@ -843,7 +817,6 @@ def test_pure_cid_nl_targets_csv_integration(
             dll_dir=tmp_path / "dll",
             output_dir=tmp_path / "out",
             alignment_config=AlignmentConfig(),
-            peak_config=_peak_config(),
             discovery_settings=replace(
                 _settings(), mass_recalibration=MassRecalibration.NONE
             ),
@@ -880,18 +853,12 @@ def test_alignment_applies_discovery_mass_result_without_reopening_raw(
         writer.writeheader()
         writer.writerows(rows)
 
-    def fail_if_recomputed(*_args, **_kwargs):
-        pytest.fail("Alignment recomputed mass recalibration from RAW")
-
     captured: dict[str, object] = {}
 
     def stop_after_capture(**kwargs):
         captured.update(kwargs)
         raise RuntimeError("captured")
 
-    monkeypatch.setattr(
-        application_module, "prepare_batch_mass_recalibration", fail_if_recomputed
-    )
     monkeypatch.setattr(
         application_module, "complete_untargeted_alignment", stop_after_capture
     )
@@ -905,7 +872,6 @@ def test_alignment_applies_discovery_mass_result_without_reopening_raw(
                 dll_dir=tmp_path / "dll",
                 output_dir=tmp_path / "out",
                 alignment_config=AlignmentConfig(),
-                peak_config=_peak_config(),
                 discovery_settings=_settings(),
             )
         )
@@ -1020,7 +986,6 @@ def test_reduced_discovery_persistence_keeps_inferred_peak_and_qualifies_alignme
             dll_dir=tmp_path,
             output_dir=tmp_path / "alignment",
             alignment_config=AlignmentConfig(backfill_enabled=backfill_enabled),
-            peak_config=_discovery_peak_config(tmp_path),
             discovery_settings=settings,
             execution=UntargetedExecutionPolicy(
                 profile=ExecutionProfile(alignment_workers=1, backend="thread")
@@ -1043,11 +1008,6 @@ def test_reduced_discovery_persistence_keeps_inferred_peak_and_qualifies_alignme
                 alignment_config=AlignmentConfig(),
             ),
         ),
-    )
-    monkeypatch.setattr(
-        cli,
-        "untargeted_peak_config",
-        lambda *_args, **_kwargs: _discovery_peak_config(tmp_path),
     )
     cli_output = tmp_path / "cli-alignment"
     assert (
@@ -1208,7 +1168,6 @@ def test_mixed_target_list_only_supplies_istds_to_untargeted_alignment(
             dll_dir=tmp_path / "dll",
             output_dir=tmp_path / "out",
             alignment_config=AlignmentConfig(),
-            peak_config=_peak_config(),
             discovery_settings=apply_to_discovery(load_preset(method)),
             targets_csv=source,
             sample_metadata=metadata,

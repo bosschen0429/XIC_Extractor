@@ -10,7 +10,6 @@ from tests.cid_nl_raw_fixture import (
     _current_candidates,
     _FakeRaw,
     _multi_tag_settings,
-    _peak_config,
     _settings,
 )
 from tests.cid_nl_runtime_fixtures import (
@@ -90,7 +89,6 @@ def test_owner_decides_membership_and_exact_exclusion_from_acquired_evidence(
             for i, p in enumerate(paths, 1)
         ),
         settings=settings,
-        peak_config=_peak_config(tmp_path),
         peaks_by_sample=candidates,
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,

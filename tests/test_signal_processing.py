@@ -5,6 +5,7 @@ import numpy as np
 import pytest
 from scipy.signal import savgol_filter
 
+from xic_extractor.configuration.execution_profile import in_process_execution
 from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.peak_detection.integration import peak_bounds
 from xic_extractor.peak_detection.local_minimum import _local_minimum_regions
@@ -54,6 +55,7 @@ def _config(
         resolver_peak_duration_min=resolver_peak_duration_min,
         resolver_peak_duration_max=resolver_peak_duration_max,
         resolver_min_scans=resolver_min_scans,
+        execution=in_process_execution(),
     )
 
 

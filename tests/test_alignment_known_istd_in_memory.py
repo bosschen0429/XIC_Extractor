@@ -1,4 +1,5 @@
 from contextlib import contextmanager
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -170,9 +171,7 @@ def test_untargeted_istd_uses_targeted_selection_for_multiple_supported_peaks(
     reference = extract_batch_known_istd_reference(
         targets,
         {s: tmp_path / f"{s}.raw" for s in measured},
-        tmp_path,
         config,
-        execution=in_process_execution(),
     )
     assert {sample: rt for _, sample, rt, _ in reference.coordinates} == expected
     assert calls == ["S1", "S2"]
@@ -225,9 +224,7 @@ def test_istd_reference_preserves_targeted_anchor_rejection(tmp_path, monkeypatc
     reference = extract_batch_known_istd_reference(
         [target, _make_target("Analyte", is_istd=False)],
         {"A": tmp_path / "accepted.raw", "B": tmp_path / "rejected.raw"},
-        tmp_path / "dll",
-        _config(tmp_path),
-        execution=in_process_execution(),
+        replace(_config(tmp_path), dll_dir=tmp_path / "dll"),
     )
     assert reference.coordinates == (("ISTD", "A", 3.0, 0.0),)
 
@@ -271,9 +268,9 @@ def test_istd_reference_runs_raw_files_through_targeted_process_backend(
     reference = extract_batch_known_istd_reference(
         [target, _make_target("Analyte", is_istd=False)],
         {"B": tmp_path / "b.raw", "A": tmp_path / "a.raw"},
-        tmp_path / "dll",
-        _config(tmp_path),
-        execution=ExecutionProfile(),
+        replace(
+            _config(tmp_path), dll_dir=tmp_path / "dll", execution=ExecutionProfile()
+        ),
     )
     assert calls == [("process", [target], [tmp_path / "a.raw", tmp_path / "b.raw"])]
     assert {(label, sample) for label, sample, *_ in reference.coordinates} == {
@@ -283,12 +280,15 @@ def test_istd_reference_runs_raw_files_through_targeted_process_backend(
 
 
 @pytest.mark.parametrize("policy", ("none", "easy_ic_probe", "easy_ic_restore"))
-def test_untargeted_peak_config_follows_recipe(tmp_path, policy):
-    from dataclasses import replace
-
-    from xic_extractor.applications.untargeted.request import untargeted_peak_config
+def test_istd_extraction_config_follows_recipe(tmp_path, policy):
+    from xic_extractor.applications.untargeted.istd_reference import (
+        istd_extraction_config,
+    )
     from xic_extractor.configuration.mass_recalibration import (
         resolve_mass_recalibration,
+    )
+    from xic_extractor.configuration.signal_processing_profile import (
+        DEFAULT_SIGNAL_PROCESSING_PROFILE,
     )
     from xic_extractor.presets import apply_to_discovery, load_preset
 
@@ -296,11 +296,18 @@ def test_untargeted_peak_config_follows_recipe(tmp_path, policy):
         apply_to_discovery(load_preset("dna_dr")),
         mass_recalibration=resolve_mass_recalibration(policy),
     )
-    config = untargeted_peak_config(
+    execution = ExecutionProfile(parallel_workers=3, backend="process")
+    config = istd_extraction_config(
         raw_dir=tmp_path,
         dll_dir=tmp_path,
         output_dir=tmp_path,
         discovery_settings=settings,
+        signal_processing_profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
+        execution=execution,
+    )
+    assert config.execution is execution
+    assert config.signal_processing_window_points == (
+        DEFAULT_SIGNAL_PROCESSING_PROFILE.window_points
     )
     assert config.mass_recalibration is settings.mass_recalibration
     assert config.resolver_mode == settings.resolver_mode
@@ -318,9 +325,7 @@ def test_istd_file_failure_is_not_an_empty_reference(tmp_path, monkeypatch):
         extract_batch_known_istd_reference(
             [_make_target("ISTD")],
             {"S1": tmp_path / "S1.raw"},
-            tmp_path,
             _config(tmp_path),
-            execution=in_process_execution(),
         )
 
 
@@ -401,7 +406,6 @@ def test_istd_reference_recovers_cross_sample_peak_without_local_nl(
     reference = extract_batch_known_istd_reference(
         targets,
         {s: tmp_path / f"{s}.raw" for s in ("S0", "S1", "S2", "S3")},
-        tmp_path,
         _config(tmp_path),
         sample_metadata=tuple(
             SampleMetadata(
@@ -409,7 +413,6 @@ def test_istd_reference_recovers_cross_sample_peak_without_local_nl(
             )
             for s in ("S0", "S1", "S2", "S3")
         ),
-        execution=in_process_execution(),
     )
     coordinates = {
         (label, sample): rt for label, sample, rt, _ in reference.coordinates
@@ -439,4 +442,5 @@ def _config(tmp_path):
         ms2_precursor_tol_da=1.1,
         nl_min_intensity_ratio=0.01,
         resolver_mode="local_minimum",
+        execution=in_process_execution(),
     )

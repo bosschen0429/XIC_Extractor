@@ -135,7 +135,7 @@ def test_fact_cache_policy_namespace_separates_numeric_facts(tmp_path):
 def test_alignment_metadata_keeps_two_samples_probe_results(tmp_path, monkeypatch):
     import csv
 
-    from tests.alignment_pipeline_helpers import peak_config, write_batch
+    from tests.alignment_pipeline_helpers import write_batch
     from tests.cid_nl_raw_fixture import _settings
     from xic_extractor.alignment import AlignmentConfig
     from xic_extractor.applications.untargeted import application
@@ -186,7 +186,6 @@ def test_alignment_metadata_keeps_two_samples_probe_results(tmp_path, monkeypatc
             dll_dir=tmp_path / "dll",
             output_dir=tmp_path / "out",
             alignment_config=AlignmentConfig(),
-            peak_config=peak_config(),
             discovery_settings=_settings(),
         )
     )

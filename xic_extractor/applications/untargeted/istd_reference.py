@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import math
 from collections.abc import Iterable, Mapping, Sequence
+from dataclasses import replace
 from io import BytesIO
 from pathlib import Path
 
@@ -13,18 +14,48 @@ from xic_extractor.alignment.drift_evidence import (
     mint_known_istd_reference_from_measurements,
 )
 from xic_extractor.configuration.execution_profile import ExecutionProfile
+from xic_extractor.configuration.extraction_defaults import default_extraction_config
 from xic_extractor.configuration.models import ExtractionConfig, Target
+from xic_extractor.configuration.signal_processing_profile import (
+    SignalProcessingProfile,
+)
+from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.raw_mass_recalibration import PreparedRawMassRecalibration
 from xic_extractor.sample_metadata import SampleMetadata
+
+
+def istd_extraction_config(
+    *,
+    raw_dir: Path,
+    dll_dir: Path,
+    output_dir: Path,
+    discovery_settings: DiscoverySettings,
+    signal_processing_profile: SignalProcessingProfile,
+    execution: ExecutionProfile,
+) -> ExtractionConfig:
+    """Targeted extraction input for measuring ISTDs with this run's settings."""
+    profile = signal_processing_profile
+    return replace(
+        default_extraction_config(
+            data_dir=raw_dir,
+            dll_dir=dll_dir,
+            output_dir=output_dir,
+            execution=execution,
+        ),
+        signal_processing_method=profile.method,
+        signal_processing_window_points=profile.window_points,
+        ms1_morphology_smoothing_window_points=profile.window_points,
+        nl_min_intensity_ratio=discovery_settings.nl_min_intensity_ratio,
+        resolver_mode=discovery_settings.resolver_mode,
+        mass_recalibration=discovery_settings.mass_recalibration,
+    )
 
 
 def extract_batch_known_istd_reference(
     targets: Sequence[Target],
     raw_paths_by_sample: Mapping[str, Path],
-    dll_dir: Path,
-    peak_config: ExtractionConfig,
+    config: ExtractionConfig,
     *,
-    execution: ExecutionProfile,
     source_identifier: str = "<in-memory>",
     source_sha256: str = "",
     sample_metadata: Sequence[SampleMetadata] | None = None,
@@ -32,8 +63,6 @@ def extract_batch_known_istd_reference(
     | None = None,
 ) -> KnownIstdReference:
     """Project Targeted's credible selected ISTDs into the Alignment RT reference."""
-    from dataclasses import replace
-
     from xic_extractor.alignment.config import AlignmentConfig
     from xic_extractor.extraction.process_backend import run_process
     from xic_extractor.extraction.serial_backend import run_serial
@@ -44,9 +73,8 @@ def extract_batch_known_istd_reference(
     istd_targets = [target for target in targets if target.is_istd]
     if not istd_targets:
         raise ValueError("No ISTD targets (is_istd=True) found in targets")
-    config = replace(peak_config, dll_dir=dll_dir, execution=execution)
     samples = sorted(raw_paths_by_sample.items())
-    run_batch = run_process if execution.backend == "process" else run_serial
+    run_batch = run_process if config.execution.backend == "process" else run_serial
     output = run_batch(
         config,
         istd_targets,

@@ -17,7 +17,6 @@ from xic_extractor.applications.untargeted.publication import (
 from xic_extractor.applications.untargeted.request import (
     UntargetedExecutionContext,
     UntargetedRequest,
-    untargeted_peak_config,
 )
 from xic_extractor.configuration.execution_profile import (
     ExecutionProfile,
@@ -258,12 +257,6 @@ class UntargetedAnalysis:
                 dll_dir=request.dll_dir,
                 output_dir=request.output_dir,
                 alignment_config=recipe.alignment_config,
-                peak_config=untargeted_peak_config(
-                    raw_dir=request.raw_dir or request.output_dir,
-                    dll_dir=request.dll_dir,
-                    output_dir=request.output_dir,
-                    discovery_settings=recipe.discovery_settings,
-                ),
                 discovery_settings=recipe.discovery_settings,
                 sample_metadata=request.sample_metadata,
                 targets_csv=request.targets_csv,

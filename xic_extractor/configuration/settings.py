@@ -74,8 +74,10 @@ def build_extraction_config(
         _parse_existing_dir(settings_path, key, settings[key])
     return replace(
         default_extraction_config(
-            data_dir=parsed.data_dir, dll_dir=parsed.dll_dir, output_dir=output_dir
+            data_dir=parsed.data_dir,
+            dll_dir=parsed.dll_dir,
+            output_dir=output_dir,
+            execution=parsed.execution,
         ),
         injection_order_source=parsed.injection_order_source,
-        execution=parsed.execution,
     )

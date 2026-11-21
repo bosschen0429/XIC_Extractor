@@ -1248,7 +1248,7 @@ def test_backfill_planning_consumes_filtered_locations_with_sample_attribution(
         sample_population=fixture.samples,
         alignment_config=config,
         rt_frame=frame,
-        half_windows_by_sample={s.sample_name: 1.0 for s in fixture.samples},
+        backfill_half_window_min=1.0,
     )
     by_id = {q.sample_key: q for q in questions}
     assert set(by_id) == {

@@ -15,7 +15,6 @@ from tests.cid_nl_raw_fixture import (
     _FakeRaw,
     _FakeThermoRaw,
     _open_bound_raw,
-    _peak_config,
     _settings,
     _source_for,
 )
@@ -638,7 +637,6 @@ def test_runtime_delivers_one_real_subject_cohort_with_cache_replay(
     for path in raw_paths:
         path.write_bytes(f"real-data-runtime:{path.stem}".encode())
     settings = _settings()
-    peak_config = _peak_config(tmp_path)
     source_raw = _FakeRaw((7.98, 8.02))
     candidates = _current_candidates(
         source_raw,
@@ -668,7 +666,6 @@ def test_runtime_delivers_one_real_subject_cohort_with_cache_replay(
         ),
         method_subject=subject,
         settings=settings,
-        peak_config=peak_config,
         peaks_by_sample={"S1": candidates, "S2": ()},
         discovery_receipts_by_sample=build_discovery_receipts(
             tmp_path,
@@ -692,7 +689,6 @@ def test_runtime_delivers_one_real_subject_cohort_with_cache_replay(
             candidates=context.peaks_by_sample[sample.raw_stem],
             discovery_receipt=context.discovery_receipts_by_sample[sample.raw_stem],
             settings=context.settings,
-            peak_config=context.peak_config,
             raw_path=context.raw_paths_by_sample[sample.raw_stem],
             dll_dir=tmp_path,
             work_unit_key=f"untargeted-cid-nl:{sample.raw_stem}",
@@ -817,7 +813,6 @@ def test_runtime_recovers_from_single_scan_cid_nl_support_owners(
     for path in raw_paths:
         path.write_bytes(f"real-data-runtime-recovery:{path.stem}".encode())
     settings = _settings()
-    peak_config = _peak_config(tmp_path)
     source_raws = {
         raw_paths[0]: _FakeRaw((8.0,)),
         raw_paths[1]: _FakeRaw((8.0,)),
@@ -881,7 +876,6 @@ def test_runtime_recovers_from_single_scan_cid_nl_support_owners(
         ),
         method_subject=subject,
         settings=settings,
-        peak_config=peak_config,
         peaks_by_sample=peaks_by_sample,
         discovery_receipts_by_sample=build_discovery_receipts(
             tmp_path,
@@ -907,7 +901,6 @@ def test_runtime_recovers_from_single_scan_cid_nl_support_owners(
             candidates=context.peaks_by_sample[sample.raw_stem],
             discovery_receipt=context.discovery_receipts_by_sample[sample.raw_stem],
             settings=context.settings,
-            peak_config=context.peak_config,
             raw_path=context.raw_paths_by_sample[sample.raw_stem],
             dll_dir=tmp_path,
             work_unit_key=f"untargeted-cid-nl:{sample.raw_stem}",
@@ -982,7 +975,6 @@ def test_batch_candidate_selection_preserves_order_and_request_sample_membership
 ) -> None:
     raw_paths = (tmp_path / "S1.synthetic", tmp_path / "S2.synthetic")
     settings = _settings()
-    peak_config = _peak_config(tmp_path)
     peaks_by_sample = {}
     sources_by_path = {}
     for path in raw_paths:
@@ -1057,7 +1049,6 @@ def test_batch_candidate_selection_preserves_order_and_request_sample_membership
             ),
             method_subject=subject_batch,
             settings=settings,
-            peak_config=peak_config,
             peaks_by_sample=peaks_by_sample,
             discovery_receipts_by_sample=receipts,
             signal_processing_profile=TEST_PROFILE,
@@ -1076,7 +1067,6 @@ def test_batch_candidate_selection_preserves_order_and_request_sample_membership
                 candidates=tuple(reversed(context.peaks_by_sample[sample.raw_stem])),
                 discovery_receipt=receipts[sample.raw_stem],
                 settings=settings,
-                peak_config=peak_config,
                 raw_path=context.raw_paths_by_sample[sample.raw_stem],
                 dll_dir=tmp_path,
                 acquisition_source_expectation=context.acquisition_sources_by_sample[
@@ -1127,7 +1117,6 @@ def test_context_rejects_same_stem_receipt_from_different_acquisition(
     source_path.write_bytes(b"discovery-acquisition")
     replay_path.write_bytes(b"different-replay-acquisition")
     settings = _settings()
-    peak_config = _peak_config(tmp_path)
     candidates = _current_candidates(
         _FakeRaw((8.0,)),
         raw_file=source_path,
@@ -1160,7 +1149,6 @@ def test_context_rejects_same_stem_receipt_from_different_acquisition(
             ),
             method_subject=subject,
             settings=settings,
-            peak_config=peak_config,
             peaks_by_sample={"S1": candidates},
             discovery_receipts_by_sample={"S1": receipt},
             signal_processing_profile=TEST_PROFILE,
@@ -1178,7 +1166,6 @@ def test_runtime_does_not_open_recovery_resource_when_owner_condition_is_false(
     for raw_path in raw_paths:
         raw_path.write_bytes(raw_path.stem.encode())
     settings = _settings()
-    peak_config = _peak_config(tmp_path)
     source_raws = {path: _FakeRaw((8.0,)) for path in raw_paths}
     support = _current_candidates(
         source_raws[raw_paths[0]],
@@ -1220,7 +1207,6 @@ def test_runtime_does_not_open_recovery_resource_when_owner_condition_is_false(
         ),
         method_subject=subject,
         settings=settings,
-        peak_config=peak_config,
         peaks_by_sample=peaks_by_sample,
         discovery_receipts_by_sample=build_discovery_receipts(
             tmp_path,
@@ -1254,7 +1240,6 @@ def test_runtime_does_not_open_recovery_resource_when_owner_condition_is_false(
             candidates=context.peaks_by_sample[sample.raw_stem],
             discovery_receipt=context.discovery_receipts_by_sample[sample.raw_stem],
             settings=context.settings,
-            peak_config=context.peak_config,
             raw_path=context.raw_paths_by_sample[sample.raw_stem],
             dll_dir=tmp_path,
             work_unit_key=f"untargeted-cid-nl:{sample.raw_stem}",

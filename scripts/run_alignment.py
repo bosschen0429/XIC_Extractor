@@ -4,7 +4,6 @@ import argparse
 import cProfile
 import io
 import math
-import os
 import pstats
 import sys
 from collections.abc import Sequence
@@ -32,7 +31,6 @@ from xic_extractor.applications.untargeted.request import (
     AlignmentReplayOptions,
     UntargetedExecutionContext,
     UntargetedRequest,
-    untargeted_peak_config,
     validate_retained_processing_profile,
 )
 from xic_extractor.configuration.execution_profile import (
@@ -220,14 +218,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             output_dir=output_dir,
             alignment_config=replace(
                 recipe.alignment_config, backfill_enabled=args.backfill
-            ),
-            peak_config=untargeted_peak_config(
-                raw_dir=raw_dir,
-                dll_dir=dll_dir,
-                output_dir=output_dir,
-                discovery_settings=recipe.discovery_settings,
-                baseline_integration_method=_baseline_integration_method(args),
-                signal_processing_profile=signal_processing_profile,
             ),
             discovery_settings=recipe.discovery_settings,
             signal_processing_profile=signal_processing_profile,
@@ -708,10 +698,6 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         metavar="LOWER:UPPER",
         help="Retain curves only in this m/z range (repeatable); implies explanation",
     )
-    parser.add_argument(
-        "--baseline-integration-method",
-        help="Baseline integration method. Only asls is supported.",
-    )
     parser.add_argument("--emit-alignment-status-matrix", action="store_true")
     args = parser.parse_args(argv)
     if args.save_matrix_inputs and args.stop_after == "grouping":
@@ -891,22 +877,6 @@ def _write_cprofile_outputs(profiler: cProfile.Profile, output_dir: Path) -> Non
     top_path.write_text(stream.getvalue(), encoding="utf-8")
     print(f"cProfile binary: {profile_path}")
     print(f"cProfile top functions: {top_path}")
-
-
-def _baseline_integration_method(args: argparse.Namespace) -> str:
-    if args.baseline_integration_method:
-        method = args.baseline_integration_method.strip().lower()
-        if method == "linear_edge":
-            raise ValueError("linear_edge baseline integration is retired; use asls")
-        if method != "asls":
-            raise ValueError("--baseline-integration-method must be asls")
-        return method
-    env_method = os.environ.get("BASELINE_INTEGRATION_METHOD", "").strip().lower()
-    if env_method in {"", "asls"}:
-        return "asls"
-    if env_method == "linear_edge":
-        raise ValueError("linear_edge baseline integration is retired; use asls")
-    raise ValueError("BASELINE_INTEGRATION_METHOD must be asls")
 
 
 if __name__ == "__main__":

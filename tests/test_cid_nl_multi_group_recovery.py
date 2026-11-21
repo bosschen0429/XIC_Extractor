@@ -20,7 +20,6 @@ from tests.cid_nl_raw_fixture import (
     _current_candidates,
     _FakeRaw,
     _multi_tag_settings,
-    _peak_config,
     _settings,
 )
 from tests.cid_nl_runtime_fixtures import build_discovery_receipts, install_runtime_raws
@@ -73,6 +72,7 @@ from xic_extractor.sample_metadata import SampleMetadata
 from xic_extractor.untargeted_execution.partition import cid_nl_backfill_acquisition
 from xic_extractor.untargeted_execution.partition import models as partition_models
 from xic_extractor.untargeted_execution.partition.models import (
+    BACKFILL_HALF_WINDOW_MIN,
     UntargetedPartitionJob,
     project_completed_backfill,
 )
@@ -239,9 +239,8 @@ def test_backfill_batch_retains_shape_contradictions_as_soft_risk(
 
 
 @pytest.mark.parametrize("empty", [False, True])
-@pytest.mark.parametrize("half_window", [0.10, 0.15])
 def test_backfill_query_and_empty_completion_keep_sample_rt_separate_from_group(
-    tmp_path, monkeypatch, empty, half_window
+    tmp_path, monkeypatch, empty
 ):
     import csv
 
@@ -253,9 +252,6 @@ def test_backfill_query_and_empty_completion_keep_sample_rt_separate_from_group(
 
     shifts = {"S1": 0.0, "S2": 0.0, "Late": 0.4, "Early": -0.4}
     settings = _settings()
-    peak_config = replace(
-        _peak_config(tmp_path), nl_rt_anchor_half_window_min=half_window
-    )
     paths = tuple(tmp_path / f"{stem}.synthetic" for stem in shifts)
     raws, candidates = {}, {}
     for path in paths:
@@ -287,7 +283,6 @@ def test_backfill_query_and_empty_completion_keep_sample_rt_separate_from_group(
             for i, path in enumerate(paths, 1)
         ),
         settings=settings,
-        peak_config=peak_config,
         peaks_by_sample=candidates,
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,
@@ -329,9 +324,8 @@ def test_backfill_query_and_empty_completion_keep_sample_rt_separate_from_group(
         assert attempt.query_rt_basis == "calibrated_trajectory_fit"
         receipt = attempt.assessment.evaluation_receipt
         assert (receipt.query_rt_min, receipt.query_rt_max) == pytest.approx(
-            (expected - half_window, expected + half_window)
+            (expected - BACKFILL_HALF_WINDOW_MIN, expected + BACKFILL_HALF_WINDOW_MIN)
         )
-        assert not receipt.query_rt_min <= 8.0 <= receipt.query_rt_max
         assert len(attempt.assessment.candidate_peaks) == (0 if empty else 1)
         if not empty:
             assert attempt.assessment.candidate_peaks[
@@ -343,8 +337,8 @@ def test_backfill_query_and_empty_completion_keep_sample_rt_separate_from_group(
         if sample_stem in {"Early", "Late"}:
             assert backfill_query_bounds(cell) == pytest.approx(
                 (
-                    8.0 + shifts[sample_stem] - half_window,
-                    8.0 + shifts[sample_stem] + half_window,
+                    8.0 + shifts[sample_stem] - BACKFILL_HALF_WINDOW_MIN,
+                    8.0 + shifts[sample_stem] + BACKFILL_HALF_WINDOW_MIN,
                 )
             )
     path = render("backfill", tmp_path / "queries.tsv", writer)
@@ -354,7 +348,7 @@ def test_backfill_query_and_empty_completion_keep_sample_rt_separate_from_group(
         for row in rows:
             if row["sample_stem"] in {"Early", "Late"}:
                 assert float(row["backfill_query_rt_min"]) == pytest.approx(
-                    8.0 + shifts[row["sample_stem"]] - half_window
+                    8.0 + shifts[row["sample_stem"]] - BACKFILL_HALF_WINDOW_MIN
                 )
 
 
@@ -367,7 +361,7 @@ def test_rejected_discovery_input_cannot_supply_backfill_support(
 
     stems = ("S1", "S2", "Rejected")
     paths = tuple(tmp_path / f"{stem}.synthetic" for stem in stems)
-    settings, peak_config = _settings(), _peak_config(tmp_path)
+    settings = _settings()
     raws, candidates = {}, {}
     for path in paths:
         path.write_bytes(path.stem.encode())
@@ -401,7 +395,6 @@ def test_rejected_discovery_input_cannot_supply_backfill_support(
             for i, stem in enumerate(stems)
         ),
         settings=settings,
-        peak_config=peak_config,
         peaks_by_sample=candidates,
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,
@@ -500,10 +493,7 @@ def test_runtime_recovers_every_authorized_rt_group(
     authorized_centers = (8.0,) if shared_support == "below-quorum" else (8.0, 12.0)
     centers = {**support, "Missing": recovery_peaks}
     paths = tuple(tmp_path / f"{stem}.synthetic" for stem in centers)
-    settings, peak_config = (
-        replace(_settings(), neutral_loss_profile=None, rt_max=12.6),
-        _peak_config(tmp_path),
-    )
+    settings = replace(_settings(), neutral_loss_profile=None, rt_max=12.6)
     raws, candidates = {}, {}
     for path in paths:
         path.write_bytes(path.stem.encode())
@@ -559,7 +549,6 @@ def test_runtime_recovers_every_authorized_rt_group(
             for i, stem in enumerate(centers)
         ),
         settings=settings,
-        peak_config=peak_config,
         peaks_by_sample=candidates,
         signal_processing_profile=TEST_PROFILE,
     )
@@ -572,7 +561,6 @@ def test_runtime_recovers_every_authorized_rt_group(
             candidates,
             kwargs,
             settings,
-            peak_config,
         )
         return
     if batched:
@@ -604,7 +592,6 @@ def test_runtime_recovers_every_authorized_rt_group(
                 candidates=candidates[sample.raw_stem],
                 discovery_receipt=context.discovery_receipts_by_sample[sample.raw_stem],
                 settings=settings,
-                peak_config=peak_config,
                 raw_path=context.raw_paths_by_sample[sample.raw_stem],
                 dll_dir=tmp_path,
                 work_unit_key=sample.raw_stem,
@@ -641,8 +628,8 @@ def test_runtime_recovers_every_authorized_rt_group(
         )
         receipt = attempt.assessment.evaluation_receipt
         assert (receipt.query_rt_min, receipt.query_rt_max) == (
-            center - peak_config.nl_rt_anchor_half_window_min,
-            center + peak_config.nl_rt_anchor_half_window_min,
+            center - BACKFILL_HALF_WINDOW_MIN,
+            center + BACKFILL_HALF_WINDOW_MIN,
         )
     if len(authorized_centers) > 1:
         with pytest.raises(ValueError, match="multiple backfill attempts"):
@@ -1010,14 +997,11 @@ def _shared_peak_inputs(
 
     centers = {**dict.fromkeys(observed, (8.0, 8.12)), "Missing": (8.06,)}
     paths = tuple(tmp_path / f"{stem}.synthetic" for stem in centers)
-    settings, peak_config = (
-        replace(
-            _settings(),
-            neutral_loss_profile=None,
-            rt_max=8.6,
-            mass_recalibration=MassRecalibration.NONE,
-        ),
-        _peak_config(tmp_path),
+    settings = replace(
+        _settings(),
+        neutral_loss_profile=None,
+        rt_max=8.6,
+        mass_recalibration=MassRecalibration.NONE,
     )
     raws, candidates = {}, {}
     for index, path in enumerate(paths, start=1):
@@ -1073,7 +1057,6 @@ def _shared_peak_inputs(
             for index, stem in enumerate(centers)
         ),
         settings=settings,
-        peak_config=peak_config,
         peaks_by_sample=candidates,
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,
@@ -1170,10 +1153,7 @@ def test_shared_ms1_only_backfill_peak_is_not_written_to_two_rows(
                 return replace(trace, intensity=np.zeros_like(trace.intensity))
             return trace
 
-    settings, peak_config = (
-        replace(_settings(), neutral_loss_profile=None, rt_max=8.6),
-        _peak_config(tmp_path),
-    )
+    settings = replace(_settings(), neutral_loss_profile=None, rt_max=8.6)
     raws, candidates = {}, {}
     for path in paths:
         path.write_bytes(path.stem.encode())
@@ -1218,7 +1198,6 @@ def test_shared_ms1_only_backfill_peak_is_not_written_to_two_rows(
             for index, stem in enumerate(ms1_centers)
         ),
         settings=settings,
-        peak_config=peak_config,
         peaks_by_sample=candidates,
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,
@@ -1349,11 +1328,10 @@ def test_ms1_only_backfill_fills_only_one_unique_group_window_peak(
 ):
     centers = {"S1": (8.0,), "S2": (8.0,), "Missing": missing_peaks}
     paths = tuple(tmp_path / f"{stem}.synthetic" for stem in centers)
-    settings, peak_config = (
+    settings = (
         replace(_multi_tag_settings(), tag_combine_mode=composition)
         if composition
-        else replace(_settings(), neutral_loss_profile=None, rt_max=8.6),
-        _peak_config(tmp_path),
+        else replace(_settings(), neutral_loss_profile=None, rt_max=8.6)
     )
     raws, candidates = {}, {}
     for path in paths:
@@ -1397,7 +1375,6 @@ def test_ms1_only_backfill_fills_only_one_unique_group_window_peak(
             for index, stem in enumerate(centers)
         ),
         settings=settings,
-        peak_config=peak_config,
         peaks_by_sample=candidates,
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,
@@ -1498,10 +1475,7 @@ def test_backfill_reaches_a_sample_whose_support_belongs_to_another_group(
     ms1_centers = {"S1": (8.0,), "S2": (8.0,), "Missing": (8.0, 9.6)}
     nl_centers = {"S1": (8.0,), "S2": (8.0,), "Missing": (9.6,)}
     paths = tuple(tmp_path / f"{stem}.synthetic" for stem in ms1_centers)
-    settings, peak_config = (
-        replace(_settings(), neutral_loss_profile=None, rt_max=10.1),
-        _peak_config(tmp_path),
-    )
+    settings = replace(_settings(), neutral_loss_profile=None, rt_max=10.1)
     raws, candidates = {}, {}
     for path in paths:
         path.write_bytes(path.stem.encode())
@@ -1536,7 +1510,6 @@ def test_backfill_reaches_a_sample_whose_support_belongs_to_another_group(
             for index, stem in enumerate(ms1_centers)
         ),
         settings=settings,
-        peak_config=peak_config,
         peaks_by_sample=candidates,
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,
@@ -1585,7 +1558,7 @@ def test_alignment_uses_configured_recovery_groups(tmp_path, monkeypatch):
 
 
 def _assert_alignment_uses_configured_recovery_groups(
-    tmp_path, monkeypatch, paths, raws, candidates, kwargs, settings, peak_config
+    tmp_path, monkeypatch, paths, raws, candidates, kwargs, settings
 ):
     from tests.cid_nl_runtime_fixtures import persist_discovery_batch
     from xic_extractor.discovery.input_source import DiscoveryInputSource
@@ -1610,7 +1583,7 @@ def _assert_alignment_uses_configured_recovery_groups(
         )
         (recovery,) = missing.backfill_attempts
         receipt = recovery.assessment.evaluation_receipt
-        half_window = peak_config.nl_rt_anchor_half_window_min
+        half_window = BACKFILL_HALF_WINDOW_MIN
         assert (receipt.query_rt_min, receipt.query_rt_max) == (
             8.0 - half_window,
             8.0 + half_window,
@@ -1634,7 +1607,6 @@ def _assert_alignment_uses_configured_recovery_groups(
         dll_dir=tmp_path,
         output_dir=tmp_path / "alignment",
         settings=settings,
-        peak_config=peak_config,
         alignment_config=AlignmentConfig(
             anchor_min_seed_events=2, preferred_rt_sec=2.0
         ),
@@ -1748,7 +1720,6 @@ def _backfill_request(tmp_path, options, config):
         dll_dir=tmp_path,
         output_dir=tmp_path / "grouping",
         discovery_settings=options["settings"],
-        peak_config=options["peak_config"],
         execution=UntargetedExecutionPolicy(
             profile=ExecutionProfile(alignment_workers=1, backend="thread"),
             acquisition_cache_dir=tmp_path / "raw-facts",

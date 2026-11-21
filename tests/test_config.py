@@ -84,7 +84,6 @@ def test_missing_input_is_actionable(tmp_path, name):
         "dirty_matrix_mode",
         "rolling_window_size",
         "nl_rt_anchor_search_margin_min",
-        "nl_rt_anchor_half_window_min",
         "nl_fallback_half_window_min",
         "ms2_precursor_tol_da",
         "nl_min_intensity_ratio",

@@ -16,7 +16,6 @@ from xic_extractor.alignment.cid_nl_inputs import (
     CID_NL_ALIGNMENT_CONFIG,
     UntargetedCidNlAssessmentInput,
 )
-from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
@@ -326,7 +325,6 @@ def adapt_current_discovery_sample_subject(
     support_candidates: tuple[DiscoveryPeak, ...] = (),
     rt_reference_only: bool = False,
     settings: DiscoverySettings,
-    peak_config: ExtractionConfig,
     raw: CidNlRawSource | None,
     _preacquired_traces: UntargetedCidNlSampleTraceBatch | None = None,
     signal_processing_profile: SignalProcessingProfile,
@@ -338,7 +336,6 @@ def adapt_current_discovery_sample_subject(
         peaks=peaks,
         support_candidates=support_candidates,
         settings=settings,
-        peak_config=peak_config,
     )
     bounded = _bounded_subject_candidates(
         peaks,
@@ -413,7 +410,6 @@ def adapt_current_discovery_sample_subject(
         method_subject=method_subject,
         peaks=peak_candidates,
         settings=settings,
-        peak_config=peak_config,
         raw=raw,
         source=source,
         signal_processing_profile=signal_processing_profile,
@@ -533,7 +529,6 @@ def _adopt_peak_observations(
     method_subject: CidNlMethodSubject,
     peaks: tuple[DiscoveryPeak, ...],
     settings: DiscoverySettings,
-    peak_config: ExtractionConfig,
     raw: CidNlRawSource,
     source,
     signal_processing_profile: SignalProcessingProfile,
@@ -598,7 +593,7 @@ def _adopt_peak_observations(
             trace=trace,
             evaluations=(evaluation,),
             signal_processing_profile=signal_processing_profile,
-            resolver_mode=peak_config.resolver_mode,
+            resolver_mode=settings.resolver_mode,
         )[0]
         observations.append((peak.peak_id, observation))
         if evidence_sink is not None:
@@ -734,7 +729,6 @@ def _validate_inputs(**values: object) -> None:
         "peaks": tuple,
         "support_candidates": tuple,
         "settings": DiscoverySettings,
-        "peak_config": ExtractionConfig,
     }
     for name, kind in expected.items():
         if not isinstance(values[name], kind):
@@ -751,10 +745,8 @@ def _validate_inputs(**values: object) -> None:
         )
     method_subject = values["method_subject"]
     settings = values["settings"]
-    peak_config = values["peak_config"]
     assert isinstance(method_subject, CidNlMethodSubject)
     assert isinstance(settings, DiscoverySettings)
-    assert isinstance(peak_config, ExtractionConfig)
     if method_subject.subject_kind != "untargeted_precursor":
         raise CidNlAcquisitionError(
             "adapter requires an Untargeted CID-NL method subject"
@@ -800,10 +792,6 @@ def _validate_inputs(**values: object) -> None:
     ):
         raise CidNlAcquisitionError(
             "Discovery precursor tolerance mismatches the method subject"
-        )
-    if peak_config.baseline_integration_method != "asls":
-        raise CidNlAcquisitionError(
-            "peak_config requires canonical asls baseline integration"
         )
 
 

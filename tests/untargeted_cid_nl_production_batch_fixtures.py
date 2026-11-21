@@ -28,7 +28,6 @@ from tests.cid_nl_raw_fixture import (
     TEST_PROFILE,
     _FakeRaw,
     _multi_tag_settings,
-    _peak_config,
     _settings,
 )
 from tests.cid_nl_runtime_fixtures import (
@@ -196,7 +195,6 @@ def _assert_jobs_match_direct_construction(batch) -> None:
             candidates=context.peaks_by_sample[sample.raw_stem],
             discovery_receipt=context.discovery_receipts_by_sample[sample.raw_stem],
             settings=context.settings,
-            peak_config=context.peak_config,
             raw_path=context.raw_paths_by_sample[sample.raw_stem],
             dll_dir=batch.jobs[0].dll_dir,
             work_unit_key=(
@@ -430,7 +428,6 @@ def profile_replay(tmp_path, monkeypatch, request):
         rt_min=13.1,
         rt_max=17.4 if separate_groups or family_precursor_delta else 13.4,
     )
-    peak_config = _peak_config(tmp_path)
     profile = SignalProcessingProfile(window_points=15)
     if family_context:
         settings = replace(
@@ -871,7 +868,6 @@ def profile_replay(tmp_path, monkeypatch, request):
         dll_dir=tmp_path,
         output_dir=tmp_path / "alignment",
         settings=settings,
-        peak_config=peak_config,
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
         signal_processing_profile=profile,
         timing_recorder=TimingRecorder.disabled(
@@ -897,7 +893,6 @@ def profile_replay(tmp_path, monkeypatch, request):
                 candidates=candidates,
                 paths=paths,
                 center_rt=center_rt,
-                peak_config=peak_config,
                 profile=profile,
                 settings=settings,
                 receipts=receipts,
@@ -936,11 +931,9 @@ def _source_verification_inputs(tmp_path: Path):
     settings = replace(
         _settings(), neutral_loss_profile=None, precursor_mz_tolerance_ppm=1.0
     )
-    peak_config = _peak_config(tmp_path)
     raw, candidates = _nearby_subject_candidates(
         path,
         settings=settings,
-        peak_config=peak_config,
     )
     return (
         path,
@@ -956,7 +949,6 @@ def _source_verification_inputs(tmp_path: Path):
                 ),
             ),
             settings=settings,
-            peak_config=peak_config,
             peaks_by_sample={"S1": candidates},
             dll_dir=tmp_path,
             signal_processing_profile=TEST_PROFILE,
