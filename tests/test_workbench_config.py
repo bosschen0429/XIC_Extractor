@@ -116,18 +116,6 @@ def test_discovery_defaults_use_bundled_shared_targets(monkeypatch, tmp_path):
     assert untargeted_config.read_untargeted_config()["targets_csv"] == ""
 
 
-def test_old_workspace_worker_setting_is_ignored_and_not_written(tmp_path):
-    path = tmp_path / "workspace.json"
-    path.write_text(
-        json.dumps(
-            {"application": {"parallel_workers": "0"}, "batch": {}, "targets": []}
-        )
-    )
-    assert "parallel_workers" not in config_io.read_settings(config_dir=tmp_path)
-    config_io.write_dll_dir("shared-dll", config_dir=tmp_path)
-    assert json.loads(path.read_text())["application"] == {"dll_dir": "shared-dll"}
-
-
 def test_untargeted_save_routes_dll_to_canonical_and_preserves_unrelated_controls(
     tmp_path,
 ):

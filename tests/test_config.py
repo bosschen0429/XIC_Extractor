@@ -1,5 +1,4 @@
 import csv
-import json
 
 import pytest
 
@@ -109,31 +108,6 @@ def test_defaults_are_only_batch_and_machine():
         "injection_order_source",
     }
     assert warnings == []
-
-
-@pytest.mark.parametrize("workers", ["", "2", "0"])
-def test_targeted_uses_system_budget_not_old_workspace_worker_value(tmp_path, workers):
-    from xic_extractor.configuration.execution_profile import load_execution_profile
-    from xic_extractor.configuration.loader import prepare_targeted_config
-    from xic_extractor.configuration.workspace_state import save_workspace
-    from xic_workbench.config_io import read_settings as read_work_settings
-
-    config_dir = tmp_path / "config"
-    save_workspace(
-        config_dir,
-        settings={"data_dir": str(tmp_path), "dll_dir": str(tmp_path)},
-        targets=[_target_row()],
-    )
-    path = config_dir / "workspace.json"
-    state = json.loads(path.read_text(encoding="utf-8"))
-    state["application"]["parallel_workers"] = workers
-    path.write_text(json.dumps(state), encoding="utf-8")
-    assert "parallel_workers" not in read_work_settings(config_dir=config_dir)
-    prepared = prepare_targeted_config(config_dir)
-    try:
-        assert prepared.config.execution == load_execution_profile()
-    finally:
-        prepared.cleanup()
 
 
 @pytest.mark.parametrize("loss", ["116.0474", "132.0423", "146.0579", "162.0528"])

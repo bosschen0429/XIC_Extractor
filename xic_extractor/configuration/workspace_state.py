@@ -37,8 +37,6 @@ def read_workspace(config_dir: Path) -> dict:
             "targets",
         }:
             raise ValueError("unsupported workspace schema")
-        if isinstance(state.get("application"), dict):
-            state["application"].pop("parallel_workers", None)
         for section in ("application", "batch"):
             values = state[section]
             if not isinstance(values, dict) or any(
