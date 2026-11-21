@@ -46,12 +46,12 @@ The original browser shard passed 57 cases both before and after mitigation,
 with sampled TCP counts below 503 and over 8 GiB of available memory. Neither run
 reproduced the browser error; these clean intervals do not prove its elimination.
 
-The Windows test launch disables `TcpPortRandomizationWin`, preserving all 18
-stock disabled features observed with Playwright 1.64.1 / Chromium 156.0.8078.4.
-A temporary stock browser supplies that list once per channel and process;
-there is no copied list, test retry, increased worker budget or product-browser
-change. The real-browser regression compares the effective launch features
-against an independently launched stock browser.
+Playwright 1.65.0 [includes the mitigation in its own default feature list](https://github.com/microsoft/playwright/pull/43605).
+The fixture therefore launches the requested channel directly, without a
+second browser or a custom launch switch. On Windows, the fixture and an
+independent stock launch had the same 16 disabled features, including
+`TcpPortRandomizationWin`, for bundled headless Chromium 158.0.8127.18 and
+the locally installed Chrome and Edge channels.
 
 Evidence is under `output/browser-ci-analysis/`: `native-probe-result.json`,
 `shard-baseline/` and `shard-candidate/` hold the native comparison, live resource

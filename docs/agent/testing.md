@@ -144,10 +144,8 @@ After bootstrap, install the locked Chromium once and run the Workbench checks:
     .venv\Scripts\python.exe -m pytest tests/test_workbench_browser.py -q
 
 CI uses bundled Chromium; `XIC_PLAYWRIGHT_CHANNEL=chrome` (or `msedge`) is an
-explicit local opt-in. The Windows test launcher mitigates the
-[randomized TCP port defect](diagnostic-ledger.md#windows-randomized-tcp-ports-can-fail-at-low-connection-counts)
-while retaining Playwright's stock feature settings; product browsers are unchanged.
-[Removal criteria](https://github.com/bosschen0429/XIC_Extractor/issues/1221) require testing the locked Windows browser without the extra launch.
+explicit local opt-in. The shared fixture uses Playwright's stock Chromium launch;
+the locked version disables Windows TCP port randomization by default.
 A browser lane skipped by the coverage plan is not a passing browser run.
 For CI jobs, sharding and watchdog settings, see the
 [workflow](../../.github/workflows/ci.yml). On a browser failure, inspect
