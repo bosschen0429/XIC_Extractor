@@ -157,6 +157,30 @@ def test_cancellation_after_runtime_publishes_nothing(
     )
 
 
+def test_cancellation_during_raw_reads_is_reported_as_cancelled(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    inputs = entry_scenario(tmp_path, "positive")
+    read_sources: list[object] = []
+    read = _FakeThermoRaw.GetChromatogramData
+
+    def record_read(self, *args):
+        read_sources.append(self.source)
+        return read(self, *args)
+
+    monkeypatch.setattr(_FakeThermoRaw, "GetChromatogramData", record_read)
+
+    with pytest.raises(InterruptedError, match="cancelled"):
+        publish_alignment(
+            tmp_path, monkeypatch, should_cancel=lambda: bool(read_sources), **inputs
+        )
+    assert read_sources
+    assert not any(
+        (tmp_path / "alignment" / name).exists() for name in PUBLISHED_TABLES
+    )
+
+
 def test_runtime_failure_surfaces_as_alignment_error(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
