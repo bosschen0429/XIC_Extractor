@@ -1022,12 +1022,16 @@ $("load-curves").addEventListener("click", () =>
   action(startCurves, "正在準備所選樣本 XIC…"),
 );
 async function cancelCurves() {
-  if (!state.job) return;
+  const jobId = state.job?.id;
+  if (!jobId) return;
   try {
-    setCurveJob(await api(`/api/jobs/${state.job.id}/cancel`, {}));
-    updateProgress(state.job);
+    const job = await api(`/api/jobs/${jobId}/cancel`, {});
+    if (state.job?.id !== jobId) return;
+    setCurveJob(job);
+    updateProgress(job);
     controls();
   } catch (error) {
+    if (state.job?.id !== jobId) return;
     status(error.message, "error");
   }
 }

@@ -2300,6 +2300,74 @@ def test_raw_curve_read_never_locks_review_and_a_new_action_replaces_it(
     assert cancelled_reads(3) == 3
 
 
+@pytest.mark.parametrize("switch_item", [False, True], ids=["current", "replaced"])
+def test_cancel_confirmation_only_updates_the_current_curve_job(
+    workbench, tmp_path, monkeypatch, switch_item
+):
+    from tests.inspector_fixtures import create_review_batch
+    from xic_workbench import review_curves
+
+    release = threading.Event()
+
+    def blocked(*args, **kwargs):
+        assert release.wait(HANDSHAKE_TIMEOUT_S)
+        raise review_curves.ReviewAcquisitionCancelled()
+
+    monkeypatch.setattr(review_curves, "review_curve_bundle", blocked)
+    report, _ = create_review_batch(tmp_path)
+    page = workbench
+    _open_results(page)
+    page.locator("#source").fill(str(report))
+    page.locator("#open-form button[type=submit]").click()
+    page.get_by_role("button", name="瀏覽矩陣 feature").click()
+    first = page.locator('#item-list button[data-item-id*="a-complete"]')
+    next_item = page.locator('#item-list button[data-item-id*="z-priority"]')
+    first.click()
+    _configure_curve_sources(page, tmp_path, tmp_path)
+    _check_curve_samples(page)
+    with page.expect_response("**/api/curves") as started:
+        page.locator("#load-curves").click()
+    job_url = f"**/api/jobs/{started.value.json()['id']}"
+    cancel_url = f"{job_url}/cancel"
+    cancellations = []
+    page.route(job_url, lambda route: None)
+    page.route(cancel_url, lambda route: cancellations.append(route))
+    progress = page.locator("#job-progress")
+    cancel = page.locator("#cancel")
+    try:
+        expect(progress).to_be_visible()
+        expect(cancel).to_be_enabled()
+        with page.expect_request(cancel_url):
+            cancel.click()
+        confirmation = cancellations[0].fetch()
+        assert confirmation.json()["status"] == "cancelling"
+        selected = first
+        if switch_item:
+            next_item.click()
+            selected = next_item
+            expect(selected).to_have_attribute("aria-current", "true")
+            expect(progress).to_be_hidden()
+            expect(cancel).to_be_hidden()
+        with page.expect_response(cancel_url) as delivered:
+            cancellations.pop().fulfill(response=confirmation)
+        delivered.value.finished()
+        page.evaluate("""() => new Promise(resolve =>
+            requestAnimationFrame(() => requestAnimationFrame(resolve)))""")
+        expect(selected).to_have_attribute("aria-current", "true")
+        if switch_item:
+            expect(progress).to_be_hidden()
+            expect(cancel).to_be_hidden()
+        else:
+            expect(progress).to_be_visible()
+            expect(page.locator("#job-message")).to_contain_text("正在停止讀取")
+            expect(cancel).to_be_visible()
+            expect(cancel).to_be_disabled()
+    finally:
+        release.set()
+        page.unroute(cancel_url)
+        page.unroute(job_url)
+
+
 def test_starting_analysis_ends_the_curve_job_and_its_poll(
     workbench, tmp_path, monkeypatch, fake_runs
 ):
