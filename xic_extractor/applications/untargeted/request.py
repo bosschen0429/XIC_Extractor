@@ -70,10 +70,7 @@ class UntargetedRequest:
 
     def resolve_processing_profile(self) -> SignalProcessingProfile:
         """Resolve request dependencies at the formal application entry."""
-        settings = self.discovery_settings
-        if settings is not None and type(settings) is not DiscoverySettings:
-            raise TypeError("discovery_settings must be an exact DiscoverySettings")
-        if settings is None or not is_supported_alignment_discovery(settings):
+        if not is_supported_alignment_discovery(self.discovery_settings):
             raise ValueError(
                 "run_untargeted_application supports only supported CID-NL "
                 "discovery_settings; "
@@ -82,10 +79,6 @@ class UntargetedRequest:
                 "owner-closed discovery batch index"
             )
         profile = self.signal_processing_profile
-        if not isinstance(profile, SignalProcessingProfile):
-            raise TypeError(
-                "signal_processing_profile must be a SignalProcessingProfile"
-            )
         validate_retained_processing_profile(profile)
         return profile
 

@@ -366,7 +366,6 @@ def _request_subject_candidates(
     if not isinstance(job._request_subjects, UntargetedCidNlMethodSubjectBatch):
         return _bounded_subject_candidates(
             job.candidates,
-            sample=job.sample,
             method_subject=job.method_subject,
             settings=job.settings,
         )

@@ -41,7 +41,6 @@ from xic_extractor.peak_detection.cid_nl_method_assessment import (
     resolve_cid_nl_method_relations,
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import (
-    CidNlComposition,
     CidNlMethodSubject,
 )
 from xic_extractor.peak_detection.cid_nl_peak_support import (
@@ -140,30 +139,16 @@ class UntargetedCidNlBackfillTarget:
 
     def __post_init__(self) -> None:
         if (
-            not isinstance(self.group_hypothesis_id, str)
-            or not self.group_hypothesis_id.strip()
-            or not isinstance(self.method_subject, CidNlMethodSubject)
-            or isinstance(self.physical_mz, bool)
-            or not isinstance(self.physical_mz, (int, float))
-            or not math.isfinite(float(self.physical_mz))
+            not math.isfinite(self.physical_mz)
             or self.physical_mz <= 0.0
-            or isinstance(self.center_rt, bool)
-            or not isinstance(self.center_rt, (int, float))
-            or not math.isfinite(float(self.center_rt))
+            or not math.isfinite(self.center_rt)
             or self.center_rt < 0.0
-            or isinstance(self.sample_query_rt, bool)
-            or not isinstance(self.sample_query_rt, (int, float))
-            or not math.isfinite(float(self.sample_query_rt))
+            or not math.isfinite(self.sample_query_rt)
             or self.sample_query_rt < 0.0
-            or not isinstance(self.query_rt_basis, str)
-            or not self.query_rt_basis.strip()
-            or type(self.query_rt_reliable) is not bool
             or (
                 self.query_rt_tolerance_sec is not None
                 and (
-                    isinstance(self.query_rt_tolerance_sec, bool)
-                    or not isinstance(self.query_rt_tolerance_sec, (int, float))
-                    or not math.isfinite(self.query_rt_tolerance_sec)
+                    not math.isfinite(self.query_rt_tolerance_sec)
                     or self.query_rt_tolerance_sec <= 0.0
                 )
             )
@@ -189,65 +174,6 @@ class UntargetedCidNlBackfillTraceBatch:
     @property
     def group_hypothesis_ids(self) -> tuple[str, ...]:
         return tuple(target.group_hypothesis_id for target in self.targets)
-
-    def __post_init__(self) -> None:
-        if not self.sample_key.strip() or not self.acquisition_source_id.strip():
-            raise CidNlAcquisitionError(
-                "backfill trace batch requires owner identities"
-            )
-        if (
-            type(self.targets) is not tuple
-            or not self.targets
-            or any(
-                not isinstance(target, UntargetedCidNlBackfillTarget)
-                for target in self.targets
-            )
-            or len(self.group_hypothesis_ids) != len(set(self.group_hypothesis_ids))
-            or self.targets
-            != tuple(
-                sorted(
-                    self.targets,
-                    key=lambda target: (
-                        target.method_subject.method_subject_id,
-                        target.center_rt,
-                        target.group_hypothesis_id,
-                    ),
-                )
-            )
-            or type(self.requests) is not tuple
-            or type(self.trace_indices) is not tuple
-            or type(self.context_requests) is not tuple
-            or type(self.context_trace_indices) is not tuple
-            or not (len(self.targets) == len(self.requests) == len(self.trace_indices))
-        ):
-            raise CidNlAcquisitionError(
-                "backfill trace batch entries must be canonical and complete"
-            )
-        if (
-            not isinstance(self.acquisition, TraceAcquisitionBatch)
-            or set((*self.trace_indices, *self.context_trace_indices))
-            != set(range(len(self.acquisition.traces)))
-            or any(
-                self.acquisition.traces[index].coordinate.request != request
-                for request, index in zip(
-                    self.requests, self.trace_indices, strict=True
-                )
-            )
-        ):
-            raise CidNlAcquisitionError(
-                "backfill trace batch acquisition does not close its requests"
-            )
-        if (
-            len(self.context_requests) != len(self.context_trace_indices)
-            or len(self.context_requests) not in (0, len(self.targets))
-            or any(
-                self.acquisition.traces[index].coordinate.request != request
-                for request, index in zip(
-                    self.context_requests, self.context_trace_indices, strict=True
-                )
-            )
-        ):
-            raise CidNlAcquisitionError("backfill context requests are not bound")
 
     def acquired_trace(
         self,
@@ -351,17 +277,6 @@ def acquire_untargeted_cid_nl_backfill_trace_batch(
 ) -> UntargetedCidNlBackfillTraceBatch:
     """Acquire search traces and bounded fallback context in one sample phase."""
 
-    if (
-        type(backfill_requests) is not tuple
-        or not backfill_requests
-        or any(
-            not isinstance(item, UntargetedCidNlBackfillTarget)
-            for item in backfill_requests
-        )
-        or len({item.group_hypothesis_id for item in backfill_requests})
-        != len(backfill_requests)
-    ):
-        raise CidNlAcquisitionError("backfill requests must be a non-empty typed tuple")
     targets = tuple(
         sorted(
             backfill_requests,
@@ -447,44 +362,17 @@ def backfill_untargeted_cid_nl_sample_subject(
     immutable measured CID-NL evidence to new owner-resolved relations.
     """
 
-    if not isinstance(method_subject, CidNlMethodSubject):
-        raise CidNlAcquisitionError("method_subject has the wrong owner type")
-    if not isinstance(support_policy, DdaCidNlPeakSupportPolicy):
-        raise CidNlAcquisitionError("support_policy has the wrong owner type")
-    if initial_assessment is not None:
-        if (
-            not is_cid_nl_missing_ms1_rejection(initial_assessment)
-            or initial_assessment.evaluation_receipt.support_policy != support_policy
-        ):
-            raise CidNlAcquisitionError(
-                "backfill requires the exact missing-MS1 rejection and support policy"
-            )
-    if (
-        isinstance(group_center_rt, bool)
-        or not isinstance(group_center_rt, (int, float))
-        or not math.isfinite(float(group_center_rt))
-        or float(group_center_rt) < 0.0
+    if initial_assessment is not None and not is_cid_nl_missing_ms1_rejection(
+        initial_assessment
     ):
+        raise CidNlAcquisitionError("backfill requires the exact missing-MS1 rejection")
+    if not math.isfinite(group_center_rt) or group_center_rt < 0.0:
         raise CidNlAcquisitionError("group_center_rt must be finite and non-negative")
     query_rt = group_center_rt if query_rt is None else query_rt
-    if (
-        isinstance(query_rt, bool)
-        or not isinstance(query_rt, (int, float))
-        or not math.isfinite(float(query_rt))
-        or query_rt < 0.0
-        or not isinstance(query_rt_basis, str)
-        or not query_rt_basis.strip()
-    ):
-        raise CidNlAcquisitionError(
-            "query RT requires a finite non-negative value and basis"
-        )
+    if not math.isfinite(query_rt) or query_rt < 0.0:
+        raise CidNlAcquisitionError("query RT requires a finite non-negative value")
     physical_mz = group_center_mz
-    if (
-        isinstance(physical_mz, bool)
-        or not isinstance(physical_mz, (int, float))
-        or not math.isfinite(float(physical_mz))
-        or physical_mz <= 0.0
-    ):
+    if not math.isfinite(physical_mz) or physical_mz <= 0.0:
         raise CidNlAcquisitionError("group_center_mz must be finite and positive")
     source = acquisition_source
     query_rt_min, query_rt_max = _backfill_window(query_rt, half_window_min)
@@ -529,13 +417,6 @@ def backfill_untargeted_cid_nl_sample_subject(
         if group_hypothesis_id is None:
             raise CidNlAcquisitionError(
                 "preacquired backfill requires exact group identity"
-            )
-        if (
-            _preacquired_traces.sample_key != sample.sample_name
-            or _preacquired_traces.acquisition_source_id != source.acquisition_source_id
-        ):
-            raise CidNlAcquisitionError(
-                "backfill trace batch crossed its sample or acquisition source"
             )
         acquisition = _preacquired_traces.acquisition
         acquired = _preacquired_traces.acquired_trace(
@@ -597,21 +478,6 @@ def backfill_untargeted_cid_nl_sample_subject(
         if raw is None or settings is None:
             raise CidNlAcquisitionError(
                 "composite backfill requires full settings and owner-opened MS2 source"
-            )
-        if settings.tag_combine_mode == "single":
-            raise CidNlAcquisitionError(
-                "Composite backfill requires union or intersection"
-            )
-        expected = CidNlComposition(
-            tags=tuple(
-                (profile.tag, profile.neutral_loss_da)
-                for profile in settings.neutral_loss_profiles
-            ),
-            combine_mode=settings.tag_combine_mode,
-        )
-        if expected != method_subject.composition:
-            raise CidNlAcquisitionError(
-                "backfill composition mismatches the method subject"
             )
         backfill_evidence, backfill_support, backfill_sets = (
             _composite_backfill_evidence(

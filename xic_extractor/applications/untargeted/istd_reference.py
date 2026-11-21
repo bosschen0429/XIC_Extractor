@@ -110,8 +110,6 @@ def extract_batch_known_istd_reference(
 
 def read_known_istd_reference(path: Path) -> KnownIstdReference:
     """Read the current report schema and validate declared targets at their owner."""
-    if not isinstance(path, Path):
-        raise TypeError("known ISTD reference workbook must be a Path")
     payload = path.read_bytes()
     workbook = load_workbook(BytesIO(payload), read_only=True, data_only=True)
 

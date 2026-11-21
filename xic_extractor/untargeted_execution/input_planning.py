@@ -216,7 +216,6 @@ def prepare_indexed_untargeted_plan(
         for pair in ordered
         if not source.locations[pair[1]].requires_overlap_review
     )
-    receipts = source.batch.peak_receipts
     expectations = {
         path.stem: expectation
         for path, expectation in zip(
@@ -230,9 +229,7 @@ def prepare_indexed_untargeted_plan(
         metadata_by_stem={sample.raw_stem: sample for sample in sample_metadata},
         source_expectations=expectations,
         peak_map={stem: () for stem in source},
-        receipt_map={
-            stem: receipt for stem, receipt in receipts.items() if receipt is not None
-        },
+        receipt_map=source.batch.peak_receipts,
         signal_processing_profile=profile,
     )
     return UntargetedInputPlan(

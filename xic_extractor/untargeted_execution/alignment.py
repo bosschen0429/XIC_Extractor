@@ -21,7 +21,6 @@ from xic_extractor.configuration.execution_profile import ExecutionProfile
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
-from xic_extractor.discovery.batch_contract import DiscoveryPeakUniverseReceipt
 from xic_extractor.discovery.csv_reader import (
     DiscoveryBatchInput,
 )
@@ -82,13 +81,6 @@ def prepare_untargeted_alignment_inputs(
         raise ValueError(
             "CID-NL production requires RAW for every sample: " + ", ".join(missing)
         )
-
-    for sample_stem in discovery_batch.sample_order:
-        receipt = discovery_batch.peak_receipts[sample_stem]
-        if not isinstance(receipt, DiscoveryPeakUniverseReceipt):
-            raise ValueError(
-                "CID-NL production requires owner-closed Discovery receipts"
-            )
 
     ordered_raw_paths = tuple(
         raw_paths[sample_stem] for sample_stem in discovery_batch.sample_order

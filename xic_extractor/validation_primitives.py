@@ -303,24 +303,6 @@ def require_lower_sha256(
     return value
 
 
-def require_optional_lower_sha256(
-    value: object,
-    *,
-    field: str = "digest",
-    error_factory: Callable[[str], Exception] = ValueError,
-    type_error_factory: Callable[[str], Exception] | None = None,
-) -> str | None:
-    """Return lowercase SHA-256 digest if value is not None, else None."""
-    if value is None:
-        return None
-    return require_lower_sha256(
-        value,
-        field=field,
-        error_factory=error_factory,
-        type_error_factory=type_error_factory,
-    )
-
-
 __all__ = [
     "canonical_float_hex",
     "canonical_json_bytes",
@@ -336,7 +318,6 @@ __all__ = [
     "require_lower_sha256",
     "require_mapping",
     "require_optional_integer",
-    "require_optional_lower_sha256",
     "require_optional_text",
     "require_owner_normalized_text",
     "require_text",
