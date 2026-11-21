@@ -17,11 +17,12 @@ from time import perf_counter
 from typing import Any
 
 from xic_extractor.alignment.grouping_experiment import (
-    calibrate_grouping,
+    GroupingInputs,
+    GroupingWorkset,
+    refit_rt_models,
     replay_grouping,
 )
 from xic_extractor.alignment.rt_frame import SampleRtFrame
-from xic_extractor.alignment.sample_rt_calibration import RtCalibrationPolicy
 from xic_extractor.diagnostics.grouping_experiment_io import (
     query_discovery,
     read_grouping_inputs,
@@ -32,6 +33,7 @@ from xic_extractor.diagnostics.grouping_experiment_io import (
     write_rt_calibration,
     write_table,
 )
+from xic_extractor.rt_calibration_codec import rt_calibration_payload, rt_drift_payload
 
 
 def _range(value: str) -> tuple[float, float]:
@@ -93,16 +95,12 @@ def _add_replay_arguments(replay: argparse.ArgumentParser) -> None:
         metavar="FIELD=JSON",
         help="Override an AlignmentConfig field (Backfill does not affect grouping)",
     )
-    calibration = replay.add_mutually_exclusive_group()
-    calibration.add_argument(
-        "--calibrate",
-        action="store_true",
-        help="Fit the shared RT model from directly observed baseline groups",
+    replay.add_argument(
+        "--rt-calibration",
+        type=Path,
+        help="Use an existing sample_rt_calibration JSON instead of the batch RT "
+        "models refitted from the snapshot's anchors",
     )
-    calibration.add_argument(
-        "--rt-calibration", type=Path, help="Use an existing sample_rt_calibration JSON"
-    )
-    replay.add_argument("--loess-fraction", type=float, default=0.3)
     replay.add_argument(
         "--compare-to",
         type=Path,
@@ -113,8 +111,9 @@ def _add_replay_arguments(replay: argparse.ArgumentParser) -> None:
 def regroup_main(argv: Sequence[str]) -> int:
     parser = argparse.ArgumentParser(
         usage="%(prog)s regroup --inputs SNAPSHOT --output-dir DIR [options]",
-        description="Recompute initial scalar CID-NL groups from frozen observations "
-        "without Discovery, RAW, DLL, Backfill or Matrix publication.",
+        description="Refit batch RT models from the snapshot's anchors and recompute "
+        "initial scalar CID-NL groups from frozen observations, without Discovery, "
+        "RAW, DLL, Backfill or Matrix publication.",
     )
     _add_replay_arguments(parser)
     parser.set_defaults(command="replay")
@@ -188,44 +187,41 @@ def _execute(parser: argparse.ArgumentParser, argv: Sequence[str] | None) -> int
                 )
             config = replace(inputs.alignment_config, **overrides)
             baseline = replay_grouping(inputs)
-            calibration = None
-            if args.calibrate:
-                calibration = calibrate_grouping(
-                    inputs,
-                    baseline,
-                    policy=RtCalibrationPolicy(loess_fraction=args.loess_fraction),
-                )
-            elif args.rt_calibration:
+            rt_frame = None
+            if args.rt_calibration:
                 calibration = read_rt_calibration(args.rt_calibration)
-            if calibration is not None:
                 write_rt_calibration(
                     args.output_dir / "rt-calibration.json", calibration
                 )
-            rt_frame = (
-                SampleRtFrame().with_sample_calibration(calibration)
-                if calibration is not None
-                else None
-            )
-            grouping_config_changed = config != replace(
-                inputs.alignment_config, backfill_enabled=config.backfill_enabled
-            )
-            variant = grouping_config_changed or (
-                calibration is not None
-                and any(
+                rt_frame = SampleRtFrame().with_sample_calibration(calibration)
+                current = inputs
+                rt_model = "external"
+                rt_model_changed = any(
                     workset.rt_drift is not None
                     or workset.rt_calibration != calibration
                     for workset in inputs.worksets
                 )
+            else:
+                current = refit_rt_models(inputs)
+                rt_model = (
+                    "refit"
+                    if any(item.rt_model_inputs is not None for item in inputs.worksets)
+                    else "snapshot"
+                )
+                rt_model_changed = _rt_models_changed(inputs, current)
+            grouping_config_changed = config != replace(
+                inputs.alignment_config, backfill_enabled=config.backfill_enabled
             )
+            variant = grouping_config_changed or rt_model_changed
             groups = (
-                replay_grouping(inputs, config=config, rt_coordinates=rt_frame)
+                replay_grouping(current, config=config, rt_coordinates=rt_frame)
                 if variant
                 else baseline
             )
             summary = {
                 **write_grouping_result(
                     args.output_dir,
-                    inputs,
+                    current,
                     groups,
                     baseline=baseline if variant else (),
                     compare_to=args.compare_to,
@@ -233,13 +229,8 @@ def _execute(parser: argparse.ArgumentParser, argv: Sequence[str] | None) -> int
                 ),
                 "source": provenance,
                 "overrides": overrides,
-                "rt_calibration": bool(calibration),
-                "calibration_knot_count": len(calibration.knots) if calibration else 0,
-                "calibrated_sample_count": sum(
-                    bool(sample.knots) for sample in calibration.samples.values()
-                )
-                if calibration
-                else 0,
+                "rt_model": rt_model,
+                "rt_model_changed": rt_model_changed,
             }
         summary["elapsed_seconds"] = round(perf_counter() - started, 3)
         write_json(args.output_dir / "summary.json", summary)
@@ -247,6 +238,32 @@ def _execute(parser: argparse.ArgumentParser, argv: Sequence[str] | None) -> int
         return 0
     except (ValueError, OSError, KeyError, TypeError) as exc:
         parser.exit(2, f"{parser.prog}: {exc}\n")
+
+
+def _rt_models_changed(frozen: GroupingInputs, refitted: GroupingInputs) -> bool:
+    """Compare each batch's models as the snapshot persists them."""
+    pairs = {
+        (
+            id(before.rt_calibration),
+            id(before.rt_drift),
+            id(after.rt_calibration),
+            id(after.rt_drift),
+        ): (before, after)
+        for before, after in zip(frozen.worksets, refitted.worksets, strict=True)
+    }
+    return any(
+        _rt_model_payload(before) != _rt_model_payload(after)
+        for before, after in pairs.values()
+    )
+
+
+def _rt_model_payload(workset: GroupingWorkset) -> tuple[object, object]:
+    return (
+        None
+        if workset.rt_calibration is None
+        else rt_calibration_payload(workset.rt_calibration),
+        None if workset.rt_drift is None else rt_drift_payload(workset.rt_drift),
+    )
 
 
 if __name__ == "__main__":

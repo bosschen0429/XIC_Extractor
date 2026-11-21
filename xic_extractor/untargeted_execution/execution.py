@@ -776,6 +776,7 @@ class UntargetedPartitionPipelineAdapter:
                     if (frame := self._batch_preparation.frozen_rt_frame) is not None
                     else None
                 ),
+                rt_model_inputs=self._batch_preparation.rt_model_inputs,
             )
             if self._grouping_only:
                 return experiment

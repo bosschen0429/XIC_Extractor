@@ -15,7 +15,7 @@ XIC-specific task routing and invariants; global rules own general defaults.
 | UI information hierarchy, interactions, wording, styling or theme roles | [`ui-design.md`](docs/ui-design.md) |
 | Imports in startup-sensitive or lightweight readers | [Dependency Direction](docs/architecture-contract.md#dependency-direction) |
 | Issue scope, implementation completion, push, PR or review | [`delivery.md`](docs/agent/delivery.md) |
-| Current-format Untargeted output as test input | Regenerate with the [8RAW runner](docs/agent/local-execution.md#validation-scale); older runs under `output/` are not current-format input |
+| Untargeted output as test input | [Replay only the stage you changed](docs/agent/local-execution.md#replay-only-the-stage-you-changed) from a capture whose upstream stages match current code; regenerate with the [8RAW runner](docs/agent/local-execution.md#validation-scale) only for what no replay covers. Other runs under `output/` are not current-format input |
 | Scripts and diagnostics | [`script-tool-lifecycle.md`](docs/agent/script-tool-lifecycle.md) to add or retire one; [`INDEX.md`](tools/diagnostics/INDEX.md) to pick one; [`diagnostic-ledger.md`](docs/agent/diagnostic-ledger.md) before repeating evidence |
 | Docs, skills, hooks, rules or agent config | [`codex-operating-system.md`](docs/agent/codex-operating-system.md) |
 | GitHub issues | [Operations](docs/agent/issue-tracker.md); [labels](docs/agent/triage-labels.md) for triage |

@@ -401,7 +401,6 @@ to query Discovery or compare already-written tables:
 .venv/Scripts/python.exe -m tools.diagnostics.grouping_experiment query --discovery-batch-index <index.csv> --mz-range 242.12:242.13 --output-dir output/query
 .venv/Scripts/python.exe -m scripts.run_alignment --stop-after grouping --save-grouping-inputs <usual Alignment arguments> --output-dir output/grouping
 .venv/Scripts/python.exe -m scripts.run_alignment regroup --inputs output/grouping/grouping-inputs.json.gz --set preferred_rt_sec=30 --output-dir output/grouping-tight
-.venv/Scripts/python.exe -m scripts.run_alignment regroup --inputs output/grouping/grouping-inputs.json.gz --calibrate --output-dir output/grouping-calibrated
 ```
 
 Replay reads retained snapshots that still carry the retired owner
@@ -425,8 +424,10 @@ Add `--save-grouping-inputs` only when later regrouping needs a retained input;
 it writes `grouping-inputs.json.gz` without reading or replaying it again.
 
 The compressed `grouping-inputs.json.gz` retains scalar observations, exact
-member identities, measured member peaks, frozen batch calibration, elution
-landmarks, local peak-shape descriptors and configuration. Batch models and
+member identities, measured member peaks, each batch's frozen RT calibration
+and drift model with the anchor observations and ISTD coordinates they were
+fitted from, elution landmarks, local peak-shape descriptors and
+configuration. Batch models and
 contexts are shared across worksets. Context RT/intensity arrays are omitted;
 their tie priority is retained as context order. Older snapshots
 without shape descriptors cannot test shape-aware membership; a new
@@ -445,9 +446,14 @@ Saved tables can only resolve gaps to the precision of their observed RT values.
 grouping affect replay. Owner detection and integration changes require a new
 snapshot.
 
-`--calibrate` calls the formal sample RT calibration owner on established
-baseline groups with at least three measured members. `--loess-fraction` controls
-its local regression neighborhood; `--rt-calibration` instead supplies an
+Replay refits each batch's RT calibration and drift model from its retained
+anchors with the current code and groups against the refit; `summary.json`
+reports `rt_model` and `rt_model_changed`. A changed model is replayed twice,
+so `changes.tsv` compares the refit grouping with the frozen one. A snapshot
+without retained anchors (`rt_model: snapshot`) reuses its frozen models.
+Which peaks become anchors (initial assessment, bootstrap grouping and the
+calibration reference population) is fixed at capture; changing it needs a new
+capture. `--rt-calibration` instead supplies an
 existing `sample_rt_calibration` JSON. Replay preserves the map's measured
 support and explicit weak estimates without promoting them to strong support.
 Calibration does not change measured RT or area. Historical frozen offset maps

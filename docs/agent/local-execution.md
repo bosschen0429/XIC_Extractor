@@ -116,7 +116,7 @@ first three flags below.
 
 | Stage | Input to retain | What to compare |
 | --- | --- | --- |
-| `regroup` | `--save-grouping-inputs` → `grouping-inputs.json.gz` | Initial groups, members and reassignments |
+| `regroup` | `--save-grouping-inputs` → `grouping-inputs.json.gz` | Initial groups, members and reassignments, after refitting batch RT calibration and drift from the retained anchors |
 | `backfill` | `--save-backfill-inputs` → `backfill-inputs/` | `backfill-cells.tsv`: competing rows, sample, area, decision and status |
 | `pair-batches` | `--save-pairing-inputs` → one JSON per declared batch | `batch_correspondence.tsv`: partners, competitors and unpaired reasons; `summary.json`: reference and RT map diagnostics |
 | `matrix` | `--save-matrix-inputs` → `matrix-cells.json` and, for multiple batches, `matrix-join.json` | Only `alignment_matrix.tsv`, from the formal writer |
@@ -125,7 +125,7 @@ first three flags below.
 fit the original 50 ppm window; at 20 ppm, `members.tsv` shows two singletons
 and `changes.tsv` shows both reassignments. For real observations, substitute
 your captured snapshot. See the [grouping diagnostic](../../tools/diagnostics/INDEX.md#grouping_experimentpy)
-for baseline comparisons and calibration options.
+for baseline comparisons and which RT model changes replay covers.
 
     .venv\Scripts\python.exe -m scripts.run_alignment regroup --inputs tests/fixtures/synthetic-grouping.json.gz --set max_ppm=20 --output-dir output/regroup-smoke
 

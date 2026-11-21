@@ -25,12 +25,12 @@ from xic_extractor.alignment.result.application_result import (
 )
 from xic_extractor.alignment.result.scientific_alignment import ObservedSearchSubject
 from xic_extractor.alignment.rt_anchors import (
+    BatchRtModelInputs,
     RtAnchorObservation,
+    fit_batch_rt_model,
     rt_anchor_observations,
 )
-from xic_extractor.alignment.rt_drift import BatchRtModelAccumulator
 from xic_extractor.alignment.rt_frame import SampleRtFrame
-from xic_extractor.alignment.sample_rt_calibration import BatchRtCalibrationAccumulator
 from xic_extractor.discovery.models import DiscoveryPeak
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessment,
@@ -83,18 +83,8 @@ class CidNlBatchGrouping:
 
     def __init__(self, rt_frame: SampleRtFrame) -> None:
         self._bootstrap_frame = rt_frame
-        self._calibration = BatchRtCalibrationAccumulator(
-            sample_stems=tuple(
-                self._bootstrap_frame.sample_universe
-                or self._bootstrap_frame.injection_order
-            ),
-            sample_cohorts=self._bootstrap_frame.sample_cohorts,
-        )
-        self._drift = BatchRtModelAccumulator(
-            sample_cohorts=self._bootstrap_frame.sample_cohorts,
-            injection_order=self._bootstrap_frame.injection_order,
-            qc_samples=self._bootstrap_frame.qc_samples,
-        )
+        self._anchor_batches: list[tuple[RtAnchorObservation, ...]] = []
+        self._rt_model_inputs: BatchRtModelInputs | None = None
         self._rt_frame: SampleRtFrame | None = None
 
     def add_initial(self, prepared: CidNlGrouping) -> tuple[RtAnchorObservation, ...]:
@@ -108,8 +98,7 @@ class CidNlBatchGrouping:
     def add_anchor_observations(
         self, observations: Sequence[RtAnchorObservation]
     ) -> None:
-        self._calibration.add_observations(observations)
-        self._drift.add_observations(observations)
+        self._anchor_batches.append(tuple(observations))
 
     def freeze_calibration(
         self, *, reference: CidNlBatchGrouping | None = None
@@ -120,17 +109,28 @@ class CidNlBatchGrouping:
         i.e. without peaks measured on an unresolved shoulder or overlap.
         """
         source = reference if reference is not None else self
-        calibration = source._calibration.freeze(
-            measured_istds=self._bootstrap_frame.measured_istd_coordinates
+        frame = source._bootstrap_frame
+        self._rt_model_inputs = BatchRtModelInputs(
+            sample_stems=tuple(frame.sample_universe or frame.injection_order),
+            sample_cohorts=frame.sample_cohorts,
+            injection_order=frame.injection_order,
+            qc_samples=frame.qc_samples,
+            measured_istds=self._bootstrap_frame.measured_istd_coordinates,
+            anchor_batches=tuple(source._anchor_batches),
         )
         self._rt_frame = self._bootstrap_frame.with_sample_calibration(
-            calibration, source._drift.freeze(calibration)
+            *fit_batch_rt_model(self._rt_model_inputs)
         )
 
     @property
     def frozen_rt_frame(self) -> SampleRtFrame | None:
         """The final batch map retained for persisted review consumers."""
         return self._rt_frame
+
+    @property
+    def rt_model_inputs(self) -> BatchRtModelInputs | None:
+        """What the frozen map and drift model were fitted from."""
+        return self._rt_model_inputs
 
     def finalize_grouping(
         self,

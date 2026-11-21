@@ -364,9 +364,13 @@ def test_application_outputs_formal_groups_with_an_optional_snapshot(
         )
         == 0
     )
-    diff = json.loads((tmp_path / "replay" / "summary.json").read_text())[
-        "membership_diff"
-    ]
+    replay_summary = json.loads((tmp_path / "replay" / "summary.json").read_text())
+    assert all(workset.rt_model_inputs is not None for workset in inputs.worksets)
+    assert (replay_summary["rt_model"], replay_summary["rt_model_changed"]) == (
+        "refit",
+        False,
+    )
+    diff = replay_summary["membership_diff"]
     assert (
         diff["compared_owner_count"] > 0
         and diff["split_count"] == diff["merge_count"] == 0
@@ -526,6 +530,96 @@ def test_replay_members_report_the_selected_coordinate_basis(tmp_path, mode):
             assert risk["rt_estimate"]["method"] == (
                 "median_shift" if mode == "sparse" else "boundary_shift"
             )
+
+
+@pytest.mark.parametrize("retained", [True, False])
+def test_replay_refits_batch_rt_models_from_retained_anchors(
+    tmp_path, monkeypatch, retained
+):
+    from xic_extractor.alignment.rt_anchors import (
+        BatchRtModelInputs,
+        RtAnchorObservation,
+    )
+    from xic_extractor.alignment.sample_rt_calibration import BatchRtCalibration
+
+    samples = ("a", "b", "c")
+    shifts = {"a": 0.0, "b": 0.5, "c": 0.5}
+    query = 12.0
+    model_inputs = BatchRtModelInputs(
+        sample_stems=samples,
+        sample_cohorts=dict.fromkeys(samples, ""),
+        injection_order=dict(zip(samples, (1, 2, 3), strict=True)),
+        qc_samples=frozenset(),
+        measured_istds=(),
+        anchor_batches=(
+            tuple(
+                RtAnchorObservation(
+                    f"channel{i}",
+                    400.0 + i,
+                    None if i % 2 else 116.0474,
+                    sample,
+                    f"g{i}-{sample}",
+                    position + shifts[sample],
+                    f"g{i}",
+                )
+                for i, position in enumerate(range(10, 18))
+                for sample in samples
+            ),
+        ),
+    )
+    stale = BatchRtCalibration.from_coordinate_knots(
+        tuple((sample, ((0.0, 0.0), (60.0, 60.0))) for sample in samples)
+    )
+    owners = []
+    for sample in samples:
+        owner = _owner(sample, "peak", apex_rt=query + shifts[sample])
+        owners.append(
+            replace(owner, owner_id=owner.cross_sample_member_subject.subject_id)
+        )
+    kept = model_inputs if retained else None
+    inputs = GroupingInputs(
+        sample_stems=samples,
+        injection_order=dict(model_inputs.injection_order),
+        alignment_config=AlignmentConfig(),
+        worksets=(
+            GroupingWorkset("mass-window", tuple(owners), (), None, (), stale),
+            GroupingWorkset("empty", (), (), None, (), stale),
+        ),
+        candidate_ids_by_owner={},
+    )
+    inputs = replace(
+        inputs,
+        worksets=tuple(
+            replace(workset, rt_model_inputs=kept) for workset in inputs.worksets
+        ),
+    )
+    snapshot, output = tmp_path / "inputs.gz", tmp_path / "replay"
+    write_grouping_inputs(snapshot, inputs, provenance={"evidence": "synthetic"})
+    with gzip.open(snapshot, "rt", encoding="utf-8") as stream:
+        assert len(json.load(stream)["rt_models"]) == 1
+    restored, _ = read_grouping_inputs(snapshot)
+    first, second = restored.worksets
+    assert first.rt_model_inputs == kept
+    assert first.rt_model_inputs is second.rt_model_inputs
+    counted_replay = Mock(wraps=replay_grouping)
+    monkeypatch.setattr(
+        "tools.diagnostics.grouping_experiment.replay_grouping", counted_replay
+    )
+    assert main(["replay", "--inputs", str(snapshot), "--output-dir", str(output)]) == 0
+    summary = json.loads((output / "summary.json").read_text(encoding="utf-8"))
+    assert (summary["rt_model"], summary["rt_model_changed"]) == (
+        ("refit", True) if retained else ("snapshot", False)
+    )
+    assert counted_replay.call_count == (2 if retained else 1)
+    with (output / "members.tsv").open(encoding="utf-8") as stream:
+        members = list(csv.DictReader(stream, delimiter="\t"))
+    assert {row["sample_stem"]: float(row["comparison_rt"]) for row in members} == (
+        pytest.approx(
+            dict.fromkeys(samples, query + 0.5)
+            if retained
+            else {sample: query + shifts[sample] for sample in samples}
+        )
+    )
 
 
 def test_rt_coordinate_override_changes_membership_without_rewriting_measurements(

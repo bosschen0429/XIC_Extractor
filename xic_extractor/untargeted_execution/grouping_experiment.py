@@ -16,6 +16,7 @@ from xic_extractor.alignment.grouping_experiment import (
     GroupingWorkset,
 )
 from xic_extractor.alignment.result.scientific_alignment import ObservedSearchSubject
+from xic_extractor.alignment.rt_anchors import BatchRtModelInputs
 from xic_extractor.alignment.sample_rt_calibration import BatchRtCalibration
 
 
@@ -37,6 +38,7 @@ def grouping_experiment_from_prepared(
     alignment_config: AlignmentConfig,
     initial_job_count: int,
     rt_calibration: BatchRtCalibration | None,
+    rt_model_inputs: BatchRtModelInputs | None,
 ) -> PreparedGroupingExperiment:
     worksets = []
     groups: list[CrossSamplePeakGroupHypothesis] = []
@@ -84,6 +86,7 @@ def grouping_experiment_from_prepared(
                     rt_calibration=partition.rt_frame.calibration_for_snapshot,
                     rt_drift=partition.rt_frame.drift_model,
                     elution_contexts=workset.grouping_scope.peak_trajectories.source_contexts,
+                    rt_model_inputs=rt_model_inputs,
                 )
             )
     inputs = GroupingInputs(

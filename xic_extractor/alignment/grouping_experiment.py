@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample.peak_groups import (
@@ -17,18 +17,17 @@ from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 from xic_extractor.alignment.peak_trajectories import (
     resolve_peak_trajectories,
 )
+from xic_extractor.alignment.rt_anchors import BatchRtModelInputs, fit_batch_rt_model
 from xic_extractor.alignment.rt_drift import RtDriftModel
 from xic_extractor.alignment.rt_frame import RtFrame, SampleRtFrame
-from xic_extractor.alignment.sample_rt_calibration import (
-    BatchRtCalibration,
-    RtCalibrationPolicy,
-    build_batch_rt_calibration,
-)
+from xic_extractor.alignment.sample_rt_calibration import BatchRtCalibration
 from xic_extractor.peak_detection.elution_context import SampleElutionContext
 
 
 @dataclass(frozen=True, slots=True)
 class GroupingWorkset:
+    """One replay unit; worksets of one batch share its RT model and inputs."""
+
     key: str
     owners: tuple[SampleLocalMS1Owner, ...]
     known_identity_bindings: tuple[tuple[str, str], ...]
@@ -36,6 +35,7 @@ class GroupingWorkset:
     elution_contexts: tuple[SampleElutionContext, ...] = ()
     rt_calibration: BatchRtCalibration | None = None
     rt_drift: RtDriftModel | None = None
+    rt_model_inputs: BatchRtModelInputs | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,24 +110,20 @@ def replay_grouping(
     return tuple(groups)
 
 
-def calibrate_grouping(
-    inputs: GroupingInputs,
-    groups: tuple[CrossSamplePeakGroupHypothesis, ...],
-    *,
-    policy: RtCalibrationPolicy,
-) -> BatchRtCalibration:
-    """Fit the existing RT model from directly observed stable initial groups."""
-    observations = {
-        group.group_hypothesis_id: {
-            owner.sample_stem: owner.peak.integration.rt_apex_min
-            for owner in group.owners
-        }
-        for group in groups
-        if group.disposition == "established"
-    }
-    return build_batch_rt_calibration(
-        observations,
-        sample_stems=inputs.sample_stems,
-        prior_injections={},
-        policy=policy,
-    )
+def refit_rt_models(inputs: GroupingInputs) -> GroupingInputs:
+    """Fit each batch RT model again from its retained anchors with current code.
+
+    Worksets without retained anchors keep their frozen model.
+    """
+    fitted: dict[int, tuple[BatchRtCalibration, RtDriftModel]] = {}
+    worksets = []
+    for workset in inputs.worksets:
+        model_inputs = workset.rt_model_inputs
+        if model_inputs is None:
+            worksets.append(workset)
+            continue
+        if id(model_inputs) not in fitted:
+            fitted[id(model_inputs)] = fit_batch_rt_model(model_inputs)
+        calibration, drift = fitted[id(model_inputs)]
+        worksets.append(replace(workset, rt_calibration=calibration, rt_drift=drift))
+    return replace(inputs, worksets=tuple(worksets))

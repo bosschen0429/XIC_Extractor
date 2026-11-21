@@ -100,8 +100,9 @@ matter; see [Cleveland (1979)](https://doi.org/10.1080/01621459.1979.10481038)
 and the [NIST LOESS guidance](https://www.itl.nist.gov/div898/handbook/pmd/section1/pmd144.htm).
 It counts RT positions per injection, not the number of samples in the batch.
 The fit consumes fixed bootstrap anchors once; final regrouping and Backfill do
-not feed their own results back into that fit. Saved frozen maps keep their
-coordinates on replay and are not refitted under this floor.
+not feed their own results back into that fit. Grouping replay refits from the
+same retained anchors; a saved map without them keeps its coordinates and is
+not refitted under this floor.
 
 ### ISTD landmark bounded influence
 

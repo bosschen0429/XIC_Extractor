@@ -683,10 +683,7 @@ class BatchRtCalibrationAccumulator:
                 anchor.sample_stem: anchor.rt_min for anchor in anchors
             }
             self._channels[key] = {
-                anchor.sample_stem: (
-                    anchor.method_subject.precursor_mz,
-                    anchor.method_subject.neutral_loss_da,
-                )
+                anchor.sample_stem: (anchor.precursor_mz, anchor.neutral_loss_da)
                 for anchor in anchors
             }
 
