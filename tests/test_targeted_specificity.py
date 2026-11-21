@@ -1,4 +1,4 @@
-"""Per-target specificity: CID-NL value, Delta Mass ions, and earlier-format reading."""
+"""Per-target specificity: CID-NL value and Delta Mass ions."""
 
 import json
 
@@ -6,7 +6,6 @@ import openpyxl
 import pytest
 
 from tests.targeted_fixtures import ScopedMs2WindowReader
-from xic_extractor.configuration.legacy_target_methods import upgrade_target_table
 from xic_extractor.configuration.models import ConfigError
 from xic_extractor.configuration.target_list_files import (
     create_target_list,
@@ -88,104 +87,51 @@ def test_cid_nl_alone_ranks_while_with_delta_mass_it_is_a_required_condition():
     ]
 
 
-def _pair_method(combine="all", ppm=20, apex=1, cid=True):
-    """An earlier named identification method: CID-NL dR plus an M+1 pair."""
-    conditions = [{"kind": "cid_nl", "tag": "dR"}] if cid else []
-    conditions.append(
-        {
-            "kind": "delta_mass",
-            "apex_floor_sec": apex,
-            "positions": [
-                {"label": "quant", "offset_mz": 0},
-                {
-                    "label": "m1",
-                    "offset_mz": 1.003355,
-                    "ratio_min": 0.05,
-                    "ratio_max": 0.5,
-                },
-            ],
-        }
+def _workspace_targets_entry(tmp_path, column):
+    from xic_extractor.configuration.loader import prepare_targeted_config
+
+    (tmp_path / "workspace.json").write_text(
+        json.dumps(
+            {
+                "application": {"dll_dir": str(tmp_path)},
+                "batch": {"data_dir": str(tmp_path)},
+                "targets": [row(**{column: "dR"})],
+            }
+        ),
+        encoding="utf-8",
     )
-    return {"combine_mode": combine, "mz_tolerance_ppm": ppm, "conditions": conditions}
+    prepare_targeted_config(tmp_path)
 
 
-def _named(label, method):
-    return {
-        "label": label,
-        "mz": "302",
-        "expected_rt_min": "2",
-        "method": method,
-        "role": "analyte",
-        "istd_pair": "",
-    }
+def _csv_entry(tmp_path, column):
+    from xic_extractor.configuration.targets import read_targets
+
+    path = tmp_path / "targets.csv"
+    path.write_text(
+        f"label,mz,expected_rt_min,{column},role,istd_pair\nX,302,2,dR,analyte,\n",
+        encoding="utf-8",
+    )
+    read_targets(path)
 
 
-def test_earlier_workbook_with_named_methods_is_rejected(tmp_path):
-    path = tmp_path / "legacy.xlsx"
+def _xlsx_entry(tmp_path, column):
+    path = tmp_path / "targets.xlsx"
     book = openpyxl.Workbook()
     book.active.title = "Targets"
-    book.active.append(["label", "mz", "expected_rt_min", "method", "role"])
-    book.active.append(["iso", "302", "2", "Pair", "analyte"])
-    book.create_sheet("Identification Methods").append(["Method", "Condition", "Kind"])
+    book.active.append(["label", "mz", "expected_rt_min", column, "role", "istd_pair"])
+    book.active.append(["X", "302", "2", "dR", "analyte", ""])
     book.save(path)
-    with pytest.raises(ConfigError, match="舊格式.*Identification Methods"):
-        load_target_list(path)
+    load_target_list(path)
 
 
-@pytest.mark.parametrize(
-    "method,message",
-    [
-        (_pair_method(combine="any"), "任一符合"),
-        (
-            {
-                "conditions": [
-                    {"kind": "cid_nl", "tag": "dR"},
-                    {"kind": "cid_nl", "tag": "R"},
-                ]
-            },
-            "同類條件",
-        ),
-        (
-            {"conditions": [{"kind": "cid_nl", "tag": "dR"}]},
-            "必要條件",
-        ),
-    ],
-)
-def test_methods_the_new_format_cannot_express_are_rejected_with_targets(
-    method, message
-):
-    with pytest.raises(ConfigError, match=f"iso.*{message}"):
-        upgrade_target_table([_named("iso", "Pair")], {"Pair": method})
+@pytest.mark.parametrize("column", ["method", "cid_nl_tag"])
+@pytest.mark.parametrize("entry", [_csv_entry, _xlsx_entry, _workspace_targets_entry])
+def test_earlier_method_column_is_rejected_not_ignored(tmp_path, entry, column):
+    with pytest.raises(ConfigError, match=f"column {column} .*unsupported target"):
+        entry(tmp_path, column)
 
 
-def test_delta_mass_methods_with_different_shared_settings_are_rejected():
-    with pytest.raises(ConfigError, match="共用一組：a、b"):
-        upgrade_target_table(
-            [_named("a", "A"), _named("b", "B")],
-            {"A": _pair_method(), "B": _pair_method(apex=3)},
-        )
-
-
-def test_named_methods_convert_to_parameter_columns():
-    rows, details = upgrade_target_table(
-        [_named("iso", "Pair"), _named("plain", "R"), _named("ms1", "")],
-        {"Pair": _pair_method()},
-    )
-    assert [(r["cid_nl_loss_da"], r["delta_mass_mz"]) for r in rows] == [
-        ("116.0474", "+1.003355"),
-        ("132.0423", ""),
-        ("", ""),
-    ]
-    (ion,) = details["ions"]["iso"]
-    assert (ion["label"], ion["offset_mz"], ion["ratio_min"], ion["compare_shape"]) == (
-        "m1",
-        1.003355,
-        0.05,
-        False,
-    )
-
-
-def test_earlier_workspace_state_reads_as_parameter_columns(tmp_path):
+def test_workspace_with_earlier_identification_methods_is_rejected(tmp_path):
     from xic_extractor.configuration.workspace_state import read_workspace
 
     (tmp_path / "workspace.json").write_text(
@@ -193,46 +139,14 @@ def test_earlier_workspace_state_reads_as_parameter_columns(tmp_path):
             {
                 "application": {},
                 "batch": {},
-                "targets": [
-                    row(label="iso", cid_nl_tag="Pair"),
-                    row(label="plain", cid_nl_tag="dR"),
-                ],
-                "identification_methods": {
-                    "Pair": {
-                        "conditions": [
-                            {
-                                "kind": "delta_mass",
-                                "positions": [
-                                    {"label": "quant", "offset_mz": 0.0},
-                                    {"label": "light", "offset_mz": -2.0},
-                                ],
-                            }
-                        ]
-                    }
-                },
+                "targets": [row(cid_nl_loss_da="116.0474")],
+                "identification_methods": {},
             }
         ),
         encoding="utf-8",
     )
-    state = read_workspace(tmp_path)
-    assert "identification_methods" not in state
-    assert [(t["cid_nl_loss_da"], t["delta_mass_mz"]) for t in state["targets"]] == [
-        ("", "-2.0"),
-        ("116.0474", ""),
-    ]
-    assert state["delta_mass"]["ions"]["iso"][0]["label"] == "light"
-
-
-def test_named_method_without_definition_is_rejected(tmp_path):
-    path = tmp_path / "targets.csv"
-    path.write_text(
-        "label,mz,expected_rt_min,method,role,istd_pair\nX,302,2,Mine,analyte,\n",
-        encoding="utf-8",
-    )
-    from xic_extractor.configuration.targets import read_targets
-
-    with pytest.raises(ConfigError, match="X: 找不到方法 'Mine'"):
-        read_targets(path)
+    with pytest.raises(ConfigError, match="工作區設定檔無法讀取"):
+        read_workspace(tmp_path)
 
 
 def extract(tmp_path, raw, target_row, delta_mass, *, acquire_ms2=False):

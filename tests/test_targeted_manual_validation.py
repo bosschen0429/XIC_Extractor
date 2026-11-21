@@ -13,6 +13,12 @@ from tools.diagnostics.targeted_manual_validation import (
     score_manual_validation,
     write_validation_workbook,
 )
+from xic_extractor.configuration.execution_profile import (
+    ExecutionProfile,
+    load_execution_profile,
+)
+
+_EXECUTION = load_execution_profile(parallel_workers=1, backend="thread")
 
 
 def test_read_manual_truth_parses_dna_rna_two_raw_blocks(tmp_path: Path) -> None:
@@ -142,7 +148,7 @@ def test_score_manual_validation_tracks_numeric_errors_and_guardrails() -> None:
         ProgramPeakRow("SampleA", "Analyte", False, 11.10, 2300.0, 26000.0, True),
     ]
 
-    score = score_manual_validation("canonical_targeted", {}, truth, peaks)
+    score = score_manual_validation("canonical_targeted", _EXECUTION, truth, peaks)
 
     assert score.area_median_abs_pct_error == 0.2
     assert score.area_within_10pct == 1
@@ -184,7 +190,7 @@ def test_run_manual_validation_scores_one_current_pass() -> None:
             )
         ]
 
-    result = run_manual_validation(truth, fake_runner)
+    result = run_manual_validation(truth, fake_runner, execution=_EXECUTION)
 
     assert calls == 1
     assert result.score.name == "canonical_targeted"
@@ -207,7 +213,7 @@ def test_write_validation_workbook_contains_required_sheets(tmp_path: Path) -> N
     peaks = [ProgramPeakRow("SampleA", "TargetA", False, 10.01, 1000.0, 10000.0, True)]
     score = score_manual_validation(
         "canonical_targeted",
-        {},
+        _EXECUTION,
         truth,
         peaks,
     )
@@ -226,7 +232,7 @@ def _identity_check_status(tmp_path: Path, peaks: list[ProgramPeakRow]) -> str:
         ManualTruthRow("DNA", "SampleA", "Analyte", 11.0, 2000.0, 20000.0, 1.0, "拖尾"),
     ]
     score = score_manual_validation(
-        "canonical_targeted", {}, truth, peaks, istd_targets={"ISTD"}
+        "canonical_targeted", _EXECUTION, truth, peaks, istd_targets={"ISTD"}
     )
     output = tmp_path / "summary.xlsx"
     write_validation_workbook(output, [score])
@@ -312,7 +318,7 @@ def test_write_validation_workbook_lists_per_target_failures(tmp_path: Path) -> 
     ]
     score = score_manual_validation(
         "canonical_targeted",
-        {},
+        _EXECUTION,
         truth,
         peaks,
     )
@@ -371,21 +377,20 @@ def test_run_cases_executes_each_case_once_with_current_config(
         )
         for name in ("nosplit", "split")
     ]
-    calls: list[tuple[str, dict[str, str]]] = []
+    calls: list[tuple[str, ExecutionProfile]] = []
 
     def fake_run_case(
         case: module.ManualValidationCase,
         _output_dir: Path,
-        execution_overrides: dict[str, str],
+        execution: ExecutionProfile,
     ) -> list[module.ProgramPeakRow]:
-        calls.append((case.name, execution_overrides))
+        calls.append((case.name, execution))
         return []
 
     monkeypatch.setattr(module, "_run_case", fake_run_case)
-    overrides = {"parallel_mode": "process", "parallel_workers": "4"}
 
-    assert module._run_cases(cases, tmp_path, overrides) == []
-    assert calls == [("nosplit", overrides), ("split", overrides)]
+    assert module._run_cases(cases, tmp_path, _EXECUTION) == []
+    assert calls == [("nosplit", _EXECUTION), ("split", _EXECUTION)]
 
 
 def test_main_writes_workbook_with_injected_runner(tmp_path: Path, monkeypatch) -> None:
@@ -405,7 +410,7 @@ def test_main_writes_workbook_with_injected_runner(tmp_path: Path, monkeypatch) 
     def fake_runner(
         cases: list[module.ManualValidationCase],
         _output_dir: Path,
-        _execution_overrides: dict[str, str],
+        _execution: ExecutionProfile,
     ) -> list[module.ProgramPeakRow]:
         return [
             module.ProgramPeakRow(
@@ -459,14 +464,14 @@ def test_main_applies_parallel_overrides_to_one_current_run(
     split_targets = tmp_path / "targets2.csv"
     nosplit_targets.write_text("label\nTargetA\n", encoding="utf-8")
     split_targets.write_text("label\nTargetA\n", encoding="utf-8")
-    seen_overrides: list[dict[str, str]] = []
+    seen: list[ExecutionProfile] = []
 
     def fake_runner(
         cases: list[module.ManualValidationCase],
         _output_dir: Path,
-        execution_overrides: dict[str, str],
+        execution: ExecutionProfile,
     ) -> list[module.ProgramPeakRow]:
-        seen_overrides.append(execution_overrides)
+        seen.append(execution)
         return [
             module.ProgramPeakRow(
                 case.sample_name,
@@ -481,6 +486,7 @@ def test_main_applies_parallel_overrides_to_one_current_run(
         ]
 
     monkeypatch.setattr(module, "_run_cases", fake_runner)
+    output_dir = tmp_path / "validation"
 
     exit_code = module.main(
         [
@@ -495,16 +501,21 @@ def test_main_applies_parallel_overrides_to_one_current_run(
             "--split-targets",
             str(split_targets),
             "--output-dir",
-            str(tmp_path / "validation"),
+            str(output_dir),
             "--parallel-mode",
-            "process",
+            "serial",
             "--parallel-workers",
             "4",
         ]
     )
 
     assert exit_code == 0
-    assert seen_overrides == [{"parallel_mode": "process", "parallel_workers": "4"}]
+    assert seen == [load_execution_profile(parallel_workers=4, backend="thread")]
+    wb = load_workbook(output_dir / "targeted_manual_validation.xlsx", read_only=True)
+    assert list(wb["RunConfig"].iter_rows(values_only=True))[1:] == [
+        ("canonical_targeted", "parallel_mode", "serial"),
+        ("canonical_targeted", "parallel_workers", "4"),
+    ]
 
 
 def test_script_file_exposes_cli_help() -> None:

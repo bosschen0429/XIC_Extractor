@@ -28,11 +28,6 @@ def ion_name(offset_mz: float) -> str:
     return f"{offset_mz:+.4f}"
 
 
-def format_offset(offset_mz: float) -> str:
-    """Exact text of an offset in a target table cell."""
-    return f"{offset_mz:+}"
-
-
 @dataclass(frozen=True)
 class CidNlCondition:
     neutral_loss_da: float

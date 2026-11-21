@@ -80,6 +80,7 @@ def test_missing_input_is_actionable(tmp_path, name):
     "key",
     [
         "parallel_mode",
+        "parallel_workers",
         "dirty_matrix_mode",
         "rolling_window_size",
         "nl_rt_anchor_search_margin_min",
@@ -104,47 +105,8 @@ def test_defaults_are_only_batch_and_machine():
         "data_dir",
         "dll_dir",
         "injection_order_source",
-        "parallel_workers",
     }
     assert warnings == []
-
-
-@pytest.mark.parametrize("workers", ["", "2", "5"])
-def test_targeted_and_discovery_use_system_budget_not_saved_worker_value(
-    tmp_path, workers, monkeypatch
-):
-    from xic_extractor.configuration.execution_profile import load_execution_profile
-    from xic_extractor.configuration.loader import prepare_targeted_config
-    from xic_extractor.configuration.workspace_state import save_workspace
-    from xic_workbench.config_io import read_settings as read_work_settings
-    from xic_workbench.config_io import write_settings
-
-    config_dir = tmp_path / "config"
-    save_workspace(
-        config_dir,
-        settings={"data_dir": str(tmp_path), "dll_dir": str(tmp_path)},
-        targets=[_target_row()],
-    )
-    write_settings({"parallel_workers": workers}, config_dir=config_dir)
-    assert read_work_settings(config_dir=config_dir)["parallel_workers"] == ""
-    prepared = prepare_targeted_config(config_dir)
-    try:
-        assert (
-            prepared.config.execution.parallel_workers
-            == load_execution_profile().parallel_workers
-        )
-        if workers:
-            assert load_execution_profile(
-                parallel_workers=int(workers)
-            ).parallel_workers == int(workers)
-    finally:
-        prepared.cleanup()
-
-
-@pytest.mark.parametrize("workers", ["0", "-1", "1.5", "bad"])
-def test_targeted_rejects_invalid_worker_budget(workers):
-    with pytest.raises(ConfigError, match="parallel_workers.*integer >= 1"):
-        resolve_settings({"parallel_workers": workers})
 
 
 @pytest.mark.parametrize("loss", ["116.0474", "132.0423", "146.0579", "162.0528"])
@@ -160,19 +122,6 @@ def test_target_cid_nl_loss_is_a_number_under_the_shared_policy(loss):
 def test_target_cid_nl_loss_must_be_below_the_target_mz(loss):
     with pytest.raises(ConfigError, match="中性丟失"):
         parse_target_rows([_target_row(cid_nl_loss_da=loss)])
-
-
-@pytest.mark.parametrize(
-    "tag,loss", [("dR", 116.0474), ("R", 132.0423), ("MeR", 146.0579)]
-)
-def test_legacy_method_column_reads_as_its_loss(tmp_path, tag, loss):
-    path = tmp_path / "targets.csv"
-    path.write_text(
-        "label,mz,expected_rt_min,cid_nl_tag,role,istd_pair\n"
-        f"ISTD,258.1085,9,{tag},istd,\n",
-        encoding="utf-8",
-    )
-    assert read_targets(path)[0].neutral_loss_da == loss
 
 
 def test_blank_tag_admits_ms1_only_without_imposing_a_neutral_loss_mass():
