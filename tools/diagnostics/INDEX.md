@@ -436,12 +436,14 @@ Backfill acquisition windows are not grouping inputs. The snapshot reader also
 accepts retained snapshots carrying that extra metadata, without using it for
 membership; new snapshots omit it.
 Replay needs only that snapshot, with no RAW, DLL, acquisition or Backfill.
+Worksets replay in parallel processes, one fewer than the CPU count.
 `--compare-to <previous replay dir>` compares group membership with another
 replay or the capture output of the same snapshot, such as one produced by
 another commit, and writes `membership-diff.tsv` (merges and splits with their
 owners, samples and apex RT gap). A variant (`--set` or a changed RT model)
-compares `changes.tsv` with that directory's tables; without `--compare-to` it
-replays the frozen snapshot a second time as its baseline.
+compares `changes.tsv` with that directory's tables, so its changes include any
+grouping-code difference from that run; without `--compare-to` it replays the
+frozen snapshot a second time as its baseline.
 If both tables already exist, use `compare` instead. Both commands compare shared
 owner IDs, report unmatched counts, and reject a comparison with no common owner.
 Saved tables can only resolve gaps to the precision of their observed RT values.

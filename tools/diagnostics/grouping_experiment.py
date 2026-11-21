@@ -16,6 +16,7 @@ from pathlib import Path
 from time import perf_counter
 from typing import Any
 
+from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSamplePeakGroupHypothesis,
 )
@@ -25,7 +26,8 @@ from xic_extractor.alignment.grouping_experiment import (
     refit_rt_models,
     replay_grouping,
 )
-from xic_extractor.alignment.rt_frame import SampleRtFrame
+from xic_extractor.alignment.rt_frame import RtFrame, SampleRtFrame
+from xic_extractor.configuration.execution_profile import default_parallel_workers
 from xic_extractor.diagnostics.grouping_experiment_io import (
     query_discovery,
     read_grouping_inputs,
@@ -36,6 +38,7 @@ from xic_extractor.diagnostics.grouping_experiment_io import (
     write_rt_calibration,
     write_table,
 )
+from xic_extractor.execution.workers import WorkerAdmissionPool
 from xic_extractor.rt_calibration_codec import rt_calibration_payload, rt_drift_payload
 
 
@@ -109,7 +112,8 @@ def _add_replay_arguments(replay: argparse.ArgumentParser) -> None:
         type=Path,
         help="Previous replay or capture output dir of the same snapshot (e.g. "
         "another commit); a variant uses it as baseline instead of replaying the "
-        "frozen snapshot",
+        "frozen snapshot, so its changes include any grouping-code difference "
+        "from that run",
     )
 
 
@@ -218,16 +222,16 @@ def _execute(parser: argparse.ArgumentParser, argv: Sequence[str] | None) -> int
             )
             baseline: Sequence[CrossSamplePeakGroupHypothesis] | Path = ()
             if grouping_config_changed or rt_model_changed:
-                groups = replay_grouping(
+                groups = _replay_grouping(
                     current, config=config, rt_coordinates=rt_frame
                 )
                 baseline = (
                     args.compare_to
                     if args.compare_to is not None
-                    else replay_grouping(inputs)
+                    else _replay_grouping(inputs)
                 )
             else:
-                groups = replay_grouping(inputs)
+                groups = _replay_grouping(inputs)
             summary = {
                 **write_grouping_result(
                     args.output_dir,
@@ -248,6 +252,56 @@ def _execute(parser: argparse.ArgumentParser, argv: Sequence[str] | None) -> int
         return 0
     except (ValueError, OSError, KeyError, TypeError) as exc:
         parser.exit(2, f"{parser.prog}: {exc}\n")
+
+
+def _replay_grouping(
+    inputs: GroupingInputs,
+    *,
+    config: AlignmentConfig | None = None,
+    rt_coordinates: RtFrame | None = None,
+) -> tuple[CrossSamplePeakGroupHypothesis, ...]:
+    """``replay_grouping`` with worksets spread over processes, largest first.
+
+    Worksets share no grouping state, so the groups and their order are unchanged.
+    """
+    worksets = inputs.worksets
+    workers = min(default_parallel_workers(), len(worksets))
+    if workers < 2:
+        return replay_grouping(inputs, config=config, rt_coordinates=rt_coordinates)
+    context = (inputs, config, rt_coordinates)
+    results: dict[int, tuple[CrossSamplePeakGroupHypothesis, ...]] = {}
+
+    def collect(
+        _completed: int,
+        _total: int,
+        index: int,
+        groups: tuple[CrossSamplePeakGroupHypothesis, ...],
+    ) -> None:
+        results[index] = groups
+
+    with WorkerAdmissionPool(
+        max_workers=workers, backend="process", shared_objects=(context,)
+    ) as pool:
+        pool.run_windowed(
+            sorted(range(len(worksets)), key=lambda i: -len(worksets[i].owners)),
+            _replay_workset,
+            task_arg_fn=lambda index: (context, index),
+            on_completed=collect,
+        )
+    if pool.first_error is not None:
+        raise pool.first_error
+    return tuple(group for index in range(len(worksets)) for group in results[index])
+
+
+def _replay_workset(
+    task: tuple[tuple[GroupingInputs, AlignmentConfig | None, RtFrame | None], int],
+) -> tuple[CrossSamplePeakGroupHypothesis, ...]:
+    (inputs, config, rt_coordinates), index = task
+    return replay_grouping(
+        replace(inputs, worksets=(inputs.worksets[index],)),
+        config=config,
+        rt_coordinates=rt_coordinates,
+    )
 
 
 def _rt_models_changed(frozen: GroupingInputs, refitted: GroupingInputs) -> bool:

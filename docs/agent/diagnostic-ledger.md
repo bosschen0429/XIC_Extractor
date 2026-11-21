@@ -505,6 +505,20 @@ retained labels in one row, unchanged. Not judged neighborhood by neighborhood.
 Reopen when the LOESS fit, the support floor or the drift-anchor population changes.
 Artifacts: `output/rt1165-calib-monotone/` in the #1165 worktree.
 
+### Grouping time concentrates in dense windows
+
+`diagnostic_only` (2026-11-21). Replaying the 83-injection `output/nl_gate/fix`
+snapshot one workset at a time took 526 s after a 5 s load. The 50 slowest of
+1,828 worksets took 72%, and time grew with about owners^2.3. The three slowest
+(NL116, 83 samples, 169–275 owners, 30–40 s each) split two ways: one spent 77%
+in peak-pattern matching, which reruns the pairing DP for every candidate shift;
+two spent nearly all of it in membership search re-scoring merged groups
+(161,023 evaluations for 239 owners). Drift coefficient fitting was about a fifth
+of profiled time there. One window timed 31 and 40 s in two runs.
+
+Reopen when membership search, pattern matching or window density changes.
+Artifacts: `output/perf_probe/run83/` in the `feat/replay-rt-calibration` worktree.
+
 ### Accepted Alignment optimizations
 
 All `exact_safe` with byte-identical public outputs; local gains, not cohort
@@ -516,6 +530,7 @@ percentages.
 | Process workers read the shared owner bootstrap from shared memory, not initargs | workers started about 4 s apart (initargs block spawn until each child re-imports the main module), now together; initial phase 8RAW 35.4/36.4 to 28.7/32.4 s, oil 62.6/64.1 to 55.7/58.4 s; runtime −4 to −8 s | worker transport or start method changes |
 | No per-entry fsync in the recomputable fact cache (#699, `332f19f4`) | 8RAW median 104.1 to 80.2 s | cache persistence or recovery semantics change |
 | Final membership replay reuses group costs (#913, `a51d0473f`) | `replay_grouping` 240 to 178 s on 44 samples | membership costs, search or snapshot change |
+| Regroup replays worksets in process workers, largest first | 83 injections on 6 cores/12 threads: whole regroup 120 s against 526 s for sequential grouping alone, same 2,539 groups, peak working set 8.3 GB; 8RAW 4.2 to 6.2 s with six byte-identical tables | workset independence, worker transport or host changes |
 | Injection ordering prepared once per grouping population | grouping 0.156 to 0.115 s on the m/z 396 snapshot | neighbor semantics or grouping population change |
 | Peak trajectories use local mass and order regions | 128 mass families 1.85 to 0.17 s; ppm calls 1.75M to 13.6k | ppm/order semantics or density change |
 | Dense peak patterns reuse top-two DP states | 32 peaks 3.58 to 1.18 s | matching semantics change |

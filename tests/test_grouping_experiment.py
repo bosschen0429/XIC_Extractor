@@ -445,7 +445,7 @@ def test_istd_experiment_and_saved_replay_use_formal_batch_coordinates(
     ) != group_signature(expected)
     counted_replay = Mock(wraps=replay_grouping)
     monkeypatch.setattr(
-        "tools.diagnostics.grouping_experiment.replay_grouping", counted_replay
+        "tools.diagnostics.grouping_experiment._replay_grouping", counted_replay
     )
     output = tmp_path / "istd-replay"
     assert main(["replay", "--inputs", str(snapshot), "--output-dir", str(output)]) == 0
@@ -603,7 +603,7 @@ def test_replay_refits_batch_rt_models_from_retained_anchors(
     assert first.rt_model_inputs is second.rt_model_inputs
     counted_replay = Mock(wraps=replay_grouping)
     monkeypatch.setattr(
-        "tools.diagnostics.grouping_experiment.replay_grouping", counted_replay
+        "tools.diagnostics.grouping_experiment._replay_grouping", counted_replay
     )
     assert main(["replay", "--inputs", str(snapshot), "--output-dir", str(output)]) == 0
     summary = json.loads((output / "summary.json").read_text(encoding="utf-8"))
@@ -922,7 +922,7 @@ def test_replay_only_recomputes_when_grouping_inputs_change(tmp_path, monkeypatc
     a, b = "a|hypothesis|peak", "b|hypothesis|peak"
     counted_replay = Mock(wraps=replay_grouping)
     monkeypatch.setattr(
-        "tools.diagnostics.grouping_experiment.replay_grouping", counted_replay
+        "tools.diagnostics.grouping_experiment._replay_grouping", counted_replay
     )
 
     def run(name, *options):
@@ -982,13 +982,54 @@ def test_replay_only_recomputes_when_grouping_inputs_change(tmp_path, monkeypatc
     assert summary["membership_diff"]["merge_count"] == 0
 
 
+def test_parallel_regroup_writes_the_sequential_tables(tmp_path, monkeypatch):
+    import tools.diagnostics.grouping_experiment as experiment
+
+    samples = ("a", "b", "c")
+    worksets = []
+    for index, members in enumerate((samples[:2], samples, samples[:1])):
+        owners = []
+        for sample in members:
+            owner = _owner(sample, f"peak{index}", apex_rt=10.0 + index)
+            owners.append(
+                replace(owner, owner_id=owner.cross_sample_member_subject.subject_id)
+            )
+        worksets.append(GroupingWorkset(f"window{index}", tuple(owners), (), None))
+    snapshot = tmp_path / "inputs.gz"
+    write_grouping_inputs(
+        snapshot,
+        GroupingInputs(
+            sample_stems=samples,
+            injection_order=dict(zip(samples, (1, 2, 3), strict=True)),
+            alignment_config=AlignmentConfig(),
+            worksets=tuple(worksets),
+            candidate_ids_by_owner={},
+        ),
+        provenance={"evidence": "synthetic"},
+    )
+    command = ["replay", "--inputs", str(snapshot), "--output-dir"]
+    outputs = []
+    for workers in (1, 2):
+        monkeypatch.setattr(
+            experiment, "default_parallel_workers", lambda count=workers: count
+        )
+        outputs.append(tmp_path / f"workers{workers}")
+        assert main([*command, str(outputs[-1])]) == 0
+    sequential, parallel = outputs
+    with (parallel / "groups.tsv").open(encoding="utf-8") as stream:
+        rows = list(csv.DictReader(stream, delimiter="\t"))
+    assert [round(float(row["rt"])) for row in rows] == [10, 11, 12]
+    for name in ("groups.tsv", "members.tsv", "decisions.tsv", "samples.tsv"):
+        assert (parallel / name).read_bytes() == (sequential / name).read_bytes()
+
+
 def test_saved_memberships_compare_splits_and_merges_without_replay(
     tmp_path, monkeypatch
 ):
     from xic_extractor.diagnostics.grouping_experiment_io import write_table
 
     monkeypatch.setattr(
-        "tools.diagnostics.grouping_experiment.replay_grouping",
+        "tools.diagnostics.grouping_experiment._replay_grouping",
         lambda *a, **kw: pytest.fail("comparison must not regroup observations"),
     )
     observations = [
