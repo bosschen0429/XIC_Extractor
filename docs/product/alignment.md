@@ -243,7 +243,7 @@ matching chemistry, and precursors within the configured comparison tolerance.
 Their selected integration segments must be disjoint; owner bounds apply only
 when selected integrations are unavailable. Existing method compatibility must
 place track members exclusively on opposite sides of that pair.
-Product/loss envelope mismatches disambiguate that witness; a mismatch alone
+Product envelope mismatches disambiguate that witness; a mismatch alone
 does not revoke a track's membership authority.
 
 Withdrawal removes the track's seeds, same-track RT benefit, and derived

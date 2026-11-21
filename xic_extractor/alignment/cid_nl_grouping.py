@@ -61,11 +61,7 @@ def _known_istd_comparison_intervals(
 
 _DISCOVERY_MODERATE_EVIDENCE_SCORE = 40
 
-CidNlPairFailure = Literal[
-    "neutral_loss_tag_mismatch",
-    "product_mz_out_of_tolerance",
-    "observed_loss_out_of_tolerance",
-]
+CidNlPairFailure = Literal["neutral_loss_tag_mismatch", "product_mz_out_of_tolerance"]
 
 
 def cid_nl_pair_failures(
@@ -88,13 +84,6 @@ def cid_nl_pair_failures(
         > config.product_mz_tolerance_ppm
     ):
         return None, "product_mz_out_of_tolerance"
-    if (
-        absolute_ppm_error(
-            second.observed_neutral_loss_da, first.observed_neutral_loss_da
-        )
-        > config.observed_loss_tolerance_ppm
-    ):
-        return None, "observed_loss_out_of_tolerance"
     return None, None
 
 
@@ -146,16 +135,7 @@ def cid_nl_index_queries(
     event = owner.primary_identity_event
     axes = [("precursor", owner.peak.mz, config.max_ppm)]
     if event is not None:
-        axes.extend(
-            (
-                ("product", event.product_mz, config.product_mz_tolerance_ppm),
-                (
-                    "loss",
-                    event.observed_neutral_loss_da,
-                    config.observed_loss_tolerance_ppm,
-                ),
-            )
-        )
+        axes.append(("product", event.product_mz, config.product_mz_tolerance_ppm))
     return tuple(
         ((owner.neutral_loss_tag, axis), value, tolerance)
         for axis, value, tolerance in axes
@@ -178,18 +158,13 @@ class CidNlFeatureEnvelope:
     seed: SampleLocalMS1Owner
     product_min: float
     product_max: float
-    loss_min: float
-    loss_max: float
     composite_subject_id: str | None
 
     @classmethod
     def from_owner(cls, owner: SampleLocalMS1Owner) -> CidNlFeatureEnvelope:
         event = owner.primary_identity_event
         product = 0.0 if event is None else event.product_mz
-        loss = 0.0 if event is None else event.observed_neutral_loss_da
-        return cls(
-            owner, product, product, loss, loss, owner_composite_subject_id(owner)
-        )
+        return cls(owner, product, product, owner_composite_subject_id(owner))
 
     def add(self, owner: SampleLocalMS1Owner) -> None:
         if self.composite_subject_id is not None and not compatible_composite_owners(
@@ -200,8 +175,6 @@ class CidNlFeatureEnvelope:
         if event is not None:
             self.product_min = min(self.product_min, event.product_mz)
             self.product_max = max(self.product_max, event.product_mz)
-            self.loss_min = min(self.loss_min, event.observed_neutral_loss_da)
-            self.loss_max = max(self.loss_max, event.observed_neutral_loss_da)
 
     def failures(
         self, owner: SampleLocalMS1Owner, config: AlignmentConfig
@@ -228,16 +201,6 @@ class CidNlFeatureEnvelope:
             > 1.0
         ):
             return "", "product_envelope"
-        if (
-            envelope_fraction(
-                self.loss_min,
-                self.loss_max,
-                event.observed_neutral_loss_da,
-                config.observed_loss_tolerance_ppm,
-            )
-            > 1.0
-        ):
-            return "", "observed_loss_envelope"
         return "", ""
 
     def index_entries(
@@ -245,7 +208,7 @@ class CidNlFeatureEnvelope:
     ) -> tuple[tuple[tuple[str, str], float], ...]:
         values = [("precursor", precursor_min)]
         if self.seed.primary_identity_event is not None:
-            values.extend((("product", self.product_min), ("loss", self.loss_min)))
+            values.append(("product", self.product_min))
         entries = tuple(
             ((self.seed.neutral_loss_tag, axis), value) for axis, value in values
         )

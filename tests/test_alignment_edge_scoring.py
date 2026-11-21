@@ -109,11 +109,6 @@ def test_method_answer_not_reason_text_controls_rt_continuity(
             _owner("s2", product_mz=150.0100),
             "product_mz_out_of_tolerance",
         ),
-        (
-            _owner("s1", observed_neutral_loss_da=100.0000),
-            _owner("s2", observed_neutral_loss_da=100.0100),
-            "observed_loss_out_of_tolerance",
-        ),
     ],
 )
 def test_numeric_and_sample_hard_gates(
@@ -344,20 +339,14 @@ def test_drift_is_not_queried_when_it_cannot_admit_the_pair(
     assert edge.rt_drift_corrected_delta_sec is None
 
 
-@pytest.mark.parametrize("failure", ["product", "loss"])
-def test_targeted_istd_hard_gate_exception_retains_its_rt_query(failure: str) -> None:
+def test_targeted_istd_hard_gate_exception_retains_its_rt_query() -> None:
     from xic_extractor.alignment.cross_sample.peak_groups import (
         classify_cross_sample_initial_edge,
     )
 
     edge = evaluate_owner_edge(
         _owner("s1"),
-        _owner(
-            "s2",
-            owner_apex_rt=11.5,
-            product_mz=155.0 if failure == "product" else 150.0,
-            observed_neutral_loss_da=105.0 if failure == "loss" else 100.0,
-        ),
+        _owner("s2", owner_apex_rt=11.5, product_mz=155.0),
         config=AlignmentConfig(),
         rt_frame=SampleRtFrame().with_sources(
             drift_lookup=_DriftLookup(
@@ -445,19 +434,6 @@ def test_seed_support_uses_anchor_min_evidence_score_threshold(
             _owner("s1", precursor_mz=250.0000, product_mz=150.0000),
             _owner("s2", precursor_mz=250.0200, product_mz=150.0100),
             "precursor_mz_out_of_tolerance",
-        ),
-        (
-            _owner(
-                "s1",
-                product_mz=150.0000,
-                observed_neutral_loss_da=100.0000,
-            ),
-            _owner(
-                "s2",
-                product_mz=150.0100,
-                observed_neutral_loss_da=100.0100,
-            ),
-            "product_mz_out_of_tolerance",
         ),
     ],
 )

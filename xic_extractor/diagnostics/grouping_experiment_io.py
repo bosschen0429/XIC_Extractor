@@ -189,6 +189,7 @@ _RETIRED_ALIGNMENT_CONFIG_KEYS = frozenset(
         "duplicate_fold_rt_sec",
         "identity_rt_candidate_window_sec",
         "mz_bucket_neighbor_radius",
+        "observed_loss_tolerance_ppm",
         "owner_backfill_min_detected_samples",
         "owner_tail_max_secondary_ratio",
         "owner_tail_seed_guard_sec",

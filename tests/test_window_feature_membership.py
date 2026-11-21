@@ -1288,18 +1288,6 @@ def test_full85_bands_preserve_coherent_members_and_separate_rt_outlier(
     case: str,
 ) -> None:
     owners, orders = _owners(case)
-    old = infer_feature_memberships(
-        owners,
-        config=AlignmentConfig(),
-        rt_frame=SampleRtFrame(injection_order=(orders or {})),
-        bootstrap=True,
-        rules=CID_NL_GROUPING_RULES,
-    )
-    assert not any(
-        group.disposition == "assigned" and len(group.owner_ids) == len(owners)
-        for group in old.groups
-    ), "the fixture must expose the old split"
-
     result = infer_feature_memberships(
         tuple(reversed(owners)),
         config=AlignmentConfig(),
