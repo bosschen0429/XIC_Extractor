@@ -304,18 +304,6 @@ zero borrowed-support rows.
 Rerun when NL evidence ownership, segment selection or candidate projection
 changes.
 
-### d3-N6-medA: local RT, not absolute drift
-
-Dated case (2026-05-28), not a current verdict. Absolute RT range was 2.15 min
-across 85RAW but the local rolling-median p95 was 0.048 min with no moderate or
-severe rows; same-surface areas matched 8/8 (ratio ≈ 1.000001). Absolute drift
-and mixed-surface area comparisons are not reasons to reject a target. A later
-hardened gate rejected 13 promoted weak-seed rows as
-`risky_weak_seed_backfill`; that failure was the promotion policy, not absence.
-
-A new selection, boundary or promotion question needs evidence on current code,
-starting with 8RAW.
-
 ### Standard mixture manual 2RAW: identity check, not an area reference
 
 `diagnostic_only`; `e8a99be0` (2026-11-14). The two RAWs are method-change
