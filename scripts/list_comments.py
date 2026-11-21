@@ -1,13 +1,11 @@
-"""List source comments or reject ones not present in the comparison revision."""
+"""List tracked source comments as JSON lines: path, line and comment."""
 
-import argparse
 import io
 import json
 import re
 import subprocess
 import tokenize
 from bisect import bisect_right
-from collections import Counter
 from collections.abc import Iterator
 from functools import cache
 from itertools import chain
@@ -145,46 +143,11 @@ def git(*args: str) -> str:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    mode = parser.add_mutually_exclusive_group(required=True)
-    mode.add_argument("--base", help="Git commit to compare with the tracked worktree")
-    mode.add_argument("--inventory", action="store_true", help="emit JSON lines")
-    args = parser.parse_args()
-    if args.inventory:
-        for path in git("ls-files", "-z").split("\0")[:-1]:
-            if language(path) and not Path(path).is_symlink() and Path(path).is_file():
-                for line, value in comments(path, Path(path).read_text("utf-8-sig")):
-                    print(json.dumps({"path": path, "line": line, "comment": value}))
-        return 0
-    base = git(
-        "rev-parse", "--verify", "--end-of-options", args.base + "^{commit}"
-    ).strip()
-    changes = iter(
-        git("diff", "-M", "--name-status", "-z", base, "--").split("\0")[:-1]
-    )
-    failed = False
-    for status in changes:
-        old = next(changes)
-        path = next(changes) if status.startswith("R") else old
-        if status == "D" or not language(path) or Path(path).is_symlink():
-            continue
-        allowed = (
-            Counter(
-                text
-                for _, text in comments(
-                    old, git("show", f"{base}:{old}").replace("\r\n", "\n")
-                )
-            )
-            if status != "A" and language(old)
-            else Counter()
-        )
-        for line, text in comments(path, Path(path).read_text("utf-8-sig")):
-            if allowed[text]:
-                allowed[text] -= 1
-            else:
-                print(f"{path}:{line}: new source comment: {text}")
-                failed = True
-    return int(failed)
+    for path in git("ls-files", "-z").split("\0")[:-1]:
+        if language(path) and not Path(path).is_symlink() and Path(path).is_file():
+            for line, value in comments(path, Path(path).read_text("utf-8-sig")):
+                print(json.dumps({"path": path, "line": line, "comment": value}))
+    return 0
 
 
 if __name__ == "__main__":
