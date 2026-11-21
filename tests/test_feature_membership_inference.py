@@ -108,6 +108,24 @@ def test_bootstrap_identity_uses_measured_ion_masses_not_derived_loss(
     assert (together in _memberships(result)) is grouped
 
 
+def test_bootstrap_identity_requires_the_preferred_precursor_tolerance() -> None:
+    """Ions co-isolated for MS2 share one product; only the precursor separates them.
+
+    The 15N and 13C dA isotopologues co-elute 25.7 ppm apart: inside max_ppm,
+    outside preferred_ppm.
+    """
+    owners = (
+        _heavy_owner("a", 253.1067, 137.0593),
+        _heavy_owner("b", 253.1132, 137.0593),
+    )
+    result = infer_feature_memberships(
+        owners,
+        config=AlignmentConfig(),
+        rt_frame=SampleRtFrame(injection_order={"a": 1, "b": 2}),
+    )
+    assert frozenset(owner.owner_id for owner in owners) not in _memberships(result)
+
+
 @dataclass(frozen=True, slots=True)
 class _DriftLookup:
     deltas: dict[str, float | None]
