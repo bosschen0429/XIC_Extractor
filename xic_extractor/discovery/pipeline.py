@@ -12,6 +12,9 @@ from xic_extractor.configuration.mass_recalibration import (
     MassRecalibration,
     MassRecalibrationResult,
 )
+from xic_extractor.configuration.signal_processing_profile import (
+    SignalProcessingProfile,
+)
 from xic_extractor.discovery import output_publication
 from xic_extractor.discovery.blank_qualification import (
     BlankBackgroundLibrary,
@@ -33,9 +36,6 @@ from xic_extractor.discovery.ms1_capture import (
 )
 from xic_extractor.discovery.peak_binding import DiscoveryPeakPhysicalBinding
 from xic_extractor.discovery.priority import order_discovery_peak_bindings
-from xic_extractor.discovery.processing_run_spec_adapter import (
-    validate_processing_run_spec_call,
-)
 from xic_extractor.discovery.runtime_measurements import (
     record_discovery_ms1_measurements,
     record_raw_measurements,
@@ -50,7 +50,6 @@ from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.execution.timing import TimingRecorder
 from xic_extractor.processing_identity import AcquisitionSourceIdentity
 from xic_extractor.processing_run_spec import (
-    CidNlDiscoveryMethodSpec,
     ProcessingAcquisitionInput,
     ProcessingRunSpec,
 )
@@ -58,9 +57,6 @@ from xic_extractor.processing_run_spec import (
 
 class DiscoveryRawHandle(CidNlSearchSource, Protocol):
     """RAW reader surface needed by single-file discovery orchestration."""
-
-    @property
-    def acquisition_source(self) -> AcquisitionSourceIdentity: ...
 
     @property
     def mass_recalibration_result(self) -> MassRecalibrationResult: ...
@@ -98,12 +94,8 @@ def _apply_blank_qualification_if_enabled(
         sample_stem=sample_stem,
         metrics={"peak_count": len(bindings)},
     ) as stage:
-        if acquisition_input.blank_library_sha256 is None:
-            library = None
-        elif acquisition_input.blank_library_content is None:
-            raise ValueError("bound blank library snapshot is unavailable")
-        else:
-            library = _bound_background_library(acquisition_input.blank_library_content)
+        content = acquisition_input.blank_library_content
+        library = None if content is None else _bound_background_library(content)
         qualified = apply_blank_qualification_to_peaks(
             bindings,
             library,
@@ -117,35 +109,28 @@ def _apply_blank_qualification_if_enabled(
 
 
 def run_discovery(
-    raw_path: Path,
+    run_spec: ProcessingRunSpec,
     *,
     output_dir: Path,
-    settings: DiscoverySettings,
     dll_dir: Path,
     raw_opener: RawOpener | None = None,
     timing_recorder: TimingRecorder | None = None,
-    run_spec: ProcessingRunSpec,
     should_cancel: Callable[[], bool] | None = None,
 ) -> DiscoveryRunOutputs:
     raise_if_discovery_cancelled(should_cancel)
     recorder = timing_recorder or TimingRecorder.disabled("discovery")
-    (acquisition_input,) = validate_processing_run_spec_call(
-        run_spec,
-        (raw_path,),
-        discovery_settings=settings,
-    )
+    (acquisition_input,) = run_spec.acquisition_inputs
     discovery_result = _discover_sample(
-        raw_path,
-        settings=settings,
+        settings=run_spec.settings,
+        signal_processing_profile=run_spec.signal_processing_profile,
         dll_dir=dll_dir,
         raw_opener=raw_opener,
         timing_recorder=recorder,
-        run_spec=run_spec,
         acquisition_input=acquisition_input,
     )
     raise_if_discovery_cancelled(should_cancel)
     publication = output_publication.publish_discovery_batch_sample(
-        raw_path,
+        acquisition_input.raw_path,
         discovery_result.peaks,
         discovery_result.attachments,
         output_dir=output_dir,
@@ -163,27 +148,21 @@ def run_discovery(
 
 
 def run_discovery_batch(
-    raw_paths: tuple[Path, ...],
+    run_spec: ProcessingRunSpec,
     *,
     output_dir: Path,
-    settings: DiscoverySettings,
     dll_dir: Path,
     raw_opener: RawOpener | None = None,
     timing_recorder: TimingRecorder | None = None,
     execution: ExecutionProfile,
     executor_factory: Callable[..., Any] | None = None,
     progress_callback: Callable[[int, int, str], None] | None = None,
-    run_spec: ProcessingRunSpec,
     should_cancel: Callable[[], bool] | None = None,
 ) -> DiscoveryBatchOutputs:
     raise_if_discovery_cancelled(should_cancel)
     recorder = timing_recorder or TimingRecorder.disabled("discovery")
-    run_inputs = validate_processing_run_spec_call(
-        run_spec,
-        raw_paths,
-        discovery_settings=settings,
-    )
-    max_workers = min(len(raw_paths), execution.parallel_workers)
+    run_inputs = run_spec.acquisition_inputs
+    max_workers = min(len(run_inputs), execution.parallel_workers)
     if execution.backend == "process" and max_workers > 1:
         if raw_opener is not None:
             raise ValueError(
@@ -191,49 +170,43 @@ def run_discovery_batch(
                 "raw_opener injection requires in-process execution"
             )
         return run_discovery_batch_process(
-            raw_paths,
+            run_spec,
             output_dir=output_dir,
-            settings=settings,
             dll_dir=dll_dir,
             timing_recorder=recorder,
             max_workers=max_workers,
             executor_factory=executor_factory,
             progress_callback=progress_callback,
-            run_spec=run_spec,
-            run_inputs=run_inputs,
             should_cancel=should_cancel,
             discover_sample=discover_sample_for_process_job,
         )
 
     index_rows: list[dict[str, str]] = []
     per_sample: list[DiscoveryRunOutputs] = []
-    for sample_index, raw_path in enumerate(raw_paths):
+    for sample_index, acquisition_input in enumerate(run_inputs):
         raise_if_discovery_cancelled(should_cancel)
-        sample_stem = raw_path.stem
-        acquisition_input = run_inputs[sample_index]
-        acquisition_source = acquisition_input.acquisition_source
+        sample_stem = acquisition_input.raw_path.stem
         discovery_result = _discover_sample(
-            raw_path,
-            settings=settings,
+            settings=run_spec.settings,
+            signal_processing_profile=run_spec.signal_processing_profile,
             dll_dir=dll_dir,
             raw_opener=raw_opener,
             timing_recorder=recorder,
-            run_spec=run_spec,
             acquisition_input=acquisition_input,
         )
         publication = output_publication.publish_discovery_batch_sample(
-            raw_path,
+            acquisition_input.raw_path,
             discovery_result.peaks,
             discovery_result.attachments,
             output_dir=output_dir,
-            acquisition_source=acquisition_source,
+            acquisition_source=acquisition_input.acquisition_source,
             timing_recorder=recorder,
             mass_recalibration_result=discovery_result.mass_recalibration_result,
         )
         per_sample.append(publication.outputs)
         index_rows.append(publication.index_row)
         if progress_callback is not None:
-            progress_callback(sample_index + 1, len(raw_paths), sample_stem)
+            progress_callback(sample_index + 1, len(run_inputs), sample_stem)
 
     raise_if_discovery_cancelled(should_cancel)
     return DiscoveryBatchOutputs(
@@ -247,46 +220,44 @@ def run_discovery_batch(
 
 
 def _discover_sample(
-    raw_path: Path,
     *,
     settings: DiscoverySettings,
+    signal_processing_profile: SignalProcessingProfile,
     dll_dir: Path,
     raw_opener: RawOpener | None,
     timing_recorder: TimingRecorder,
-    run_spec: ProcessingRunSpec,
     acquisition_input: ProcessingAcquisitionInput,
 ) -> _DiscoverySampleResult:
-    acquisition_source = acquisition_input.acquisition_source
     if raw_opener is None:
         opener = _owner_bound_raw_opener(
-            acquisition_source,
+            acquisition_input.acquisition_source,
             settings.mass_recalibration,
             timing_recorder,
         )
     else:
         opener = raw_opener
     return _discover_completed_sample_with_runtime_projection(
-        raw_path,
         settings=settings,
+        signal_processing_profile=signal_processing_profile,
         dll_dir=dll_dir,
         raw_opener=opener,
         timing_recorder=timing_recorder,
-        run_spec=run_spec,
         acquisition_input=acquisition_input,
     )
 
 
 def _discover_completed_sample_with_runtime_projection(
-    raw_path: Path,
     *,
     settings: DiscoverySettings,
+    signal_processing_profile: SignalProcessingProfile,
     dll_dir: Path,
     raw_opener: RawOpener,
     timing_recorder: TimingRecorder,
-    run_spec: ProcessingRunSpec,
     acquisition_input: ProcessingAcquisitionInput,
 ) -> _DiscoverySampleResult:
     """Return peaks ready for publication after projecting owner metrics."""
+
+    raw_path = acquisition_input.raw_path
 
     def _project_acquisition(result: _DiscoverySampleResult) -> None:
         record_discovery_ms1_measurements(
@@ -297,13 +268,12 @@ def _discover_completed_sample_with_runtime_projection(
 
     try:
         result = _discover_completed_sample(
-            raw_path,
             settings=settings,
+            signal_processing_profile=signal_processing_profile,
             dll_dir=dll_dir,
             raw_opener=raw_opener,
             timing_recorder=timing_recorder,
             acquisition_observer=_project_acquisition,
-            run_spec=run_spec,
             acquisition_input=acquisition_input,
         )
     finally:
@@ -312,26 +282,25 @@ def _discover_completed_sample_with_runtime_projection(
 
 
 def _discover_completed_sample(
-    raw_path: Path,
     *,
     settings: DiscoverySettings,
+    signal_processing_profile: SignalProcessingProfile,
     dll_dir: Path,
     raw_opener: RawOpener,
     timing_recorder: TimingRecorder,
     measurement_observer: Callable[[_DiscoveryMs1Measurements], None] | None = None,
     acquisition_observer: Callable[[_DiscoverySampleResult], None] | None = None,
-    run_spec: ProcessingRunSpec,
     acquisition_input: ProcessingAcquisitionInput,
 ) -> _DiscoverySampleResult:
     """Acquire one RAW, close it, then complete its peak facts."""
 
     acquired = _acquire_discovery_sample(
-        raw_path,
+        settings=settings,
+        signal_processing_profile=signal_processing_profile,
         dll_dir=dll_dir,
         raw_opener=raw_opener,
         timing_recorder=timing_recorder,
         measurement_observer=measurement_observer,
-        run_spec=run_spec,
         acquisition_input=acquisition_input,
     )
     if acquisition_observer is not None:
@@ -341,7 +310,7 @@ def _discover_completed_sample(
             acquired.physical_bindings,
             settings=settings,
             timing_recorder=timing_recorder,
-            sample_stem=raw_path.stem,
+            sample_stem=acquisition_input.raw_path.stem,
             acquisition_input=acquisition_input,
         ),
         settings=settings,
@@ -356,31 +325,18 @@ def _discover_completed_sample(
 
 
 def _acquire_discovery_sample(
-    raw_path: Path,
     *,
+    settings: DiscoverySettings,
+    signal_processing_profile: SignalProcessingProfile,
     dll_dir: Path,
     raw_opener: RawOpener,
     timing_recorder: TimingRecorder,
     measurement_observer: Callable[[_DiscoveryMs1Measurements], None] | None = None,
-    run_spec: ProcessingRunSpec,
     acquisition_input: ProcessingAcquisitionInput,
 ) -> _DiscoverySampleResult:
-    if (
-        acquisition_input.input_ordinal >= len(run_spec.acquisition_inputs)
-        or run_spec.acquisition_inputs[acquisition_input.input_ordinal]
-        != acquisition_input
-    ):
-        raise ValueError("Discovery input crosses ProcessingRunSpec binding")
-    method = run_spec.discovery_method
-    if not isinstance(method, CidNlDiscoveryMethodSpec):
-        raise ValueError("sample-local Discovery search supports only CID-NL")
+    raw_path = acquisition_input.raw_path
     sample_stem = raw_path.stem
     with raw_opener(raw_path, dll_dir) as raw:
-        owner_bound_source = _owner_bound_acquisition_source(raw)
-        if owner_bound_source != acquisition_input.acquisition_source:
-            raise ValueError(
-                "spec-bound Discovery RAW handle crosses acquisition source"
-            )
         completed = False
         acquired_measurements: _DiscoveryMs1Measurements | None = None
 
@@ -398,9 +354,9 @@ def _acquire_discovery_sample(
             acquisition_result = search_cid_nl_sample(
                 raw,
                 raw_file=raw_path,
-                method=method,
+                settings=settings,
                 acquisition_source=acquisition_input.acquisition_source,
-                signal_processing_profile=run_spec.signal_processing_profile,
+                signal_processing_profile=signal_processing_profile,
                 timing_recorder=timing_recorder,
                 measurement_observer=_capture_acquired_measurements,
             )
@@ -435,15 +391,6 @@ def _acquire_discovery_sample(
                                 f"{type(diagnostic_exc).__name__}: {diagnostic_exc}"
                             ),
                         )
-
-
-def _owner_bound_acquisition_source(
-    raw: DiscoveryRawHandle,
-) -> AcquisitionSourceIdentity:
-    source = raw.acquisition_source
-    if not isinstance(source, AcquisitionSourceIdentity):
-        raise ValueError("Discovery RAW handle has an invalid acquisition source")
-    return source
 
 
 def _owner_bound_raw_opener(
@@ -481,16 +428,15 @@ def discover_sample_for_process_job(
 ) -> _DiscoverySampleResult:
     """Discover one process job's sample through the source-bound RAW opener."""
     return _discover_completed_sample(
-        job.raw_path,
         settings=job.settings,
+        signal_processing_profile=job.signal_processing_profile,
         dll_dir=job.dll_dir,
         raw_opener=_owner_bound_raw_opener(
-            job.acquisition_source,
+            job.acquisition_input.acquisition_source,
             job.settings.mass_recalibration,
             timing_recorder,
         ),
         timing_recorder=timing_recorder,
         measurement_observer=measurement_observer,
-        run_spec=job.run_spec,
         acquisition_input=job.acquisition_input,
     )

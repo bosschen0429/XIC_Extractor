@@ -21,13 +21,12 @@ from xic_extractor.configuration.execution_profile import ExecutionProfile
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
-from xic_extractor.discovery.batch_contract import DiscoveryPeakUniverseReceipt
 from xic_extractor.discovery.csv_reader import (
     DiscoveryBatchInput,
 )
 from xic_extractor.discovery.input_source import DiscoveryInputSource
 from xic_extractor.discovery.processing_run_spec_adapter import (
-    compile_discovery_processing_run_spec_with_expectations,
+    fingerprint_acquisition_sources,
 )
 from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.execution.timing import TimingRecorder
@@ -83,13 +82,6 @@ def prepare_untargeted_alignment_inputs(
             "CID-NL production requires RAW for every sample: " + ", ".join(missing)
         )
 
-    for sample_stem in discovery_batch.sample_order:
-        receipt = discovery_batch.peak_receipts[sample_stem]
-        if not isinstance(receipt, DiscoveryPeakUniverseReceipt):
-            raise ValueError(
-                "CID-NL production requires owner-closed Discovery receipts"
-            )
-
     ordered_raw_paths = tuple(
         raw_paths[sample_stem] for sample_stem in discovery_batch.sample_order
     )
@@ -129,10 +121,8 @@ def prepare_untargeted_alignment_inputs(
     recorder = timing_recorder or TimingRecorder.disabled("alignment")
     output_dir.mkdir(parents=True, exist_ok=True)
     with recorder.stage("alignment.verify_acquisition_sources"):
-        _spec, expectations = compile_discovery_processing_run_spec_with_expectations(
+        expectations = fingerprint_acquisition_sources(
             ordered_raw_paths,
-            discovery_settings=settings,
-            signal_processing_profile=signal_processing_profile,
             fingerprint_threads=execution.alignment_workers,
             verified_acquisition_sources=verified_acquisition_sources,
         )

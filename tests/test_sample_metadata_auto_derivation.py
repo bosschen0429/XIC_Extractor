@@ -6,7 +6,7 @@ from xic_extractor.sample_metadata import (
 )
 from xic_extractor.untargeted_execution.partition.request import (
     IdentityContractError,
-    _metadata_by_stem,
+    compose_partition_context,
 )
 
 
@@ -29,7 +29,7 @@ def test_infer_sample_role() -> None:
     assert infer_sample_role(None, sample_name="") == "other"
 
 
-def test_metadata_by_stem_rejects_duplicate_injection_order_within_same_batch() -> None:
+def test_partition_context_rejects_duplicate_injection_order() -> None:
     rows = (
         SampleMetadata(
             sample_name="S1",
@@ -45,9 +45,18 @@ def test_metadata_by_stem_rejects_duplicate_injection_order_within_same_batch() 
         ),
     )
     with pytest.raises(
-        IdentityContractError, match="injection orders must be complete and unique"
+        IdentityContractError, match="injection_order values must be unique"
     ):
-        _metadata_by_stem(rows)
+        compose_partition_context(
+            method_subject=None,
+            settings=None,
+            paths_by_stem={},
+            metadata_by_stem={row.raw_stem: row for row in rows},
+            source_expectations={},
+            peak_map={},
+            receipt_map={},
+            signal_processing_profile=None,
+        )
 
 
 def test_infer_sample_role_extensions() -> None:

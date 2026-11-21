@@ -114,35 +114,6 @@ class UntargetedPartitionJob:
     _candidate_order: Mapping[str, int] = field(init=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
-        expected = (
-            ("method_subject", CidNlMethodSubject),
-            ("discovery_receipt", DiscoveryPeakUniverseReceipt),
-            ("settings", DiscoverySettings),
-            ("raw_path", Path),
-            ("dll_dir", Path),
-        )
-        for field_name, kind in expected:
-            if not isinstance(getattr(self, field_name), kind):
-                raise UntargetedPartitionError(f"{field_name} has the wrong owner type")
-        if not isinstance(self.candidates, tuple) or any(
-            not isinstance(item, DiscoveryPeak) for item in self.candidates
-        ):
-            raise UntargetedPartitionError(
-                "candidates must contain current DiscoveryPeak values"
-            )
-        if self.subject_partition is not None and not isinstance(
-            self.subject_partition, UntargetedCidNlMethodSubjectBatch
-        ):
-            raise UntargetedPartitionError(
-                "subject_partition must be an owner-normalized subject batch or None"
-            )
-        if not isinstance(self.support_candidates, tuple) or any(
-            not isinstance(item, DiscoveryPeak) for item in self.support_candidates
-        ):
-            raise UntargetedPartitionError(
-                "support_candidates must contain current DiscoveryPeak values"
-            )
-        _required_text(self.work_unit_key, field="work_unit_key")
         object.__setattr__(
             self,
             "_request_subjects",
@@ -160,12 +131,6 @@ class UntargetedPartitionJob:
                 }
             ),
         )
-        if self.acquisition_cache_dir is not None and not isinstance(
-            self.acquisition_cache_dir, Path
-        ):
-            raise UntargetedPartitionError(
-                "acquisition_cache_dir must be a Path or None"
-            )
         object.__setattr__(
             self,
             "_request_candidates_by_subject",
@@ -192,25 +157,10 @@ def build_sample_jobs(
     prepared_mass_recalibration: PreparedRawMassRecalibration | None = None,
     rt_reference_only: bool = False,
 ) -> tuple[UntargetedPartitionJob, ...]:
-    """Validate a sample once, then bind each subject to those same inputs."""
+    """Bind each subject of one sample to that sample's shared inputs."""
 
     if not subject_work_units:
         return ()
-    if subject_partition is not None:
-        if not isinstance(subject_partition, UntargetedCidNlMethodSubjectBatch):
-            raise UntargetedPartitionError(
-                "subject_partition must be an owner-normalized subject batch or None"
-            )
-        partition_subjects = {
-            subject.method_subject_id: subject for subject in subject_partition.subjects
-        }
-        if any(
-            partition_subjects.get(subject.method_subject_id) != subject
-            for subject, _work_unit_key in subject_work_units
-        ):
-            raise UntargetedPartitionError(
-                "subject work units must belong to the declared subject partition"
-            )
     first_subject, first_key = subject_work_units[0]
     first = UntargetedPartitionJob(
         processing_attempt_id=processing_attempt_id,
@@ -233,9 +183,6 @@ def build_sample_jobs(
     )
     jobs = [first]
     for subject, work_unit_key in subject_work_units[1:]:
-        if not isinstance(subject, CidNlMethodSubject):
-            raise UntargetedPartitionError("method_subject has the wrong owner type")
-        _required_text(work_unit_key, field="work_unit_key")
         job = copy(first)
         object.__setattr__(job, "method_subject", subject)
         object.__setattr__(job, "work_unit_key", work_unit_key)
@@ -308,16 +255,11 @@ def project_completed_backfill(
     group_context: CidNlCellGroupContext,
 ) -> BackfillCompletionProjection:
     """Project an existing completed empty backfill without executing it again."""
-    if type(result) is not UntargetedSampleResult:
-        raise UntargetedPartitionError("backfill requires a runtime result")
-    replace(result.job)
-    replace(group_context)
-    projection = _project_completed_backfill(
+    return _project_completed_backfill(
         result,
         group_context=group_context,
         exact_traces=_exact_acquisition_traces,
     )
-    return projection
 
 
 def _project_completed_backfill(
@@ -332,8 +274,6 @@ def _project_completed_backfill(
     job = result.job
     group = group_context.group
     center = group.group_center_rt
-    if group_context.method_subject != job.method_subject:
-        raise UntargetedPartitionError("backfill crossed its owner group")
     backfill = result.backfill_for_group(
         center, group_hypothesis_id=group_context.group.group_hypothesis_id
     )
@@ -361,10 +301,7 @@ def _project_completed_backfill(
     exact = exact_traces(
         backfill.acquisition, expected_request, assessment.acquisition_source_id
     )
-    if len(exact) != 1 or (
-        receipt.query_rt_min != expected_request.rt_min
-        or receipt.query_rt_max != expected_request.rt_max
-    ):
+    if len(exact) != 1:
         raise UntargetedPartitionError("backfill crossed its exact request coordinates")
     (acquired,) = exact
     return BackfillCompletionProjection(
@@ -429,7 +366,6 @@ def _request_subject_candidates(
     if not isinstance(job._request_subjects, UntargetedCidNlMethodSubjectBatch):
         return _bounded_subject_candidates(
             job.candidates,
-            sample=job.sample,
             method_subject=job.method_subject,
             settings=job.settings,
         )
@@ -441,8 +377,7 @@ def _request_subject_candidates(
 class _SampleResultContext:
     """Reuse completed adapter snapshots within one synchronous owner phase."""
 
-    def __init__(self, jobs: tuple[UntargetedPartitionJob, ...]) -> None:
-        self._jobs = {id(job): job for job in jobs}
+    def __init__(self) -> None:
         self._traces: dict[
             int,
             tuple[
@@ -476,12 +411,6 @@ class _SampleResultContext:
         *,
         group_context: CidNlCellGroupContext,
     ) -> BackfillCompletionProjection:
-        if type(result) is not UntargetedSampleResult:
-            raise UntargetedPartitionError("backfill requires a runtime result")
-        if self._jobs.get(id(result.job)) is not result.job:
-            raise UntargetedPartitionError(
-                "backfill result does not reuse an exact runtime batch job"
-            )
         return _project_completed_backfill(
             result,
             group_context=group_context,

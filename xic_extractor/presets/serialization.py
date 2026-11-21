@@ -28,7 +28,7 @@ from xic_extractor.presets.loader import (
     reject_retired_alignment_runtime_options,
 )
 from xic_extractor.presets.models import Preset, PresetError
-from xic_extractor.processing_run_spec import CidNlDiscoveryMethodSpec
+from xic_extractor.processing_run_spec import validate_cid_nl_discovery_settings
 
 _NL_DISCOVERY_FIELDS = (
     "nl_tolerance_ppm",
@@ -184,7 +184,7 @@ def _validate_loaded_preset(preset: Preset) -> None:
     if any(tag.strategy == "delta_mass" for tag in preset.tags):
         apply_to_delta_mass_discovery(preset)
     else:
-        CidNlDiscoveryMethodSpec(settings=apply_to_discovery(preset))
+        validate_cid_nl_discovery_settings(apply_to_discovery(preset))
     apply_to_alignment(preset)
 
 

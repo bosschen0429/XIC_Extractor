@@ -126,7 +126,6 @@ def materialize_untargeted_partition(
     plan: UntargetedInputPlan,
     subject_batch: UntargetedCidNlMethodSubjectBatch,
     *,
-    prepared_worksets: PreparedUntargetedAlignmentWorksets | None = None,
     acquisition_cache_dir: Path | None = None,
     sparse: bool = False,
     rt_reference_only: bool = False,
@@ -134,21 +133,6 @@ def materialize_untargeted_partition(
     | None = None,
 ) -> UntargetedPartitionInputs:
     """Bind a finite subject partition to shared, already-validated inputs."""
-
-    prepared = (
-        prepare_untargeted_alignment_worksets(plan)
-        if prepared_worksets is None
-        else prepared_worksets
-    )
-    if prepared.plan is not plan:
-        raise ValueError("prepared alignment worksets crossed the production plan")
-    expected_batch = (
-        plan.subject_batch
-        if subject_batch == plan.subject_batch
-        else prepared.subject_batch(subject_batch.subjects)
-    )
-    if subject_batch.candidate_memberships != expected_batch.candidate_memberships:
-        raise ValueError("CID-NL partition crossed prepared candidate memberships")
 
     candidates, support = plan.partition_input_loader(
         tuple(cid for cid, _ in subject_batch.candidate_memberships)
@@ -476,7 +460,6 @@ class UntargetedPartitionPipelineAdapter:
         return materialize_untargeted_partition(
             self._plan,
             self._partition_subject_batches[partition.partition_key],
-            prepared_worksets=self._prepared_worksets,
             acquisition_cache_dir=self._acquisition_cache_dir,
             sparse=True,
             rt_reference_only=self._rt_reference_only,
@@ -821,10 +804,6 @@ def execute_untargeted_plan(
     each composed child is stored only as its ``project_child`` projection,
     which grouping-only runs do not need.
     """
-    if type(plan) is not UntargetedInputPlan:
-        raise TypeError("bounded execution requires a production plan")
-    if type(max_partition_jobs) is not int or max_partition_jobs < 1:
-        raise ValueError("partition job budget must be a positive integer")
     if (grouping_only or capture_grouping is not None) and any(
         subject.composition is not None for subject in plan.subject_batch.subjects
     ):

@@ -70,27 +70,10 @@ def _compiled_run_spec(raw_paths: tuple[Path, ...], settings: DiscoverySettings)
     return compile_discovery_processing_run_spec(raw_paths, discovery_settings=settings)
 
 
-def _spec_bound_opener(spec: Any, opener: Any) -> Any:
-    sources = {
-        item.sample_stem: item.acquisition_source for item in spec.acquisition_inputs
-    }
-
-    def open_bound(path: Path, dll_dir: Path) -> Any:
-        handle = opener(path, dll_dir)
-        handle.acquisition_source = sources[path.stem]
-        return handle
-
-    return open_bound
-
-
 def _run_discovery(raw_path: Path, **kwargs: Any) -> DiscoveryRunOutputs:
-    spec = kwargs.pop("run_spec", None) or _compiled_run_spec(
-        (raw_path,), kwargs["settings"]
-    )
-    opener = kwargs.pop("raw_opener", None)
-    if opener is not None:
-        opener = _spec_bound_opener(spec, opener)
-    return _pipeline.run_discovery(raw_path, run_spec=spec, raw_opener=opener, **kwargs)
+    settings = kwargs.pop("settings")
+    spec = kwargs.pop("run_spec", None) or _compiled_run_spec((raw_path,), settings)
+    return _pipeline.run_discovery(spec, **kwargs)
 
 
 def _read_csv(path: Path) -> list[dict[str, str]]:
@@ -234,14 +217,15 @@ def vendor_fake_open_raw(job):
     from tests.cid_nl_raw_fixture import _FakeRaw, _FakeThermoRaw, _working_imports
     from xic_extractor.raw_reader import open_raw
 
-    mode = job.raw_path.read_text()
+    raw_path = job.acquisition_input.raw_path
+    mode = raw_path.read_text()
     vendor = _FakeThermoRaw(_FakeRaw(()))
     original_dispose = vendor.Dispose
 
     def dispose():
         original_dispose()
         job.output_dir.mkdir(parents=True, exist_ok=True)
-        (job.output_dir / f"{job.raw_path.stem}.closed").write_text("disposed")
+        (job.output_dir / f"{raw_path.stem}.closed").write_text("disposed")
 
     vendor.Dispose = dispose
 
@@ -257,9 +241,7 @@ def vendor_fake_open_raw(job):
 
     def open_vendor(path, dll_dir, **kwargs):
         if mode == "unobserved":
-            raw = _FakeRawHandle(events=[])
-            raw.acquisition_source = job.acquisition_source
-            return raw
+            return _FakeRawHandle(events=[])
         return open_raw(
             path,
             dll_dir,
@@ -285,7 +267,7 @@ def vendor_fake_discovery_opener(job, recorder):
         return open_vendor(
             path,
             dll_dir,
-            expected_acquisition_source=job.acquisition_source,
+            expected_acquisition_source=job.acquisition_input.acquisition_source,
             mass_recalibration=job.settings.mass_recalibration,
             timing_recorder=recorder,
         )
@@ -295,12 +277,11 @@ def vendor_fake_discovery_opener(job, recorder):
 
 def discover_vendor_fake_sample(job, *, timing_recorder, measurement_observer):
     return _pipeline._discover_completed_sample(
-        job.raw_path,
         settings=job.settings,
+        signal_processing_profile=job.signal_processing_profile,
         dll_dir=job.dll_dir,
         raw_opener=vendor_fake_discovery_opener(job, timing_recorder),
         timing_recorder=timing_recorder,
         measurement_observer=measurement_observer,
-        run_spec=job.run_spec,
         acquisition_input=job.acquisition_input,
     )

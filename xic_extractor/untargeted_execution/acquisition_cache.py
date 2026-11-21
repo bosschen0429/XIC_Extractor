@@ -256,8 +256,6 @@ class _FactCache:
         source_id: str,
         mass_recalibration: MassRecalibration = MassRecalibration.NONE,
     ) -> None:
-        if not isinstance(root, Path):
-            raise TypeError("acquisition cache directory must be a Path")
         namespace = (
             source_id
             if mass_recalibration is MassRecalibration.NONE

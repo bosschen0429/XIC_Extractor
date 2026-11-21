@@ -17,7 +17,6 @@ from xic_extractor.validation_primitives import (
     require_lower_sha256,
     require_mapping,
     require_optional_integer,
-    require_optional_lower_sha256,
     require_optional_text,
     require_owner_normalized_text,
     require_text,
@@ -236,6 +235,3 @@ def test_require_lower_sha256() -> None:
     for invalid in (valid + "\n", "a" * 63 + "\n", "ａ" * 64, "a" * 65):
         with pytest.raises(ValueError, match="hash must be a lowercase SHA-256"):
             require_lower_sha256(invalid, field="hash")
-
-    assert require_optional_lower_sha256(None, field="hash") is None
-    assert require_optional_lower_sha256(valid, field="hash") == valid

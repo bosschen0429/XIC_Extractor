@@ -20,7 +20,7 @@ from tests.untargeted_partition_fixtures import project_composed_child
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.configuration.execution_profile import in_process_execution
 from xic_extractor.discovery.processing_run_spec_adapter import (
-    compile_discovery_processing_run_spec_with_expectations,
+    fingerprint_acquisition_sources,
 )
 from xic_extractor.untargeted_execution.execution import (
     execute_untargeted_plan,
@@ -62,7 +62,7 @@ def test_run_spec_expectation_rejects_change_after_fingerprint(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    path, _raw, arguments = _source_verification_inputs(tmp_path)
+    path, _raw, _arguments = _source_verification_inputs(tmp_path)
     build_source = processing_spec_adapter.build_local_acquisition_source_identity
 
     def change_after_fingerprint(source_path, **kwargs):
@@ -76,10 +76,7 @@ def test_run_spec_expectation_rejects_change_after_fingerprint(
         change_after_fingerprint,
     )
     with pytest.raises(identity_owner.IdentityContractError, match="changed during"):
-        compile_discovery_processing_run_spec_with_expectations(
-            (path,),
-            discovery_settings=arguments["settings"],
-        )
+        fingerprint_acquisition_sources((path,))
 
 
 @pytest.mark.parametrize("change", ["edit", "replace"])

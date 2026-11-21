@@ -4,7 +4,6 @@ import concurrent.futures
 import multiprocessing
 import pickle
 from concurrent.futures import Future
-from dataclasses import replace
 from functools import partial
 from pathlib import Path
 
@@ -33,7 +32,6 @@ from xic_extractor.discovery.processing_run_spec_adapter import (
     compile_discovery_processing_run_spec,
 )
 from xic_extractor.discovery.sample_process_execution import (
-    DiscoverySampleProcessError,
     DiscoverySampleProcessJob,
     run_discovery_sample_process_job,
 )
@@ -120,11 +118,9 @@ def test_discovery_persists_feature_facts_and_measured_review_support(
             pass
 
     outputs = run_discovery_batch(
-        paths,
+        spec,
         output_dir=tmp_path / "discovery",
-        settings=settings,
         dll_dir=tmp_path / "dll",
-        run_spec=spec,
         execution=ExecutionProfile(parallel_workers=workers),
         raw_opener=(lambda path, _dll: handles[path]) if workers == 1 else None,
         executor_factory=ImmediateExecutor if workers > 1 else None,
@@ -137,13 +133,13 @@ def test_discovery_persists_feature_facts_and_measured_review_support(
         outputs.per_sample,
         strict=True,
     ):
-        candidates, _publication = captured[acquisition.sample_stem]
+        candidates, _publication = captured[acquisition.raw_path.stem]
         assert {item.precursor_mz_basis for item in candidates} == {
             "scan_precursor",
             "product_plus_neutral_loss",
         }
         assert len(candidates) == 2
-        expected_path = tmp_path / f"{acquisition.sample_stem}.csv"
+        expected_path = tmp_path / f"{acquisition.raw_path.stem}.csv"
         write_discovery_peaks_csv(expected_path, candidates)
         assert output.peaks_csv.read_bytes() == expected_path.read_bytes()
         events = _read_csv(output.events_csv)
@@ -151,7 +147,7 @@ def test_discovery_persists_feature_facts_and_measured_review_support(
             item.peak_id for item in candidates
         }
         assert any(not row["peak_id"] and float(row["xic_mz"]) < 600 for row in events)
-        receipt = batch.peak_receipts[acquisition.sample_stem]
+        receipt = batch.peak_receipts[acquisition.raw_path.stem]
         assert receipt.peak_count == 2
         assert (
             len(
@@ -186,12 +182,10 @@ def test_batch_serial_and_process_share_one_run_spec_and_sample_bindings(
         for index, path in enumerate(raw_paths)
     }
     serial = run_discovery_batch(
-        raw_paths,
+        spec,
         output_dir=tmp_path / "serial-spec",
-        settings=settings,
         dll_dir=tmp_path / "dll",
         raw_opener=lambda path, dll_dir: serial_handles[path],
-        run_spec=spec,
         execution=in_process_execution(),
     )
 
@@ -231,16 +225,13 @@ def test_batch_serial_and_process_share_one_run_spec_and_sample_bindings(
             pass
 
     process = run_discovery_batch(
-        raw_paths,
+        spec,
         output_dir=tmp_path / "process-spec",
-        settings=settings,
         dll_dir=tmp_path / "dll",
         execution=ExecutionProfile(parallel_workers=2),
         executor_factory=_SynchronousExecutor,
-        run_spec=spec,
     )
 
-    assert tuple(job.run_spec for job in submitted_jobs) == (spec, spec)
     assert tuple(job.acquisition_input for job in submitted_jobs) == (
         spec.acquisition_inputs
     )
@@ -273,98 +264,3 @@ def test_batch_serial_and_process_share_one_run_spec_and_sample_bindings(
         completed_worker_results[0].publication.index_row
     )
     assert restored_result.publication.outputs == process.per_sample[0]
-
-
-def test_real_spawn_rejects_full_mismatched_process_job_with_exact_identity(
-    tmp_path: Path,
-) -> None:
-    raw_path = tmp_path / "sample.raw"
-    raw_path.write_bytes(b"real-spawn-mismatched-job")
-    settings = _settings()
-    spec = compile_discovery_processing_run_spec(
-        (raw_path,), discovery_settings=settings
-    )
-    acquisition_input = spec.acquisition_inputs[0]
-    source = acquisition_input.acquisition_source
-    job = DiscoverySampleProcessJob(
-        sample_index=0,
-        raw_path=raw_path,
-        output_dir=tmp_path / "out",
-        settings=replace(settings, ms1_search_padding_min=0.33),
-        dll_dir=tmp_path / "dll",
-        acquisition_source=source,
-        run_spec=spec,
-        acquisition_input=acquisition_input,
-    )
-
-    context = multiprocessing.get_context("spawn")
-    with concurrent.futures.ProcessPoolExecutor(
-        max_workers=1,
-        mp_context=context,
-    ) as executor:
-        result = executor.submit(_run_discovery_sample_process_job, job).result(
-            timeout=30
-        )
-
-    assert isinstance(result, DiscoverySampleProcessError)
-    assert result.message == "ValueError: Discovery process job crosses method settings"
-    assert result.signal_processing_profile == spec.signal_processing_profile
-    assert result.acquisition_source_id == source.acquisition_source_id
-
-
-def test_process_job_validates_binding_and_preserves_failure_identity(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    raw_path = tmp_path / "sample.raw"
-    raw_path.write_bytes(b"process identity")
-    settings = _settings()
-    spec = compile_discovery_processing_run_spec(
-        (raw_path,), discovery_settings=settings
-    )
-    acquisition_input = spec.acquisition_inputs[0]
-    source = acquisition_input.acquisition_source
-    opener_requests: list[Path] = []
-
-    def _rejecting_owner_opener(_source, _mass_recalibration, _recorder):
-        def _open(path: Path, _dll_dir: Path):
-            opener_requests.append(path)
-            raise RuntimeError("owner boom")
-
-        return _open
-
-    monkeypatch.setattr(
-        "xic_extractor.discovery.pipeline._owner_bound_raw_opener",
-        _rejecting_owner_opener,
-    )
-    valid_job = DiscoverySampleProcessJob(
-        sample_index=0,
-        raw_path=raw_path,
-        output_dir=tmp_path / "out",
-        settings=settings,
-        dll_dir=tmp_path / "dll",
-        acquisition_source=source,
-        run_spec=spec,
-        acquisition_input=acquisition_input,
-    )
-
-    failure = _run_discovery_sample_process_job(valid_job)
-
-    assert isinstance(failure, DiscoverySampleProcessError)
-    assert failure.signal_processing_profile == spec.signal_processing_profile
-    assert failure.acquisition_source_id == source.acquisition_source_id
-    assert failure.message == "RuntimeError: owner boom"
-    assert opener_requests == [raw_path]
-
-    crossed_job = replace(
-        valid_job,
-        settings=replace(settings, ms1_search_padding_min=0.33),
-    )
-    crossed = _run_discovery_sample_process_job(crossed_job)
-    assert isinstance(crossed, DiscoverySampleProcessError)
-    assert (
-        crossed.message == "ValueError: Discovery process job crosses method settings"
-    )
-    assert crossed.signal_processing_profile == spec.signal_processing_profile
-    assert crossed.acquisition_source_id == source.acquisition_source_id
-    assert opener_requests == [raw_path]

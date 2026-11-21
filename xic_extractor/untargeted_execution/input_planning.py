@@ -24,7 +24,7 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
     mint_cid_nl_subject_membership,
 )
 from xic_extractor.processing_identity import AcquisitionSourceExpectation
-from xic_extractor.processing_run_spec import CidNlDiscoveryMethodSpec
+from xic_extractor.processing_run_spec import validate_cid_nl_discovery_settings
 from xic_extractor.sample_metadata import (
     SampleMetadata,
 )
@@ -57,10 +57,7 @@ class UntargetedInputPlan:
 class PreparedUntargetedAlignmentWorksets:
     """One plan's complete Alignment worksets and partition lookup indexes."""
 
-    plan: UntargetedInputPlan
     worksets: tuple[tuple[CidNlMethodSubject, ...], ...]
-    subjects_by_id: dict[str, CidNlMethodSubject]
-    workset_ids_by_subject: dict[str, frozenset[str]]
     memberships_by_subject: dict[str, tuple[tuple[str, str], ...]]
 
     def subject_batch(
@@ -69,22 +66,6 @@ class PreparedUntargetedAlignmentWorksets:
     ) -> UntargetedCidNlMethodSubjectBatch:
         """Bind whole prepared worksets to their exact candidate memberships."""
 
-        requested_ids: set[str] = set()
-        touched_worksets: set[frozenset[str]] = set()
-        for subject in subjects:
-            expected = self.subjects_by_id.get(subject.method_subject_id)
-            if expected is None or subject != expected:
-                raise ValueError(
-                    "CID-NL partition contains a foreign alignment subject"
-                )
-            requested_ids.add(subject.method_subject_id)
-            touched_worksets.add(self.workset_ids_by_subject[subject.method_subject_id])
-        if len(requested_ids) != len(subjects):
-            raise ValueError("CID-NL partition contains duplicate alignment subjects")
-        if any(not workset_ids <= requested_ids for workset_ids in touched_worksets):
-            raise ValueError(
-                "CID-NL partition cannot split one alignment subject workset"
-            )
         return UntargetedCidNlMethodSubjectBatch(
             subjects=subjects,
             candidate_memberships=tuple(
@@ -106,44 +87,23 @@ def prepare_untargeted_alignment_worksets(
 ) -> PreparedUntargetedAlignmentWorksets:
     """Prepare the complete workset closure once before partition materialization."""
 
-    if type(plan) is not UntargetedInputPlan:
-        raise TypeError("Alignment subject worksets require a production plan")
     worksets = alignment_subject_worksets(
         plan.runtime_subjects,
         known_istd_reference=known_istd_reference,
     )
-    subjects_by_id = {
-        subject.method_subject_id: subject
-        for workset in worksets
-        for subject in workset
-    }
-    workset_ids_by_subject: dict[str, frozenset[str]] = {}
-    for workset in worksets:
-        member_ids = frozenset(member.method_subject_id for member in workset)
-        for subject in workset:
-            workset_ids_by_subject[subject.method_subject_id] = member_ids
     memberships: dict[str, list[tuple[str, str]]] = {
-        subject_id: [] for subject_id in subjects_by_id
+        subject.method_subject_id: [] for workset in worksets for subject in workset
     }
     for membership in plan.subject_batch.candidate_memberships:
         subject_memberships = memberships.get(membership[1])
         if subject_memberships is not None:
             subject_memberships.append(membership)
-    memberships_by_subject = {
-        subject_id: tuple(sorted(subject_memberships))
-        for subject_id, subject_memberships in memberships.items()
-    }
-    if any(
-        not subject_memberships
-        for subject_memberships in memberships_by_subject.values()
-    ):
-        raise ValueError("runtime alignment subject has no candidate membership")
     return PreparedUntargetedAlignmentWorksets(
-        plan=plan,
         worksets=worksets,
-        subjects_by_id=subjects_by_id,
-        workset_ids_by_subject=workset_ids_by_subject,
-        memberships_by_subject=memberships_by_subject,
+        memberships_by_subject={
+            subject_id: tuple(sorted(subject_memberships))
+            for subject_id, subject_memberships in memberships.items()
+        },
     )
 
 
@@ -151,7 +111,7 @@ def is_supported_alignment_discovery(settings: DiscoverySettings) -> bool:
     """Return whether settings select a supported discovery method for alignment."""
 
     try:
-        CidNlDiscoveryMethodSpec(settings=settings)
+        validate_cid_nl_discovery_settings(settings)
     except TypeError, ValueError:
         return False
     return True
@@ -256,7 +216,6 @@ def prepare_indexed_untargeted_plan(
         for pair in ordered
         if not source.locations[pair[1]].requires_overlap_review
     )
-    receipts = source.batch.peak_receipts
     expectations = {
         path.stem: expectation
         for path, expectation in zip(
@@ -270,9 +229,7 @@ def prepare_indexed_untargeted_plan(
         metadata_by_stem={sample.raw_stem: sample for sample in sample_metadata},
         source_expectations=expectations,
         peak_map={stem: () for stem in source},
-        receipt_map={
-            stem: receipt for stem, receipt in receipts.items() if receipt is not None
-        },
+        receipt_map=source.batch.peak_receipts,
         signal_processing_profile=profile,
     )
     return UntargetedInputPlan(

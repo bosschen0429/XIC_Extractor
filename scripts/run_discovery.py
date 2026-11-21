@@ -131,22 +131,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         if raw_path is not None:
             single_outputs = run_discovery(
-                raw_path,
+                run_spec,
                 output_dir=output_dir,
-                settings=settings,
                 dll_dir=dll_dir,
-                run_spec=run_spec,
                 timing_recorder=timing_recorder,
             )
             print(f"Discovery peaks CSV: {single_outputs.peaks_csv}")
             print(f"Discovery events CSV: {single_outputs.events_csv}")
         else:
             batch_outputs = run_discovery_batch(
-                raw_paths,
+                run_spec,
                 output_dir=output_dir,
-                settings=settings,
                 dll_dir=dll_dir,
-                run_spec=run_spec,
                 execution=execution_profile,
                 timing_recorder=timing_recorder,
             )

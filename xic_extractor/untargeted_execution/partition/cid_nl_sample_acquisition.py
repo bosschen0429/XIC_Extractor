@@ -43,7 +43,6 @@ from xic_extractor.peak_detection.cid_nl_method_assessment import (
     resolve_cid_nl_method_relations,
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import (
-    CidNlComposition,
     CidNlMethodSubject,
 )
 from xic_extractor.peak_detection.cid_nl_peak_support import (
@@ -116,37 +115,11 @@ class UntargetedCidNlSampleTraceBatch:
     candidate_evaluations: tuple[PhysicalPeakEvaluation, ...] = ()
 
     def __post_init__(self) -> None:
-        if not self.sample_key.strip() or not self.acquisition_source_id.strip():
-            raise CidNlAcquisitionError("sample trace batch requires owner identities")
-        if type(self.candidate_ids) is not tuple or not self.candidate_ids:
-            raise CidNlAcquisitionError(
-                "sample trace batch requires exact peak identities"
-            )
-        if self.candidate_ids != tuple(sorted(set(self.candidate_ids))):
-            raise CidNlAcquisitionError(
-                "sample trace batch peak identities must be canonical and unique"
-            )
-        if not isinstance(self.acquisition, TraceAcquisitionBatch):
-            raise CidNlAcquisitionError("invalid sample acquisition")
-        indices = self.candidate_trace_indices
-        if indices is None:
-            indices = tuple(range(len(self.candidate_ids)))
-            object.__setattr__(self, "candidate_trace_indices", indices)
-        all_indices = (*indices, *self.context_trace_indices)
-        if (
-            type(indices) is not tuple
-            or len(indices) != len(self.candidate_ids)
-            or any(type(index) is not int for index in indices)
-            or type(self.context_trace_indices) is not tuple
-            or any(type(index) is not int for index in self.context_trace_indices)
-            or set(all_indices) != set(range(len(self.acquisition.traces)))
-            or tuple(dict.fromkeys(all_indices))
-            != tuple(range(len(self.acquisition.traces)))
-            or self.acquisition.capability.acquisition_source.acquisition_source_id
-            != self.acquisition_source_id
-        ):
-            raise CidNlAcquisitionError(
-                "sample trace batch acquisition does not close its peaks"
+        if self.candidate_trace_indices is None:
+            object.__setattr__(
+                self,
+                "candidate_trace_indices",
+                tuple(range(len(self.candidate_ids))),
             )
 
     def acquired_trace(self, candidate_id: str) -> AcquiredTrace:
@@ -225,22 +198,6 @@ def acquire_untargeted_cid_nl_sample_trace_batch(
 ) -> UntargetedCidNlSampleTraceBatch | None:
     """Acquire all eligible peak XICs for one sample in one adapter call."""
 
-    if not isinstance(settings, DiscoverySettings):
-        raise CidNlAcquisitionError("settings has the wrong owner type")
-    if type(peaks) is not tuple or any(
-        not isinstance(peak, DiscoveryPeak) for peak in peaks
-    ):
-        raise CidNlAcquisitionError("peaks must be current DiscoveryPeak receipts")
-    candidate_ids = tuple(peak.peak_id for peak in peaks)
-    if candidate_ids != tuple(sorted(set(candidate_ids))):
-        raise CidNlAcquisitionError(
-            "sample trace batch peaks must be canonical and unique"
-        )
-    raw_stem = sample.raw_stem
-    if any(peak.sample_stem != raw_stem for peak in peaks):
-        raise CidNlAcquisitionError(
-            "sample trace batch peaks crossed the resolved sample"
-        )
     capture_candidates = tuple(peak for peak in peaks if peak.is_clean_peak)
     if not capture_candidates:
         return None
@@ -331,21 +288,13 @@ def adapt_current_discovery_sample_subject(
 ) -> CidNlAcquisitionResult:
     """Reacquire a subject and mint its complete CellObservation input."""
 
-    _validate_inputs(
-        method_subject=method_subject,
-        peaks=peaks,
-        support_candidates=support_candidates,
-        settings=settings,
-    )
     bounded = _bounded_subject_candidates(
         peaks,
-        sample=sample,
         method_subject=method_subject,
         settings=settings,
     )
     support_bounded = _bounded_subject_candidates(
         support_candidates,
-        sample=sample,
         method_subject=method_subject,
         settings=settings,
     )
@@ -538,8 +487,8 @@ def _adopt_peak_observations(
 ) -> tuple[TraceAcquisitionBatch | None, tuple[tuple[str, PeakObservation], ...]]:
     if not peaks:
         return None, ()
-    requests, indices = _sample_capture_requests(peaks=peaks, settings=settings)
     if _preacquired_traces is None:
+        requests, indices = _sample_capture_requests(peaks=peaks, settings=settings)
         capability = mint_trace_acquisition_capability(
             source,
             adapter_namespace=_ADAPTER_NAMESPACE,
@@ -550,13 +499,6 @@ def _adopt_peak_observations(
         acquired_traces = tuple(acquisition.traces[index] for index in indices)
         evaluations = _measure_peaks(peaks, acquired_traces, signal_processing_profile)
     else:
-        if (
-            _preacquired_traces.sample_key != sample.sample_name
-            or _preacquired_traces.acquisition_source_id != source.acquisition_source_id
-        ):
-            raise CidNlAcquisitionError(
-                "preacquired traces crossed their sample or acquisition source"
-            )
         acquired_traces = tuple(
             _preacquired_traces.acquired_trace(peak.peak_id) for peak in peaks
         )
@@ -564,13 +506,6 @@ def _adopt_peak_observations(
             _preacquired_traces.evaluation(peak.peak_id) for peak in peaks
         )
         acquisition = _preacquired_traces.acquisition
-    for peak, acquired, index in zip(peaks, acquired_traces, indices, strict=True):
-        if acquired.coordinate.request != requests[index]:
-            raise CidNlAcquisitionError(
-                "preacquired trace does not match the peak capture plan: "
-                f"{peak.peak_id}: acquired={acquired.coordinate.request!r}, "
-                f"planned={requests[index]!r}"
-            )
     admitted = tuple(
         (peak, acquired, evaluation)
         for peak, acquired, evaluation in zip(
@@ -685,18 +620,9 @@ def _mint_assessment(
 def _bounded_subject_candidates(
     peaks: tuple[DiscoveryPeak, ...],
     *,
-    sample: SampleMetadata,
     method_subject: CidNlMethodSubject,
     settings: DiscoverySettings,
 ) -> tuple[DiscoveryPeak, ...]:
-    ids = tuple(peak.peak_id for peak in peaks)
-    if len(ids) != len(set(ids)):
-        raise CidNlAcquisitionError("Discovery peak IDs must be unique")
-    for peak in peaks:
-        if peak.sample_stem != sample.raw_stem:
-            raise CidNlAcquisitionError(
-                f"{peak.peak_id}: peak references a different sample"
-            )
     return tuple(
         sorted(
             (
@@ -721,78 +647,6 @@ def _bounded_subject_candidates(
             key=lambda item: item.peak_id,
         )
     )
-
-
-def _validate_inputs(**values: object) -> None:
-    expected = {
-        "method_subject": CidNlMethodSubject,
-        "peaks": tuple,
-        "support_candidates": tuple,
-        "settings": DiscoverySettings,
-    }
-    for name, kind in expected.items():
-        if not isinstance(values[name], kind):
-            raise CidNlAcquisitionError(f"{name} has the wrong owner type")
-    peaks = values["peaks"]
-    assert isinstance(peaks, tuple)
-    if any(not isinstance(item, DiscoveryPeak) for item in peaks):
-        raise CidNlAcquisitionError("peaks must contain current DiscoveryPeak values")
-    support_candidates = values["support_candidates"]
-    assert isinstance(support_candidates, tuple)
-    if any(not isinstance(item, DiscoveryPeak) for item in support_candidates):
-        raise CidNlAcquisitionError(
-            "support_candidates must contain current DiscoveryPeak values"
-        )
-    method_subject = values["method_subject"]
-    settings = values["settings"]
-    assert isinstance(method_subject, CidNlMethodSubject)
-    assert isinstance(settings, DiscoverySettings)
-    if method_subject.subject_kind != "untargeted_precursor":
-        raise CidNlAcquisitionError(
-            "adapter requires an Untargeted CID-NL method subject"
-        )
-    if method_subject.composition is not None:
-        if settings.tag_combine_mode == "single":
-            raise CidNlAcquisitionError(
-                "Composite assessment requires union or intersection"
-            )
-        expected_composition = CidNlComposition(
-            tags=tuple(
-                (profile.tag, profile.neutral_loss_da)
-                for profile in settings.neutral_loss_profiles
-            ),
-            combine_mode=settings.tag_combine_mode,
-        )
-        if method_subject.composition != expected_composition:
-            raise CidNlAcquisitionError(
-                "Discovery composition mismatches the method subject"
-            )
-    elif (
-        settings.tag_combine_mode not in {"single", "union", "intersection"}
-        or len(settings.selected_tag_names) != 1
-        or len(settings.neutral_loss_profiles) != 1
-    ):
-        raise CidNlAcquisitionError(
-            "The real-data runtime accepts exactly one CID-NL Discovery tag"
-        )
-    if method_subject.composition is None and not math.isclose(
-        settings.neutral_loss_profiles[0].neutral_loss_da,
-        method_subject.configured_losses[0],
-        rel_tol=0.0,
-        abs_tol=1e-12,
-    ):
-        raise CidNlAcquisitionError(
-            "Discovery neutral loss mismatches the method subject"
-        )
-    if not math.isclose(
-        settings.precursor_mz_tolerance_ppm,
-        method_subject.precursor_tolerance_ppm,
-        rel_tol=0.0,
-        abs_tol=1e-12,
-    ):
-        raise CidNlAcquisitionError(
-            "Discovery precursor tolerance mismatches the method subject"
-        )
 
 
 __all__ = [

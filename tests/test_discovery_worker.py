@@ -43,8 +43,8 @@ def _full_request(
     raw_path.write_bytes(b"raw")
     captured_discovery: dict[str, Any] = {}
 
-    def fake_run_discovery_batch(*_args: object, **kwargs: Any) -> SimpleNamespace:
-        captured_discovery.update(kwargs)
+    def fake_run_discovery_batch(run_spec: Any, **kwargs: Any) -> SimpleNamespace:
+        captured_discovery.update(kwargs, run_spec=run_spec)
         return SimpleNamespace(batch_index_csv=index_path, per_sample=())
 
     monkeypatch.setattr(
@@ -114,8 +114,8 @@ def test_full_analysis_applies_default_runtime(
     }
     assert captured_discovery["execution"] == request.execution_profile
     run_spec = captured_discovery["run_spec"]
-    assert run_spec.discovery_method.settings == settings
-    assert run_spec.acquisition_inputs[0].sample_stem == "A"
+    assert run_spec.settings == settings
+    assert run_spec.acquisition_inputs[0].raw_path.stem == "A"
 
 
 def test_alignment_interruption_propagates_from_execute(

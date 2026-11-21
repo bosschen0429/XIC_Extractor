@@ -141,10 +141,6 @@ def _outside_group_relation(
 ) -> OutsideGroupCellRelation | None:
     if outside_group_context is None:
         return None
-    if type(outside_group_context) is not CidNlCellGroupContext:
-        raise CellObservationContractError(
-            "outside-group context has the wrong owner type"
-        )
     if (
         method_assessment.method_result != "SUPPORT"
         or outside_group_context.config != group_context.config

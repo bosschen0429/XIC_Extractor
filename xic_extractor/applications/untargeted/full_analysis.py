@@ -135,11 +135,9 @@ class UntargetedAnalysis:
         )
         self.stage = "Discovery 擷取與結果發布"
         batch_outputs = run_discovery_batch(
-            raw_paths,
+            run_spec,
             output_dir=request.output_dir,
-            settings=settings,
             dll_dir=request.dll_dir,
-            run_spec=run_spec,
             execution=request.execution_profile,
             should_cancel=self.should_cancel,
             progress_callback=lambda done, _total, sample: self.progress(
@@ -223,13 +221,11 @@ class UntargetedAnalysis:
         settings = bind_cid_nl_recipe(load_preset("dna_dr"), "full").discovery_settings
         directory = request.output_dir / "cid_nl_dR"
         outputs = run_discovery_batch(
-            raw_paths,
-            output_dir=directory,
-            settings=settings,
-            dll_dir=request.dll_dir,
-            run_spec=compile_discovery_processing_run_spec(
+            compile_discovery_processing_run_spec(
                 raw_paths, discovery_settings=settings
             ),
+            output_dir=directory,
+            dll_dir=request.dll_dir,
             execution=request.execution_profile,
             should_cancel=self.should_cancel,
             progress_callback=lambda done, total, sample: self.progress(
