@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from pathlib import Path
 
 from openpyxl import Workbook
 
@@ -25,27 +26,28 @@ from xic_extractor.applications.untargeted.istd_reference import (
 from xic_extractor.sample_metadata import SampleMetadata
 
 
-def _plan(
-    tmp_path, monkeypatch, *, scenario="positive", opened_sink=None, sample_count=4
-):
-    paths = tuple(tmp_path / f"S{i}.synthetic" for i in range(sample_count))
-    settings = replace(
-        _settings(),
+def scenario_settings(scenario: str, settings=None):
+    return replace(
+        settings or _settings(),
         neutral_loss_profile=None,
         precursor_mz_tolerance_ppm=(
             5.0 if scenario == "cross_subject_recovery" else 1.0
         ),
     )
-    peak_config = _peak_config(tmp_path)
+
+
+def scenario_acquisitions(paths, *, settings, scenario="positive"):
+    """Three nearby CID-NL subjects per sample, shaped by ``scenario``.
+
+    Returns the synthetic RAW and the Discovery peaks of each path's sample.
+    """
     raws = {}
     candidates = {}
     for sample_index, path in enumerate(paths):
-        if not path.exists():
-            path.write_bytes(path.stem.encode())
         raw, sample_candidates = _nearby_subject_candidates(
             path,
             settings=settings,
-            peak_config=peak_config,
+            peak_config=None,
         )
         third_raw = _FakeRaw(
             (7.98,), scan_precursor_mz=500.008, neutral_loss_das=(116.0474,)
@@ -108,6 +110,49 @@ def _plan(
                 if path in paths[:2]
                 else ()
             )
+    return raws, candidates
+
+
+def known_istd_workbook(path: Path, stems) -> Path:
+    """A known ISTD at the scenario's m/z, measured at 7.98 min in every sample."""
+    workbook = Workbook()
+    targets = workbook.active
+    targets.title = "Targets"
+    targets.append(
+        [
+            "Label",
+            "Role",
+            "m/z",
+            "RT min",
+            "RT max",
+            "ppm tol",
+            "NL (Da)",
+            "NL ppm warn",
+            "NL ppm max",
+            "ISTD Pair",
+        ]
+    )
+    targets.append(["known", "ISTD", 500, 7, 10, 20, 116.0474, 20, 50, ""])
+    results = workbook.create_sheet("XIC Results")
+    results.append(["SampleName", "Target", "Role", "RT", "Area"])
+    for stem in stems:
+        results.append([stem, "known", "ISTD", 7.98, -999])
+    workbook.save(path)
+    return path
+
+
+def _plan(
+    tmp_path, monkeypatch, *, scenario="positive", opened_sink=None, sample_count=4
+):
+    paths = tuple(tmp_path / f"S{i}.synthetic" for i in range(sample_count))
+    for path in paths:
+        if not path.exists():
+            path.write_bytes(path.stem.encode())
+    settings = scenario_settings(scenario)
+    peak_config = _peak_config(tmp_path)
+    raws, candidates = scenario_acquisitions(
+        paths, settings=settings, scenario=scenario
+    )
     plan = prepare_persisted_discovery_plan(
         raw_paths=paths,
         sample_metadata=tuple(
@@ -142,31 +187,11 @@ def _plan(
     )
     reference = None
     if scenario == "istd":
-        workbook = Workbook()
-        targets = workbook.active
-        targets.title = "Targets"
-        targets.append(
-            [
-                "Label",
-                "Role",
-                "m/z",
-                "RT min",
-                "RT max",
-                "ppm tol",
-                "NL (Da)",
-                "NL ppm warn",
-                "NL ppm max",
-                "ISTD Pair",
-            ]
+        reference = read_known_istd_reference(
+            known_istd_workbook(
+                tmp_path / "reference.xlsx", tuple(path.stem for path in paths)
+            )
         )
-        targets.append(["known", "ISTD", 500, 7, 10, 20, 116.0474, 20, 50, ""])
-        results = workbook.create_sheet("XIC Results")
-        results.append(["SampleName", "Target", "Role", "RT", "Area"])
-        for path in paths:
-            results.append([path.stem, "known", "ISTD", 7.98, -999])
-        reference_path = tmp_path / "reference.xlsx"
-        workbook.save(reference_path)
-        reference = read_known_istd_reference(reference_path)
     assert len(plan.subject_batch.subjects) == (
         0
         if scenario == "ineligible"

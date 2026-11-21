@@ -93,6 +93,7 @@ def publish_alignment(
     name: str = "alignment",
     opened_samples: set[str] | None = None,
     peak_config_changes: Mapping[str, object] | None = None,
+    execution_changes: Mapping[str, object] | None = None,
 ) -> Path:
     """Run the formal Untargeted Alignment entry and return its output folder.
 
@@ -143,11 +144,14 @@ def publish_alignment(
             discovery_settings=settings,
             sample_metadata=sample_metadata or sample_metadata_for(stems),
             known_istd_reference_workbook=known_istd_reference_workbook,
-            execution=UntargetedExecutionPolicy(
-                profile=ExecutionProfile(
-                    alignment_workers=1, backend="thread", overlap_partitions=False
+            execution=replace(
+                UntargetedExecutionPolicy(
+                    profile=ExecutionProfile(
+                        alignment_workers=1, backend="thread", overlap_partitions=False
+                    ),
+                    acquisition_cache_dir=tmp_path / f"{name}-facts",
                 ),
-                acquisition_cache_dir=tmp_path / f"{name}-facts",
+                **(execution_changes or {}),
             ),
             publication=UntargetedPublicationPolicy(
                 output_level=output_level,
