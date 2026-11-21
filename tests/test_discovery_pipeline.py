@@ -18,7 +18,6 @@ from tests.discovery_pipeline_fixtures import (
     _run_discovery,
     _scan_event,
     _settings,
-    _spec_bound_opener,
     discover_vendor_fake_sample,
     vendor_fake_discovery_opener,
     vendor_fake_open_raw,
@@ -191,7 +190,7 @@ def test_cancelled_batch_retains_completed_samples_without_publishing_index(
     monkeypatch.setattr(
         "xic_extractor.discovery.pipeline._owner_bound_raw_opener",
         lambda source, _mass_recalibration, _recorder: (
-            lambda path, dll_dir: _with_source(opener(path, dll_dir), source)
+            lambda path, dll_dir: opener(path, dll_dir)
         ),
     )
 
@@ -540,9 +539,7 @@ def test_parallel_batch_preserves_serial_artifacts_and_sample_order(
     monkeypatch.setattr(
         "xic_extractor.discovery.pipeline._owner_bound_raw_opener",
         lambda acquisition_source, _mass_recalibration, _recorder: (
-            lambda path, dll_dir: _with_source(
-                parallel_handles[path], acquisition_source
-            )
+            lambda path, dll_dir: parallel_handles[path]
         ),
     )
 
@@ -618,22 +615,21 @@ def test_parallel_batch_preserves_first_failure_and_completed_census(
                 future.set_result(
                     DiscoverySampleProcessError(
                         sample_index=job.sample_index,
-                        sample_stem=job.raw_path.stem,
-                        raw_name=job.raw_path.name,
-                        **_job_identity(job),
+                        sample_stem=job.acquisition_input.raw_path.stem,
+                        raw_name=job.acquisition_input.raw_path.name,
                         message="RuntimeError: owner boom",
                         timing_records=(
                             TimingRecord(
                                 stage="discover.failed_worker_partial",
                                 elapsed_sec=0.25,
-                                sample_stem=job.raw_path.stem,
+                                sample_stem=job.acquisition_input.raw_path.stem,
                                 metrics={},
                             ),
                         ),
                         measurement_observations=(
                             {
                                 "metric": "worker_retry_count",
-                                "scope": job.raw_path.stem,
+                                "scope": job.acquisition_input.raw_path.stem,
                                 "unit": "retries",
                                 "aggregation": "sum",
                                 "source": "discovery.worker",
@@ -703,9 +699,8 @@ def test_parallel_batch_preserves_every_same_batch_failure(
             future.set_result(
                 DiscoverySampleProcessError(
                     sample_index=job.sample_index,
-                    sample_stem=job.raw_path.stem,
-                    raw_name=job.raw_path.name,
-                    **_job_identity(job),
+                    sample_stem=job.acquisition_input.raw_path.stem,
+                    raw_name=job.acquisition_input.raw_path.name,
                     message=f"RuntimeError: owner boom {job.sample_index}",
                 )
             )
@@ -752,14 +747,13 @@ def test_parallel_batch_rejects_error_caller_authored_owner_counts(
             future.set_result(
                 DiscoverySampleProcessError(
                     sample_index=job.sample_index,
-                    sample_stem=job.raw_path.stem,
-                    raw_name=job.raw_path.name,
-                    **_job_identity(job),
+                    sample_stem=job.acquisition_input.raw_path.stem,
+                    raw_name=job.acquisition_input.raw_path.name,
                     message="RuntimeError: owner boom",
                     measurement_observations=(
                         {
                             "metric": "logical_xic_request_count",
-                            "scope": job.raw_path.stem,
+                            "scope": job.acquisition_input.raw_path.stem,
                             "unit": "opens",
                             "aggregation": "sum",
                             "source": "worker",
@@ -812,15 +806,14 @@ def test_parallel_batch_projects_typed_error_measurements_and_reduces_raw_open(
             future.set_result(
                 DiscoverySampleProcessError(
                     sample_index=job.sample_index,
-                    sample_stem=job.raw_path.stem,
-                    raw_name=job.raw_path.name,
-                    **_job_identity(job),
+                    sample_stem=job.acquisition_input.raw_path.stem,
+                    raw_name=job.acquisition_input.raw_path.name,
                     message="RuntimeError: owner boom",
                     ms1_measurements=measurements,
                     measurement_observations=(
                         {
                             "metric": "raw_open_count",
-                            "scope": job.raw_path.stem,
+                            "scope": job.acquisition_input.raw_path.stem,
                             "unit": "opens",
                             "aggregation": "sum",
                             "source": "xic_extractor.raw_reader.open_raw",
@@ -877,9 +870,8 @@ def test_parallel_batch_disabled_timing_skips_ipc_serialization(
             future.set_result(
                 DiscoverySampleProcessError(
                     sample_index=job.sample_index,
-                    sample_stem=job.raw_path.stem,
-                    raw_name=job.raw_path.name,
-                    **_job_identity(job),
+                    sample_stem=job.acquisition_input.raw_path.stem,
+                    raw_name=job.acquisition_input.raw_path.name,
                     message="RuntimeError: owner boom",
                 )
             )
@@ -998,7 +990,6 @@ def test_unobserved_adapter_failure_does_not_invent_raw_open(
     raw_path.write_bytes(b"unobserved-read-failure")
     raw = _FakeRawHandle(events=[])
     spec = _compiled_run_spec((raw_path,), _settings())
-    raw.acquisition_source = spec.acquisition_inputs[0].acquisition_source
     recorder = TimingRecorder("discovery")
     monkeypatch.setattr(
         "xic_extractor.discovery.cid_nl_search.collect_strict_nl_events",
@@ -1007,11 +998,11 @@ def test_unobserved_adapter_failure_does_not_invent_raw_open(
 
     with pytest.raises(RuntimeError, match="scan failed"):
         _acquire_discovery_sample(
-            raw_path,
+            settings=spec.settings,
+            signal_processing_profile=spec.signal_processing_profile,
             dll_dir=tmp_path / "dll",
             raw_opener=lambda path, dll_dir: raw,
             timing_recorder=recorder,
-            run_spec=spec,
             acquisition_input=spec.acquisition_inputs[0],
         )
 
@@ -1049,11 +1040,11 @@ def test_discovery_capture_failure_preserves_owner_acquisition_measurements(
 
     with pytest.raises(RuntimeError, match="peak failed"):
         _acquire_discovery_sample(
-            raw_path,
+            settings=spec.settings,
+            signal_processing_profile=spec.signal_processing_profile,
             dll_dir=tmp_path / "dll",
             raw_opener=lambda path, dll_dir: raw,
             timing_recorder=recorder,
-            run_spec=spec,
             acquisition_input=spec.acquisition_inputs[0],
         )
 
@@ -1081,7 +1072,6 @@ def test_adapter_counter_failure_does_not_mask_discovery_failure(
     raw = _CounterFailureRaw(events=[])
     raw_path = tmp_path / "sample.raw"
     spec = _compiled_run_spec((raw_path,), _settings())
-    raw.acquisition_source = spec.acquisition_inputs[0].acquisition_source
     recorder = TimingRecorder("discovery")
     monkeypatch.setattr(
         "xic_extractor.discovery.cid_nl_search.collect_strict_nl_events",
@@ -1090,11 +1080,11 @@ def test_adapter_counter_failure_does_not_mask_discovery_failure(
 
     with pytest.raises(RuntimeError, match="scan failed"):
         _acquire_discovery_sample(
-            raw_path,
+            settings=spec.settings,
+            signal_processing_profile=spec.signal_processing_profile,
             dll_dir=tmp_path / "dll",
             raw_opener=lambda path, dll_dir: raw,
             timing_recorder=recorder,
-            run_spec=spec,
             acquisition_input=spec.acquisition_inputs[0],
         )
 
@@ -1128,14 +1118,12 @@ def test_parallel_batch_failure_preserves_completed_worker_diagnostics(
                     sample_stem="sample-0",
                     raw_name="sample-0.raw",
                     message="RuntimeError: owner boom",
-                    **_job_identity(job),
                 )
             else:
                 result = DiscoverySampleProcessResult(
                     sample_index=1,
                     sample_stem="sample-1",
                     publication=cast(Any, None),
-                    **_job_identity(job),
                     timing_records=(
                         TimingRecord(
                             stage="discover.worker",
@@ -1670,30 +1658,15 @@ def _peak_kwargs(apex_rt: float, amplitude: float) -> dict[str, np.ndarray]:
     return {"rt": rt, "intensity": intensity}
 
 
-def _with_source(handle: Any, source: Any) -> Any:
-    handle.acquisition_source = source
-    return handle
-
-
-def _job_identity(job: Any) -> dict[str, str]:
-    return {
-        "signal_processing_profile": job.run_spec.signal_processing_profile,
-        "acquisition_source_id": job.acquisition_source.acquisition_source_id,
-    }
-
-
 def _bound_process_job(raw_path: Path, tmp_path: Path, **overrides: Any) -> Any:
     settings = _settings()
     spec = _compiled_run_spec((raw_path,), settings)
-    source = spec.acquisition_inputs[0].acquisition_source
     fields: dict[str, Any] = {
         "sample_index": 0,
-        "raw_path": raw_path,
         "output_dir": tmp_path / "out",
         "settings": settings,
+        "signal_processing_profile": spec.signal_processing_profile,
         "dll_dir": tmp_path / "dll",
-        "acquisition_source": source,
-        "run_spec": spec,
         "acquisition_input": spec.acquisition_inputs[0],
     }
     fields.update(overrides)
@@ -1703,16 +1676,10 @@ def _bound_process_job(raw_path: Path, tmp_path: Path, **overrides: Any) -> Any:
 def _run_discovery_batch(
     raw_paths: tuple[Path, ...], **kwargs: Any
 ) -> DiscoveryBatchOutputs:
-    spec = kwargs.pop("run_spec", None) or _compiled_run_spec(
-        raw_paths, kwargs["settings"]
-    )
-    opener = kwargs.pop("raw_opener", None)
-    if opener is not None:
-        opener = _spec_bound_opener(spec, opener)
+    settings = kwargs.pop("settings")
+    spec = kwargs.pop("run_spec", None) or _compiled_run_spec(raw_paths, settings)
     kwargs.setdefault("execution", in_process_execution())
-    return _pipeline.run_discovery_batch(
-        raw_paths, run_spec=spec, raw_opener=opener, **kwargs
-    )
+    return _pipeline.run_discovery_batch(spec, **kwargs)
 
 
 @pytest.mark.parametrize(
@@ -1758,19 +1725,17 @@ def test_acquisition_open_observations_keep_sample_attribution_in_serial_and_spa
         recorder = TimingRecorder("discovery")
 
         def open_sample(path, _dll, output_dir=output_dir, recorder=recorder):
-            item = next(
-                item
-                for item in spec.acquisition_inputs
-                if item.sample_stem == path.stem
+            index, item = next(
+                (index, item)
+                for index, item in enumerate(spec.acquisition_inputs)
+                if item.raw_path == path
             )
             job = DiscoverySampleProcessJob(
-                item.input_ordinal,
-                path,
+                index,
                 output_dir,
                 settings,
+                spec.signal_processing_profile,
                 dll_dir,
-                item.acquisition_source,
-                spec,
                 item,
             )
             return vendor_fake_discovery_opener(job, recorder)(path, dll_dir)
@@ -1778,9 +1743,8 @@ def test_acquisition_open_observations_keep_sample_attribution_in_serial_and_spa
         if parallel:
             run = partial(
                 run_discovery_batch_process,
-                paths,
+                spec,
                 output_dir=output_dir,
-                settings=settings,
                 dll_dir=dll_dir,
                 timing_recorder=recorder,
                 max_workers=1,
@@ -1789,21 +1753,17 @@ def test_acquisition_open_observations_keep_sample_attribution_in_serial_and_spa
                     mp_context=multiprocessing.get_context("spawn"),
                 ),
                 progress_callback=None,
-                run_spec=spec,
-                run_inputs=spec.acquisition_inputs,
                 should_cancel=None,
                 discover_sample=discover_vendor_fake_sample,
             )
         else:
             run = partial(
                 _pipeline.run_discovery_batch,
-                paths,
+                spec,
                 execution=in_process_execution(),
                 output_dir=output_dir,
-                settings=settings,
                 dll_dir=dll_dir,
                 timing_recorder=recorder,
-                run_spec=spec,
                 raw_opener=open_sample,
             )
         if mode in {"success", "unobserved"}:
@@ -1870,13 +1830,11 @@ def test_process_worker_records_raw_open_through_its_production_opener(
     spec = _compiled_run_spec((raw_path,), settings)
     item = spec.acquisition_inputs[0]
     job = DiscoverySampleProcessJob(
-        item.input_ordinal,
-        raw_path,
+        0,
         tmp_path / "out",
         settings,
+        spec.signal_processing_profile,
         dll_dir,
-        item.acquisition_source,
-        spec,
         item,
         instrument_diagnostics=True,
     )

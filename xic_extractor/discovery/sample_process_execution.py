@@ -1,8 +1,8 @@
 """Run Discovery samples in a process pool and reduce their results.
 
 The pipeline owner supplies the per-sample Discovery flow; this module owns the
-picklable job and result envelopes, worker scheduling, identity checks, and the
-projection of worker diagnostics into the parent timing recorder.
+picklable job and result envelopes, worker scheduling, and the projection of
+worker diagnostics into the parent timing recorder.
 """
 
 from __future__ import annotations
@@ -25,9 +25,6 @@ from xic_extractor.discovery.models import (
     EventAttachment,
 )
 from xic_extractor.discovery.ms1_capture import _DiscoveryMs1Measurements
-from xic_extractor.discovery.processing_run_spec_adapter import (
-    processing_run_input_for_path,
-)
 from xic_extractor.discovery.runtime_measurements import (
     portable_worker_observations,
     record_discovery_ms1_measurements,
@@ -37,7 +34,6 @@ from xic_extractor.discovery.runtime_measurements import (
 from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.execution.timing import TimingRecord, TimingRecorder
 from xic_extractor.execution.workers import execute_process_jobs
-from xic_extractor.processing_identity import AcquisitionSourceIdentity
 from xic_extractor.processing_run_spec import (
     ProcessingAcquisitionInput,
     ProcessingRunSpec,
@@ -47,12 +43,10 @@ from xic_extractor.processing_run_spec import (
 @dataclass(frozen=True)
 class DiscoverySampleProcessJob:
     sample_index: int
-    raw_path: Path
     output_dir: Path
     settings: DiscoverySettings
+    signal_processing_profile: SignalProcessingProfile
     dll_dir: Path
-    acquisition_source: AcquisitionSourceIdentity
-    run_spec: ProcessingRunSpec
     acquisition_input: ProcessingAcquisitionInput
     instrument_diagnostics: bool = False
 
@@ -65,8 +59,6 @@ class DiscoverySampleProcessResult:
     timing_records: tuple[TimingRecord, ...]
     measurement_observations: tuple[dict[str, object], ...]
     ms1_measurements: _DiscoveryMs1Measurements | None = None
-    signal_processing_profile: SignalProcessingProfile | None = None
-    acquisition_source_id: str = ""
 
 
 @dataclass(frozen=True)
@@ -78,8 +70,6 @@ class DiscoverySampleProcessError:
     timing_records: tuple[TimingRecord, ...] = ()
     measurement_observations: tuple[dict[str, object], ...] = ()
     ms1_measurements: _DiscoveryMs1Measurements | None = None
-    signal_processing_profile: SignalProcessingProfile | None = None
-    acquisition_source_id: str = ""
 
 
 class DiscoveryProcessExecutionError(RuntimeError):
@@ -102,8 +92,6 @@ class DiscoveryProcessExecutionError(RuntimeError):
         self.cancelled_job_count = cancelled_job_count
         self.in_flight_job_count = in_flight_job_count
         self.unsubmitted_job_count = unsubmitted_job_count
-        self.signal_processing_profile = first_failure.signal_processing_profile
-        self.acquisition_source_id = first_failure.acquisition_source_id
         super().__init__(f"{first_failure.raw_name}: {first_failure.message}")
 
 
@@ -141,35 +129,28 @@ def raise_if_discovery_cancelled(should_cancel: Callable[[], bool] | None) -> No
 
 
 def run_discovery_batch_process(
-    raw_paths: tuple[Path, ...],
+    run_spec: ProcessingRunSpec,
     *,
     output_dir: Path,
-    settings: DiscoverySettings,
     dll_dir: Path,
     timing_recorder: TimingRecorder,
     max_workers: int,
     executor_factory: Callable[..., Any] | None,
     progress_callback: Callable[[int, int, str], None] | None,
-    run_spec: ProcessingRunSpec,
-    run_inputs: tuple[ProcessingAcquisitionInput, ...],
     should_cancel: Callable[[], bool] | None,
     discover_sample: SampleDiscoverer,
 ) -> DiscoveryBatchOutputs:
     pending_jobs: list[DiscoverySampleProcessJob] = []
-    for sample_index, raw_path in enumerate(raw_paths):
+    for sample_index, acquisition_input in enumerate(run_spec.acquisition_inputs):
         raise_if_discovery_cancelled(should_cancel)
-        acquisition_input = run_inputs[sample_index]
-        acquisition_source = acquisition_input.acquisition_source
         pending_jobs.append(
             DiscoverySampleProcessJob(
                 sample_index=sample_index,
-                raw_path=raw_path,
                 output_dir=output_dir,
-                settings=settings,
+                settings=run_spec.settings,
+                signal_processing_profile=run_spec.signal_processing_profile,
                 dll_dir=dll_dir,
-                acquisition_source=acquisition_source,
                 instrument_diagnostics=timing_recorder.enabled,
-                run_spec=run_spec,
                 acquisition_input=acquisition_input,
             )
         )
@@ -205,23 +186,17 @@ def run_discovery_batch_process(
         _observe_pickle_payload_bytes(
             timing_recorder,
             job,
-            scope=job.raw_path.stem,
+            scope=job.acquisition_input.raw_path.stem,
             source="discovery.process_job.request",
         )
     for observed in report.observed_results:
         expected_job = jobs_by_sample_index.get(observed.sample_index)
-        if expected_job is None or observed.sample_stem != expected_job.raw_path.stem:
-            raise ValueError(
-                "Discovery process result does not match a submitted sample job"
-            )
         if (
-            observed.signal_processing_profile
-            != expected_job.run_spec.signal_processing_profile
-            or observed.acquisition_source_id
-            != expected_job.acquisition_source.acquisition_source_id
+            expected_job is None
+            or observed.sample_stem != expected_job.acquisition_input.raw_path.stem
         ):
             raise ValueError(
-                "Discovery process result crosses profile/acquisition binding"
+                "Discovery process result does not match a submitted sample job"
             )
         _observe_pickle_payload_bytes(
             timing_recorder,
@@ -367,31 +342,28 @@ def run_discovery_sample_process_job(
         acquired_measurements = measurements
 
     try:
-        _validate_discovery_process_job_binding(job)
         discovery_result = discover_sample(
             job,
             timing_recorder=recorder,
             measurement_observer=_capture_acquired_measurements,
         )
-        sample_stem = job.raw_path.stem
+        raw_path = job.acquisition_input.raw_path
         publication = output_publication.publish_discovery_batch_sample(
-            job.raw_path,
+            raw_path,
             discovery_result.peaks,
             discovery_result.attachments,
             output_dir=job.output_dir,
-            acquisition_source=job.acquisition_source,
+            acquisition_source=job.acquisition_input.acquisition_source,
             timing_recorder=recorder,
             mass_recalibration_result=discovery_result.mass_recalibration_result,
         )
         return DiscoverySampleProcessResult(
             sample_index=job.sample_index,
-            sample_stem=sample_stem,
+            sample_stem=raw_path.stem,
             publication=publication,
             timing_records=recorder.records,
             measurement_observations=portable_worker_observations(recorder),
             ms1_measurements=discovery_result.ms1_measurements,
-            signal_processing_profile=job.run_spec.signal_processing_profile,
-            acquisition_source_id=job.acquisition_source.acquisition_source_id,
         )
     except Exception as exc:
         return _discovery_process_error(
@@ -403,20 +375,6 @@ def run_discovery_sample_process_job(
         )
 
 
-def _validate_discovery_process_job_binding(job: DiscoverySampleProcessJob) -> None:
-    expected = processing_run_input_for_path(
-        job.run_spec,
-        job.raw_path,
-        input_ordinal=job.acquisition_input.input_ordinal,
-    )
-    if expected != job.acquisition_input:
-        raise ValueError("Discovery process job crosses run-spec input binding")
-    if job.acquisition_source != expected.acquisition_source:
-        raise ValueError("Discovery process job crosses acquisition identity")
-    if job.settings != job.run_spec.discovery_method.settings:
-        raise ValueError("Discovery process job crosses method settings")
-
-
 def _discovery_process_error(
     job: DiscoverySampleProcessJob,
     exc: Exception,
@@ -425,14 +383,13 @@ def _discovery_process_error(
     measurement_observations: tuple[dict[str, object], ...] = (),
     ms1_measurements: _DiscoveryMs1Measurements | None = None,
 ) -> DiscoverySampleProcessError:
+    raw_path = job.acquisition_input.raw_path
     return DiscoverySampleProcessError(
         sample_index=job.sample_index,
-        sample_stem=job.raw_path.stem,
-        raw_name=job.raw_path.name,
+        sample_stem=raw_path.stem,
+        raw_name=raw_path.name,
         message=f"{type(exc).__name__}: {exc}",
         timing_records=timing_records,
         measurement_observations=measurement_observations,
         ms1_measurements=ms1_measurements,
-        signal_processing_profile=job.run_spec.signal_processing_profile,
-        acquisition_source_id=job.acquisition_source.acquisition_source_id,
     )

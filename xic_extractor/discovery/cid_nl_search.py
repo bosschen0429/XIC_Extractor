@@ -20,10 +20,10 @@ from xic_extractor.discovery.ms2_events import (
     AcquisitionSpanMS2Source,
     collect_strict_nl_events,
 )
+from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.discovery.strict_event_receipts import read_parent_ms1_observations
 from xic_extractor.execution.timing import TimingRecorder
 from xic_extractor.processing_identity import AcquisitionSourceIdentity
-from xic_extractor.processing_run_spec import CidNlDiscoveryMethodSpec
 
 
 class CidNlSearchSource(DiscoveryMs1Source, AcquisitionSpanMS2Source, Protocol):
@@ -36,14 +36,13 @@ def search_cid_nl_sample(
     raw: CidNlSearchSource,
     *,
     raw_file: Path,
-    method: CidNlDiscoveryMethodSpec,
+    settings: DiscoverySettings,
     acquisition_source: AcquisitionSourceIdentity,
     signal_processing_profile: SignalProcessingProfile,
     timing_recorder: TimingRecorder,
     measurement_observer: Callable[[_DiscoveryMs1Measurements], None] | None = None,
 ) -> _DiscoveryMs1AcquisitionResult:
     """Execute the bound tags/composition; physical processing knows neither."""
-    settings = method.settings
     with timing_recorder.stage(
         "discover.ms2_events", sample_stem=raw_file.stem
     ) as stage:

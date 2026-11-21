@@ -229,12 +229,10 @@ def test_cli_flows_share_tsv_groups_and_excluded_population(tmp_path, monkeypatc
         for index, path in enumerate(raw_paths)
     }
     discovery = run_discovery_batch(
-        raw_paths,
+        spec,
         output_dir=tmp_path / "discovery",
-        settings=settings,
         dll_dir=tmp_path,
         raw_opener=lambda path, _dll: handles[path],
-        run_spec=spec,
         execution=in_process_execution(),
     )
     opened = install_runtime_raws(

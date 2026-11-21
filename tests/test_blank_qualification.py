@@ -246,7 +246,7 @@ def test_discovery_only_filters_background_when_explicitly_enabled(
         (raw,),
         discovery_settings=settings,
     )
-    assert (spec.acquisition_inputs[0].blank_library_sha256 is not None) is enabled
+    assert (spec.acquisition_inputs[0].blank_library_content is not None) is enabled
     qualified = _apply_blank_qualification_if_enabled(
         (c_background, c_override, c_clean),
         settings=settings,
@@ -485,12 +485,11 @@ def test_run_discovery_explicit_disable_skips_blank_directory(
         pytest.fail("explicit disable must not acquire blank RAWs")
 
     def compile_spec(raw_paths, *, discovery_settings):
-        settings = discovery_settings
-        settings_seen.append(settings)
-        return None
+        settings_seen.append(discovery_settings)
+        return SimpleNamespace(settings=discovery_settings)
 
-    def discover(raw_path, *, settings, **kwargs):
-        settings_seen.append(settings)
+    def discover(run_spec, **kwargs):
+        settings_seen.append(run_spec.settings)
         return SimpleNamespace(peaks_csv="candidates.csv", events_csv="review.csv")
 
     monkeypatch.setattr(

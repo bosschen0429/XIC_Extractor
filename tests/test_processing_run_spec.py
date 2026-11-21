@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import math
 from dataclasses import replace
 from pathlib import Path
@@ -20,42 +19,8 @@ from xic_extractor.configuration.signal_processing_profile import (
 from xic_extractor.discovery.evidence_config import DiscoveryEvidenceThresholds
 from xic_extractor.discovery.processing_run_spec_adapter import (
     compile_discovery_processing_run_spec,
-    validate_processing_run_spec_call,
 )
 from xic_extractor.discovery.settings import DiscoverySettings
-from xic_extractor.processing_run_spec import (
-    ProcessingAcquisitionInput,
-    canonical_processing_run_spec_bytes,
-    compile_processing_run_spec,
-)
-
-
-def test_run_spec_identity_closes_input_order(
-    tmp_path: Path,
-) -> None:
-    raw_paths = _raws(tmp_path)
-    spec = _compile_paths(raw_paths)
-    reversed_spec = _compile_paths(tuple(reversed(raw_paths)))
-    assert reversed_spec != spec
-
-
-@pytest.mark.parametrize(
-    "rt_min,rt_max", [(None, None), (None, 75.0), (1.5, None), (0.0, 999.0)]
-)
-def test_run_spec_preserves_auto_or_explicit_crop_intent(
-    tmp_path: Path, rt_min, rt_max
-) -> None:
-    paths = _raws(tmp_path)
-    settings = replace(_settings(), rt_min=rt_min, rt_max=rt_max)
-    spec = _compile_paths(paths, settings=settings)
-    saved_settings = json.loads(canonical_processing_run_spec_bytes(spec))[
-        "discovery_method"
-    ]["settings"]
-    for field, value in (("rt_min", rt_min), ("rt_max", rt_max)):
-        assert saved_settings[field] == (None if value is None else value.hex())
-    assert spec.discovery_method.settings == settings
-    if rt_min is not None or rt_max is not None:
-        assert spec.discovery_method != _compile_paths(paths).discovery_method
 
 
 def test_parallel_fingerprints_preserve_identity_order_and_overlap(
@@ -66,9 +31,7 @@ def test_parallel_fingerprints_preserve_identity_order_and_overlap(
     from xic_extractor.discovery import processing_run_spec_adapter as adapter
 
     paths = _raws(tmp_path)
-    expected = adapter.compile_discovery_processing_run_spec_with_expectations(
-        paths, discovery_settings=_settings()
-    )
+    expected = adapter.fingerprint_acquisition_sources(paths)
     original = adapter.build_local_acquisition_source_identity
     barrier = threading.Barrier(2)
     thread_ids: set[int] = set()
@@ -83,9 +46,7 @@ def test_parallel_fingerprints_preserve_identity_order_and_overlap(
     monkeypatch.setattr(
         adapter, "build_local_acquisition_source_identity", concurrent_fingerprint
     )
-    actual = adapter.compile_discovery_processing_run_spec_with_expectations(
-        paths, discovery_settings=_settings(), fingerprint_threads=2
-    )
+    actual = adapter.fingerprint_acquisition_sources(paths, fingerprint_threads=2)
     assert actual == expected
     assert len(thread_ids) == 2
 
@@ -97,26 +58,22 @@ def test_run_spec_reuses_verified_sources_without_rehashing(
     from xic_extractor.raw_reader_errors import RawReaderError
 
     paths = _raws(tmp_path)
-    expected = adapter.compile_discovery_processing_run_spec_with_expectations(
-        paths, discovery_settings=_settings()
-    )
-    sources = {
-        path.stem: source for path, source in zip(paths, expected[1], strict=True)
-    }
+    expected = adapter.fingerprint_acquisition_sources(paths)
+    sources = {path.stem: source for path, source in zip(paths, expected, strict=True)}
     monkeypatch.setattr(
         adapter,
         "build_local_acquisition_source_identity",
         lambda *_args, **_kwargs: pytest.fail("rehashed a verified source"),
     )
-    actual = adapter.compile_discovery_processing_run_spec_with_expectations(
-        paths, discovery_settings=_settings(), verified_acquisition_sources=sources
+    actual = adapter.fingerprint_acquisition_sources(
+        paths, verified_acquisition_sources=sources
     )
     assert actual == expected
 
     paths[0].write_bytes(b"changed source with different size")
     with pytest.raises(RawReaderError, match="RAW path state"):
-        adapter.compile_discovery_processing_run_spec_with_expectations(
-            paths, discovery_settings=_settings(), verified_acquisition_sources=sources
+        adapter.fingerprint_acquisition_sources(
+            paths, verified_acquisition_sources=sources
         )
 
 
@@ -139,9 +96,7 @@ def test_parallel_fingerprints_reject_source_changed_during_read(
         adapter, "build_local_acquisition_source_identity", mutate_after_fingerprint
     )
     with pytest.raises(IdentityContractError, match="changed during"):
-        adapter.compile_discovery_processing_run_spec_with_expectations(
-            paths, discovery_settings=_settings(), fingerprint_threads=2
-        )
+        adapter.fingerprint_acquisition_sources(paths, fingerprint_threads=2)
 
 
 def test_discovery_preparation_binds_local_revision_without_reading_raw(
@@ -162,37 +117,6 @@ def test_discovery_preparation_binds_local_revision_without_reading_raw(
         and item.acquisition_source.local_file_revision is not None
         for item in spec.acquisition_inputs
     )
-
-
-def test_run_spec_call_rejects_conflicts_before_runtime(tmp_path: Path) -> None:
-    raw_paths = _raws(tmp_path)
-    settings = _settings()
-    spec = _compile_paths(raw_paths, settings=settings)
-
-    with pytest.raises(ValueError, match="settings conflict"):
-        validate_processing_run_spec_call(
-            spec,
-            raw_paths,
-            discovery_settings=DiscoverySettings(
-                neutral_loss_profile=NeutralLossProfile("DNA_dR", 98.0)
-            ),
-        )
-    with pytest.raises(ValueError, match="runtime RAW path"):
-        validate_processing_run_spec_call(
-            spec,
-            (raw_paths[0], tmp_path / "C.raw"),
-            discovery_settings=settings,
-        )
-
-
-def test_run_spec_pure_owner_compiles_typed_inputs(tmp_path: Path) -> None:
-    adapter_spec = _compile_paths(_raws(tmp_path))
-    pure_spec = compile_processing_run_spec(
-        adapter_spec.acquisition_inputs,
-        discovery_settings=_settings(),
-    )
-
-    assert pure_spec == adapter_spec
 
 
 def test_run_spec_rejects_duplicate_local_file_aliases_once(
@@ -221,27 +145,6 @@ def test_run_spec_rejects_duplicate_local_file_aliases_once(
         )
 
     assert calls == [first, alias]
-
-
-def test_pure_run_spec_rejects_same_source_under_different_names(
-    tmp_path: Path,
-) -> None:
-    spec = _compile_paths(_raws(tmp_path))
-    source = spec.acquisition_inputs[0].acquisition_source
-
-    with pytest.raises(ValueError, match="duplicate.*acquisition_source_id"):
-        compile_processing_run_spec(
-            (
-                spec.acquisition_inputs[0],
-                ProcessingAcquisitionInput(
-                    input_ordinal=1,
-                    adapter_input_key="renamed.raw",
-                    sample_stem="renamed",
-                    acquisition_source=source,
-                ),
-            ),
-            discovery_settings=_settings(),
-        )
 
 
 def test_run_spec_rejects_invalid_direct_profile_type() -> None:
@@ -412,59 +315,7 @@ def test_near_equal_neutral_loss_masses_remain_distinct_and_hashable(
         discovery_settings=settings,
     )
 
-    assert spec.discovery_method.settings == settings
-
-
-def test_signal_profile_changes_run_identity_not_legacy_vendor_method(
-    tmp_path: Path,
-) -> None:
-    from xic_extractor.configuration.mass_recalibration import MassRecalibration
-
-    raws = _raws(tmp_path)
-    settings = replace(_settings(), mass_recalibration=MassRecalibration.NONE)
-    spec = _compile_paths(raws, settings=settings)
-    wider = compile_discovery_processing_run_spec(
-        raws,
-        discovery_settings=settings,
-        signal_processing_profile=SignalProcessingProfile(window_points=21),
-    )
-
-    assert spec.discovery_method.settings.ms2_precursor_tol_da == 0.8
-    saved_settings = json.loads(canonical_processing_run_spec_bytes(spec))[
-        "discovery_method"
-    ]["settings"]
-    assert "mass_recalibration" not in saved_settings
-    assert spec.discovery_method == wider.discovery_method
-    assert spec != wider
-
-
-@pytest.mark.parametrize("enabled", [False, True])
-def test_processing_run_spec_binds_custom_blank_settings(
-    tmp_path: Path,
-    enabled: bool,
-) -> None:
-    raws = _raws(tmp_path)
-    library_path = tmp_path / "blank_library.json"
-    _write_bound_library(library_path, 1000.0)
-    custom_settings = DiscoverySettings(
-        neutral_loss_profile=NeutralLossProfile(
-            tag="DNA_dR",
-            neutral_loss_da=116.0474,
-        ),
-        enable_blank_qualification=enabled,
-        blank_library_path=str(library_path),
-        blank_ppm_tol=12.5,
-        blank_fold_change_threshold=4.5,
-    )
-    spec = compile_discovery_processing_run_spec(
-        raws,
-        discovery_settings=custom_settings,
-    )
-    bound_settings = spec.discovery_method.settings
-    assert bound_settings.enable_blank_qualification is enabled
-    assert bound_settings.blank_library_path == str(library_path)
-    assert bound_settings.blank_ppm_tol == 12.5
-    assert bound_settings.blank_fold_change_threshold == 4.5
+    assert spec.settings == settings
 
 
 def _write_bound_library(path: Path, intensity: float) -> None:
@@ -478,27 +329,6 @@ def _write_bound_library(path: Path, intensity: float) -> None:
         min_intensity=0.0,
         source_blanks=("blank",),
     ).save_json(path)
-
-
-@pytest.mark.parametrize("selection", ["explicit", "colocated"])
-def test_run_identity_binds_selected_blank_content(
-    tmp_path: Path,
-    selection: str,
-) -> None:
-    raw_paths = _raws(tmp_path)
-    library_path = tmp_path / "blank_library.json"
-    _write_bound_library(library_path, 1000.0)
-    settings = replace(
-        _settings(),
-        neutral_loss_profile=None,
-        enable_blank_qualification=True,
-        blank_library_path=str(library_path) if selection == "explicit" else None,
-    )
-    first = _compile_paths(raw_paths, settings=settings)
-    _write_bound_library(library_path, 1.0)
-    second = _compile_paths(raw_paths, settings=settings)
-    assert first != second
-    assert first.discovery_method == second.discovery_method
 
 
 def test_run_identity_does_not_inherit_packaged_blank_library(
@@ -525,7 +355,7 @@ def test_run_identity_does_not_inherit_packaged_blank_library(
     _write_bound_library(packaged_path, 1.0)
     monkeypatch.setattr(blank, "_CACHED_DEFAULT_LIBRARY", None)
     second = _compile_paths(raw_paths, settings=settings)
-    assert all(item.blank_library_sha256 is None for item in first.acquisition_inputs)
+    assert all(item.blank_library_content is None for item in first.acquisition_inputs)
     assert first == second
 
 
@@ -566,12 +396,10 @@ def test_bound_blank_snapshot_controls_each_sample_after_library_mutation(
         for path, item in zip(paths, spec.acquisition_inputs, strict=True)
     }
     result = run_discovery_batch(
-        tuple(paths),
+        spec,
         output_dir=tmp_path / "out",
-        settings=settings,
         dll_dir=tmp_path / "dll",
         raw_opener=lambda path, _dll: handles[path],
-        run_spec=spec,
         execution=in_process_execution(),
     )
     states = {

@@ -27,7 +27,7 @@ from xic_extractor.discovery.csv_reader import (
 )
 from xic_extractor.discovery.input_source import DiscoveryInputSource
 from xic_extractor.discovery.processing_run_spec_adapter import (
-    compile_discovery_processing_run_spec_with_expectations,
+    fingerprint_acquisition_sources,
 )
 from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.execution.timing import TimingRecorder
@@ -129,10 +129,8 @@ def prepare_untargeted_alignment_inputs(
     recorder = timing_recorder or TimingRecorder.disabled("alignment")
     output_dir.mkdir(parents=True, exist_ok=True)
     with recorder.stage("alignment.verify_acquisition_sources"):
-        _spec, expectations = compile_discovery_processing_run_spec_with_expectations(
+        expectations = fingerprint_acquisition_sources(
             ordered_raw_paths,
-            discovery_settings=settings,
-            signal_processing_profile=signal_processing_profile,
             fingerprint_threads=execution.alignment_workers,
             verified_acquisition_sources=verified_acquisition_sources,
         )

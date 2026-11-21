@@ -23,7 +23,7 @@ from xic_extractor.presets.models import (
     PresetTag,
 )
 from xic_extractor.presets.serialization import save_preset, serialize_preset
-from xic_extractor.processing_run_spec import CidNlDiscoveryMethodSpec
+from xic_extractor.processing_run_spec import validate_cid_nl_discovery_settings
 from xic_extractor.settings_schema import RESOLVER_MODES
 
 _DISPLAY_NAMES = {
@@ -318,7 +318,7 @@ def _validate_gui_method(
         )
     else:
         settings = apply_to_discovery(preset, explicit_tuning_overrides=overrides)
-        CidNlDiscoveryMethodSpec(settings=settings)
+        validate_cid_nl_discovery_settings(settings)
     serialize_preset(preset, discovery_overrides=overrides)
 
 

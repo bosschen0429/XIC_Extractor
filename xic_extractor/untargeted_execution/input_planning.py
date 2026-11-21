@@ -24,7 +24,7 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
     mint_cid_nl_subject_membership,
 )
 from xic_extractor.processing_identity import AcquisitionSourceExpectation
-from xic_extractor.processing_run_spec import CidNlDiscoveryMethodSpec
+from xic_extractor.processing_run_spec import validate_cid_nl_discovery_settings
 from xic_extractor.sample_metadata import (
     SampleMetadata,
 )
@@ -151,7 +151,7 @@ def is_supported_alignment_discovery(settings: DiscoverySettings) -> bool:
     """Return whether settings select a supported discovery method for alignment."""
 
     try:
-        CidNlDiscoveryMethodSpec(settings=settings)
+        validate_cid_nl_discovery_settings(settings)
     except TypeError, ValueError:
         return False
     return True

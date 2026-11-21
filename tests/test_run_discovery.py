@@ -33,17 +33,13 @@ def test_run_discovery_cli_passes_single_raw_settings(
     captured = {}
 
     def _fake_run_discovery(
-        raw_path_arg,
+        run_spec,
         *,
         output_dir,
-        settings,
         dll_dir,
-        run_spec,
         timing_recorder=None,
     ):
-        captured["raw_path"] = raw_path_arg
         captured["output_dir"] = output_dir
-        captured["settings"] = settings
         captured["dll_dir"] = dll_dir
         captured["run_spec"] = run_spec
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -87,9 +83,8 @@ def test_run_discovery_cli_passes_single_raw_settings(
     )
 
     assert code == 0
-    assert captured["raw_path"] == raw_path.resolve()
     assert captured["output_dir"] == output_dir.resolve()
-    settings = captured["settings"]
+    settings = captured["run_spec"].settings
     assert settings.neutral_loss_profile.tag == "DNA_dR"
     assert settings.neutral_loss_profile.neutral_loss_da == 116.0474
     assert len(settings.neutral_loss_profiles) == 1
@@ -98,8 +93,9 @@ def test_run_discovery_cli_passes_single_raw_settings(
     assert settings.rt_min is None and settings.rt_max is None
     assert captured["dll_dir"] == dll_dir.resolve()
     assert captured["run_spec"].signal_processing_profile.window_points == 9
-    assert captured["run_spec"].discovery_method.settings == settings
-    assert captured["run_spec"].acquisition_inputs[0].sample_stem == raw_path.stem
+    assert tuple(item.raw_path for item in captured["run_spec"].acquisition_inputs) == (
+        raw_path.resolve(),
+    )
     stdout = capsys.readouterr().out
     assert "Discovery peaks CSV: " in stdout
     assert "Discovery events CSV: " in stdout
@@ -150,18 +146,14 @@ def test_run_discovery_cli_passes_raw_dir_batch_settings(
     captured = {}
 
     def _fake_run_discovery_batch(
-        raw_paths,
+        run_spec,
         *,
         output_dir,
-        settings,
         dll_dir,
-        run_spec,
         execution,
         timing_recorder=None,
     ):
-        captured["raw_paths"] = raw_paths
         captured["output_dir"] = output_dir
-        captured["settings"] = settings
         captured["dll_dir"] = dll_dir
         captured["run_spec"] = run_spec
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -196,13 +188,13 @@ def test_run_discovery_cli_passes_raw_dir_batch_settings(
     )
 
     assert code == 0
-    assert captured["raw_paths"] == (second.resolve(), first.resolve())
+    assert tuple(item.raw_path for item in captured["run_spec"].acquisition_inputs) == (
+        second.resolve(),
+        first.resolve(),
+    )
     assert captured["output_dir"] == output_dir.resolve()
     assert captured["dll_dir"] == dll_dir.resolve()
-    assert captured["settings"].resolver_mode == "local_minimum"
-    assert tuple(
-        item.sample_stem for item in captured["run_spec"].acquisition_inputs
-    ) == ("A", "B")
+    assert captured["run_spec"].settings.resolver_mode == "local_minimum"
     stdout = capsys.readouterr().out
     assert "Discovery batch index: " in stdout
     assert "discovery_batch_index.csv" in stdout
@@ -279,16 +271,14 @@ def test_run_discovery_cli_writes_live_and_final_timing_json_for_batch(
     )
 
     def _fake_run_discovery_batch(
-        raw_paths,
+        run_spec,
         *,
         output_dir,
-        settings,
         dll_dir,
-        run_spec,
         execution,
         timing_recorder=None,
     ):
-        assert run_spec.discovery_method.settings == settings
+        raw_paths = run_spec.acquisition_inputs
         assert timing_recorder is not None
         with timing_recorder.stage(
             "discover.write_batch_index",

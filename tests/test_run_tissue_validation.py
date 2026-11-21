@@ -102,7 +102,6 @@ def test_preflight_8_and_85_share_science_without_output_or_execution(
         plans.append(json.loads(capsys.readouterr().out))
 
     from scripts import run_alignment, run_discovery
-    from xic_extractor.processing_run_spec import CidNlDiscoveryMethodSpec
 
     for plan in plans:
         assert set(plan["commands"]) == {"discovery", "alignment"}
@@ -113,9 +112,7 @@ def test_preflight_8_and_85_share_science_without_output_or_execution(
         assert alignment_args.timing_output and alignment_args.timing_live_output
         discovery_settings = run_discovery._discovery_settings(discovery_args)
         _, recipe = run_alignment._resolve_preset(alignment_args)
-        assert CidNlDiscoveryMethodSpec(settings=discovery_settings) == (
-            CidNlDiscoveryMethodSpec(settings=recipe.discovery_settings)
-        )
+        assert discovery_settings == recipe.discovery_settings
 
     assert executed == []
     assert plans[0]["science"] == plans[1]["science"]

@@ -1,21 +1,16 @@
 """Mass policy persistence, rollback, and per-sample provenance contracts."""
 
 import json
-from dataclasses import replace
 
 import pytest
 
 from xic_extractor.configuration.mass_recalibration import MassRecalibration
 from xic_extractor.presets import apply_to_discovery, load_preset
 from xic_extractor.presets.serialization import save_preset
-from xic_extractor.processing_run_spec import (
-    CidNlDiscoveryMethodSpec,
-    canonical_cid_nl_method_bytes,
-)
 
 
 @pytest.mark.parametrize("policy", tuple(MassRecalibration))
-def test_preset_rollback_roundtrip_and_identity(tmp_path, policy):
+def test_preset_rollback_roundtrip(tmp_path, policy):
     path = tmp_path / "rollback.toml"
     saved = save_preset(
         load_preset("dna_dr"),
@@ -32,13 +27,6 @@ def test_preset_rollback_roundtrip_and_identity(tmp_path, policy):
         assert "mass_recalibration" not in content
     else:
         assert 'mass_recalibration = "easy_ic_probe"' in content
-    method = json.loads(
-        canonical_cid_nl_method_bytes(CidNlDiscoveryMethodSpec(settings))
-    )
-    if policy is MassRecalibration.NONE:
-        assert "mass_recalibration" not in method["settings"]
-    else:
-        assert method["settings"]["mass_recalibration"] == policy.value
 
 
 @pytest.mark.parametrize("outcome", ("applied", "not_applicable"))
@@ -85,29 +73,6 @@ def test_receipt_roundtrip_preserves_each_raw_result_and_legacy_none(tmp_path, o
         )
         assert legacy.mass_recalibration_result.policy is MassRecalibration.NONE
         assert legacy.mass_recalibration_result.outcome == "none"
-
-
-@pytest.mark.parametrize("policy", tuple(MassRecalibration))
-def test_method_spec_records_none_by_omission(tmp_path, policy):
-    from xic_extractor.discovery.processing_run_spec_adapter import (
-        compile_discovery_processing_run_spec,
-    )
-    from xic_extractor.processing_run_spec import (
-        canonical_processing_run_spec_bytes,
-    )
-
-    raw = tmp_path / "A.raw"
-    raw.write_bytes(b"identity fixture")
-    settings = replace(
-        apply_to_discovery(load_preset("dna_dr")), mass_recalibration=policy
-    )
-    spec = compile_discovery_processing_run_spec((raw,), discovery_settings=settings)
-    settings_content = json.loads(canonical_processing_run_spec_bytes(spec))[
-        "discovery_method"
-    ]["settings"]
-    assert ("mass_recalibration" in settings_content) is (
-        policy is not MassRecalibration.NONE
-    )
 
 
 def test_fact_cache_policy_namespace_separates_numeric_facts(tmp_path):

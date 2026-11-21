@@ -118,8 +118,8 @@ def test_discovery_cli_forwards_worker_budget_and_run_spec(
     dll_dir.mkdir()
     observed = []
 
-    def capture_pipeline(paths, **kwargs):
-        observed.append((paths, kwargs))
+    def capture_pipeline(run_spec, **kwargs):
+        observed.append((run_spec, kwargs))
         return SimpleNamespace(
             batch_index_csv=tmp_path / "batch.csv",
             peaks_csv=tmp_path / "candidates.csv",
@@ -150,18 +150,18 @@ def test_discovery_cli_forwards_worker_budget_and_run_spec(
     if timing:
         args.extend(("--timing-output", str(tmp_path / "timing.json")))
     assert run_discovery.main(args) == 0
-    ((paths, forwarded),) = observed
-    assert paths == (raw_paths if input_mode == "raw-dir" else raw_paths[0])
+    ((run_spec, forwarded),) = observed
+    assert tuple(item.raw_path for item in run_spec.acquisition_inputs) == (
+        raw_paths if input_mode == "raw-dir" else raw_paths[:1]
+    )
     if expected_workers is None:
         assert "execution" not in forwarded
     else:
         assert forwarded["execution"].parallel_workers == expected_workers
     assert (forwarded["timing_recorder"] is not None) is timing
-    assert forwarded["run_spec"].discovery_method.settings == forwarded["settings"]
-    assert not forwarded["settings"].enable_blank_qualification
+    assert not run_spec.settings.enable_blank_qualification
     assert all(
-        item.blank_library_sha256 is None
-        for item in forwarded["run_spec"].acquisition_inputs
+        item.blank_library_content is None for item in run_spec.acquisition_inputs
     )
 
 
@@ -201,9 +201,8 @@ def test_discovery_cli_runs_saved_method_with_only_explicit_tuning_overrides(
     dll_dir.mkdir()
     observed = []
 
-    def capture_pipeline(_raw_path, **kwargs):
-        observed.append(kwargs["settings"])
-        assert kwargs["run_spec"].discovery_method.settings == kwargs["settings"]
+    def capture_pipeline(run_spec, **kwargs):
+        observed.append(run_spec.settings)
         return SimpleNamespace(
             peaks_csv=tmp_path / "candidates.csv",
             events_csv=tmp_path / "review.csv",

@@ -130,12 +130,10 @@ def test_recorded_mono_nl_match_keeps_distinct_inferred_physical_search(
         intensity=intensity,
     )
     outputs = run_discovery(
-        raw_path,
+        spec,
         output_dir=tmp_path / "out",
-        settings=settings,
         dll_dir=tmp_path / "dll",
         raw_opener=lambda *_args: raw,
-        run_spec=spec,
     )
     candidates = read_discovery_peaks_csv(outputs.peaks_csv)
     supported = [
@@ -190,12 +188,10 @@ def test_pipeline_retains_each_seeded_physical_peak_from_one_rt_group(
         intensity=intensity,
     )
     outputs = run_discovery(
-        raw_path,
+        spec,
         output_dir=tmp_path / "out",
-        settings=settings,
         dll_dir=tmp_path / "dll",
         raw_opener=lambda *_args: raw,
-        run_spec=spec,
     )
     candidates = sorted(
         read_discovery_peaks_csv(outputs.peaks_csv),
@@ -524,85 +520,16 @@ def test_spec_bound_single_run_uses_compiled_acquisition_and_measures_once(
     )
 
     outputs = run_discovery(
-        raw_path,
+        spec,
         output_dir=tmp_path / "out",
-        settings=settings,
         dll_dir=tmp_path / "dll",
         raw_opener=lambda path, dll_dir: raw,
-        run_spec=spec,
     )
 
     assert physical_calls == {"prepare": 1, "evaluate": 1}
     assert len(_read_csv(outputs.peaks_csv)) == 1
     assert not (tmp_path / "out" / "discovery_physical_facts.json").exists()
     assert raw.raw_chromatogram_call_count == 2
-
-
-@pytest.mark.parametrize(
-    ("binding", "expected_error"),
-    [("missing", "invalid acquisition source"), ("crossed", "crosses")],
-)
-def test_spec_bound_handle_closes_source_before_ms2_or_xic(
-    tmp_path: Path,
-    binding: str,
-    expected_error: str,
-) -> None:
-    raw_path = tmp_path / "Sample.raw"
-    raw_path.write_bytes(b"compiled acquisition")
-    settings = _settings()
-    spec = compile_discovery_processing_run_spec(
-        (raw_path,), discovery_settings=settings
-    )
-    if binding == "missing":
-        source = None
-    else:
-        other = tmp_path / "Other.raw"
-        other.write_bytes(b"different acquisition")
-        source = build_acquisition_source_identity(
-            other,
-            acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
-            observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
-        )
-
-    class CountingHandle:
-        acquisition_source = source
-        raw_chromatogram_call_count = 0
-
-        def __init__(self) -> None:
-            self.ms2_calls = 0
-            self.xic_calls = 0
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *_args):
-            return None
-
-        def iter_ms2_scans(self, *_args):
-            self.ms2_calls += 1
-            return iter(())
-
-        def extract_xic_many(self, requests):
-            self.xic_calls += 1
-            return tuple(XICTrace.empty() for _request in requests)
-
-        def scan_window_for_request(self, _request):
-            return (0, 0)
-
-    handle = CountingHandle()
-
-    with pytest.raises(ValueError, match=expected_error):
-        run_discovery(
-            raw_path,
-            output_dir=tmp_path / "out",
-            settings=settings,
-            dll_dir=tmp_path / "dll",
-            raw_opener=lambda *_args: handle,
-            run_spec=spec,
-        )
-
-    assert handle.ms2_calls == 0
-    assert handle.xic_calls == 0
 
 
 def test_sparse_trace_outside_actual_context_reports_truthful_unavailable(
@@ -623,12 +550,10 @@ def test_sparse_trace_outside_actual_context_reports_truthful_unavailable(
     )
 
     outputs = run_discovery(
-        raw_path,
+        spec,
         output_dir=tmp_path / "out",
-        settings=settings,
         dll_dir=tmp_path / "dll",
         raw_opener=lambda *_args: raw,
-        run_spec=spec,
     )
 
     assert _read_csv(outputs.peaks_csv) == []
@@ -1293,12 +1218,10 @@ def test_pipeline_publishes_inferred_precursor_ms1_ion_from_raw_handle(
         intensity=100.0 + 10_000 * np.exp(-0.5 * ((rt - 10.0) / 0.05) ** 2),
     )
     outputs = run_discovery(
-        raw_path,
+        spec,
         output_dir=tmp_path / "out",
-        settings=settings,
         dll_dir=tmp_path / "dll",
         raw_opener=lambda *_args: raw,
-        run_spec=spec,
     )
 
     (candidate,) = _read_csv(outputs.peaks_csv)
@@ -1418,12 +1341,10 @@ def test_held_inferred_peak_remains_in_review(
         ),
     )
     outputs = run_discovery(
-        raw_path,
+        spec,
         output_dir=tmp_path / "out",
-        settings=settings,
         dll_dir=tmp_path / "dll",
         raw_opener=lambda *_args: raw,
-        run_spec=spec,
     )
 
     (candidate,) = read_discovery_peaks_csv(outputs.peaks_csv)

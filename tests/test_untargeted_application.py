@@ -927,12 +927,10 @@ def test_reduced_discovery_persistence_keeps_inferred_peak_and_qualifies_alignme
         for index, raw_path in enumerate(raw_paths)
     }
     discovery = discovery_pipeline.run_discovery_batch(
-        raw_paths,
+        spec,
         output_dir=tmp_path / "discovery",
-        settings=settings,
         dll_dir=tmp_path / "dll",
         raw_opener=lambda path, _dll_dir: discovery_handles[path],
-        run_spec=spec,
         execution=in_process_execution(),
     )
     batch = read_discovery_batch_index(
