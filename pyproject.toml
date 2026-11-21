@@ -492,7 +492,12 @@ allow_indirect_imports = true
 id = "only-execution-opens-pools"
 name = "Only execution opens thread or process pools"
 type = "forbidden"
-source_modules = ["xic_extractor"]
+source_modules = [
+    "xic_extractor",
+    "scripts",
+    "tools",
+    "xic_inspector",
+]
 forbidden_modules = [
     "concurrent",
     "multiprocessing",
@@ -500,5 +505,7 @@ forbidden_modules = [
 ignore_imports = [
     "xic_extractor.execution.** -> concurrent",
     "xic_extractor.execution.** -> multiprocessing",
+    "scripts.run_extraction -> multiprocessing",
+    "tools.diagnostics.targeted_manual_validation -> multiprocessing",
 ]
 allow_indirect_imports = true
