@@ -8,7 +8,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from xic_extractor.alignment.rt_frame import SampleRtFrame
-from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
@@ -49,7 +48,6 @@ class UntargetedPartitionContext:
     samples: tuple[SampleMetadata, ...]
     method_subject: CidNlMethodSubject | UntargetedCidNlMethodSubjectBatch
     settings: DiscoverySettings
-    peak_config: ExtractionConfig
     raw_paths_by_sample: Mapping[str, Path]
     peaks_by_sample: Mapping[str, tuple[DiscoveryPeak, ...]]
     discovery_receipts_by_sample: Mapping[
@@ -87,7 +85,6 @@ def build_partition_context(
     sample_metadata: Sequence[SampleMetadata],
     method_subject: CidNlMethodSubject | UntargetedCidNlMethodSubjectBatch,
     settings: DiscoverySettings,
-    peak_config: ExtractionConfig,
     peaks_by_sample: Mapping[str, Sequence[DiscoveryPeak]],
     discovery_receipts_by_sample: Mapping[
         str,
@@ -116,8 +113,6 @@ def build_partition_context(
         )
     if not isinstance(settings, DiscoverySettings):
         raise IdentityContractError("settings must be DiscoverySettings")
-    if not isinstance(peak_config, ExtractionConfig):
-        raise IdentityContractError("peak_config must be ExtractionConfig")
     paths_by_stem = _raw_paths_by_stem(raw_paths)
     metadata_by_stem = _metadata_by_stem(sample_metadata)
     if set(metadata_by_stem) != set(paths_by_stem):
@@ -217,7 +212,6 @@ def build_partition_context(
     return compose_partition_context(
         method_subject=method_subject,
         settings=settings,
-        peak_config=peak_config,
         paths_by_stem=paths_by_stem,
         metadata_by_stem=metadata_by_stem,
         source_expectations=source_expectations,
@@ -231,7 +225,6 @@ def compose_partition_context(
     *,
     method_subject: CidNlMethodSubject | UntargetedCidNlMethodSubjectBatch,
     settings: DiscoverySettings,
-    peak_config: ExtractionConfig,
     paths_by_stem: Mapping[str, Path],
     metadata_by_stem: Mapping[str, SampleMetadata],
     source_expectations: dict[str, AcquisitionSourceExpectation],
@@ -257,7 +250,6 @@ def compose_partition_context(
         samples=samples,
         method_subject=method_subject,
         settings=settings,
-        peak_config=peak_config,
         raw_paths_by_sample=dict(paths_by_stem),
         peaks_by_sample=dict(peak_map),
         discovery_receipts_by_sample=dict(receipt_map),

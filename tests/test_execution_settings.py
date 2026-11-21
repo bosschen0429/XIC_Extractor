@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from xic_extractor.configuration import execution_profile as execution_settings
+from xic_extractor.configuration.execution_profile import in_process_execution
 from xic_extractor.configuration.models import ExtractionConfig
 
 
@@ -13,44 +14,30 @@ def test_canonical_profile_uses_cpu_budget_and_parallel_alignment(
 ) -> None:
     monkeypatch.setattr(execution_settings.os, "cpu_count", lambda: 12)
 
-    profile = execution_settings.resolve_execution_profile()
+    profile = execution_settings.load_execution_profile()
 
     assert profile.parallel_workers == 11
     assert profile.alignment_workers == 4
 
 
-def test_settings_and_explicit_overrides_have_one_precedence_chain() -> None:
-    from_settings = execution_settings.resolve_execution_profile(
-        {"parallel_workers": "6"}
-    )
-    explicit = execution_settings.resolve_execution_profile(
-        {"parallel_workers": "6"}, parallel_workers=3, alignment_workers=2
-    )
-
-    assert from_settings == execution_settings.ExecutionProfile(6, 4)
-    assert explicit == execution_settings.ExecutionProfile(3, 2)
-
-
 @pytest.mark.parametrize(
-    ("settings", "parallel_workers", "alignment_workers"),
-    [
-        ({"parallel_workers": "0"}, None, None),
-        ({"parallel_workers": "bad"}, None, None),
-        (None, 0, None),
-        (None, None, 0),
-    ],
+    ("parallel_workers", "alignment_workers"), [(0, None), (None, 0)]
 )
 def test_profile_rejects_invalid_worker_counts(
-    settings: dict[str, str] | None,
     parallel_workers: int | None,
     alignment_workers: int | None,
 ) -> None:
     with pytest.raises(ValueError, match="integer >= 1"):
-        execution_settings.resolve_execution_profile(
-            settings,
+        execution_settings.load_execution_profile(
             parallel_workers=parallel_workers,
             alignment_workers=alignment_workers,
         )
+
+
+@pytest.mark.parametrize("backend", ["serial", "Process", ""])
+def test_entry_rejects_unknown_backend(backend: str) -> None:
+    with pytest.raises(ValueError, match="backend must be one of process, thread"):
+        execution_settings.load_execution_profile(backend=backend)
 
 
 def test_worker_counts_are_internal_unless_a_caller_overrides(monkeypatch):
@@ -80,6 +67,7 @@ def test_extraction_config_default_factory_uses_shared_parallel_budget(
         peak_min_prominence_ratio=0.1,
         ms2_precursor_tol_da=1.6,
         nl_min_intensity_ratio=0.01,
+        execution=in_process_execution(),
     )
 
     assert config.execution == execution_settings.ExecutionProfile(

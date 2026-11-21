@@ -18,7 +18,6 @@ from xic_extractor.acquisition.raw_paths import existing_raw_paths
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.drift_evidence import KnownIstdReference
 from xic_extractor.configuration.execution_profile import ExecutionProfile
-from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
@@ -64,7 +63,6 @@ def prepare_untargeted_alignment_inputs(
     dll_dir: Path,
     output_dir: Path,
     settings: DiscoverySettings,
-    peak_config: ExtractionConfig,
     sample_metadata: tuple[SampleMetadata, ...] | None = None,
     timing_recorder: TimingRecorder | None = None,
     signal_processing_profile: SignalProcessingProfile,
@@ -161,7 +159,6 @@ def prepare_untargeted_alignment_inputs(
             raw_paths=ordered_raw_paths,
             sample_metadata=retained_sample_metadata,
             settings=settings,
-            peak_config=peak_config,
             dll_dir=dll_dir,
             profile=signal_processing_profile,
             acquisition_source_expectations=expectations,
@@ -176,7 +173,6 @@ def complete_untargeted_alignment(
     dll_dir: Path,
     output_dir: Path,
     settings: DiscoverySettings,
-    peak_config: ExtractionConfig,
     alignment_config: AlignmentConfig,
     sample_metadata: tuple[SampleMetadata, ...] | None = None,
     known_istd_reference: KnownIstdReference | None = None,
@@ -209,7 +205,6 @@ def complete_untargeted_alignment(
         dll_dir=dll_dir,
         output_dir=output_dir,
         settings=settings,
-        peak_config=peak_config,
         sample_metadata=sample_metadata,
         timing_recorder=timing_recorder,
         signal_processing_profile=signal_processing_profile,

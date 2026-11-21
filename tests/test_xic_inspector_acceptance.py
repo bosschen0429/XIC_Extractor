@@ -29,6 +29,10 @@ from xic_extractor.applications.untargeted.publication import (
 from xic_extractor.applications.untargeted.request import (
     UntargetedRequest,
 )
+from xic_extractor.configuration.execution_profile import (
+    UntargetedExecutionPolicy,
+    in_process_execution,
+)
 from xic_extractor.evidence_artifacts import EvidenceLocator
 from xic_inspector.api import (
     InspectorCancelled,
@@ -260,7 +264,7 @@ def test_acceptance_a9_pipeline_shared_callable_handoff(tmp_path, monkeypatch) -
         tmp_path, monkeypatch, "positive"
     )
     import xic_extractor.applications.untargeted.application as application
-    from tests.alignment_pipeline_helpers import peak_config, write_batch
+    from tests.alignment_pipeline_helpers import write_batch
     from tests.cid_nl_raw_fixture import _settings
 
     batch_index = write_batch(tmp_path, ("S1", "S2"))
@@ -280,12 +284,12 @@ def test_acceptance_a9_pipeline_shared_callable_handoff(tmp_path, monkeypatch) -
     )
     outputs = application.run_untargeted_application(
         UntargetedRequest(
+            execution=UntargetedExecutionPolicy(profile=in_process_execution()),
             discovery_batch_index=batch_index,
             raw_dir=tmp_path,
             dll_dir=tmp_path,
             output_dir=tmp_path / "published",
             alignment_config=config,
-            peak_config=peak_config(),
             discovery_settings=replace(
                 _settings(), mass_recalibration=MassRecalibration.NONE
             ),

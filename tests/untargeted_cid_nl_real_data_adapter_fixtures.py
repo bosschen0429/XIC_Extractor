@@ -9,14 +9,12 @@ from tests.cid_nl_raw_fixture import (
     TEST_PROFILE,
     _current_candidates,
     _open_bound_raw,
-    _peak_config,
     _settings,
 )
 from tests.untargeted_cid_nl_no_raw_fixture import (
     UntargetedCidNlNoRawFixture,
     build_untargeted_cid_nl_no_raw_fixture,
 )
-from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.discovery.csv_reader import located_events_by_peak
 from xic_extractor.discovery.csv_writer import write_discovery_events_csv
 from xic_extractor.discovery.models import DiscoveryPeak
@@ -51,7 +49,6 @@ class SampleAdapterScenario:
     tmp_path: Path
     fixture: UntargetedCidNlNoRawFixture
     settings: DiscoverySettings
-    peak_config: ExtractionConfig
     attachments: list = field(default_factory=list)
 
     def discover(self, source_raw):
@@ -89,7 +86,6 @@ class SampleAdapterScenario:
             method_subject=self.fixture.method_subject,
             peaks=candidates,
             settings=self.settings,
-            peak_config=self.peak_config,
             raw=raw,
             signal_processing_profile=TEST_PROFILE,
         )
@@ -101,7 +97,6 @@ def build_sample_adapter_scenario(tmp_path: Path) -> SampleAdapterScenario:
         tmp_path=tmp_path,
         fixture=build_sample_adapter_fixture(tmp_path),
         settings=_settings(),
-        peak_config=_peak_config(tmp_path),
     )
 
 

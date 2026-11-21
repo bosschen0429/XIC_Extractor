@@ -38,6 +38,9 @@ def test_completed_empty_recovery_preserves_each_compatible_source_subject(
     monkeypatch: pytest.MonkeyPatch,
     backfill_enabled: bool,
 ) -> None:
+    """Missing has no Discovery peak: only Backfill has a reason to read it. Both 21
+    ppm-apart source subjects support one row.
+    """
     stems = ("SupportA1", "SupportA2", "SupportB1", "SupportB2", "Missing")
     settings = replace(SETTINGS, precursor_mz_tolerance_ppm=20.0)
     paths = raw_paths(tmp_path, stems)
@@ -69,10 +72,8 @@ def test_completed_empty_recovery_preserves_each_compatible_source_subject(
         opened_samples=opened,
     )
 
-    # Missing has no Discovery peak: only Backfill has a reason to read it.
     assert ("Missing" in opened) is backfill_enabled
 
-    # Both 21 ppm-apart source subjects support one row.
     (row,) = read_tsv(output / "alignment_matrix.tsv")
     assert row["Missing"] == ""
     support_areas = [float(row[stem]) for stem in stems[:4]]
@@ -119,9 +120,7 @@ def test_completed_empty_recovery_preserves_each_compatible_source_subject(
 def _nearby_subjects(tmp_path: Path):
     settings = replace(SETTINGS, precursor_mz_tolerance_ppm=1.0)
     paths = raw_paths(tmp_path, ("S1",))
-    source_raw, candidates = _nearby_subject_candidates(
-        paths["S1"], settings=settings, peak_config=None
-    )
+    source_raw, candidates = _nearby_subject_candidates(paths["S1"], settings=settings)
     return settings, paths, source_raw, candidates
 
 
@@ -129,6 +128,10 @@ def test_one_raw_serves_two_nearby_subjects_as_separate_rows(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """One RAW and one sample's settings serve two 8 ppm-apart subjects: each group
+    keeps its own precursor and candidate and is integrated from that shared trace. A
+    one-sample group is reviewed, not published to the Matrix.
+    """
     settings, paths, source_raw, candidates = _nearby_subjects(tmp_path)
     assert len(candidates) == 2
 
@@ -149,9 +152,6 @@ def test_one_raw_serves_two_nearby_subjects_as_separate_rows(
         "alignment_run_metadata.json",
         "alignment_explanation.sqlite",
     }
-    # One RAW and one sample's settings serve two 8 ppm-apart subjects: each
-    # group keeps its own precursor and candidate and is integrated from that
-    # shared trace. A one-sample group is reviewed, not published to the Matrix.
     assert read_tsv(output / "alignment_matrix.tsv") == []
     review = {
         row["feature_id"]: row for row in read_tsv(output / "alignment_review.tsv")
@@ -177,7 +177,12 @@ def test_sample_metadata_sets_matrix_order_and_backfill_eligibility(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Request sample metadata reaches Alignment planning unchanged."""
+    """Request sample metadata reaches Alignment planning unchanged.
+
+    Matrix columns follow the requested injection order. Backfill needs two eligible
+    direct supports; a blank or excluded Support2 leaves only Support1, and Hold,
+    without a Discovery peak, is then never read.
+    """
 
     stems = ("Support1", "Support2", "Hold")
     paths = raw_paths(tmp_path, stems)
@@ -221,7 +226,6 @@ def test_sample_metadata_sets_matrix_order_and_backfill_eligibility(
             name=name,
             opened_samples=opened,
         )
-        # Matrix columns follow the requested injection order.
         assert tsv_header(output / "alignment_matrix.tsv")[2:] == [
             "Support2",
             "Hold",
@@ -239,9 +243,6 @@ def test_sample_metadata_sets_matrix_order_and_backfill_eligibility(
             "Hold" in opened,
         )
 
-    # Backfill needs two eligible direct supports; a blank or excluded
-    # Support2 leaves only Support1, and Hold, without a Discovery peak, is
-    # then never read.
     assert outcomes == {
         ("sample", False): (True, "backfilled", True),
         ("blank", False): (False, "not_searched", False),
@@ -268,6 +269,9 @@ def test_discovery_review_rows_cannot_become_alignment_roots(
     monkeypatch: pytest.MonkeyPatch,
     scenario: str,
 ) -> None:
+    """Only admitted peaks start Alignment work. With two admitted supports, Backfill
+    also reads Hold.
+    """
     above_threshold = scenario == "ambiguous_hold_above_threshold"
     ambiguous = scenario.startswith("ambiguous_hold_")
     stems = ("Support", "Hold", "Support2") if above_threshold else ("Support", "Hold")
@@ -356,8 +360,6 @@ def test_discovery_review_rows_cannot_become_alignment_roots(
         opened_samples=opened,
     )
 
-    # Only admitted peaks start Alignment work. With two admitted supports,
-    # Backfill also reads Hold.
     assert opened == {
         stem for stem, values in peaks.items() if any(c.admitted for c in values)
     } | ({"Hold"} if above_threshold else set())
@@ -377,6 +379,7 @@ def test_owners_from_every_supported_sample_join_one_row(
     monkeypatch: pytest.MonkeyPatch,
     supported_samples: int,
 ) -> None:
+    """Owners from every supported sample join one row, centred on their mean."""
     stems = ("Early", "Middle", "Late")
     apexes = (8.0, 8.1, 8.2)
     paths = raw_paths(tmp_path, stems)
@@ -394,7 +397,6 @@ def test_owners_from_every_supported_sample_join_one_row(
         alignment_config=AlignmentConfig(),
     )
 
-    # Owners from every supported sample join one row, centred on their mean.
     (row,) = read_tsv(output / "alignment_matrix.tsv")
     (review,) = read_tsv(output / "alignment_review.tsv")
     assert review["identity_reason"] == "established"
@@ -416,6 +418,11 @@ def test_known_istd_reference_joins_drifting_samples_in_one_row(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Without the reference, 60 ppm and 1.067 min apart stay two one-sample groups,
+    which are reviewed but not published to the Matrix. The known ISTD reference
+    binds both samples and closes one row whose cells keep each sample's own drifted
+    apex and area.
+    """
     from openpyxl import Workbook
 
     stems = ("S0", "S1")
@@ -478,8 +485,6 @@ def test_known_istd_reference_joins_drifting_samples_in_one_row(
         **common,
     )
 
-    # Without the reference, 60 ppm and 1.067 min apart stay two one-sample
-    # groups, which are reviewed but not published to the Matrix.
     assert len(read_tsv(plain / "alignment_review.tsv")) == 2
     assert read_tsv(plain / "alignment_matrix.tsv") == []
     plain_values = {
@@ -489,8 +494,6 @@ def test_known_istd_reference_joins_drifting_samples_in_one_row(
     }
     assert set(plain_values) == set(stems)
     assert len(read_tsv(corrected / "alignment_review.tsv")) == 1
-    # The known ISTD reference binds both samples and closes one row whose
-    # cells keep each sample's own drifted apex and area.
     (row,) = read_tsv(corrected / "alignment_matrix.tsv")
     assert {stem: float(row[stem]) for stem in stems} == pytest.approx(plain_values)
     assert plain_values["S1"] / plain_values["S0"] == pytest.approx(1.4, rel=1e-3)
@@ -510,13 +513,15 @@ def test_backfill_recovers_sample_without_discovery_peak(
     monkeypatch: pytest.MonkeyPatch,
     recovery_case: str,
 ) -> None:
+    """Unequal heights separate the owner-mean RT from an area-weighted RT. One direct
+    support is below K = 2: no row, Hold is not searched.
+    """
     stems = (
         ("Support1", "Hold")
         if recovery_case == "threshold"
         else ("Support1", "Support2", "Support3", "Hold")
     )
     apexes = (7.97, 8.03) if recovery_case == "threshold" else (7.97, 7.99, 8.01, 8.03)
-    # Unequal heights separate the owner-mean RT from an area-weighted RT.
     scales = (1.0, 9.0) if recovery_case == "threshold" else (1.0, 9.0, 2.0, 9.0)
     paths = raw_paths(tmp_path, stems)
     raws = {}
@@ -542,7 +547,6 @@ def test_backfill_recovers_sample_without_discovery_peak(
         stem: cells[(feature, stem)]["source_candidate_id"] for stem in supports
     } == {stem: peaks[stem][0].peak_id for stem in supports}
     if recovery_case == "threshold":
-        # One direct support is below K = 2: no row, Hold is not searched.
         assert matrix == []
         assert hold["status"] == "not_searched"
         return
@@ -583,6 +587,7 @@ def test_atomic_publication_preserves_ms1_only_backfill_and_no_peak(
     monkeypatch: pytest.MonkeyPatch,
     output_level: str,
 ) -> None:
+    """Areas scale 1:2:3:4 with the synthetic intensity factor."""
     from xic_extractor.alignment_explanation.published_cells import (
         read_published_cells,
     )
@@ -620,7 +625,6 @@ def test_atomic_publication_preserves_ms1_only_backfill_and_no_peak(
     (review_row,) = read_tsv(output / "alignment_review.tsv")
     cells = {stem: cell for (_f, stem), cell in published_cells(output).items()}
     assert set(cells) == set(stems)
-    # Areas scale 1:2:3:4 with the synthetic intensity factor.
     areas = [float(matrix_row[stem]) for stem in stems[:4]]
     assert areas == pytest.approx([areas[0] * k for k in (1, 2, 3, 4)], rel=1e-3)
     for stem in stems[:4]:

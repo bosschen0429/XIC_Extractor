@@ -196,19 +196,6 @@ Repeat only for a different method/cohort, changed candidate or calibration
 owners, or an independent identity oracle. Artifacts:
 `output/fixed-group-final-attempt/`.
 
-### Average peer fit breaks flat worst-pair ties
-
-`expected_diff`; 44-sample snapshot, baseline `83749217` (#913, 2026-10-25).
-
-The maximum-pair cost can stay unchanged when a non-extreme member is replaced.
-Grouping now resolves such ties by average owner-to-peer cost without raising
-the primary cost. At m/z 310.14 and 326.146 the selected peaks have better peer
-fit (0.21366 versus 0.21441; 0.28258 versus 0.28447); local RAW inspection
-supports the m/z 326 choice. All 35,677 observations are retained; 4,166 groups,
-965 singletons; no group repeats a sample.
-
-Rerun when candidate scope, costs or bounded search change.
-
 ### Urine MeIQx: group-centered Backfill already recovers seed-window misses
 
 `diagnostic_only`; `c0b9f0fc`, 54RAW urine (2026-08-20).
@@ -307,16 +294,6 @@ boundaries by containment and area retention, not coordinate equality.
 Rerun when boundary selection, the baseline-return rule or the area integrator
 changes.
 
-### Gaussian15 MS1 morphology owns primary area
-
-`production_ready` (2026-06-05). Primary matrix area requires
-`primary_matrix_area_source=gaussian15_positive_asls_residual`; missing typed
-morphology fails closed as `missing_ms1_morphology_area`. The 85RAW gate had
-1,546,489 non-blank primary areas, zero from non-Gaussian, ASLS or raw sources,
-85 samples and 614 rows.
-
-Rerun only for a new production behavior change or a contradicting artifact.
-
 ### Targeted NL support stays inside its Gaussian15 peak group
 
 `production_ready` (2026-06-05). A selected chromatographic segment may not
@@ -326,18 +303,6 @@ zero borrowed-support rows.
 
 Rerun when NL evidence ownership, segment selection or candidate projection
 changes.
-
-### d3-N6-medA: local RT, not absolute drift
-
-Dated case (2026-05-28), not a current verdict. Absolute RT range was 2.15 min
-across 85RAW but the local rolling-median p95 was 0.048 min with no moderate or
-severe rows; same-surface areas matched 8/8 (ratio ≈ 1.000001). Absolute drift
-and mixed-surface area comparisons are not reasons to reject a target. A later
-hardened gate rejected 13 promoted weak-seed rows as
-`risky_weak_seed_backfill`; that failure was the promotion policy, not absence.
-
-A new selection, boundary or promotion question needs evidence on current code,
-starting with 8RAW.
 
 ### Standard mixture manual 2RAW: identity check, not an area reference
 
@@ -463,48 +428,6 @@ full85 timing or scientific acceptance claim.
 Reopen for changes to replay fields, context tie priority or grouping-only output.
 Artifacts: `output/codex-grouping-output/` in the #1165 worktree.
 
-### Reassignment uses settled drift models
-
-`diagnostic_only` (#1165, 2026-11-17). On the 85-sample selected 348.21
-workset, the formal method split 46 MS2-labelled Y owners 44+1+1. With the main
-group's coefficients held fixed, the current, swapped-N2313 and returned-T2275
-configurations cost the same; the +0.006/+0.010 differences came only from
-refitting coefficients, which moved an unrelated worst pair. Offering settled
-group coefficients as reassignment candidates put all 46 in one group. Retained
-8RAW replay: 871 groups, physical membership unchanged; 42 decisions price their
-alternatives under settled models, and two 273.15 TumorBC2312 owners gain
-`accepted_competition`. Selected 85 worksets: only the 348.21 neighborhood
-changed membership; N2313@13.13 carries `accepted_competition` against 13.52; 244.12, 827.17 and 828.17 controls unchanged;
-288.07 mixing persists (not addressed). Owner renaming and input reversal gave
-identical membership. Not a full85 or Backfill claim.
-
-Reopen when coefficient fitting, reassignment or settled-model scope changes.
-
-### A locally folded calibration keeps its curve
-
-`diagnostic_only` (#1165, 2026-11-17). At `9aa1b046` two 85RAW Tumor injections
-(TumorBC2281, TumorBC2286_DNAandRNA) had 22 qualified positions, but their LOESS
-fit folded at one pair 0.04 min apart near 13.3 min. The whole map was dropped
-for a constant shift (+5.7/+2.9 s); ISTDs then missed by up to 63/47 s, and the
-two injections recovered 18.7%/20.1% of eligible cells against a 27.9% Tumor
-median. Pooling only the folded pair (`3770d271`), on captured inputs that
-reproduce all 85 frozen maps, changes only those two maps; the other 83 are
-value-identical. Held-out ISTDs improve where the curve bends (12 min 35 to
-1–3 s; 25 min 64/48 to 46/25 s). The pre-set rule failed at oxodG (2281
-5 to 22 s) and the 40.6 min endpoint; healthy Tumor curves also lose to a
-constant shift at both under the same hold-out (10/32 vs 9/11 s).
-
-Full 85RAW (cached RAW, same Discovery): the two injections recover 28.1%/29.7%
-(+59/+66 Backfill cells). The two newly calibrated injections change drift
-anchors, so `a` changed in 100 and `b` in 17 groups that keep identical
-non-target members; 172 groups changed membership. Whole matrix 1,319 to 1,318
-rows, numeric 40,571 to 40,835, unresolved −216 in the other 83 samples,
-published direct observations −11 (28 lost, 17 gained, at most 3 per m/z). Y: 51
-retained labels in one row, unchanged. Not judged neighborhood by neighborhood.
-
-Reopen when the LOESS fit, the support floor or the drift-anchor population changes.
-Artifacts: `output/rt1165-calib-monotone/` in the #1165 worktree.
-
 ### Grouping time concentrates in dense windows
 
 `diagnostic_only` (2026-11-21). Replaying the 83-injection `output/nl_gate/fix`
@@ -566,8 +489,6 @@ model.
   cost. Oil 8-RAW Alignment 155.6/143.3 s base versus 144.1/148.1 s candidate;
   summed partition acquisition rose 171 to 174/182 s. Only sharing one list
   per RAW across handles could remove the cost.
-- **Standard Peak `--best-shift-only` in the one-shot preset:** faster in no-RAW
-  replay, no gain in the full 8RAW stage.
 
 ### Measurement noise
 

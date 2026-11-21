@@ -17,7 +17,6 @@ from xic_extractor.acquisition_contract import (
 )
 from xic_extractor.alignment.backfill.cid_nl_planning import CidNlBackfillQuestion
 from xic_extractor.alignment.cid_nl_inputs import UntargetedCidNlBackfillInput
-from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
@@ -347,13 +346,11 @@ def acquire_untargeted_cid_nl_backfill_trace_batch(
     sample: SampleMetadata,
     acquisition_source: AcquisitionSourceIdentity,
     backfill_requests: tuple[UntargetedCidNlBackfillTarget, ...],
-    peak_config: ExtractionConfig,
+    half_window_min: float,
     raw: CidNlRawSource,
 ) -> UntargetedCidNlBackfillTraceBatch:
     """Acquire search traces and bounded fallback context in one sample phase."""
 
-    if not isinstance(peak_config, ExtractionConfig):
-        raise CidNlAcquisitionError("peak_config has the wrong owner type")
     if (
         type(backfill_requests) is not tuple
         or not backfill_requests
@@ -376,12 +373,11 @@ def acquire_untargeted_cid_nl_backfill_trace_batch(
         )
     )
     source = acquisition_source
-    half_window = peak_config.nl_rt_anchor_half_window_min
     requests = tuple(
         _backfill_xic_request(
             mz=target.physical_mz,
             query_rt=target.sample_query_rt,
-            half_window=half_window,
+            half_window=half_window_min,
             ppm_tol=target.method_subject.precursor_tolerance_ppm,
             physical_context=False,
         )
@@ -395,7 +391,7 @@ def acquire_untargeted_cid_nl_backfill_trace_batch(
         _backfill_xic_request(
             mz=target.physical_mz,
             query_rt=target.sample_query_rt,
-            half_window=half_window,
+            half_window=half_window_min,
             ppm_tol=target.method_subject.precursor_tolerance_ppm,
             physical_context=True,
         )
@@ -437,7 +433,8 @@ def backfill_untargeted_cid_nl_sample_subject(
     query_rt_reliable: bool = True,
     group_hypothesis_id: str | None = None,
     support_policy: DdaCidNlPeakSupportPolicy,
-    peak_config: ExtractionConfig,
+    half_window_min: float,
+    resolver_mode: str,
     raw: CidNlRawSource | None,
     initial_assessment: CidNlMethodAssessment | None = None,
     settings: DiscoverySettings | None = None,
@@ -452,8 +449,6 @@ def backfill_untargeted_cid_nl_sample_subject(
 
     if not isinstance(method_subject, CidNlMethodSubject):
         raise CidNlAcquisitionError("method_subject has the wrong owner type")
-    if not isinstance(peak_config, ExtractionConfig):
-        raise CidNlAcquisitionError("peak_config has the wrong owner type")
     if not isinstance(support_policy, DdaCidNlPeakSupportPolicy):
         raise CidNlAcquisitionError("support_policy has the wrong owner type")
     if initial_assessment is not None:
@@ -492,24 +487,23 @@ def backfill_untargeted_cid_nl_sample_subject(
     ):
         raise CidNlAcquisitionError("group_center_mz must be finite and positive")
     source = acquisition_source
-    half_window = peak_config.nl_rt_anchor_half_window_min
-    query_rt_min, query_rt_max = _backfill_window(query_rt, half_window)
+    query_rt_min, query_rt_max = _backfill_window(query_rt, half_window_min)
     selection_window = (
-        _backfill_window(query_rt, half_window, query_rt_tolerance_sec)
+        _backfill_window(query_rt, half_window_min, query_rt_tolerance_sec)
         if query_rt_tolerance_sec is not None
         else None
     )
     request = _backfill_xic_request(
         mz=physical_mz,
         query_rt=float(query_rt),
-        half_window=half_window,
+        half_window=half_window_min,
         ppm_tol=method_subject.precursor_tolerance_ppm,
         physical_context=False,
     )
     context_request = _backfill_xic_request(
         mz=physical_mz,
         query_rt=float(query_rt),
-        half_window=half_window,
+        half_window=half_window_min,
         ppm_tol=method_subject.precursor_tolerance_ppm,
         physical_context=True,
     )
@@ -578,7 +572,7 @@ def backfill_untargeted_cid_nl_sample_subject(
                 else None
             ),
             profile=signal_processing_profile,
-            resolver_mode=peak_config.resolver_mode,
+            resolver_mode=resolver_mode,
             evaluation_sink=physical_evaluations.append,
         )
         if physical_evaluations[0].reason != "incomplete_peak_context":
@@ -748,7 +742,8 @@ def reuse_cid_nl_backfill_peak(
     target: UntargetedCidNlBackfillTarget,
     capture: CidNlAcquisitionResult,
     source: AcquisitionSourceIdentity,
-    peak_config: ExtractionConfig,
+    half_window_min: float,
+    resolver_mode: str,
 ) -> UntargetedCidNlBackfillAttemptResult | None:
     """Ask the group's physical question of measured segments, without new RAW reads.
 
@@ -764,9 +759,7 @@ def reuse_cid_nl_backfill_peak(
         return None
     sample = capture.assessment_input.sample
     query = target.sample_query_rt
-    window = _backfill_window(
-        query, peak_config.nl_rt_anchor_half_window_min, target.query_rt_tolerance_sec
-    )
+    window = _backfill_window(query, half_window_min, target.query_rt_tolerance_sec)
     matches = {}
     for record in capture.capture_evidence:
         peak = record.observation_ref
@@ -807,7 +800,7 @@ def reuse_cid_nl_backfill_peak(
         sample=sample,
         trace=record.trace,
         evaluations=(answer,),
-        resolver_mode=peak_config.resolver_mode,
+        resolver_mode=resolver_mode,
         signal_processing_profile=answer.prepared.profile,
         capture_stage="method_backfill",
     )

@@ -5,7 +5,7 @@ from pathlib import Path
 
 from xic_extractor.configuration.execution_profile import (
     ExecutionProfile,
-    resolve_execution_profile,
+    load_execution_profile,
 )
 from xic_extractor.configuration.extraction_defaults import default_extraction_config
 from xic_extractor.configuration.models import ConfigError, ExtractionConfig
@@ -30,8 +30,7 @@ def fill_setting_defaults(raw: dict[str, str]) -> tuple[dict[str, str], list[str
         raise ConfigError(
             "Retired or unknown Targeted settings: "
             + ", ".join(unknown)
-            + ". Use only data_dir, dll_dir, injection_order_source "
-            "and parallel_workers; "
+            + ". Use only data_dir, dll_dir and injection_order_source; "
             "scientific overrides are not accepted."
         )
     return {**CANONICAL_SETTINGS_DEFAULTS, **raw}, []
@@ -44,10 +43,7 @@ def validate_settings_values(
     for key in ("data_dir", "dll_dir"):
         if not values[key].strip():
             raise ConfigError(f"{settings_path}: {key} is required")
-    try:
-        execution = resolve_execution_profile(values)
-    except ValueError as exc:
-        raise ConfigError(f"{settings_path}: {exc}") from exc
+    execution = load_execution_profile()
     return _ParsedSettings(
         Path(values["data_dir"]).expanduser(),
         Path(values["dll_dir"]).expanduser(),
@@ -78,8 +74,10 @@ def build_extraction_config(
         _parse_existing_dir(settings_path, key, settings[key])
     return replace(
         default_extraction_config(
-            data_dir=parsed.data_dir, dll_dir=parsed.dll_dir, output_dir=output_dir
+            data_dir=parsed.data_dir,
+            dll_dir=parsed.dll_dir,
+            output_dir=output_dir,
+            execution=parsed.execution,
         ),
         injection_order_source=parsed.injection_order_source,
-        execution=parsed.execution,
     )

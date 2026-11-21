@@ -173,6 +173,9 @@ def test_partition_capacity_keeps_batch_calibration_and_grouping(tmp_path, monke
 def test_backfill_is_partition_invariant_and_never_supplies_ms2_support(
     tmp_path, monkeypatch
 ):
+    """S20 and S21 have no Discovery peak for the heavier subject; S21 also has no CID-
+    NL scan for it.
+    """
     paths, raws, peaks, settings = _shifted_feature_raws(
         tmp_path,
         samples=22,
@@ -180,8 +183,6 @@ def test_backfill_is_partition_invariant_and_never_supplies_ms2_support(
         shifts={20: 0.1, 21: -0.1},
         spacing=1.00335483507,
     )
-    # S20 and S21 have no Discovery peak for the heavier subject; S21 also has
-    # no CID-NL scan for it.
     for stem in ("S20", "S21"):
         peaks[stem] = tuple(
             c for c in peaks[stem] if representative_event(c).precursor_mz < 500.5
@@ -227,6 +228,9 @@ def test_backfill_is_partition_invariant_and_never_supplies_ms2_support(
 def test_execution_profile_does_not_change_published_alignment(
     tmp_path, monkeypatch, scenario
 ):
+    """A known ISTD joins all three subjects into one workset, which a partition cannot
+    split. Sample intensities scale 1:2:3:4.
+    """
     inputs = entry_scenario(tmp_path, scenario)
     samples = len(inputs["paths"])
     baseline = publish_alignment(
@@ -237,8 +241,6 @@ def test_execution_profile_does_not_change_published_alignment(
         **inputs,
     )
     tables = published_tables(baseline)
-    # A known ISTD joins all three subjects into one workset, which a partition
-    # cannot split.
     for index, (subjects, workers) in enumerate(((1, 1), (1, 2), (1, 4), (2, 2))):
         subjects = 3 if scenario == "istd" else subjects
         variant = publish_alignment(
@@ -260,7 +262,6 @@ def test_execution_profile_does_not_change_published_alignment(
     rows = read_tsv(baseline / "alignment_matrix.tsv")
     assert rows
     if scenario == "positive":
-        # Sample intensities scale 1:2:3:4.
         for row in rows:
             assert float(row["S0"]) > 0
             assert float(row["S1"]) == pytest.approx(2 * float(row["S0"]), rel=1e-3)
@@ -282,6 +283,9 @@ def test_execution_profile_does_not_change_published_alignment(
 def test_bounded_runtime_skips_subjects_without_ms1_features(
     tmp_path, monkeypatch, scenario, raw_workers
 ):
+    """An ineligible cohort closes without opening RAW. The subject without an MS1
+    feature forms no row.
+    """
     inputs = entry_scenario(tmp_path, scenario)
     admitted = {
         stem
@@ -307,14 +311,12 @@ def test_bounded_runtime_skips_subjects_without_ms1_features(
         **inputs,
     )
 
-    # An ineligible cohort closes without opening RAW.
     assert opened == admitted
     review = read_tsv(output / "alignment_review.tsv")
     if scenario == "ineligible":
         assert review == []
         assert read_tsv(output / "alignment_matrix.tsv") == []
     else:
-        # The subject without an MS1 feature forms no row.
         assert len(review) == 2
 
 

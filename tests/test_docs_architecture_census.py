@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import shutil
 import subprocess
 import sys
@@ -307,9 +306,29 @@ def test_ppm_arithmetic_gate_accepts_other_uses_and_the_owner(tmp_path: Path) ->
 ROOT = Path(__file__).resolve().parents[1]
 
 
-@pytest.fixture(scope="module")
-def current_architecture_census() -> census.ArchitectureCensus:
-    return census.build_architecture_census(ROOT)
+@pytest.mark.current_repository_census
+def test_current_repository_passes_every_gate() -> None:
+    assert census.validate_repository(ROOT) == []
+
+
+@pytest.mark.parametrize("path", ["scripts/run_extraction.py", "xic_workbench/cli.py"])
+def test_frozen_entrypoints_call_freeze_support_first(tmp_path, path):
+    for relative in ("scripts/run_extraction.py", "xic_workbench/cli.py"):
+        target = tmp_path / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(
+            "def main():\n multiprocessing.freeze_support()", encoding="utf-8"
+        )
+    assert census.validate_frozen_entrypoints(tmp_path) == []
+
+    (tmp_path / path).write_text(
+        "def main():\n prepare()\n multiprocessing.freeze_support()",
+        encoding="utf-8",
+    )
+
+    problems = census.validate_frozen_entrypoints(tmp_path)
+    assert len(problems) == 1
+    assert "freeze_support first" in problems[0]
 
 
 def _lint_imports_executable() -> str:
@@ -323,24 +342,6 @@ def _lint_imports_executable() -> str:
             executable = str(sibling_entrypoint)
     assert executable is not None
     return executable
-
-
-@pytest.mark.current_repository_census
-def test_current_architecture_census_is_valid_and_static_only(
-    current_architecture_census: census.ArchitectureCensus,
-) -> None:
-    observed = current_architecture_census
-
-    assert census.validate_architecture_census(ROOT, observed) == []
-    assert set(observed.serializable()) == set(census.CENSUS_OWNER_REFS)
-    assert all(observed.serializable().values())
-    assert not {
-        "productization_lanes",
-        "authority_scopes",
-        "retained_artifacts",
-        "installed_entrypoints",
-        "frozen_bundle_inputs",
-    } & set(observed.serializable())
 
 
 def test_semantic_identifier_gate_scans_python_values_and_maintained_docs(
@@ -435,137 +436,6 @@ def test_historical_identifier_exemption_is_exact_and_requires_a_reason(
     )
 
 
-@pytest.mark.current_repository_census
-def test_grimp_census_records_only_importable_internal_modules(
-    current_architecture_census: census.ArchitectureCensus,
-) -> None:
-    observed = current_architecture_census
-    importable_modules = {
-        census.module_name_from_path(path)
-        for path in census.repository_python_paths(ROOT)
-        if path.parts and path.parts[0] in census.REPOSITORY_ROOTS
-    }
-
-    assert {
-        reference.source_module for reference in observed.internal_static_imports
-    } <= importable_modules
-    assert {
-        reference.imported_module for reference in observed.internal_static_imports
-    } <= importable_modules
-
-
-@pytest.mark.current_repository_census
-def test_alignment_to_extraction_imports_are_exact_owner_edges(
-    current_architecture_census: census.ArchitectureCensus,
-) -> None:
-    observed = {
-        (reference.source_module, reference.imported_module)
-        for reference in current_architecture_census.internal_static_imports
-        if reference.source_module.startswith("xic_extractor.alignment")
-        and reference.imported_module.startswith("xic_extractor.extraction")
-    }
-
-    assert observed == set()
-
-
-@pytest.mark.current_repository_census
-def test_discovery_to_extraction_imports_are_exact_owner_edges(
-    current_architecture_census: census.ArchitectureCensus,
-) -> None:
-    observed = {
-        (reference.source_module, reference.imported_module)
-        for reference in current_architecture_census.internal_static_imports
-        if reference.source_module.startswith("xic_extractor.discovery")
-        and reference.imported_module.startswith("xic_extractor.extraction")
-    }
-
-    assert observed == set()
-
-
-@pytest.mark.current_repository_census
-def test_discovery_does_not_import_alignment_or_presets(
-    current_architecture_census: census.ArchitectureCensus,
-) -> None:
-    observed = {
-        (reference.source_module, reference.imported_module)
-        for reference in current_architecture_census.internal_static_imports
-        if reference.source_module.startswith("xic_extractor.discovery")
-        and reference.imported_module.startswith(
-            ("xic_extractor.alignment", "xic_extractor.presets")
-        )
-    }
-
-    assert observed == set()
-
-
-def test_census_excludes_ignored_modules_from_grimp_graph(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    class FakeGraph:
-        modules = {
-            "xic_extractor.keep",
-            "xic_extractor.other",
-            "xic_extractor.ignored",
-        }
-
-        @staticmethod
-        def find_modules_directly_imported_by(module: str) -> set[str]:
-            return {
-                "xic_extractor.keep": {
-                    "xic_extractor.other",
-                    "xic_extractor.ignored",
-                },
-                "xic_extractor.other": set(),
-                "xic_extractor.ignored": {"xic_extractor.keep"},
-            }[module]
-
-        @staticmethod
-        def get_import_details(
-            *,
-            importer: str,
-            imported: str,
-        ) -> list[dict[str, int]]:
-            del importer, imported
-            return [{"line_number": 1}]
-
-    (tmp_path / "pyproject.toml").write_text(
-        """
-[project.scripts]
-example = "xic_extractor.keep:main"
-
-[tool.setuptools.packages.find]
-include = ["xic_extractor*"]
-exclude = ["tests*"]
-""".lstrip(),
-        encoding="utf-8",
-    )
-    monkeypatch.setattr(
-        census,
-        "repository_python_paths",
-        lambda repo_root: (
-            Path("xic_extractor/keep.py"),
-            Path("xic_extractor/other.py"),
-        ),
-    )
-    monkeypatch.setattr(
-        census.grimp,
-        "build_graph",
-        lambda *args, **kwargs: FakeGraph(),
-    )
-
-    observed = census.build_architecture_census(tmp_path)
-
-    assert observed.internal_static_imports == (
-        census.StaticImportReference(
-            source_path="xic_extractor/keep.py",
-            source_module="xic_extractor.keep",
-            imported_module="xic_extractor.other",
-            line=1,
-        ),
-    )
-
-
 def test_repository_python_paths_excludes_unstaged_tracked_deletions(
     tmp_path: Path,
 ) -> None:
@@ -641,6 +511,7 @@ def test_import_linter_config_owns_the_static_dependency_contracts() -> None:
         "product-routes-ignore-delta-mass",
         "alignment-stays-off-pipelines-and-io",
         "discovery-pipeline-independent-of-targeted-entry",
+        "discovery-does-not-load-presets",
         "processing-identity-stays-inner",
         "sample-metadata-no-instrument-qc",
         "grouping-and-cell-consume-method-answers",
@@ -852,67 +723,6 @@ unmatched_ignore_imports_alerting = error
     )
 
 
-@pytest.mark.current_repository_census
-def test_census_records_declarations_without_claiming_runtime_closure(
-    current_architecture_census: census.ArchitectureCensus,
-) -> None:
-    observed = current_architecture_census
-    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-    scripts = project["project"]["scripts"]
-    find = project["tool"]["setuptools"]["packages"]["find"]
-
-    assert observed.project_entrypoint_declarations == tuple(
-        f"{name}={target}" for name, target in sorted(scripts.items())
-    )
-    assert observed.package_discovery_patterns == tuple(
-        f"{key}:{pattern}" for key in ("include", "exclude") for pattern in find[key]
-    )
-    assert {pattern.removesuffix("*") for pattern in find["include"]} == set(
-        census.REPOSITORY_ROOTS
-    )
-
-
-def test_census_owner_refs_use_exact_tracked_path_spelling() -> None:
-    assert set(
-        census.CENSUS_OWNER_REFS.values()
-    ) <= census.repository_tracked_path_keys(ROOT)
-
-
-@pytest.mark.current_repository_census
-def test_optional_json_census_has_content_identity_and_scope(
-    tmp_path: Path,
-    current_architecture_census: census.ArchitectureCensus,
-) -> None:
-    observed = current_architecture_census
-    output = tmp_path / "architecture_census.json"
-
-    census.write_architecture_census_json(output, observed, ROOT)
-
-    payload = json.loads(output.read_text(encoding="utf-8"))
-    assert payload["schema_version"] == "architecture_census"
-    assert payload["claim"] == "derived_disposable_not_authority"
-    assert payload["static_dependency_scope"] == "grimp_static_import_graph"
-    assert payload["static_dependency_gate"] == "pyproject.toml [tool.importlinter]"
-    assert payload["source_identity"]["head"]
-    assert len(payload["source_identity"]["census_sha256"]) == 64
-    assert isinstance(payload["source_identity"]["worktree_dirty"], bool)
-    assert set(payload["census"]) == set(census.CENSUS_OWNER_REFS)
-
-
-@pytest.mark.current_repository_census
-def test_json_census_rejects_nonignored_repo_path(
-    current_architecture_census: census.ArchitectureCensus,
-) -> None:
-    observed = current_architecture_census
-
-    with pytest.raises(ValueError, match="outside the repo or git-ignored"):
-        census.write_architecture_census_json(
-            ROOT / "docs" / "architecture_census.json",
-            observed,
-            ROOT,
-        )
-
-
 @pytest.mark.parametrize(
     ("source", "rule"),
     [
@@ -1016,77 +826,6 @@ def test_test_source_gate_allows_nonproduction_and_strict_patches(tmp_path, sour
     path.write_text(source, encoding="utf-8")
 
     assert census.validate_test_source_boundaries(tmp_path, [relative]) == []
-
-
-@pytest.mark.parametrize(
-    ("path", "source", "message"),
-    [
-        (
-            "scripts/run_extraction.py",
-            "def main():\n prepare()\n multiprocessing.freeze_support()",
-            "freeze_support first",
-        ),
-        (
-            "xic_workbench/cli.py",
-            "def main():\n prepare()\n multiprocessing.freeze_support()",
-            "freeze_support first",
-        ),
-        (
-            "xic_extractor/other.py",
-            "run_untargeted_application(request)",
-            "run_untargeted_application callers",
-        ),
-        (
-            "xic_extractor/other.py",
-            "from xic_extractor.peak_detection.hypotheses import build_peak_hypotheses",
-            "build_peak_hypotheses importers",
-        ),
-        (
-            "xic_extractor/alignment/other.py",
-            "from xic_extractor.peak_detection.signal_quality "
-            "import measure_signal_quality",
-            "cannot import noise estimators",
-        ),
-    ],
-)
-def test_production_entry_gate_preserves_required_boundaries(
-    tmp_path, path, source, message, monkeypatch
-):
-    sources = {
-        "scripts/run_extraction.py": "def main():\n multiprocessing.freeze_support()",
-        "xic_workbench/cli.py": "def main():\n multiprocessing.freeze_support()",
-        "scripts/run_alignment.py": "run_untargeted_application(request)",
-        "xic_extractor/applications/untargeted/full_analysis.py": (
-            "run_untargeted_application(request)"
-        ),
-        "xic_extractor/extraction/targeted_peak_hypotheses.py": (
-            "from xic_extractor.peak_detection.hypotheses import build_peak_hypotheses"
-        ),
-        "xic_extractor/alignment/other.py": (
-            "from xic_extractor.peak_detection.signal_quality import SignalQuality\n"
-            "execute_partition()\n"
-            "execute_untargeted_plan()\n"
-            "complete_untargeted_alignment()"
-        ),
-    }
-    for relative, content in sources.items():
-        target = tmp_path / relative
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(content, encoding="utf-8")
-    monkeypatch.setattr(
-        census,
-        "repository_python_paths",
-        lambda root: tuple(p.relative_to(root) for p in root.rglob("*.py")),
-    )
-    assert census.validate_production_entry_boundaries(tmp_path) == []
-
-    target = tmp_path / path
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(source, encoding="utf-8")
-
-    problems = census.validate_production_entry_boundaries(tmp_path)
-    assert len(problems) == 1
-    assert message in problems[0]
 
 
 @pytest.mark.parametrize(

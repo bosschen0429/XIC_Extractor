@@ -32,6 +32,7 @@ from xic_extractor.applications.targeted.output_boundary import (
 from xic_extractor.applications.targeted.production_workflow import (
     execute_targeted_production_workflow,
 )
+from xic_extractor.configuration.execution_profile import in_process_execution
 from xic_extractor.configuration.signal_processing_profile import (
     resolve_signal_processing_profile,
 )
@@ -115,6 +116,7 @@ def test_formal_entry_retains_the_method_universe_and_publishes_its_decision(
         ms2_precursor_tol_da=0.5,
         nl_min_intensity_ratio=0.01,
         count_no_ms2_as_detected=True,
+        execution=in_process_execution(),
     )
     target = Target(
         label="Analyte",
@@ -1509,6 +1511,7 @@ def test_formal_targeted_backfill_uses_confirmed_peers_and_paired_istd(
         peak_min_prominence_ratio=0.01,
         ms2_precursor_tol_da=0.5,
         nl_min_intensity_ratio=0.01,
+        execution=in_process_execution(),
     )
     analyte = Target(
         label="Analyte",
@@ -1758,6 +1761,7 @@ def test_paired_position_rejects_remote_nl_peak_in_workbook_and_inspector(
         peak_min_prominence_ratio=0.01,
         ms2_precursor_tol_da=0.5,
         nl_min_intensity_ratio=0.01,
+        execution=in_process_execution(),
     )
     analyte, istd = parse_target_rows(
         [
@@ -1952,6 +1956,7 @@ def test_istd_backfill_keeps_a_drifting_target_as_one_group(
         peak_min_prominence_ratio=0.01,
         ms2_precursor_tol_da=0.5,
         nl_min_intensity_ratio=0.01,
+        execution=in_process_execution(),
     )
     istd = Target(
         label="ISTD",

@@ -47,6 +47,7 @@ from xic_extractor.untargeted_execution.partition.cid_nl_sample_acquisition impo
     adapt_current_discovery_sample_subject,
 )
 from xic_extractor.untargeted_execution.partition.models import (
+    BACKFILL_HALF_WINDOW_MIN,
     UntargetedPartitionError,
     UntargetedPartitionJob,
     _request_subject_candidates,
@@ -78,7 +79,8 @@ class _RuntimeJobState:
                 target=target,
                 capture=self.adapter_result,
                 source=self.job.acquisition_source_expectation.source,
-                peak_config=self.job.peak_config,
+                half_window_min=BACKFILL_HALF_WINDOW_MIN,
+                resolver_mode=self.job.settings.resolver_mode,
             )
             if attempt is not None:
                 self.backfill_attempts += (attempt,)
@@ -196,7 +198,6 @@ def _execute_initial_assessment(state: _RuntimeJobState) -> None:
                 peaks=_request_subject_candidates(job),
                 support_candidates=job.support_candidates,
                 settings=job.settings,
-                peak_config=job.peak_config,
                 raw=None,
                 rt_reference_only=job.rt_reference_only,
                 signal_processing_profile=job.signal_processing_profile,
@@ -254,7 +255,6 @@ def _execute_initial_assessment_batch(
                 peaks=_request_subject_candidates(state.job),
                 support_candidates=state.job.support_candidates,
                 settings=state.job.settings,
-                peak_config=state.job.peak_config,
                 raw=raw,
                 _preacquired_traces=trace_batch,
                 rt_reference_only=state.job.rt_reference_only,
@@ -327,10 +327,7 @@ def _prepare_group_authorized_backfills(
         sample_population=tuple(job.sample for job in templates.values()),
         alignment_config=prepared.alignment_config,
         rt_frame=prepared.rt_frame,
-        half_windows_by_sample={
-            sample_id: job.peak_config.nl_rt_anchor_half_window_min
-            for sample_id, job in templates.items()
-        },
+        backfill_half_window_min=BACKFILL_HALF_WINDOW_MIN,
     )
     _apply_backfill_questions(states, templates, questions)
 
@@ -420,7 +417,7 @@ def _execute_backfill_batch(phase: _BatchSamplePhaseState) -> None:
             backfill_requests=tuple(
                 target for state in pending for target in state.backfill_targets
             ),
-            peak_config=first.peak_config,
+            half_window_min=BACKFILL_HALF_WINDOW_MIN,
             raw=raw,
         )
         for state in pending:
@@ -443,7 +440,8 @@ def _execute_backfill_batch(phase: _BatchSamplePhaseState) -> None:
                     group_hypothesis_id=target.group_hypothesis_id,
                     initial_assessment=ctx.initial_assessment,
                     support_policy=ctx.support_policy,
-                    peak_config=state.job.peak_config,
+                    half_window_min=BACKFILL_HALF_WINDOW_MIN,
+                    resolver_mode=state.job.settings.resolver_mode,
                     raw=raw if state.job.method_subject.composition else None,
                     settings=state.job.settings,
                     signal_processing_profile=state.job.signal_processing_profile,

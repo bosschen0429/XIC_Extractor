@@ -1,3 +1,10 @@
+"""Compare serial and process scheduling for complete Targeted application runs.
+
+Uses the shared Targeted validation run owner and compares the published
+workbooks. Elapsed time includes finalization and publication, not only
+acquisition.
+"""
+
 import argparse
 import sys
 from collections.abc import Callable, Sequence

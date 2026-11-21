@@ -1,3 +1,10 @@
+"""Match method DOCX entries to RAW names and write the QC sequence manifest.
+
+Writes the sequence manifest, injection order and
+``instrument_qc_sample_metadata.tsv`` without extracting trends. Sample roles
+are metadata only; they do not alter trend values or Matrix outputs.
+"""
+
 from __future__ import annotations
 
 import argparse

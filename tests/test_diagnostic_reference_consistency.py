@@ -211,9 +211,9 @@ def test_cli_writes_review_rows_and_distribution_without_mutating_inputs(
     for group, refs in (("a", [2, 3, 5]), ("b", [4, 9, 10])):
         path = tmp_path / f"{group}.csv"
         path.write_text(
-            "label,mz,expected_rt_min,cid_nl_tag,role,istd_pair\n"
+            "label,mz,expected_rt_min,cid_nl_loss_da,role,istd_pair\n"
             + "".join(
-                f"{label},300.119,{rt},dR,istd,\n"
+                f"{label},300.119,{rt},116.0474,istd,\n"
                 for label, rt in zip(("left", "held", "right"), refs, strict=True)
             ),
             encoding="utf-8",

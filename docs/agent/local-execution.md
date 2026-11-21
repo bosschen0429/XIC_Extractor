@@ -124,7 +124,7 @@ first three flags below.
 **Try regrouping without RAW, a preset or a DLL.** The two fixture observations
 fit the original 50 ppm window; at 20 ppm, `members.tsv` shows two singletons
 and `changes.tsv` shows both reassignments. For real observations, substitute
-your captured snapshot. See the [grouping diagnostic](../../tools/diagnostics/INDEX.md#grouping_experimentpy)
+your captured snapshot. See the [grouping diagnostic](../../tools/diagnostics/grouping_experiment.py)
 for baseline comparisons and which RT model changes replay covers.
 
     .venv\Scripts\python.exe -m scripts.run_alignment regroup --inputs tests/fixtures/synthetic-grouping.json.gz --set max_ppm=20 --output-dir output/regroup-smoke

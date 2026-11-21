@@ -12,7 +12,6 @@ import xic_extractor.applications.untargeted.application as application_module
 import xic_extractor.applications.untargeted.publication as publication_module
 import xic_extractor.output.alignment.pipeline_outputs as output_owner
 from tests.alignment_explanation_fixtures import explanation_discovery_facts
-from tests.alignment_pipeline_helpers import peak_config as _peak_config
 from tests.alignment_pipeline_helpers import write_batch as _write_batch
 from tests.cid_nl_raw_fixture import _FakeRaw, _FakeThermoRaw, _settings
 from tests.cid_nl_runtime_fixtures import (
@@ -23,9 +22,6 @@ from tests.cid_nl_runtime_fixtures import (
 from tests.discovery_pipeline_fixtures import (
     _OwnerBoundFakeRawHandle,
     _scan_event,
-)
-from tests.discovery_pipeline_fixtures import (
-    _peak_config as _discovery_peak_config,
 )
 from tests.discovery_pipeline_fixtures import (
     _settings as _discovery_settings,
@@ -124,14 +120,12 @@ def test_published_run_follows_known_istd_reference_and_injection_order(
         if with_reference
         else None
     )
-    # The measured ISTD becomes an RT calibration anchor only when supplied.
     istd_anchors = [
         row["istd_label"]
         for row in read_tsv(output / "alignment_rt_anchors.tsv")
         if row["kind"] == "istd"
     ]
     assert istd_anchors == (["known"] if with_reference else [])
-    # Matrix columns follow the declared injection order, not the batch order.
     assert tsv_header(output / "alignment_matrix.tsv")[2:] == list(reversed(stems))
 
 
@@ -239,12 +233,12 @@ def test_pure_cid_nl_projection_failure_publishes_no_owned_outputs(
     with pytest.raises(ValueError, match="invalid finalized projection"):
         application_module.run_untargeted_application(
             UntargetedRequest(
+                execution=UntargetedExecutionPolicy(profile=in_process_execution()),
                 discovery_batch_index=batch_index,
                 raw_dir=tmp_path / "raw",
                 dll_dir=tmp_path / "dll",
                 output_dir=output_dir,
                 alignment_config=AlignmentConfig(),
-                peak_config=_peak_config(),
                 discovery_settings=_settings(),
             )
         )
@@ -423,12 +417,12 @@ def test_pipeline_publishes_projected_children_and_cleans_up(
     def run():
         return application_module.run_untargeted_application(
             UntargetedRequest(
+                execution=UntargetedExecutionPolicy(profile=in_process_execution()),
                 discovery_batch_index=batch_index,
                 raw_dir=tmp_path,
                 dll_dir=tmp_path,
                 output_dir=output_dir,
                 alignment_config=config,
-                peak_config=_peak_config(),
                 discovery_settings=_settings(),
                 publication=UntargetedPublicationPolicy(
                     emit_alignment_explanation=emit_explanation
@@ -473,12 +467,9 @@ def test_pipeline_publishes_projected_children_and_cleans_up(
         completed.close()
 
 
-@pytest.mark.parametrize("canonical_window, override_window", ((21, 15), (15, 21)))
-def test_pipeline_rejects_profile_config_conflict_before_read_or_raw(
+def test_pipeline_rejects_unsupported_profile_before_read_or_raw(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    canonical_window: int,
-    override_window: int,
 ) -> None:
     touched = False
 
@@ -491,21 +482,18 @@ def test_pipeline_rejects_profile_config_conflict_before_read_or_raw(
         application_module, "complete_untargeted_alignment", fail_if_touched
     )
 
-    with pytest.raises(ValueError, match="conflicts with peak_config"):
+    with pytest.raises(ValueError, match="does not support legacy Alignment"):
         application_module.run_untargeted_application(
             UntargetedRequest(
+                execution=UntargetedExecutionPolicy(profile=in_process_execution()),
                 discovery_batch_index=tmp_path / "batch.csv",
                 raw_dir=tmp_path / "raw",
                 dll_dir=tmp_path / "dll",
                 output_dir=tmp_path / "out",
                 alignment_config=AlignmentConfig(),
-                peak_config=replace(
-                    _peak_config(),
-                    signal_processing_window_points=canonical_window,
-                ),
                 discovery_settings=_settings(),
                 signal_processing_profile=resolve_signal_processing_profile(
-                    signal_processing_window_points=override_window,
+                    signal_processing_window_points=21,
                 ),
             )
         )
@@ -525,12 +513,12 @@ def test_pipeline_rejects_unsupported_discovery_before_acquisition_or_output(
     with pytest.raises(ValueError, match="pure single-provider CID-NL"):
         application_module.run_untargeted_application(
             UntargetedRequest(
+                execution=UntargetedExecutionPolicy(profile=in_process_execution()),
                 discovery_batch_index=tmp_path / "missing-batch.csv",
                 raw_dir=tmp_path / "missing-raw",
                 dll_dir=tmp_path / "missing-dll",
                 output_dir=output_dir,
                 alignment_config=AlignmentConfig(),
-                peak_config=_peak_config(),
                 discovery_settings=settings,
             )
         )
@@ -545,7 +533,8 @@ def test_pure_cid_nl_targets_csv_integration(
     batch_index = _write_batch(tmp_path, ("S1",))
     targets_csv = tmp_path / "targets.csv"
     targets_csv.write_text(
-        "label,mz,expected_rt_min,cid_nl_tag,role,istd_pair\nISTD1,200.0,3,dR,istd,\n",
+        "label,mz,expected_rt_min,cid_nl_loss_da,role,istd_pair\n"
+        "ISTD1,200.0,3,116.0474,istd,\n",
         encoding="utf-8",
     )
     raw_dir = tmp_path / "raw"
@@ -568,11 +557,6 @@ def test_pure_cid_nl_targets_csv_integration(
         application_module,
         "extract_batch_known_istd_reference",
         lambda **kwargs: fake_ref,
-    )
-    monkeypatch.setattr(
-        application_module,
-        "prepare_batch_mass_recalibration",
-        lambda *args, **kwargs: {},
     )
     monkeypatch.setattr(
         application_module,
@@ -600,12 +584,12 @@ def test_pure_cid_nl_targets_csv_integration(
 
     application_module.run_untargeted_application(
         UntargetedRequest(
+            execution=UntargetedExecutionPolicy(profile=in_process_execution()),
             discovery_batch_index=batch_index,
             raw_dir=raw_dir,
             dll_dir=tmp_path / "dll",
             output_dir=tmp_path / "out",
             alignment_config=AlignmentConfig(),
-            peak_config=_peak_config(),
             discovery_settings=replace(
                 _settings(), mass_recalibration=MassRecalibration.NONE
             ),
@@ -642,9 +626,6 @@ def test_alignment_applies_discovery_mass_result_without_reopening_raw(
         writer.writeheader()
         writer.writerows(rows)
 
-    def fail_if_recomputed(*_args, **_kwargs):
-        pytest.fail("Alignment recomputed mass recalibration from RAW")
-
     captured: dict[str, object] = {}
 
     def stop_after_capture(**kwargs):
@@ -652,21 +633,18 @@ def test_alignment_applies_discovery_mass_result_without_reopening_raw(
         raise RuntimeError("captured")
 
     monkeypatch.setattr(
-        application_module, "prepare_batch_mass_recalibration", fail_if_recomputed
-    )
-    monkeypatch.setattr(
         application_module, "complete_untargeted_alignment", stop_after_capture
     )
 
     with pytest.raises(AlignmentProcessExecutionError, match="captured"):
         application_module.run_untargeted_application(
             UntargetedRequest(
+                execution=UntargetedExecutionPolicy(profile=in_process_execution()),
                 discovery_batch_index=batch_index,
                 raw_dir=raw_path.parent,
                 dll_dir=tmp_path / "dll",
                 output_dir=tmp_path / "out",
                 alignment_config=AlignmentConfig(),
-                peak_config=_peak_config(),
                 discovery_settings=_settings(),
             )
         )
@@ -781,7 +759,6 @@ def test_reduced_discovery_persistence_keeps_inferred_peak_and_qualifies_alignme
             dll_dir=tmp_path,
             output_dir=tmp_path / "alignment",
             alignment_config=AlignmentConfig(backfill_enabled=backfill_enabled),
-            peak_config=_discovery_peak_config(tmp_path),
             discovery_settings=settings,
             execution=UntargetedExecutionPolicy(
                 profile=ExecutionProfile(alignment_workers=1, backend="thread")
@@ -804,11 +781,6 @@ def test_reduced_discovery_persistence_keeps_inferred_peak_and_qualifies_alignme
                 alignment_config=AlignmentConfig(),
             ),
         ),
-    )
-    monkeypatch.setattr(
-        cli,
-        "untargeted_peak_config",
-        lambda *_args, **_kwargs: _discovery_peak_config(tmp_path),
     )
     cli_output = tmp_path / "cli-alignment"
     assert (
@@ -963,12 +935,12 @@ def test_mixed_target_list_only_supplies_istds_to_untargeted_alignment(
     )
     application_module.run_untargeted_application(
         UntargetedRequest(
+            execution=UntargetedExecutionPolicy(profile=in_process_execution()),
             discovery_batch_index=batch_index,
             raw_dir=tmp_path / "raw",
             dll_dir=tmp_path / "dll",
             output_dir=tmp_path / "out",
             alignment_config=AlignmentConfig(),
-            peak_config=_peak_config(),
             discovery_settings=apply_to_discovery(load_preset(method)),
             targets_csv=source,
             sample_metadata=metadata,

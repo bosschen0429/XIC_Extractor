@@ -1,5 +1,4 @@
 import json
-from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -12,7 +11,6 @@ from tests.alignment_pipeline_helpers import (
     writer_batch,
     writer_group,
 )
-from tests.alignment_pipeline_helpers import peak_config as _peak_config
 from xic_extractor.execution.timing import TimingRecorder
 from xic_extractor.output.alignment.pipeline_outputs import (
     alignment_metadata,
@@ -21,14 +19,12 @@ from xic_extractor.output.alignment.pipeline_outputs import (
 
 
 def test_alignment_metadata_records_inputs_and_settings() -> None:
-    peak_config = _peak_config()
-
     metadata = alignment_metadata(
         discovery_batch_index=Path("batch.csv"),
         raw_dir=Path("raw"),
         dll_dir=Path("dll"),
         output_level="debug",
-        peak_config=peak_config,
+        resolver_mode="local_minimum",
     )
 
     assert set(metadata) == {
@@ -41,6 +37,7 @@ def test_alignment_metadata_records_inputs_and_settings() -> None:
         "signal_processing_profile_json",
     }
     assert metadata["baseline_integration_method"] == "asls"
+    assert metadata["resolver_mode"] == "local_minimum"
     profile = json.loads(metadata["signal_processing_profile_json"])
     assert profile["schema_version"] == "signal_processing_profile"
     assert profile["method"] == "gaussian"
@@ -48,20 +45,6 @@ def test_alignment_metadata_records_inputs_and_settings() -> None:
     assert profile["physical_signal_formula"] == (
         "gaussian_raw_minus_nonnegative_asls_rt_raw_positive"
     )
-
-
-def test_alignment_metadata_records_baseline_integration_method() -> None:
-    peak_config = replace(_peak_config(), baseline_integration_method="asls")
-
-    metadata = alignment_metadata(
-        discovery_batch_index=Path("batch.csv"),
-        raw_dir=Path("raw"),
-        dll_dir=Path("dll"),
-        output_level="machine",
-        peak_config=peak_config,
-    )
-
-    assert metadata["baseline_integration_method"] == "asls"
 
 
 def test_validation_minimal_outputs_keep_gate_artifacts_without_debug_surfaces(

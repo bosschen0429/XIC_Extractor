@@ -22,7 +22,6 @@ from xic_extractor.alignment.cid_nl_initial_grouping import CidNlGrouping
 from xic_extractor.alignment.cid_nl_inputs import (
     UntargetedCidNlBackfillInput,
 )
-from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
@@ -70,6 +69,7 @@ copyreg.pickle(MappingProxyType, _reduce_mapping_proxy)
 
 
 SCHEMA_VERSION = "untargeted_cid_nl_real_data_runtime_result"
+BACKFILL_HALF_WINDOW_MIN = 1.0
 
 
 class UntargetedPartitionError(ValueError):
@@ -93,7 +93,6 @@ class UntargetedPartitionJob:
     candidates: tuple[DiscoveryPeak, ...]
     discovery_receipt: DiscoveryPeakUniverseReceipt
     settings: DiscoverySettings
-    peak_config: ExtractionConfig
     raw_path: Path
     dll_dir: Path
     work_unit_key: str
@@ -119,7 +118,6 @@ class UntargetedPartitionJob:
             ("method_subject", CidNlMethodSubject),
             ("discovery_receipt", DiscoveryPeakUniverseReceipt),
             ("settings", DiscoverySettings),
-            ("peak_config", ExtractionConfig),
             ("raw_path", Path),
             ("dll_dir", Path),
         )
@@ -184,7 +182,6 @@ def build_sample_jobs(
     candidates: tuple[DiscoveryPeak, ...],
     discovery_receipt: DiscoveryPeakUniverseReceipt,
     settings: DiscoverySettings,
-    peak_config: ExtractionConfig,
     raw_path: Path,
     dll_dir: Path,
     signal_processing_profile: SignalProcessingProfile,
@@ -223,7 +220,6 @@ def build_sample_jobs(
         candidates=candidates,
         discovery_receipt=discovery_receipt,
         settings=settings,
-        peak_config=peak_config,
         raw_path=raw_path,
         dll_dir=dll_dir,
         work_unit_key=first_key,
@@ -292,7 +288,7 @@ class UntargetedSampleResult:
                 and attempt.group_hypothesis_id == group_hypothesis_id
             )
         else:
-            half_window = self.job.peak_config.nl_rt_anchor_half_window_min
+            half_window = BACKFILL_HALF_WINDOW_MIN
             matches = tuple(
                 attempt
                 for attempt in self.backfill_attempts
@@ -358,8 +354,8 @@ def _project_completed_backfill(
     query_rt = center if backfill.query_rt is None else backfill.query_rt
     expected_request = XICRequest(
         mz=group.group_center_mz,
-        rt_min=max(0.0, query_rt - job.peak_config.nl_rt_anchor_half_window_min),
-        rt_max=query_rt + job.peak_config.nl_rt_anchor_half_window_min,
+        rt_min=max(0.0, query_rt - BACKFILL_HALF_WINDOW_MIN),
+        rt_max=query_rt + BACKFILL_HALF_WINDOW_MIN,
         ppm_tol=job.method_subject.precursor_tolerance_ppm,
     )
     exact = exact_traces(

@@ -64,7 +64,7 @@ markers = [
     "windows_only: exercises Windows-specific DLL loading or file-locking behavior. CI runs these only in the Windows integration lane.",
     "requires_dotnet: exercises a real managed .NET runtime, not a fake RAW reader. CI covers these in the Linux lane with CoreCLR.",
     "browser_e2e: runs the shipped HTML workbench in locked Playwright Chromium without RAW/DLL analysis. CI selects this on workbench/review and browser-test infrastructure changes and on master.",
-    "current_repository_census: validates the current checkout's complete architecture census. CI runs this once in the lint job; the main pytest sessions exclude it to avoid rebuilding the same repository-wide graph.",
+    "current_repository_census: runs every repository-wide gate against the current checkout. CI runs this once in the lint job; the main pytest sessions exclude it.",
     "packaging_build: builds installable wheel or PyInstaller outputs. CI runs these serially in the Windows integration lane for packaging-authority changes and on master; other PRs keep the cheaper packaging contract tests.",
     "ci_workflow: replays CI workflow steps in PowerShell with faked child commands. Selection runs these when the workflow or test-selection tooling changes, and on master.",
     "serial_ci: uses a subprocess or build path whose bounded timeout is not parallel-safe on the Windows integration runner. CI runs these explicit node IDs after the parallel session.",
@@ -128,7 +128,6 @@ forbidden_modules = [
     "xic_extractor.raw_reader",
     "xic_extractor.raw_source_binding",
     "xic_extractor.raw_sequence",
-    "xic_extractor.raw_mass_recalibration_batch",
 ]
 allow_indirect_imports = false
 
@@ -149,7 +148,6 @@ forbidden_modules = [
     "xic_extractor.raw_reader",
     "xic_extractor.raw_source_binding",
     "xic_extractor.raw_sequence",
-    "xic_extractor.raw_mass_recalibration_batch",
 ]
 allow_indirect_imports = false
 
@@ -166,7 +164,6 @@ forbidden_modules = [
     "xic_extractor.raw_reader",
     "xic_extractor.raw_source_binding",
     "xic_extractor.raw_sequence",
-    "xic_extractor.raw_mass_recalibration_batch",
 ]
 allow_indirect_imports = false
 
@@ -238,7 +235,6 @@ forbidden_modules = [
     "xic_extractor.raw_reader",
     "xic_extractor.raw_source_binding",
     "xic_extractor.raw_sequence",
-    "xic_extractor.raw_mass_recalibration_batch",
 ]
 allow_indirect_imports = false
 
@@ -292,7 +288,6 @@ forbidden_modules = [
     "xic_extractor.raw_reader",
     "xic_extractor.raw_source_binding",
     "xic_extractor.raw_sequence",
-    "xic_extractor.raw_mass_recalibration_batch",
 ]
 allow_indirect_imports = false
 
@@ -309,7 +304,6 @@ forbidden_modules = [
     "xic_extractor.raw_reader",
     "xic_extractor.raw_source_binding",
     "xic_extractor.raw_sequence",
-    "xic_extractor.raw_mass_recalibration_batch",
     "openpyxl",
     "csv",
 ]
@@ -327,7 +321,6 @@ forbidden_modules = [
     "xic_extractor.raw_reader",
     "xic_extractor.raw_source_binding",
     "xic_extractor.raw_sequence",
-    "xic_extractor.raw_mass_recalibration_batch",
     "xic_extractor.alignment",
     "xic_extractor.output",
     "xic_extractor.acquisition",
@@ -391,7 +384,6 @@ forbidden_modules = [
     "xic_extractor.raw_reader",
     "xic_extractor.raw_source_binding",
     "xic_extractor.raw_sequence",
-    "xic_extractor.raw_mass_recalibration_batch",
 ]
 allow_indirect_imports = false
 
@@ -401,6 +393,14 @@ name = "Discovery pipeline does not import the Targeted entry module"
 type = "forbidden"
 source_modules = ["xic_extractor.discovery.pipeline"]
 forbidden_modules = ["xic_extractor.extractor"]
+allow_indirect_imports = false
+
+[[tool.importlinter.contracts]]
+id = "discovery-does-not-load-presets"
+name = "Discovery receives resolved settings instead of loading presets"
+type = "forbidden"
+source_modules = ["xic_extractor.discovery"]
+forbidden_modules = ["xic_extractor.presets"]
 allow_indirect_imports = false
 
 [[tool.importlinter.contracts]]
@@ -414,7 +414,6 @@ forbidden_modules = [
     "xic_extractor.raw_reader",
     "xic_extractor.raw_source_binding",
     "xic_extractor.raw_sequence",
-    "xic_extractor.raw_mass_recalibration_batch",
 ]
 allow_indirect_imports = false
 
@@ -456,7 +455,6 @@ forbidden_modules = [
     "xic_extractor.raw_reader",
     "xic_extractor.raw_source_binding",
     "xic_extractor.raw_sequence",
-    "xic_extractor.raw_mass_recalibration_batch",
     "xic_extractor.execution",
 ]
 allow_indirect_imports = false
@@ -468,6 +466,7 @@ type = "forbidden"
 source_modules = ["xic_extractor.alignment"]
 forbidden_modules = [
     "xic_extractor.peak_detection.baseline",
+    "xic_extractor.peak_detection.signal_quality",
 ]
 allow_indirect_imports = true
 

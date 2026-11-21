@@ -11,7 +11,6 @@ from tests.cid_nl_raw_fixture import (
     TEST_PROFILE,
     _current_candidates,
     _FakeRaw,
-    _peak_config,
     _settings,
 )
 from tests.cid_nl_runtime_fixtures import (
@@ -49,7 +48,6 @@ def scenario_acquisitions(paths, *, settings, scenario="positive"):
         raw, sample_candidates = _nearby_subject_candidates(
             path,
             settings=settings,
-            peak_config=None,
         )
         third_raw = _FakeRaw(
             (7.98,), scan_precursor_mz=500.008, neutral_loss_das=(116.0474,)
@@ -173,7 +171,6 @@ def _plan(
         if not path.exists():
             path.write_bytes(path.stem.encode())
     settings = scenario_settings(scenario)
-    peak_config = _peak_config(tmp_path)
     raws, candidates = scenario_acquisitions(
         paths, settings=settings, scenario=scenario
     )
@@ -193,7 +190,6 @@ def _plan(
             for index, path in enumerate(paths)
         ),
         settings=settings,
-        peak_config=peak_config,
         peaks_by_sample=candidates,
         root=tmp_path / "persisted",
         dll_dir=tmp_path,

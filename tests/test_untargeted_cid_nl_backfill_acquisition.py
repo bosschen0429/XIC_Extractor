@@ -13,7 +13,6 @@ from tests.cid_nl_raw_fixture import (
     _FakeRaw,
     _multi_tag_settings,
     _open_bound_raw,
-    _peak_config,
 )
 from tests.untargeted_cid_nl_real_data_adapter_fixtures import (
     build_sample_adapter_fixture,
@@ -27,6 +26,9 @@ from xic_extractor.untargeted_execution.partition.cid_nl_backfill_acquisition im
     backfill_untargeted_cid_nl_sample_subject,
     physical_backfill_observation,
     reuse_cid_nl_backfill_peak,
+)
+from xic_extractor.untargeted_execution.partition.models import (
+    BACKFILL_HALF_WINDOW_MIN,
 )
 
 
@@ -74,20 +76,21 @@ def test_backfill_uses_sample_pattern_location_without_claiming_method_support(
         query_rt_basis=query_basis,
         query_rt_tolerance_sec=tolerance,
     )
-    config = _peak_config(tmp_path)
     batch = acquire_untargeted_cid_nl_backfill_trace_batch(
+        half_window_min=BACKFILL_HALF_WINDOW_MIN,
         sample=fixture.sample(sample),
         acquisition_source=fixture.source(fixture.sample(sample)),
         backfill_requests=(target,),
-        peak_config=config,
         raw=raw,
     )
     assert batch.targets[0].center_rt == 8.1
     assert batch.targets[0].sample_query_rt == query_rt
     assert batch.requests[0].rt_min == pytest.approx(
-        query_rt - config.nl_rt_anchor_half_window_min
+        query_rt - BACKFILL_HALF_WINDOW_MIN
     )
     result = backfill_untargeted_cid_nl_sample_subject(
+        half_window_min=BACKFILL_HALF_WINDOW_MIN,
+        resolver_mode="local_minimum",
         processing_attempt_id=fixture.processing_attempt_id,
         sample=fixture.sample(sample),
         acquisition_source=fixture.source(fixture.sample(sample)),
@@ -101,7 +104,6 @@ def test_backfill_uses_sample_pattern_location_without_claiming_method_support(
         support_policy=DdaCidNlPeakSupportPolicy(
             precursor_tolerance_da=0.5, neutral_loss_tolerance_ppm=20.0
         ),
-        peak_config=config,
         raw=raw,
         signal_processing_profile=profile,
         _preacquired_traces=batch,
@@ -164,6 +166,7 @@ def test_recovery_batch_canonicalizes_shared_group_queries_without_merging_cente
     )
 
     batch = acquire_untargeted_cid_nl_backfill_trace_batch(
+        half_window_min=BACKFILL_HALF_WINDOW_MIN,
         sample=fixture.sample("S1"),
         acquisition_source=fixture.source(fixture.sample("S1")),
         backfill_requests=(
@@ -180,7 +183,6 @@ def test_recovery_batch_canonicalizes_shared_group_queries_without_merging_cente
                 "group-d", fixture.method_subject, 500.012, 8.2
             ),
         ),
-        peak_config=_peak_config(tmp_path),
         raw=raw,
     )
 
@@ -239,6 +241,8 @@ def test_recovery_revisits_one_hold_cell_without_minting_support(
     )
 
     result = backfill_untargeted_cid_nl_sample_subject(
+        half_window_min=BACKFILL_HALF_WINDOW_MIN,
+        resolver_mode="local_minimum",
         processing_attempt_id=fixture.processing_attempt_id,
         sample=fixture.sample("S1"),
         acquisition_source=fixture.source(fixture.sample("S1")),
@@ -250,7 +254,6 @@ def test_recovery_revisits_one_hold_cell_without_minting_support(
             precursor_tolerance_da=0.01,
             neutral_loss_tolerance_ppm=20.0,
         ),
-        peak_config=_peak_config(tmp_path),
         raw=raw,
         signal_processing_profile=TEST_PROFILE,
     )
@@ -295,6 +298,8 @@ def test_physical_backfill_does_not_choose_among_clipped_tail_candidates(
     )
     raw, _vendor = _open_bound_raw(fixture, "S1", source_raw, tmp_path=tmp_path)
     result = backfill_untargeted_cid_nl_sample_subject(
+        half_window_min=0.5,
+        resolver_mode="local_minimum",
         processing_attempt_id=fixture.processing_attempt_id,
         sample=fixture.sample("S1"),
         acquisition_source=fixture.source(fixture.sample("S1")),
@@ -305,7 +310,6 @@ def test_physical_backfill_does_not_choose_among_clipped_tail_candidates(
             precursor_tolerance_da=0.01,
             neutral_loss_tolerance_ppm=20.0,
         ),
-        peak_config=replace(_peak_config(tmp_path), nl_rt_anchor_half_window_min=0.5),
         raw=raw,
         signal_processing_profile=profile,
     )
@@ -344,15 +348,14 @@ def test_physical_backfill_context_is_not_search_permission(
             -0.5 * ((source_raw.rt - target_center) / 0.06) ** 2
         )
     raw, vendor = _open_bound_raw(fixture, "S1", source_raw, tmp_path=tmp_path)
-    config = replace(_peak_config(tmp_path), nl_rt_anchor_half_window_min=0.5)
     target = UntargetedCidNlBackfillTarget(
         "bounded-group", fixture.method_subject, 500.0, 8.0
     )
     batch = acquire_untargeted_cid_nl_backfill_trace_batch(
+        half_window_min=0.5,
         sample=fixture.sample("S1"),
         acquisition_source=fixture.source(fixture.sample("S1")),
         backfill_requests=(target, replace(target, group_hypothesis_id="same-query")),
-        peak_config=config,
         raw=raw,
     )
     assert vendor.chromatogram_request_counts == [2]
@@ -360,6 +363,8 @@ def test_physical_backfill_context_is_not_search_permission(
     assert batch.context_requests[0].rt_min == 7.0
     assert batch.context_requests[0].rt_max == 9.0
     kwargs = dict(
+        half_window_min=0.5,
+        resolver_mode="local_minimum",
         processing_attempt_id=fixture.processing_attempt_id,
         sample=fixture.sample("S1"),
         acquisition_source=fixture.source("S1"),
@@ -371,7 +376,6 @@ def test_physical_backfill_context_is_not_search_permission(
             precursor_tolerance_da=0.01,
             neutral_loss_tolerance_ppm=20.0,
         ),
-        peak_config=config,
         signal_processing_profile=profile,
     )
     batched = backfill_untargeted_cid_nl_sample_subject(
@@ -539,6 +543,8 @@ def test_composite_backfill_resolves_one_event_per_scan_loss_across_references(
     )
     try:
         result = backfill_untargeted_cid_nl_sample_subject(
+            half_window_min=BACKFILL_HALF_WINDOW_MIN,
+            resolver_mode="local_minimum",
             processing_attempt_id=fixture.processing_attempt_id,
             sample=fixture.sample("S1"),
             acquisition_source=fixture.source(fixture.sample("S1")),
@@ -548,7 +554,6 @@ def test_composite_backfill_resolves_one_event_per_scan_loss_across_references(
             support_policy=DdaCidNlPeakSupportPolicy(
                 precursor_tolerance_da=0.01, neutral_loss_tolerance_ppm=20.0
             ),
-            peak_config=_peak_config(tmp_path),
             raw=raw,
             settings=settings,
             signal_processing_profile=TEST_PROFILE,
@@ -676,6 +681,8 @@ def test_reused_hold_peak_needs_its_own_group_window(
     original = capture.assessment_input.assessment
     assert original.method_result == "HOLD" and original.evidence_observations
     attempt = reuse_cid_nl_backfill_peak(
+        half_window_min=BACKFILL_HALF_WINDOW_MIN,
+        resolver_mode="local_minimum",
         target=UntargetedCidNlBackfillTarget(
             "bounded-group",
             original.method_subject,
@@ -685,7 +692,6 @@ def test_reused_hold_peak_needs_its_own_group_window(
         ),
         capture=capture,
         source=scenario.fixture.source(scenario.fixture.sample("S1")),
-        peak_config=scenario.peak_config,
     )
     assert [
         peak.integration.rt_apex_min for peak in original.candidate_peaks

@@ -89,11 +89,7 @@ def uploaded_target_file(name: object, content: object) -> Iterator[Path]:
 def import_targets(path: Path) -> list[dict[str, str]]:
     source = Path(path)
     if source.suffix.lower() in {".csv", ".tsv"}:
-        from xic_extractor.configuration.legacy_target_methods import (
-            upgrade_target_table,
-        )
-
-        return upgrade_target_table(read_target_draft_rows(source))[0]
+        return read_target_draft_rows(source)
     if source.suffix.lower() == ".xlsx":
         return [dict(row) for row in load_target_list(source).target_rows]
     raise ConfigError(f"{source}: 請選擇 XLSX、CSV 或 TSV 目標表；不支援 .xls。")

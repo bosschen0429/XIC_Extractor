@@ -35,7 +35,6 @@ def test_settings_round_trip_rejects_hidden_science_without_migrating(tmp_path):
         "data_dir": "C:/RAW",
         "dll_dir": "C:/Thermo",
         "injection_order_source": "",
-        "parallel_workers": "",
     }
     write_settings(settings, config_dir=tmp_path)
     with pytest.raises(ConfigError, match="dirty_matrix_mode"):
@@ -174,7 +173,7 @@ def test_uploaded_lists_read_targets_only(tmp_path, extension):
     assert result["targets"][1]["istd_pair"] == "standard"
 
 
-def test_uploaded_earlier_method_workbook_is_rejected(tmp_path):
+def test_uploaded_workbook_with_an_extra_sheet_is_rejected(tmp_path):
     import base64
 
     import openpyxl
@@ -192,7 +191,7 @@ def test_uploaded_earlier_method_workbook_is_rejected(tmp_path):
     book.create_sheet("Method").append(["key", "value"])
     book.save(path)
     book.close()
-    with pytest.raises(ConfigError, match="舊格式"):
+    with pytest.raises(ConfigError, match="只接受 Delta Mass"):
         preview_target_upload(path.name, base64.b64encode(path.read_bytes()).decode())
 
 

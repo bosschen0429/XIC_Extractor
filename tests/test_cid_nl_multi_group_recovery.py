@@ -28,7 +28,6 @@ from tests.cid_nl_raw_fixture import (
     _FakeRaw,
     _FakeThermoRaw,
     _multi_tag_settings,
-    _peak_config,
     _settings,
 )
 from tests.cid_nl_runtime_fixtures import install_runtime_raws
@@ -77,6 +76,9 @@ from xic_extractor.peak_detection.cid_nl_method_assessment import (
 from xic_extractor.peak_detection.hypotheses import IntegrationResult
 from xic_extractor.peak_detection.traces import Trace
 from xic_extractor.sample_metadata import SampleMetadata
+from xic_extractor.untargeted_execution.partition.models import (
+    BACKFILL_HALF_WINDOW_MIN,
+)
 
 ALIGNMENT = AlignmentConfig(anchor_min_seed_events=1)
 
@@ -276,9 +278,8 @@ def test_backfill_batch_retains_shape_contradictions_as_soft_risk(
 
 
 @pytest.mark.parametrize("empty", [False, True])
-@pytest.mark.parametrize("half_window", [0.10, 0.15])
 def test_backfill_query_and_empty_completion_keep_sample_rt_separate_from_group(
-    tmp_path, monkeypatch, empty, half_window
+    tmp_path, monkeypatch, empty
 ):
     import csv
 
@@ -290,9 +291,6 @@ def test_backfill_query_and_empty_completion_keep_sample_rt_separate_from_group(
 
     shifts = {"S1": 0.0, "S2": 0.0, "Late": 0.4, "Early": -0.4}
     settings = _settings()
-    peak_config = replace(
-        _peak_config(tmp_path), nl_rt_anchor_half_window_min=half_window
-    )
     paths = tuple(tmp_path / f"{stem}.synthetic" for stem in shifts)
     raws, candidates = {}, {}
     for path in paths:
@@ -324,7 +322,6 @@ def test_backfill_query_and_empty_completion_keep_sample_rt_separate_from_group(
             for i, path in enumerate(paths, 1)
         ),
         settings=settings,
-        peak_config=peak_config,
         peaks_by_sample=candidates,
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,
@@ -366,9 +363,8 @@ def test_backfill_query_and_empty_completion_keep_sample_rt_separate_from_group(
         assert attempt.query_rt_basis == "calibrated_trajectory_fit"
         receipt = attempt.assessment.evaluation_receipt
         assert (receipt.query_rt_min, receipt.query_rt_max) == pytest.approx(
-            (expected - half_window, expected + half_window)
+            (expected - BACKFILL_HALF_WINDOW_MIN, expected + BACKFILL_HALF_WINDOW_MIN)
         )
-        assert not receipt.query_rt_min <= 8.0 <= receipt.query_rt_max
         assert len(attempt.assessment.candidate_peaks) == (0 if empty else 1)
         if not empty:
             assert attempt.assessment.candidate_peaks[
@@ -380,8 +376,8 @@ def test_backfill_query_and_empty_completion_keep_sample_rt_separate_from_group(
         if sample_stem in {"Early", "Late"}:
             assert backfill_query_bounds(cell) == pytest.approx(
                 (
-                    8.0 + shifts[sample_stem] - half_window,
-                    8.0 + shifts[sample_stem] + half_window,
+                    8.0 + shifts[sample_stem] - BACKFILL_HALF_WINDOW_MIN,
+                    8.0 + shifts[sample_stem] + BACKFILL_HALF_WINDOW_MIN,
                 )
             )
     path = render("backfill", tmp_path / "queries.tsv", writer)
@@ -391,7 +387,7 @@ def test_backfill_query_and_empty_completion_keep_sample_rt_separate_from_group(
         for row in rows:
             if row["sample_stem"] in {"Early", "Late"}:
                 assert float(row["backfill_query_rt_min"]) == pytest.approx(
-                    8.0 + shifts[row["sample_stem"]] - half_window
+                    8.0 + shifts[row["sample_stem"]] - BACKFILL_HALF_WINDOW_MIN
                 )
 
 
@@ -401,11 +397,13 @@ def test_backfill_query_and_empty_completion_keep_sample_rt_separate_from_group(
 def test_rejected_discovery_input_cannot_supply_backfill_support(
     tmp_path, monkeypatch, outcome
 ):
+    """A Discovery peak held at peak level is not admitted to Alignment. Only an
+    authorized Backfill reads the rejected sample's RAW.
+    """
     stems = ("S1", "S2", "Rejected")
     paths = raw_paths(tmp_path, stems)
     raws = {stem: _FakeRaw((8.0,)) for stem in stems}
     peaks = {stem: discover(raws[stem], paths[stem]) for stem in stems}
-    # A Discovery peak held at peak level is not admitted to Alignment.
     peaks["Rejected"] = tuple(_without_ms1_peak(peak) for peak in peaks["Rejected"])
     assert peaks["Rejected"]
     assert not any(peak.admitted for peak in peaks["Rejected"])
@@ -467,7 +465,6 @@ def test_rejected_discovery_input_cannot_supply_backfill_support(
     else:
         assert rejected["status"] == "not_searched"
         assert rejected["area"] == ""
-    # Only an authorized Backfill reads the rejected sample's RAW.
     assert ("Rejected" in opened) is (outcome in {"support", "empty"})
 
 
@@ -484,6 +481,7 @@ def test_rejected_discovery_input_cannot_supply_backfill_support(
 def test_backfill_recovers_every_authorized_rt_group(
     tmp_path, monkeypatch, recovery_peaks, shared_support
 ):
+    """One direct support does not authorize a Backfill of the 12 min group."""
     support = {"S1": (8.0,), "S2": (8.0,), "S3": (12.0,), "S4": (12.0,)}
     if shared_support == "shared":
         support = {"S1": (8.0, 12.0), "S2": (8.0, 12.0)}
@@ -534,7 +532,6 @@ def test_backfill_recovers_every_authorized_rt_group(
             assert cell["status"] == "unavailable"
             assert cell["area"] == ""
     if shared_support == "below-quorum":
-        # One direct support does not authorize a Backfill of the 12 min group.
         assert missing[12.0]["status"] == "not_searched"
 
 
@@ -696,6 +693,7 @@ def test_shared_ms1_only_backfill_peak_is_not_written_to_two_rows(
 def test_ms1_only_backfill_fills_only_one_unique_group_window_peak(
     tmp_path, monkeypatch, missing_peaks, expected_status, composition
 ):
+    """The Missing peak has the supports' shape, so it integrates alike."""
     centers = {"S1": (8.0,), "S2": (8.0,), "Missing": missing_peaks}
     settings = (
         replace(
@@ -736,7 +734,6 @@ def test_ms1_only_backfill_fills_only_one_unique_group_window_peak(
     if expected_status == "unavailable":
         assert cell["area"] == ""
     else:
-        # The Missing peak has the supports' shape, so it integrates alike.
         support_area = float(
             published_cells(output)[(review["feature_id"], "S1")]["area"]
         )
@@ -811,6 +808,9 @@ def test_backfill_reaches_a_sample_whose_support_belongs_to_another_group(
 
 
 def test_alignment_uses_configured_recovery_groups(tmp_path, monkeypatch):
+    """At 2 s preferred RT spacing, S3's 0.12 min offset forms its own group, and only
+    the two-support group authorizes a Backfill.
+    """
     centers = {"S1": (8.0,), "S2": (8.0,), "S3": (8.12,), "Missing": ()}
     settings = replace(SETTINGS, neutral_loss_profile=None, rt_max=12.6)
     paths = raw_paths(tmp_path, tuple(centers))
@@ -841,8 +841,6 @@ def test_alignment_uses_configured_recovery_groups(tmp_path, monkeypatch):
         ),
     )
 
-    # At 2 s preferred RT spacing, S3's 0.12 min offset forms its own group,
-    # and only the two-support group authorizes a Backfill.
     missing = {
         review["detected_count"]: cell
         for cell, review in _cells_of(output, "Missing").values()
@@ -868,7 +866,6 @@ def _shared_peak_inputs(
         raw_paths=tuple(paths.values()),
         sample_metadata=sample_metadata_for(tuple(paths)),
         settings=settings,
-        peak_config=_peak_config(tmp_path),
         peaks_by_sample=peaks,
     )
 
@@ -919,7 +916,6 @@ def _backfill_request(tmp_path, options, config):
         dll_dir=tmp_path,
         output_dir=tmp_path / "grouping",
         discovery_settings=options["settings"],
-        peak_config=options["peak_config"],
         execution=UntargetedExecutionPolicy(
             profile=ExecutionProfile(alignment_workers=1, backend="thread"),
             acquisition_cache_dir=tmp_path / "raw-facts",
@@ -930,6 +926,10 @@ def _backfill_request(tmp_path, options, config):
 def test_full_alignment_captures_competing_rows_and_single_batch_matrix(
     tmp_path, monkeypatch
 ):
+    """Capturing replay inputs does not repeat any stage. A single batch captures no
+    pairing input. S1 and S2 each own one peak of both groups. The cells TSV
+    publishes areas to two decimals.
+    """
     import subprocess
     import sys
     from collections import Counter, defaultdict
@@ -958,7 +958,6 @@ def test_full_alignment_captures_competing_rows_and_single_batch_matrix(
         application.run_untargeted_application(
             changed_request, UntargetedExecutionContext(timing_recorder=recorder)
         )
-        # Capturing replay inputs does not repeat any stage.
         stages = Counter((r.stage, r.sample_stem) for r in recorder.records)
         assert [stage for stage, count in stages.items() if count > 1] == []
 
@@ -987,7 +986,6 @@ def test_full_alignment_captures_competing_rows_and_single_batch_matrix(
         "matrix-join.json",
     }
     assert not replay_names.intersection(path.name for path in control_dir.iterdir())
-    # A single batch captures no pairing input.
     assert replay_names.intersection(path.name for path in capture_dir.iterdir()) == {
         "grouping-inputs.json.gz",
         "backfill-inputs",
@@ -1016,7 +1014,6 @@ def test_full_alignment_captures_competing_rows_and_single_batch_matrix(
     groups = defaultdict(set)
     for row in read_tsv(regrouped / "members.tsv"):
         groups[row["group_id"]].add(row["owner_id"])
-    # S1 and S2 each own one peak of both groups.
     assert sorted(map(len, groups.values())) == [2, 2]
 
     directory = capture_dir / "backfill-inputs"
@@ -1048,7 +1045,6 @@ def test_full_alignment_captures_competing_rows_and_single_batch_matrix(
     actual = published(read_tsv(backfilled / "backfill-cells.tsv"))
     expected = published(read_tsv(control_dir / "alignment_cells.tsv"))
     assert [item[:2] for item in actual] == [item[:2] for item in expected]
-    # The cells TSV publishes areas to two decimals.
     assert [item[2] for item in actual] == pytest.approx(
         [item[2] for item in expected], abs=0.006
     )

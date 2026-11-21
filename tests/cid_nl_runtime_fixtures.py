@@ -15,7 +15,6 @@ from tests.cid_nl_raw_fixture import (
 )
 from tests.raw_header_fakes import install_fake_raw_headers
 from xic_extractor.configuration.execution_profile import ExecutionProfile
-from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
@@ -121,7 +120,6 @@ def prepare_persisted_discovery_plan(
     raw_paths: tuple[Path, ...],
     sample_metadata: tuple[SampleMetadata, ...],
     settings: DiscoverySettings,
-    peak_config: ExtractionConfig,
     peaks_by_sample: Mapping[str, tuple[DiscoveryPeak, ...]],
     dll_dir: Path,
     signal_processing_profile: SignalProcessingProfile,
@@ -141,7 +139,6 @@ def prepare_persisted_discovery_plan(
         dll_dir=dll_dir,
         output_dir=root / "alignment_inputs",
         settings=settings,
-        peak_config=peak_config,
         sample_metadata=sample_metadata,
         signal_processing_profile=signal_processing_profile,
         execution=ExecutionProfile(alignment_workers=1, backend="thread"),
@@ -267,9 +264,6 @@ def install_runtime_raws(
 
     monkeypatch.setattr(partition_workers, "open_raw", _open_runtime_raw)
     monkeypatch.setattr("xic_extractor.raw_reader.open_raw", _open_runtime_raw)
-    monkeypatch.setattr(
-        "xic_extractor.raw_mass_recalibration_batch.open_raw", _open_runtime_raw
-    )
     return opened
 
 

@@ -3,6 +3,8 @@
 Tests persist Discovery results, replace only the Thermo RAW boundary and read
 what ``run_untargeted_application`` publishes. ``publish_alignment`` also
 checks the replaced boundary and the timing record on every run.
+
+Synthetic acquisitions carry no lock masses, so Discovery recorded none.
 """
 
 from __future__ import annotations
@@ -31,7 +33,6 @@ from xic_extractor.applications.untargeted.publication import (
 from xic_extractor.applications.untargeted.request import (
     UntargetedExecutionContext,
     UntargetedRequest,
-    untargeted_peak_config,
 )
 from xic_extractor.configuration.execution_profile import (
     ExecutionProfile,
@@ -42,7 +43,6 @@ from xic_extractor.discovery.csv_reader import DiscoveryBatchIndex
 from xic_extractor.execution.timing import TimingRecorder
 from xic_extractor.sample_metadata import SampleMetadata
 
-# Synthetic acquisitions carry no lock masses, so Discovery recorded none.
 SETTINGS = replace(_settings(), mass_recalibration=MassRecalibration.NONE)
 
 
@@ -92,7 +92,6 @@ def publish_alignment(
     known_istd_reference_workbook: Path | None = None,
     name: str = "alignment",
     opened_samples: set[str] | None = None,
-    peak_config_changes: Mapping[str, object] | None = None,
     execution_changes: Mapping[str, object] | None = None,
     should_cancel: Callable[[], bool] | None = None,
     timing_recorder: TimingRecorder | None = None,
@@ -135,15 +134,6 @@ def publish_alignment(
                 output_dir=output_dir,
                 alignment_config=alignment_config
                 or AlignmentConfig(anchor_min_seed_events=1),
-                peak_config=replace(
-                    untargeted_peak_config(
-                        raw_dir=raw_dir,
-                        dll_dir=tmp_path,
-                        output_dir=output_dir,
-                        discovery_settings=settings,
-                    ),
-                    **(peak_config_changes or {}),
-                ),
                 discovery_settings=settings,
                 sample_metadata=sample_metadata or sample_metadata_for(stems),
                 known_istd_reference_workbook=known_istd_reference_workbook,
