@@ -9,12 +9,10 @@ import numpy as np
 
 from tests.cid_nl_raw_fixture import fake_acquisition_source
 from xic_extractor.configuration.cid_nl_profile import NeutralLossProfile
-from xic_extractor.configuration.execution_profile import in_process_execution
 from xic_extractor.configuration.mass_recalibration import (
     MassRecalibration,
     MassRecalibrationResult,
 )
-from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.discovery import pipeline as _pipeline
 from xic_extractor.discovery.models import DiscoveryRunOutputs
 from xic_extractor.discovery.processing_run_spec_adapter import (
@@ -36,23 +34,6 @@ def _settings(**overrides: object) -> DiscoverySettings:
         **overrides,
     }
     return DiscoverySettings(**cast(Any, values))
-
-
-def _peak_config(tmp_path: Path) -> ExtractionConfig:
-    return ExtractionConfig(
-        data_dir=tmp_path,
-        dll_dir=tmp_path / "dll",
-        output_csv=tmp_path / "xic_results.csv",
-        diagnostics_csv=tmp_path / "xic_diagnostics.csv",
-        smooth_window=15,
-        smooth_polyorder=3,
-        peak_rel_height=0.95,
-        peak_min_prominence_ratio=0.10,
-        ms2_precursor_tol_da=0.5,
-        nl_min_intensity_ratio=0.01,
-        resolver_mode="local_minimum",
-        execution=in_process_execution(),
-    )
 
 
 def _scan_event(
