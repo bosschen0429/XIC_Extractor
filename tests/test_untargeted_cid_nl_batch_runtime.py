@@ -20,6 +20,7 @@ from tests.untargeted_cid_nl_batch_runtime_fixtures import (
 from tests.untargeted_partition_fixtures import (
     execute_partition_inline,
     fixture_assessment,
+    partition_context,
 )
 from xic_extractor.alignment.cid_nl_inputs import CID_NL_ALIGNMENT_CONFIG
 from xic_extractor.discovery.models import DiscoveryPeak
@@ -30,9 +31,6 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
 )
 from xic_extractor.sample_metadata import SampleMetadata
 from xic_extractor.untargeted_execution.partition.models import UntargetedPartitionJob
-from xic_extractor.untargeted_execution.partition.request import (
-    build_partition_context,
-)
 
 
 @pytest.mark.parametrize("initial_trace_without_peak", [False, True])
@@ -103,7 +101,7 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
             )
         ),
     )
-    context = build_partition_context(
+    context = partition_context(
         raw_paths=raw_paths,
         sample_metadata=tuple(
             SampleMetadata(

@@ -31,7 +31,11 @@ from xic_extractor.applications.untargeted.publication import (
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
+from xic_extractor.discovery.batch_contract import DiscoveryPeakUniverseReceipt
 from xic_extractor.discovery.models import DiscoveryPeak
+from xic_extractor.discovery.processing_run_spec_adapter import (
+    fingerprint_acquisition_sources,
+)
 from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.execution.workers import WorkerAdmissionPool
 from xic_extractor.output.alignment.pipeline_outputs import AlignmentRunOutputs
@@ -57,6 +61,10 @@ from xic_extractor.untargeted_execution.partition.execution import execute_parti
 from xic_extractor.untargeted_execution.partition.models import (
     UntargetedPartitionResult,
 )
+from xic_extractor.untargeted_execution.partition.request import (
+    UntargetedPartitionContext,
+    compose_partition_context,
+)
 from xic_extractor.untargeted_execution.partition_composition import (
     ChildProjectionContext,
     UntargetedPartitionInputs,
@@ -71,6 +79,34 @@ ALL_ROW_OUTPUTS = AlignmentRunOutputs(
     cells_tsv=Path("cells.tsv"),
     status_matrix_tsv=Path("status.tsv"),
 )
+
+
+def partition_context(
+    *,
+    raw_paths: Iterable[Path],
+    sample_metadata: Iterable[SampleMetadata],
+    method_subject,
+    settings: DiscoverySettings,
+    peaks_by_sample: Mapping[str, Iterable[DiscoveryPeak]],
+    discovery_receipts_by_sample: Mapping[str, DiscoveryPeakUniverseReceipt],
+    signal_processing_profile: SignalProcessingProfile,
+) -> UntargetedPartitionContext:
+    """Compose a run context from fixture RAW files fingerprinted as Alignment does."""
+    paths = tuple(sorted(raw_paths, key=lambda path: path.stem))
+    expectations = fingerprint_acquisition_sources(paths)
+    return compose_partition_context(
+        method_subject=method_subject,
+        settings=settings,
+        paths_by_stem={path.stem: path for path in paths},
+        metadata_by_stem={sample.raw_stem: sample for sample in sample_metadata},
+        source_expectations={
+            path.stem: expectation
+            for path, expectation in zip(paths, expectations, strict=True)
+        },
+        peak_map={stem: tuple(peaks) for stem, peaks in peaks_by_sample.items()},
+        receipt_map=dict(discovery_receipts_by_sample),
+        signal_processing_profile=signal_processing_profile,
+    )
 
 
 @dataclass(frozen=True, slots=True)

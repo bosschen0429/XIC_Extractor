@@ -152,7 +152,7 @@ from xic_extractor.extraction.jobs import RawFileJob
 from xic_extractor.untargeted_execution.partition.execution import execute_partition
 from xic_extractor.untargeted_execution.partition.models import UntargetedPartitionJob
 from xic_extractor.untargeted_execution.partition.request import (
-    build_partition_context,
+    compose_partition_context,
 )
 from xic_extractor.untargeted_execution.partition.workers import (
     _SampleInitialWorkerRequest,
@@ -197,7 +197,7 @@ installed_objects = {
     "RawFileJob": RawFileJob,
     "execute_partition": execute_partition,
     "UntargetedPartitionJob": UntargetedPartitionJob,
-    "build_partition_context": build_partition_context,
+    "compose_partition_context": compose_partition_context,
     "_SampleInitialWorkerRequest": _SampleInitialWorkerRequest,
     "CidNlAcquisitionResult": CidNlAcquisitionResult,
     "UntargetedCidNlBackfillTarget": UntargetedCidNlBackfillTarget,

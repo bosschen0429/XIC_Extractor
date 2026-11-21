@@ -33,7 +33,6 @@ from xic_extractor.untargeted_execution.partition.workers import (
     _SampleInitialWorkerRequest,
     _SampleInitialWorkerResponse,
 )
-from xic_extractor.validation_primitives import require_owner_normalized_text
 
 
 def execute_partition(
@@ -57,19 +56,6 @@ def execute_partition(
     The initial phase owns acquisition; a resumed phase consumes its sealed
     assessments and performs only Backfill acquisition under the same attempt.
     """
-    _required_text(partition_key, field="partition_key")
-    if not isinstance(alignment_config, AlignmentConfig):
-        raise UntargetedPartitionError("alignment_config must be an AlignmentConfig")
-    if (
-        not isinstance(jobs, tuple)
-        or not jobs
-        or any(not isinstance(job, UntargetedPartitionJob) for job in jobs)
-    ):
-        raise UntargetedPartitionError(
-            "jobs must contain Untargeted CID-NL runtime jobs"
-        )
-    if len({job.work_unit_key for job in jobs}) != len(jobs):
-        raise UntargetedPartitionError("partition work unit keys must be unique")
     work = _prepare_runtime_work(
         jobs,
         alignment_config=alignment_config,
@@ -455,30 +441,7 @@ def _runtime_sample_groups(
     for state in states:
         sample_id = state.job.sample.sample_name
         grouped.setdefault(sample_id, []).append(state)
-    groups = tuple(tuple(group) for group in grouped.values())
-    for group in groups:
-        first = group[0].job
-        if any(
-            state.job.sample != first.sample
-            or state.job.candidates != first.candidates
-            or state.job.discovery_receipt != first.discovery_receipt
-            or state.job.settings != first.settings
-            or state.job.raw_path != first.raw_path
-            or state.job.dll_dir != first.dll_dir
-            for state in group[1:]
-        ):
-            raise UntargetedPartitionError(
-                "sample-local runtime jobs crossed their shared acquisition inputs"
-            )
-    return groups
-
-
-def _required_text(value: object, *, field: str) -> str:
-    return require_owner_normalized_text(
-        value,
-        field=field,
-        error_factory=UntargetedPartitionError,
-    )
+    return tuple(tuple(group) for group in grouped.values())
 
 
 __all__ = ("execute_partition",)

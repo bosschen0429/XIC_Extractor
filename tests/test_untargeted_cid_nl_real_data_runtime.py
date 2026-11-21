@@ -27,7 +27,10 @@ from tests.processing_identity_no_raw_fixture import (
     build_targeted_processing_identity_raw_fixture,
 )
 from tests.untargeted_cid_nl_real_data_adapter_fixtures import _without_ms1_peak
-from tests.untargeted_partition_fixtures import execute_partition_inline
+from tests.untargeted_partition_fixtures import (
+    execute_partition_inline,
+    partition_context,
+)
 from xic_extractor.acquisition_contract import (
     acquire_trace_batch,
     mint_trace_acquisition_capability,
@@ -38,9 +41,6 @@ from xic_extractor.configuration.mass_recalibration import MassRecalibration
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     mint_untargeted_cid_nl_method_subject,
     mint_untargeted_cid_nl_method_subject_batch,
-)
-from xic_extractor.processing_identity import (
-    IdentityContractError,
 )
 from xic_extractor.raw_reader_errors import RawReaderError
 from xic_extractor.sample_metadata import SampleMetadata
@@ -55,9 +55,6 @@ from xic_extractor.untargeted_execution.partition import workers as partition_wo
 from xic_extractor.untargeted_execution.partition.models import (
     UntargetedPartitionJob,
     build_sample_jobs,
-)
-from xic_extractor.untargeted_execution.partition.request import (
-    build_partition_context,
 )
 from xic_extractor.xic_models import XICRequest
 
@@ -648,7 +645,7 @@ def test_runtime_delivers_one_real_subject_cohort_with_cache_replay(
         precursor_tolerance_ppm=settings.precursor_mz_tolerance_ppm,
         neutral_loss_da=116.0474,
     )
-    context = build_partition_context(
+    context = partition_context(
         raw_paths=raw_paths,
         sample_metadata=(
             SampleMetadata(
@@ -840,7 +837,7 @@ def test_runtime_recovers_from_single_scan_cid_nl_support_owners(
         precursor_tolerance_ppm=settings.precursor_mz_tolerance_ppm,
         neutral_loss_da=116.0474,
     )
-    context = build_partition_context(
+    context = partition_context(
         raw_paths=raw_paths,
         sample_metadata=(
             SampleMetadata(
@@ -1036,7 +1033,7 @@ def test_batch_candidate_selection_preserves_order_and_request_sample_membership
         subject_batch = mint_untargeted_cid_nl_method_subject_batch(
             subjects=subjects, candidate_memberships=memberships
         )
-        context = build_partition_context(
+        context = partition_context(
             raw_paths=raw_paths,
             sample_metadata=tuple(
                 SampleMetadata(
@@ -1105,56 +1102,6 @@ def test_batch_candidate_selection_preserves_order_and_request_sample_membership
         )
 
 
-def test_context_rejects_same_stem_receipt_from_different_acquisition(
-    tmp_path: Path,
-) -> None:
-    source_dir = tmp_path / "source"
-    replay_dir = tmp_path / "replay"
-    source_dir.mkdir()
-    replay_dir.mkdir()
-    source_path = source_dir / "S1.synthetic"
-    replay_path = replay_dir / "S1.synthetic"
-    source_path.write_bytes(b"discovery-acquisition")
-    replay_path.write_bytes(b"different-replay-acquisition")
-    settings = _settings()
-    candidates = _current_candidates(
-        _FakeRaw((8.0,)),
-        raw_file=source_path,
-        settings=settings,
-    )
-    receipt = build_discovery_receipts(
-        tmp_path,
-        (source_path,),
-        {"S1": candidates},
-    )["S1"]
-    subject = mint_untargeted_cid_nl_method_subject(
-        precursor_mz=500.0,
-        precursor_tolerance_ppm=settings.precursor_mz_tolerance_ppm,
-        neutral_loss_da=116.0474,
-    )
-
-    with pytest.raises(
-        IdentityContractError,
-        match="current acquisition source does not match the Discovery receipt",
-    ):
-        build_partition_context(
-            raw_paths=(replay_path,),
-            sample_metadata=(
-                SampleMetadata(
-                    sample_name="S1",
-                    raw_stem="S1",
-                    injection_order=1,
-                    sample_role="sample",
-                ),
-            ),
-            method_subject=subject,
-            settings=settings,
-            peaks_by_sample={"S1": candidates},
-            discovery_receipts_by_sample={"S1": receipt},
-            signal_processing_profile=TEST_PROFILE,
-        )
-
-
 @pytest.mark.parametrize("excluded", [False, True])
 def test_runtime_does_not_open_recovery_resource_when_owner_condition_is_false(
     tmp_path: Path,
@@ -1190,7 +1137,7 @@ def test_runtime_does_not_open_recovery_resource_when_owner_condition_is_false(
         precursor_tolerance_ppm=settings.precursor_mz_tolerance_ppm,
         neutral_loss_da=116.0474,
     )
-    context = build_partition_context(
+    context = partition_context(
         raw_paths=raw_paths,
         sample_metadata=tuple(
             SampleMetadata(

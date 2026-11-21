@@ -457,16 +457,7 @@ def test_indexed_mass_partition_keeps_closed_worksets_and_budgets_neighbors(
         for subject in subjects
     }
     prepared = PreparedUntargetedAlignmentWorksets(
-        plan=packing_plan,
         worksets=worksets,
-        subjects_by_id={subject.method_subject_id: subject for subject in subjects},
-        workset_ids_by_subject={
-            subject.method_subject_id: frozenset(
-                member.method_subject_id for member in workset
-            )
-            for workset in worksets
-            for subject in workset
-        },
         memberships_by_subject=memberships_by_subject,
     )
     monkeypatch.setattr(
@@ -563,69 +554,6 @@ def test_indexed_finalization_orders_children_by_canonical_subject(
     assert tuple(finalized.child_outputs) == canonical_ids
 
 
-def test_prepared_workset_index_stores_one_id_set_per_workset(
-    tmp_path,
-    monkeypatch,
-) -> None:
-    """Members of a workset share its id set instead of each rebuilding it.
-
-    Content equality alone does not catch the difference: an index built per
-    subject holds the same k ids k times, so a cohort of wide worksets pays
-    O(k**2) for an index whose content is O(k).
-    """
-
-    from dataclasses import replace
-
-    from xic_extractor.peak_detection.cid_nl_method_subject import (
-        mint_untargeted_cid_nl_method_subject,
-        mint_untargeted_cid_nl_method_subject_batch,
-    )
-    from xic_extractor.untargeted_execution import execution as bounded_owner
-
-    plan, _reference = _plan(tmp_path, monkeypatch)
-    subjects = tuple(
-        sorted(
-            (
-                mint_untargeted_cid_nl_method_subject(
-                    precursor_mz=precursor_mz,
-                    precursor_tolerance_ppm=20.0,
-                    neutral_loss_da=neutral_loss_da,
-                )
-                for precursor_mz, neutral_loss_da in (
-                    (300.0, 116.0474),
-                    (300.005, 116.0474),
-                    (300.003, 114.0),
-                    (300.004, 114.0),
-                )
-            ),
-            key=lambda subject: subject.method_subject_id,
-        )
-    )
-    packing_plan = replace(
-        plan,
-        subject_batch=mint_untargeted_cid_nl_method_subject_batch(
-            subjects=subjects,
-            candidate_memberships=tuple(
-                (f"candidate-{index}", subject.method_subject_id)
-                for index, subject in enumerate(subjects)
-            ),
-        ),
-        runtime_subjects=subjects,
-    )
-    prepared = bounded_owner.prepare_untargeted_alignment_worksets(packing_plan)
-
-    index = prepared.workset_ids_by_subject
-    assert any(len(workset) > 1 for workset in prepared.worksets)
-    assert set(index) == {subject.method_subject_id for subject in subjects}
-    for workset in prepared.worksets:
-        expected = frozenset(subject.method_subject_id for subject in workset)
-        for subject in workset:
-            assert index[subject.method_subject_id] == expected
-    assert len({id(member_ids) for member_ids in index.values()}) == len(
-        prepared.worksets
-    )
-
-
 def test_bounded_partition_real_entry_mints_interleaved_worksets_canonically(
     tmp_path,
     monkeypatch,
@@ -679,60 +607,6 @@ def test_bounded_partition_real_entry_mints_interleaved_worksets_canonically(
         partition_input_loader=lambda _ids: plan.partition_input_loader(planned_ids),
     )
     prepare_worksets = bounded_owner.prepare_untargeted_alignment_worksets
-    prepared = prepare_worksets(packing_plan)
-    assert (
-        materialize_untargeted_partition(
-            packing_plan,
-            packing_plan.subject_batch,
-            prepared_worksets=prepared,
-        ).jobs
-        == materialize_untargeted_partition(
-            packing_plan, packing_plan.subject_batch
-        ).jobs
-    )
-    split = worksets[0][:1]
-    split_ids = {subject.method_subject_id for subject in split}
-    split_batch = mint_untargeted_cid_nl_method_subject_batch(
-        subjects=split,
-        candidate_memberships=tuple(
-            membership for membership in memberships if membership[1] in split_ids
-        ),
-    )
-    with pytest.raises(ValueError, match="cannot split one alignment subject workset"):
-        materialize_untargeted_partition(
-            packing_plan,
-            split_batch,
-            prepared_worksets=prepared,
-        )
-    foreign = mint_untargeted_cid_nl_method_subject(
-        precursor_mz=900.0,
-        precursor_tolerance_ppm=20.0,
-        neutral_loss_da=116.0474,
-    )
-    foreign_batch = mint_untargeted_cid_nl_method_subject_batch(
-        subjects=(foreign,),
-        candidate_memberships=(("foreign-candidate", foreign.method_subject_id),),
-    )
-    with pytest.raises(ValueError, match="foreign alignment subject"):
-        materialize_untargeted_partition(
-            packing_plan,
-            foreign_batch,
-            prepared_worksets=prepared,
-        )
-    crossed_memberships = tuple(
-        (candidate_id, subjects[(index + 1) % len(subjects)].method_subject_id)
-        for index, (candidate_id, _subject_id) in enumerate(memberships)
-    )
-    crossed_batch = mint_untargeted_cid_nl_method_subject_batch(
-        subjects=subjects,
-        candidate_memberships=crossed_memberships,
-    )
-    with pytest.raises(ValueError, match="crossed prepared candidate memberships"):
-        materialize_untargeted_partition(
-            packing_plan,
-            crossed_batch,
-            prepared_worksets=prepared,
-        )
     captured_batches = []
     prepare_calls = []
     original_materialize_partition = bounded_owner.materialize_untargeted_partition
@@ -748,19 +622,16 @@ def test_bounded_partition_real_entry_mints_interleaved_worksets_canonically(
         _plan,
         subject_batch,
         *,
-        prepared_worksets,
         acquisition_cache_dir=None,
         sparse=False,
         rt_reference_only=False,
         mass_recalibration_by_sample=None,
     ):
-        assert prepared_worksets.plan is _plan
         assert sparse is True
         captured_batches.append(subject_batch)
         return original_materialize_partition(
             _plan,
             subject_batch,
-            prepared_worksets=prepared_worksets,
             acquisition_cache_dir=acquisition_cache_dir,
             sparse=sparse,
             rt_reference_only=rt_reference_only,

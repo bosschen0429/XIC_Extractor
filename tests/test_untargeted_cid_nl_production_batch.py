@@ -75,7 +75,6 @@ from xic_extractor.untargeted_execution.execution_result import (
     CompletedUntargetBatchWorkflowResult,
 )
 from xic_extractor.untargeted_execution.partition.models import (
-    UntargetedPartitionError,
     build_sample_jobs,
 )
 
@@ -265,15 +264,6 @@ def test_sample_job_builder_binds_shared_inputs_to_each_subject(
     work_units = tuple((job.method_subject, job.work_unit_key) for job in batch.jobs)
     assert len(work_units) == 2
     assert build_sample_jobs(**shared, subject_work_units=work_units) == batch.jobs
-    for subject, key, message in (
-        (None, "changed-subject", "wrong owner type"),
-        (work_units[1][0], "", "work_unit_key"),
-    ):
-        with pytest.raises(UntargetedPartitionError, match=message):
-            build_sample_jobs(
-                **(shared | {"subject_partition": None}),
-                subject_work_units=(work_units[0], (subject, key)),
-            )
 
 
 def test_alignment_adapter_prepares_and_executes_bounded_once(

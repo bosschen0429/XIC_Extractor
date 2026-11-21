@@ -33,6 +33,7 @@ from tests.untargeted_partition_fixtures import (
     children_of,
     complete_dense_partition,
     execute_partition_inline,
+    partition_context,
     project_composed_child,
 )
 from xic_extractor.alignment.cid_nl_inputs import CID_NL_ALIGNMENT_CONFIG
@@ -75,9 +76,6 @@ from xic_extractor.untargeted_execution.partition.models import (
     BACKFILL_HALF_WINDOW_MIN,
     UntargetedPartitionJob,
     project_completed_backfill,
-)
-from xic_extractor.untargeted_execution.partition.request import (
-    build_partition_context,
 )
 
 
@@ -573,7 +571,7 @@ def test_runtime_recovers_every_authorized_rt_group(
             precursor_tolerance_ppm=settings.precursor_mz_tolerance_ppm,
             neutral_loss_da=116.0474,
         )
-        context = build_partition_context(
+        context = partition_context(
             **kwargs,
             discovery_receipts_by_sample=build_discovery_receipts(
                 tmp_path, paths, candidates
@@ -639,7 +637,7 @@ def test_runtime_recovers_every_authorized_rt_group(
             batch, result, alignment_config=AlignmentConfig(anchor_min_seed_events=1)
         )
         assert len(completed.initial_groups) == 2
-        projection_context = partition_models._SampleResultContext(jobs)
+        projection_context = partition_models._SampleResultContext()
 
         (child,) = children_of(completed.application_result)
         scientific = child.scientific_core
@@ -887,11 +885,6 @@ def test_runtime_recovers_every_authorized_rt_group(
                     )
                     == completion
                 )
-                with pytest.raises(ValueError, match="exact runtime batch job"):
-                    projection_context.project_completed_backfill(
-                        replace(missing, job=replace(missing.job)),
-                        group_context=recovery_context,
-                    )
                 assert completion.backfill_assessment is recovery.assessment
             else:
                 if recovery_is_support:

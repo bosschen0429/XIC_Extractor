@@ -419,15 +419,7 @@ def _build_production_composition_inputs(
     alignment_config: AlignmentConfig,
     known_istd_reference: KnownIstdReference | None,
 ) -> _ProductionCompositionInputs:
-    if type(sample_results) is not tuple or any(
-        type(result) is not UntargetedSampleResult for result in sample_results
-    ):
-        raise TypeError("sample_results must be an immutable typed runtime population")
-    if not isinstance(alignment_config, AlignmentConfig):
-        raise TypeError("alignment_config must be an AlignmentConfig")
-    result_context = _SampleResultContext(
-        tuple(result.job for result in sample_results)
-    )
+    result_context = _SampleResultContext()
     result_by_key = {
         (
             result.job.sample.raw_stem,
@@ -613,13 +605,4 @@ def _runtime_observations_by_candidate(
             if candidate_id in observations:
                 raise RuntimeError("runtime acquisition duplicated a peak")
             observations[candidate_id] = observation
-    partition_ids = {key for key, _ in batch.subject_batch.candidate_memberships}
-    expected = {
-        peak.peak_id
-        for peaks in batch.context.peaks_by_sample.values()
-        for peak in peaks
-        if peak.peak_id in partition_ids
-    }
-    if not set(observations) <= expected:
-        raise RuntimeError("runtime acquisition crossed partition peaks")
     return observations
