@@ -38,6 +38,7 @@ _RT_POPULATION_MIN_MEMBERS = 4
 _RT_POPULATION_MIN_GAP_SEC = 20.0
 _RT_POPULATION_RANGE_RATIO = 2.0
 _COEFFICIENT_COST_SEC = 10.0
+_NEIGHBOR_JUMP_SEC = 120.0
 
 
 class _PairTerms(NamedTuple):
@@ -353,6 +354,16 @@ class MembershipComparison:
         self._batch_lookup = (
             self.drift.batch_state_lookup() if self.drift is not None else None
         )
+        shift = self.drift.sample_shift_min if self.drift is not None else {}
+        self._sequence = {
+            o.owner_id: (
+                self.orders[o.sample_stem],
+                self._measured_rank[o.owner_id],
+                shift.get(o.sample_stem, 0.0),
+            )
+            for o in owners
+            if o.sample_stem in self.orders
+        }
         self._pair_terms: dict[tuple[str, str], _PairTerms | None] = {}
         self._pair_positions = {p: i for i, p in enumerate(sorted(self.owners))}
         size = len(self.owners)
@@ -608,22 +619,65 @@ class MembershipComparison:
         if key not in self._models:
             inputs = _GroupInputs(self, key)
             zero = self._evaluate(key, DriftCoefficients(), inputs=inputs)
-            models = [zero]
+            jumps = math.isfinite(zero.evidence) and self._breaks_sequence(key, 0.0)
+            models = [
+                _GroupModel(zero.coefficients, math.inf, False) if jumps else zero
+            ]
             candidates = (
                 self._candidate_coefficients(key)
                 if math.isfinite(zero.evidence)
                 else ()
             )
             if candidates:
-                bound = math.inf if zero.population_gap else zero.evidence
-                models.extend(
-                    self._evaluate(key, coefficients, bound=bound, inputs=inputs)
-                    for coefficients in candidates
-                )
+                bound = math.inf if zero.population_gap or jumps else zero.evidence
+                for coefficients in candidates:
+                    model = self._evaluate(
+                        key, coefficients, bound=bound, inputs=inputs
+                    )
+                    if math.isfinite(model.evidence) and self._breaks_sequence(
+                        key, coefficients.sample_shift
+                    ):
+                        model = _GroupModel(coefficients, math.inf, False)
+                    models.append(model)
             self._models[key] = tuple(models)
             self.group_costs[key] = models[0].evidence
             self.population_gaps[key] = models[0].population_gap
         return self._models[key]
+
+    def _breaks_sequence(
+        self,
+        key: tuple[str, ...],
+        sample_shift: float,
+        fixed: frozenset[str] = frozenset(),
+    ) -> bool:
+        """Whether injection-order neighbours jump beyond ``_NEIGHBOR_JUMP_SEC``
+        after removing ``sample_shift`` times each sample's shift M.
+
+        A jump between two ``fixed`` members is not checked: Backfill cannot
+        move original members, so only jumps touching a new owner count.
+
+        The batch-state term a*B is never removed: a group's own trajectory
+        can define B and would then excuse its own jump. A sample whose shift
+        is unknown keeps its general coordinate; a sample without an injection
+        order has no neighbours. A zero model broken only by a jump does not
+        bound the drift candidates, since one of them may remove the jump.
+        """
+        sequence = self._sequence
+        placed = sorted(
+            (p for p in key if p in sequence), key=lambda p: sequence[p][:2]
+        )
+        limit = _NEIGHBOR_JUMP_SEC / 60.0
+        previous: tuple[str, float] | None = None
+        for p in placed:
+            value = self.rts[p] - sample_shift * sequence[p][2]
+            if (
+                previous is not None
+                and abs(value - previous[1]) > limit
+                and not (p in fixed and previous[0] in fixed)
+            ):
+                return True
+            previous = (p, value)
+        return False
 
     def _candidate_coefficients(
         self, key: tuple[str, ...]
@@ -841,7 +895,8 @@ class MembershipComparison:
 
         Original members cannot move in Backfill. Their pre-existing hard
         conflict is not a new candidate's failure, nor an infinite baseline to
-        subtract. Every pair involving a new owner still has to be feasible.
+        subtract. Every pair involving a new owner still has to be feasible,
+        and so does every injection-order neighbour jump involving one.
         The complete extension still obeys the RT-population constraint, and
         keeps the original group's drift coefficients rather than refitting.
         """
@@ -852,6 +907,10 @@ class MembershipComparison:
 
     def _fixed_group_cost(self, key: tuple[str, ...], basis: tuple[str, ...]) -> float:
         model = self.fixed_group_model(key, basis)
+        if key != basis and self._breaks_sequence(
+            key, model.coefficients.sample_shift, frozenset(basis)
+        ):
+            return math.inf
         if math.isfinite(model.evidence) and (key == basis or not model.population_gap):
             return model.evidence
         coefficients = model.coefficients
