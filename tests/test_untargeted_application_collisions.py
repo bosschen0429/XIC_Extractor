@@ -13,6 +13,10 @@ from xic_extractor.applications.untargeted.publication import (
 from xic_extractor.applications.untargeted.request import (
     UntargetedRequest,
 )
+from xic_extractor.configuration.execution_profile import (
+    UntargetedExecutionPolicy,
+    in_process_execution,
+)
 
 
 @pytest.mark.parametrize("suffix", ("", ".tmp", ".bak"))
@@ -36,6 +40,7 @@ def test_pipeline_rejects_stale_explanation_before_raw(
     with pytest.raises(FileExistsError, match="alignment_explanation"):
         application_module.run_untargeted_application(
             UntargetedRequest(
+                execution=UntargetedExecutionPolicy(profile=in_process_execution()),
                 discovery_batch_index=batch_index,
                 raw_dir=tmp_path / "raw",
                 dll_dir=tmp_path / "dll",
@@ -76,6 +81,7 @@ def test_pipeline_rejects_stale_output_pair_before_writer_or_raw(
     with pytest.raises(FileExistsError, match="owned artifact collisions"):
         application_module.run_untargeted_application(
             UntargetedRequest(
+                execution=UntargetedExecutionPolicy(profile=in_process_execution()),
                 discovery_batch_index=batch_index,
                 raw_dir=raw_dir,
                 dll_dir=tmp_path / "dll",
@@ -120,6 +126,7 @@ def test_pipeline_rejects_stale_output_pair_before_replace_or_raw(
     with pytest.raises(FileExistsError, match="owned artifact collisions"):
         application_module.run_untargeted_application(
             UntargetedRequest(
+                execution=UntargetedExecutionPolicy(profile=in_process_execution()),
                 discovery_batch_index=batch_index,
                 raw_dir=raw_dir,
                 dll_dir=tmp_path / "dll",
@@ -162,6 +169,7 @@ def test_run_alignment_rejects_stale_owner_edge_outputs_before_raw(
     with pytest.raises(FileExistsError, match="owned artifact collisions"):
         application_module.run_untargeted_application(
             UntargetedRequest(
+                execution=UntargetedExecutionPolicy(profile=in_process_execution()),
                 discovery_batch_index=batch_index,
                 raw_dir=raw_dir,
                 dll_dir=tmp_path / "dll",
@@ -215,6 +223,7 @@ def test_run_alignment_rejects_stale_product_artifacts_before_raw(
     with pytest.raises(FileExistsError, match="owned artifact collisions"):
         application_module.run_untargeted_application(
             UntargetedRequest(
+                execution=UntargetedExecutionPolicy(profile=in_process_execution()),
                 discovery_batch_index=batch_index,
                 raw_dir=raw_dir,
                 dll_dir=tmp_path / "dll",

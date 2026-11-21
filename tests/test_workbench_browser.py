@@ -845,7 +845,7 @@ def test_targeted_exposes_intent_only_and_editor_round_trips(
             "combobox", name="CID-NL 中性丟失（Da）（第 1 列）", exact=True
         )
     ).to_have_value(loss)
-    assert read_settings(config_dir=config_dir)["parallel_workers"] == ""
+    assert "parallel_workers" not in read_settings(config_dir=config_dir)
     expect(page.locator("#t-parallel_workers")).to_have_count(0)
 
 

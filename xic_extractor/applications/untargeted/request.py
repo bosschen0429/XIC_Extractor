@@ -84,14 +84,12 @@ class UntargetedRequest:
     alignment_config: AlignmentConfig
     peak_config: ExtractionConfig
     discovery_settings: DiscoverySettings
+    execution: UntargetedExecutionPolicy
     signal_processing_profile: SignalProcessingProfile | None = None
     sample_metadata: tuple[SampleMetadata, ...] | None = None
     known_istd_reference_workbook: Path | None = None
     targets_csv: Path | None = None
     known_istd_reference: KnownIstdReference | None = None
-    execution: UntargetedExecutionPolicy = field(
-        default_factory=UntargetedExecutionPolicy
-    )
     publication: UntargetedPublicationPolicy = field(
         default_factory=UntargetedPublicationPolicy
     )

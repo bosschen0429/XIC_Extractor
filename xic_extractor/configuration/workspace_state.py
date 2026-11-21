@@ -95,8 +95,6 @@ def save_workspace(
         if delta_mass:
             state["delta_mass"] = delta_mass
     for key, value in (settings or {}).items():
-        if key == "parallel_workers":
-            continue
         if key not in _SECTION:
             raise ConfigError(f"不支援工作設定：{key}")
         state[_SECTION[key]][key] = value

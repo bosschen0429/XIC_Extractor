@@ -619,17 +619,20 @@ def test_inspector_job_rejects_source_not_bound_to_published_untargeted_result(
         jobs.close()
 
 
-def test_http_targeted_bootstrap_accepts_saved_worker_reset(tmp_path):
+def test_http_targeted_bootstrap_opens_old_workspace_with_worker_count(tmp_path):
     config_dir = tmp_path / "config"
     config_dir.mkdir()
-    from xic_extractor.configuration.workspace_state import save_workspace
-
-    save_workspace(config_dir, settings={"parallel_workers": "0"})
+    (config_dir / "workspace.json").write_text(
+        json.dumps(
+            {"application": {"parallel_workers": "0"}, "batch": {}, "targets": []}
+        ),
+        encoding="utf-8",
+    )
     workspace = create_workspace(config_dir=config_dir)
     with workbench_client(workspace) as request:
         status, config, _ = request("/api/config")
         assert status == 200
-        assert config["settings"]["parallel_workers"] == ""
+        assert "parallel_workers" not in config["settings"]
         assert not any("parallel_workers" in w for w in config["targeted_warnings"])
 
 
@@ -638,9 +641,12 @@ def test_targeted_bootstrap_combines_saved_settings_and_launch_values(
 ):
     config_dir = tmp_path / "config"
     config_dir.mkdir()
-    from xic_extractor.configuration.workspace_state import save_workspace
-
-    save_workspace(config_dir, settings={"parallel_workers": "0"})
+    (config_dir / "workspace.json").write_text(
+        json.dumps(
+            {"application": {"parallel_workers": "0"}, "batch": {}, "targets": []}
+        ),
+        encoding="utf-8",
+    )
     workspace = AnalysisWorkspace(
         config_dir,
         {"raw_dir": "C:/launch-batch", "dll_dir": "C:/preferred-dll"},
@@ -651,7 +657,7 @@ def test_targeted_bootstrap_combines_saved_settings_and_launch_values(
         config = workspace.bootstrap()
         assert config["settings"]["data_dir"] == "C:/launch-batch"
         assert config["settings"]["dll_dir"] == "C:/preferred-dll"
-        assert config["settings"]["parallel_workers"] == ""
+        assert "parallel_workers" not in config["settings"]
         assert config["untargeted"]["dll_dir"] == "C:/preferred-dll"
         assert config["targeted_warnings"]
     finally:

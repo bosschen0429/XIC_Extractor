@@ -35,7 +35,6 @@ def test_settings_round_trip_rejects_hidden_science_without_migrating(tmp_path):
         "data_dir": "C:/RAW",
         "dll_dir": "C:/Thermo",
         "injection_order_source": "",
-        "parallel_workers": "",
     }
     write_settings(settings, config_dir=tmp_path)
     with pytest.raises(ConfigError, match="dirty_matrix_mode"):

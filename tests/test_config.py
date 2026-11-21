@@ -1,4 +1,5 @@
 import csv
+import json
 
 import pytest
 
@@ -80,6 +81,7 @@ def test_missing_input_is_actionable(tmp_path, name):
     "key",
     [
         "parallel_mode",
+        "parallel_workers",
         "dirty_matrix_mode",
         "rolling_window_size",
         "nl_rt_anchor_search_margin_min",
@@ -105,20 +107,16 @@ def test_defaults_are_only_batch_and_machine():
         "data_dir",
         "dll_dir",
         "injection_order_source",
-        "parallel_workers",
     }
     assert warnings == []
 
 
-@pytest.mark.parametrize("workers", ["", "2", "5"])
-def test_targeted_and_discovery_use_system_budget_not_saved_worker_value(
-    tmp_path, workers, monkeypatch
-):
+@pytest.mark.parametrize("workers", ["", "2", "0"])
+def test_targeted_uses_system_budget_not_old_workspace_worker_value(tmp_path, workers):
     from xic_extractor.configuration.execution_profile import load_execution_profile
     from xic_extractor.configuration.loader import prepare_targeted_config
     from xic_extractor.configuration.workspace_state import save_workspace
     from xic_workbench.config_io import read_settings as read_work_settings
-    from xic_workbench.config_io import write_settings
 
     config_dir = tmp_path / "config"
     save_workspace(
@@ -126,26 +124,16 @@ def test_targeted_and_discovery_use_system_budget_not_saved_worker_value(
         settings={"data_dir": str(tmp_path), "dll_dir": str(tmp_path)},
         targets=[_target_row()],
     )
-    write_settings({"parallel_workers": workers}, config_dir=config_dir)
-    assert read_work_settings(config_dir=config_dir)["parallel_workers"] == ""
+    path = config_dir / "workspace.json"
+    state = json.loads(path.read_text(encoding="utf-8"))
+    state["application"]["parallel_workers"] = workers
+    path.write_text(json.dumps(state), encoding="utf-8")
+    assert "parallel_workers" not in read_work_settings(config_dir=config_dir)
     prepared = prepare_targeted_config(config_dir)
     try:
-        assert (
-            prepared.config.execution.parallel_workers
-            == load_execution_profile().parallel_workers
-        )
-        if workers:
-            assert load_execution_profile(
-                parallel_workers=int(workers)
-            ).parallel_workers == int(workers)
+        assert prepared.config.execution == load_execution_profile()
     finally:
         prepared.cleanup()
-
-
-@pytest.mark.parametrize("workers", ["0", "-1", "1.5", "bad"])
-def test_targeted_rejects_invalid_worker_budget(workers):
-    with pytest.raises(ConfigError, match="parallel_workers.*integer >= 1"):
-        resolve_settings({"parallel_workers": workers})
 
 
 @pytest.mark.parametrize("loss", ["116.0474", "132.0423", "146.0579", "162.0528"])

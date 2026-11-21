@@ -7,7 +7,6 @@ from that value and opened by ``xic_extractor.execution``.
 from __future__ import annotations
 
 import os
-from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -49,20 +48,18 @@ def in_process_execution() -> ExecutionProfile:
     return ExecutionProfile(backend="thread", overlap_partitions=False)
 
 
-def resolve_execution_profile(
-    settings: Mapping[str, str] | None = None,
+def load_execution_profile(
     *,
     parallel_workers: int | None = None,
     alignment_workers: int | None = None,
     backend: str = DEFAULT_WORKER_BACKEND,
 ) -> ExecutionProfile:
-    configured_parallel = default_parallel_workers()
-    configured_value = settings.get("parallel_workers", "") if settings else ""
-    if parallel_workers is None and configured_value.strip():
-        configured_parallel = _parse_workers(configured_value, field="parallel_workers")
+    """Worker counts come from the machine; only an explicit argument overrides."""
+    if backend not in WORKER_BACKENDS:
+        raise ValueError(f"backend must be one of {', '.join(WORKER_BACKENDS)}")
     return ExecutionProfile(
         parallel_workers=(
-            configured_parallel if parallel_workers is None else parallel_workers
+            default_parallel_workers() if parallel_workers is None else parallel_workers
         ),
         alignment_workers=(
             DEFAULT_ALIGNMENT_WORKERS
@@ -71,27 +68,6 @@ def resolve_execution_profile(
         ),
         backend=backend,
     )
-
-
-def load_execution_profile(
-    *,
-    parallel_workers: int | None = None,
-    alignment_workers: int | None = None,
-    backend: str = DEFAULT_WORKER_BACKEND,
-) -> ExecutionProfile:
-    """Worker counts come from the machine; only an explicit argument overrides."""
-    return resolve_execution_profile(
-        parallel_workers=parallel_workers,
-        alignment_workers=alignment_workers,
-        backend=backend,
-    )
-
-
-def _parse_workers(value: str, *, field: str) -> int:
-    try:
-        return int(value)
-    except (TypeError, ValueError) as exc:
-        raise ValueError(f"{field} must be an integer >= 1") from exc
 
 
 def _validate_workers(value: int, *, field: str) -> int:
@@ -104,7 +80,7 @@ def _validate_workers(value: int, *, field: str) -> int:
 class UntargetedExecutionPolicy:
     """Resources for retained Alignment, independent of scientific settings."""
 
-    profile: ExecutionProfile = field(default_factory=ExecutionProfile)
+    profile: ExecutionProfile
     retain_acquisition_cache: bool = False
     acquisition_cache_dir: Path | None = None
     max_partition_jobs: int = 100_000

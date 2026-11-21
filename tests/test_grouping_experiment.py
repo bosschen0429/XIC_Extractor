@@ -23,7 +23,11 @@ from xic_extractor.alignment.grouping_experiment import (
 )
 from xic_extractor.alignment.peak_trajectories import ordered_pattern_contexts
 from xic_extractor.alignment.sample_rt_calibration import BatchRtCalibrationAccumulator
-from xic_extractor.configuration.execution_profile import ExecutionProfile
+from xic_extractor.configuration.execution_profile import (
+    ExecutionProfile,
+    UntargetedExecutionPolicy,
+    in_process_execution,
+)
 from xic_extractor.diagnostics.grouping_experiment_io import (
     group_signature,
     read_grouping_inputs,
@@ -270,7 +274,6 @@ def test_application_outputs_formal_groups_with_an_optional_snapshot(
     import xic_extractor.untargeted_execution.partition.workers as workers
     from tests.alignment_pipeline_helpers import write_batch
     from xic_extractor.applications.untargeted.request import UntargetedRequest
-    from xic_extractor.configuration.execution_profile import UntargetedExecutionPolicy
     from xic_extractor.execution.partitions import PartitionPipelineScheduler
 
     scheduled = []
@@ -1153,6 +1156,7 @@ def test_grouping_anchor_table_lists_istd_knots_without_any_workset(
 
     output = application.run_untargeted_grouping(
         UntargetedRequest(
+            execution=UntargetedExecutionPolicy(profile=in_process_execution()),
             discovery_batch_index=write_batch(tmp_path, ("S0", "S1")),
             raw_dir=tmp_path,
             dll_dir=tmp_path,
