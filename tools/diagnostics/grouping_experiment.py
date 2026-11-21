@@ -1,7 +1,25 @@
-"""Query Discovery and replay grouping snapshots without RAW.
+"""Query Discovery, compare saved tables, or replay grouping snapshots without RAW.
 
-Save replay inputs with `scripts.run_alignment --stop-after grouping
---save-grouping-inputs`.
+``compare`` diffs two saved ``members.tsv`` tables from the same observations.
+``query`` reports measured candidates and every sample, including zero-match
+samples, in repeatable ``--mz-range`` windows of a saved Discovery batch; it is
+a lookup, not a fresh extraction. ``replay`` (also
+``scripts.run_alignment regroup``) regroups a snapshot saved with
+``scripts.run_alignment --stop-after grouping --save-grouping-inputs`` through
+the formal grouping owner.
+
+Replay refits each batch's RT calibration and drift model from the retained
+anchors and reports ``rt_model`` and ``rt_model_changed`` in ``summary.json``;
+a snapshot without anchors reuses its frozen models. Which peaks become anchors
+is fixed at capture. ``--set FIELD=JSON`` changes an ``AlignmentConfig`` value;
+owner detection and integration changes need a new snapshot. ``--compare-to``
+writes ``membership-diff.tsv`` against another replay or capture.
+
+Outputs are ``groups.tsv`` and ``members.tsv`` (``comparison_rt_basis`` names
+the RT frame), ``decisions.tsv``, ``changes.tsv`` against the baseline,
+``samples.tsv`` including zero-observation samples, and ``summary.json``. They
+are initial-grouping results; final Backfill and Matrix output stay with the
+full workflow.
 """
 
 from __future__ import annotations

@@ -1,3 +1,10 @@
+"""Compare acquired Targeted peak RT and area with supplied manual measurements.
+
+An identity check against an external manual reference: PASS requires every
+manual peak and ISTD to be found. Area and RT deviations are listed for review,
+not judged. It does not replace finalized Targeted workbook validation.
+"""
+
 from __future__ import annotations
 
 import argparse

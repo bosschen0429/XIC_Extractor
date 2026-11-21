@@ -1,3 +1,11 @@
+"""Run Targeted real-data validation suites and workbook comparisons.
+
+Preview a suite with ``--dry-run``; full-cohort execution requires
+``--confirm-full-run``. Tissue suites run the finalized Targeted application
+through publication. Manual-2RAW delegates to ``targeted_manual_validation``,
+whose RT and area comparison is not full application acceptance.
+"""
+
 from __future__ import annotations
 
 import argparse

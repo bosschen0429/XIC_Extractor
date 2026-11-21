@@ -1,3 +1,5 @@
+"""Calibrate SDO/LEK instrument QC trends with method-document order."""
+
 from __future__ import annotations
 
 import argparse

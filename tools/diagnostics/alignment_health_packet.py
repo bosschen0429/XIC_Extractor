@@ -1,4 +1,10 @@
-"""Build a no-RAW alignment health packet from existing alignment artifacts."""
+"""Build a no-RAW alignment health packet from existing alignment artifacts.
+
+Summarizes owner ambiguity, Backfill dependency, not-searched pressure and
+primary-consolidation sentinel families from ``alignment_review.tsv``,
+``alignment_matrix.tsv`` and optional cell evidence. It does not read RAW,
+recompute evidence or change any published value.
+"""
 
 from __future__ import annotations
 

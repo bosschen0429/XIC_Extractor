@@ -1,4 +1,14 @@
-"""Produce read-only RAW injection chronology for diagnostics and offline readers."""
+"""Produce read-only RAW injection chronology for diagnostics and offline readers.
+
+Reads every RAW header under the batch root, including blanks and subfolders,
+without acquiring spectra or hashing content. Creation date plus the original
+vendor acquisition path identifies copies; conflicting duplicate headers, or
+headers missing acquisition identity, date or run times, fail. Optional
+``--sld`` sequence files match injections by exact original filename. Writes
+timeline JSON and TSV with chronology, copy provenance, previous injection,
+idle time and the persisted pre-flag policy. It has no selection, RT, value or
+analysis-set authority.
+"""
 
 from __future__ import annotations
 

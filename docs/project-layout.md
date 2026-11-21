@@ -81,7 +81,7 @@ Repo root 留給專案級設定、必要入口與主要目錄。Git、套件與�
 2. Public CLI → `scripts/run_<purpose>.py`，並在 `pyproject.toml` 註冊 entry point。
 3. 可重用的 domain 邏輯 → `xic_extractor/<owner>/`；owner 查 architecture contract。
 4. 證據來源 adapter、selection、共用檢閱 renderer、離線匯出 → `xic_inspector/`。
-5. 維護中的診斷 → `tools/diagnostics/<purpose>.py`，並更新 `tools/diagnostics/INDEX.md`。
+5. 維護中的診斷 → `tools/diagnostics/<purpose>.py`，用途寫在 module docstring。
 6. 測試 → `tests/test_<module>_<behavior>.py`；共用 fixture → `tests/fixtures/`。
 7. 格式契約跟著 consumer：內部資料留在 owner 的 typed model；執行時需要的
    schema/data 隨讀它的 package 安裝。不因資料是 JSON 就另建 schema。

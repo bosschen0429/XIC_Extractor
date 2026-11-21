@@ -1,4 +1,21 @@
-"""Build per-sample RT calibration from batch-wide detected alignment features."""
+"""Build per-sample RT calibration from batch-wide detected alignment features.
+
+Anchors are ``alignment_cells.tsv`` features detected in at least three
+samples; the input is one cohort and RAW is not read. The fit is the formal
+``alignment.sample_rt_calibration`` owner. Held-out validation reserves every
+fifth feature in median-RT order, fits the rest, and compares raw and
+calibrated dispersion on the same held-out rows.
+
+With an injection timeline, a sample's front shift (the median shift at the
+batch's earliest knots) is an outlier when it differs from the batch median by
+more than max(k x batch MAD, a minimum shift). An outlier is ``confirmed`` when
+the timeline pre-flags the sample, it follows a short method, or it is the
+first full-length run after a method change; otherwise it is
+``unexplained_outlier``, or ``outlier_without_timeline`` without a timeline
+row. A pre-flagged sample within tolerance is ``flagged_unconfirmed``; a
+missing front knot is ``unmeasured``. No consumer reads the status, and it does
+not change grouping, peak selection or values.
+"""
 
 from __future__ import annotations
 

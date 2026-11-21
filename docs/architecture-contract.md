@@ -388,8 +388,6 @@ loading, models, summaries, plotting and writers live in
 or writers. Diagnostic writers render; they never recompute evidence or rescan
 RAW. Gate diagnostics emit a machine-readable status and reason. Optional
 diagnostics use sidecars instead of changing established schemas.
-Adding, removing or renaming an entry point updates
-[`tools/diagnostics/INDEX.md`](../tools/diagnostics/INDEX.md) in the same change.
 
 ## Refactor And Verification
 

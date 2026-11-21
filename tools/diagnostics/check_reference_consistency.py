@@ -1,4 +1,11 @@
-"""Review Targeted input references without changing any extraction decisions."""
+"""Review Targeted input references without changing any extraction decisions.
+
+A JSON manifest lists ``groups``, each with ``name``, ``targets_csv`` and
+optional ``raw_files``; relative paths resolve against the manifest. Use
+``--preflight-only`` before RAW acquisition. Each RAW opens once. Writes
+``reference_consistency.json`` and ``reference_review.tsv``; mapping-only
+warnings are informational, while RAW multi-cluster conflicts can be high.
+"""
 
 from __future__ import annotations
 
