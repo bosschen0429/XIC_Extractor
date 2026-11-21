@@ -781,7 +781,8 @@ def test_pure_cid_nl_targets_csv_integration(
     batch_index = _write_batch(tmp_path, ("S1",))
     targets_csv = tmp_path / "targets.csv"
     targets_csv.write_text(
-        "label,mz,expected_rt_min,cid_nl_tag,role,istd_pair\nISTD1,200.0,3,dR,istd,\n",
+        "label,mz,expected_rt_min,cid_nl_loss_da,role,istd_pair\n"
+        "ISTD1,200.0,3,116.0474,istd,\n",
         encoding="utf-8",
     )
     raw_dir = tmp_path / "raw"

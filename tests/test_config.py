@@ -125,19 +125,6 @@ def test_target_cid_nl_loss_must_be_below_the_target_mz(loss):
         parse_target_rows([_target_row(cid_nl_loss_da=loss)])
 
 
-@pytest.mark.parametrize(
-    "tag,loss", [("dR", 116.0474), ("R", 132.0423), ("MeR", 146.0579)]
-)
-def test_legacy_method_column_reads_as_its_loss(tmp_path, tag, loss):
-    path = tmp_path / "targets.csv"
-    path.write_text(
-        "label,mz,expected_rt_min,cid_nl_tag,role,istd_pair\n"
-        f"ISTD,258.1085,9,{tag},istd,\n",
-        encoding="utf-8",
-    )
-    assert read_targets(path)[0].neutral_loss_da == loss
-
-
 def test_blank_tag_admits_ms1_only_without_imposing_a_neutral_loss_mass():
     target = parse_target_rows(
         [_target_row(mz="100", cid_nl_loss_da=" ", role="analyte")]

@@ -1044,7 +1044,7 @@ def test_target_ions_follow_their_row_not_a_label_typed_through(
     assert [row["delta_mass_mz"] for row in state["targets"]] == ["+1.0021", ""]
 
 
-def test_imported_earlier_method_workbook_is_rejected_with_the_fix(
+def test_imported_workbook_with_an_extra_sheet_is_rejected(
     workbench, tmp_path, browser_errors
 ):
     import openpyxl
@@ -1061,8 +1061,9 @@ def test_imported_earlier_method_workbook_is_rejected_with_the_fix(
     page = workbench
     before = page.locator("#target-preview").inner_text()
     page.locator("#target-import-file").set_input_files(portable)
-    expect(page.locator("#target-import-status")).to_contain_text("舊格式")
-    expect(page.locator("#target-import-status")).to_contain_text("Delta Mass Settings")
+    expect(page.locator("#target-import-status")).to_contain_text(
+        "只接受 Delta Mass 與 Delta Mass Settings"
+    )
     expect(page.locator("#target-import-preview")).not_to_be_visible()
     assert page.locator("#target-preview").inner_text() == before
     browser_errors.remove(
