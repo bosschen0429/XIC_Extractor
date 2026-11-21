@@ -1,7 +1,3 @@
-// Application settings. Analysis Session and sampleMetadata own jobs and samples;
-// DOM controls and uncommitted editor drafts stay with views.
-// The page's Analysis Session, held here so every view reads it without
-// importing the jobs view that composes it.
 export let analysis = null;
 export function adoptAnalysis(session) {
   analysis = session;
@@ -53,8 +49,6 @@ export function removeTarget(index) {
 export function addTarget(row) {
   state.targets.push(row);
 }
-// Saved details name targets by label; the editor keys them by row, because a
-// label changes one keystroke at a time and may pass through another's name.
 export function setDeltaMass(payload) {
   const byLabel = payload?.ions || {};
   state.deltaMass = {

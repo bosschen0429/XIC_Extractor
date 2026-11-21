@@ -40,7 +40,6 @@ class TargetedRun:
         should_cancel: Callable[[], bool],
     ) -> None:
         config_dir = Path(config_dir)
-        # Confirmed sample metadata replaces the batch's 上機資訊 for this run only.
         prepared = config_io.prepare_targeted_config(
             config_dir,
             output_dir=output_dir,
@@ -50,7 +49,6 @@ class TargetedRun:
         )
         self._prepared = prepared
         self._config, self._targets = prepared.config, list(prepared.targets)
-        # Admission fixes the discovered file set, not analysis roles or RAW bytes.
         self._raw_paths = discover_raw_files(self._config.data_dir)
         self._progress = progress
         self._should_cancel = should_cancel
@@ -77,7 +75,6 @@ class TargetedRun:
         ):
             raise ConfigError("排隊期間 RAW 檔案集合已變更；請確認後重新提交。")
         config, targets = self._config, self._targets
-        # Scoring loads scipy; keep it out of the settings page's startup path.
         from xic_extractor import extractor
         from xic_extractor.applications.targeted.application import (
             build_canonical_targeted_application_service,
@@ -95,7 +92,6 @@ class TargetedRun:
             progress=self._progress,
             should_cancel=self._should_cancel,
         )["summary"]
-        # The source here is a private queued-input copy, not a published path.
         sample_summary.pop("sequence_source", None)
         self.sample_summary = sample_summary
         self.output_dir = config.output_csv.parent

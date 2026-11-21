@@ -103,8 +103,6 @@ def test_http_accepts_page_asset_burst_before_dispatch(tmp_path):
     connections = []
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     try:
-        # Chromium opens up to six HTTP/1 connections to a page's origin. Hold
-        # dispatch until the burst has arrived, rather than racing the scheduler.
         for _ in range(6):
             connections.append(
                 socket.create_connection(server.server_address, timeout=1)
@@ -350,7 +348,6 @@ def test_review_follows_the_latest_curation_unless_one_is_opened(tmp_path):
             },
         ],
     )
-    # An export still being written has no summary yet.
     (tmp_path / "matrix_curation_20261103_090000").mkdir()
 
     def counts(page):
@@ -382,7 +379,6 @@ def test_review_follows_the_latest_curation_unless_one_is_opened(tmp_path):
         assert page["curation"]["name"] == older.name
         assert counts(page) == (2, 1, 1, 1, 1, [2, 1])
         assert [i["group_id"] for i in page["items"]] == ["z-priority", "a-complete"]
-        # Paging stays on the opened curation although a newer one exists.
         page = workspace.query({"review_scope": "matrix", "offset": 1, "limit": 1})
         assert page["curation"]["name"] == older.name
         assert [i["group_id"] for i in page["items"]] == ["a-complete"]
@@ -774,7 +770,6 @@ def test_analysis_module_graph_is_served_with_javascript_mime(tmp_path):
             pending.update(
                 item.decode() for item in imports if item.decode() not in visited
             )
-        # A misspelled entry/import must not make a smaller graph pass silently.
         shipped_modules = {
             asset.name
             for asset in files("xic_workbench").joinpath("assets").iterdir()
@@ -793,7 +788,6 @@ def test_workbench_module_imports_form_no_cycle():
         for asset in files("xic_workbench").joinpath("assets").iterdir()
         if asset.name.endswith(".js")
     }
-    # Only static specifiers are visible here; a dynamic import would hide an edge.
     assert not [name for name, text in sources.items() if "import(" in text]
     graph = {
         name: set(re.findall(r"""(?:from|import)\s*["']\./([^"'/]+\.js)["']""", text))
@@ -912,7 +906,6 @@ def test_pick_returns_the_native_choice_and_starts_from_the_field(
         native_picker.choose_path("unknown")
     nested = tmp_path / "batch"
     nested.mkdir()
-    # A typed path that no longer exists starts at its nearest existing parent.
     assert native_picker._starting_folder(str(nested / "gone" / "x.raw")) == str(nested)
     assert native_picker._starting_folder("  ") == ""
 
@@ -987,7 +980,6 @@ def test_http_curve_reads_never_block_review_and_leave_results_readable(
         _, page, _ = request("/api/open", {"source": str(db)})
         item_id = page["items"][0]["id"]
         _, detail, _ = request("/api/detail", {"item_id": item_id})
-        # This result kept no curves; the sample is read from RAW.
         assert detail["item"]["saved_curve_sample_ids"] == []
         report_url = f"/reports/{detail['view_id']}.html"
         view_url = f"/api/views/{detail['view_id']}"
@@ -1002,15 +994,11 @@ def test_http_curve_reads_never_block_review_and_leave_results_readable(
         status, first, _ = request("/api/curves", parameters)
         assert status == 202 and first["status"] == "running"
         assert entered.wait(timeout=5)
-        # Input validation rejects the new analysis before it starts. A usable
-        # curve job remains current; its client must not poll a deleted job.
         assert (
             request("/api/analysis/start", {"kind": "targeted", "values": {}})[0] == 400
         )
         status, current, _ = request(f"/api/jobs/{first['id']}")
         assert status == 200 and current["status"] == "running"
-        # A new request replaces the running read; a poll still following the
-        # old one reads that it ended instead of an unknown job.
         status, second, _ = request("/api/curves", parameters)
         assert status == 202 and second["id"] != first["id"]
         status, replaced, _ = request(f"/api/jobs/{first['id']}")
@@ -1027,7 +1015,6 @@ def test_http_curve_reads_never_block_review_and_leave_results_readable(
         assert request(report_url)[1] == original
         assert request(view_url)[1] == original_payload
 
-        # An accepted analysis ends a running read; its poll reads why.
         entered.clear()
         _, job, _ = request("/api/curves", parameters)
         assert entered.wait(timeout=5)

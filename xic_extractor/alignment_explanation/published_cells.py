@@ -21,7 +21,6 @@ class PublishedCell:
     row_mz: float
     sample: str
     direct: bool
-    # None only when the owner did not select an integration.
     apex_rt_min: float | None
     feature_id: str = ""
     value: float | None = None

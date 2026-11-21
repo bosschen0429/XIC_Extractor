@@ -42,8 +42,6 @@ class _Vendor:
         self.found = {1: 1, 4: 1, 5: 1}
         self.polarity = "Positive"
         self.centroids = {
-            # The analyte at its recorded mass, plus a neighbour 20 ppm above
-            # the true analyte mass that a 5 ppm window must exclude.
             1: ([_recorded(TRUE_MZ, 1), _recorded(NEIGHBOUR_MZ, 1)], [100.0, 7.0]),
             3: ([_recorded(TRUE_MZ, 3), _recorded(NEIGHBOUR_MZ, 3)], [300.0, 7.0]),
         }
@@ -95,7 +93,6 @@ def test_recalibrated_xic_finds_the_ion_in_every_scan_and_keeps_neighbours_out()
         (XICRequest(mz=TRUE_MZ, rt_min=9.9, rt_max=10.05, ppm_tol=5.0),)
     )[0]
 
-    # Without recalibration the scan-3 reading sits 25 ppm high, outside 5 ppm.
     assert trace.rt.tolist() == [10.0, 10.02]
     assert trace.intensity.tolist() == [100.0, 300.0]
     assert vendor.chromatogram_calls == 0
@@ -284,7 +281,6 @@ def test_ms2_fragments_use_their_scan_and_precursors_use_the_parent_ms1(
         )
         return next(iter(handle.iter_ms2_scan_subset(9.0, 11.0, frozenset({2})))).scan
 
-    # A data-dependent pick records the parent reading in both header fields.
     scan = run(selected_reading)
     expected_product = true_product if outcome == "applied" else product_reading
     expected_precursor = true_precursor if outcome == "applied" else parent_reading
@@ -304,7 +300,6 @@ def test_ms2_fragments_use_their_scan_and_precursors_use_the_parent_ms1(
             "scan_monoisotopic", metadata.monoisotopic_mz, scan.precursor_mz, metadata
         )
 
-    # A targeted inclusion mass is a method value, not a parent measurement.
     scan = run(selected_true)
     assert scan.precursor_mz == selected_true
     assert scan.precursor_metadata.monoisotopic_mz == pytest.approx(
@@ -379,8 +374,6 @@ def test_unavailable_preserves_vendor_mass_paths(case, reason):
 
 def test_anchor_uses_only_finite_ms1_finds_and_reads_no_spectra():
     vendor = _Vendor()
-    # MS2 finds and non-finds never enter the baseline. A finite MS1 outlier
-    # is deliberately retained; the median, not an invented cutoff, is the model.
     vendor.GetTrailerExtraInformation = lambda scan: SimpleNamespace(
         Values={
             1: ["0.9", "1"],
@@ -417,9 +410,6 @@ def test_parent_centroid_classifies_selected_mass_without_reliable_mono(
     )
     true_product = TRUE_MZ - 116.0474
     selected = _recorded(TRUE_MZ, 1) if measured_precursor else TRUE_MZ
-    # The vendor's mono estimate may be missing or fail to predict M+1 to four
-    # decimals. Only an exact parent centroid proves this is a measured mass;
-    # a nonmatching inclusion-list setpoint must stay unchanged.
     mono = _recorded(TRUE_MZ - 1.0033548, 1) - 0.0003
     vendor = _Vendor(trailer_labels=labels)
     vendor.GetFilterForScanNumber = lambda scan: SimpleNamespace(
@@ -496,7 +486,6 @@ def test_ms2_only_shift_is_restored_only_in_positive_mode(polarity):
         Labels=vendor.trailer_labels,
         Values=["-6" if scan == 2 else "1", "1"],
     )
-    # MS1 is at baseline. Negative-mode product readings must remain vendor data.
     vendor.GetSimplifiedScan = lambda scan: SimpleNamespace(
         Masses=[250.0 * (1 - 14e-6)], Intensities=[50.0]
     )
@@ -526,7 +515,6 @@ def test_saved_legacy_fit_replays_its_formula_without_new_preparation():
         deserialize_mass_recalibration_result,
     )
 
-    # Actual pre-restoration JSON shape: do not generate it via today's writer.
     saved = deserialize_mass_recalibration_result(
         '{"outcome":"applied","reason":null,"a":0.7,"b":1.9,'
         '"n_fit":60,"n_val":60,"val_raw_p95":25.0,'
@@ -534,7 +522,7 @@ def test_saved_legacy_fit_replays_its_formula_without_new_preparation():
     )
     vendor = _Vendor()
     vendor.centroids[3] = ([500.0 * (1 + 24.45e-6)], [100.0])
-    vendor.found = {}  # No baseline is needed to replay the saved fit.
+    vendor.found = {}
     handle = _handle(vendor, MassRecalibration.EASY_IC_PROBE)
     handle.use_mass_recalibration_result(saved)
     result = handle.read_ms1_mass_windows(((3, 499.999, 500.001),))[0]
@@ -567,7 +555,6 @@ def test_missing_scan_lm_is_not_inferred_from_baseline():
 
 _TOL_100 = mz_tolerance_da(100.0, 10.0)
 _GRID_SPECTRA = {
-    # Both window edges are inclusive; the next float outside each is not.
     1: (
         [
             np.nextafter(100.0 - _TOL_100, 0.0),
@@ -637,7 +624,6 @@ def test_batched_recalibrated_xics_match_hand_sums_in_request_order():
     other_mass = XICRequest(mz=150.0, rt_min=1.0, rt_max=5.0, ppm_tol=10.0)
     inner = XICRequest(mz=100.0, rt_min=4.0, rt_max=5.0, ppm_tol=10.0)
     no_ms1 = XICRequest(mz=100.0, rt_min=3.0, rt_max=3.0, ppm_tol=10.0)
-    # Same m/z and window, narrower ppm: only the centre centroid is inside.
     narrow = XICRequest(mz=100.0, rt_min=1.0, rt_max=5.0, ppm_tol=2.0)
     early = XICRequest(mz=100.0, rt_min=1.0, rt_max=2.0, ppm_tol=10.0)
     expected = {
@@ -672,8 +658,6 @@ def test_restored_xics_equal_one_window_at_a_time_sums_bit_for_bit():
     rng = np.random.default_rng(1173)
     spectra = []
     for scan in range(40):
-        # Clustered masses put up to dozens of centroids in one window, so
-        # numpy's pairwise slice summation order is exercised.
         masses = np.sort(
             np.concatenate((rng.uniform(99.99, 100.01, 30), rng.uniform(100, 400, 200)))
         )

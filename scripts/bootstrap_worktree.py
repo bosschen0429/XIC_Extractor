@@ -35,8 +35,6 @@ STAMP_NAME = ".xic-worktree-bootstrap.json"
 LINKED_VENV_REASON = (
     "worktree .venv is a link or junction; remove only the link before bootstrap"
 )
-# Keep caller network/index credentials and offline policy, but do not let an
-# inherited shell redirect the project/environment or weaken install semantics.
 UV_SYNC_SEMANTIC_ENV_VARS = (
     "UV_CONFIG_FILE",
     "UV_DEV",

@@ -144,7 +144,6 @@ def test_paired_istd_identity_counts_an_analyte_without_its_own_nl() -> None:
     assert _analyte(cid_nl=False).counted_detection is False
     projection = _analyte(cid_nl=False, identity=True)
     assert "paired_istd_identity" in projection.support_reasons
-    # Identity lets the peak count; the missing NL stays a doubt to read.
     assert (projection.counted_detection, projection.product_state) == (
         True,
         "detected_flagged",
@@ -222,8 +221,6 @@ def test_paired_istd_position_identifies_or_rejects_the_analyte_peak() -> None:
     ):
         analyte[sample] = _Result(9.0 + offset, _analyte(cid_nl=False))
         istd[sample] = _Result(9.0, pair)
-    # Backfill relocated this peak after the first capture missed it; its
-    # acceptance already qualified the recovered peak's shape.
     analyte["relocated"] = _Result(
         9.11, _analyte(cid_nl=False, support=("ms1_peak_present",), backfill=True)
     )
@@ -232,11 +229,8 @@ def test_paired_istd_position_identifies_or_rejects_the_analyte_peak() -> None:
 
     positions = paired_istd_positions(analyte, istd)
     assert positions.identified == {"near", "backfilled_istd", "relocated"}
-    # A peak 0.4 min from the paired position is another signal, not this
-    # analyte; without a counted ISTD there is no position to judge.
     assert positions.off_position.keys() == {"off_offset"}
     assert positions.off_position["off_offset"] == pytest.approx(0.40)
-    # Sparse batch confirmation does not veto the current sample's valid pair.
     lone = {s: r for s, r in analyte.items() if s in {"C1", "near", "off_offset"}}
     lone_positions = paired_istd_positions(lone, istd)
     assert lone_positions.identified == {"near"}

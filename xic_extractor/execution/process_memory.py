@@ -143,7 +143,7 @@ class ProcessTreeMemorySampler:
     def _sample_now(self) -> None:
         try:
             sample = self._sample_reader()
-        except Exception as exc:  # keep diagnostics from failing product work
+        except Exception as exc:
             sample = ProcessMemorySample(
                 rss_bytes=None,
                 private_bytes=None,

@@ -216,10 +216,6 @@ def fingerprint_file_content(
             getattr(before, field) != getattr(after, field) for field in stat_fields
         ):
             raise IdentityContractError("source content mutated during hashing")
-        # Windows may publish timestamp metadata from a path lookup at a different
-        # moment than from the already-open handle.  Replacement is an object-
-        # identity question; content mutation is already guarded by the two handle
-        # snapshots above.
         if not os.path.samestat(after, path_after):
             raise IdentityContractError("source path was replaced during hashing")
         if byte_size != after.st_size:
@@ -286,7 +282,6 @@ def _notify_fingerprint_observation(
             }
         )
     except Exception:
-        # Diagnostic callbacks must not alter identity semantics.
         return
 
 

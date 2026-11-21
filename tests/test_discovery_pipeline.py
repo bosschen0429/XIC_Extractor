@@ -110,8 +110,6 @@ def test_method_toml_runs_sample_local_cli_to_compatible_csvs(
         raw.acquisition_source = expected_acquisition_source
         return raw
 
-    # Only instrument I/O is substituted: CLI binding, search, physical processing,
-    # evidence composition and both writers all execute their production paths.
     monkeypatch.setattr("xic_extractor.raw_reader.open_raw", open_raw)
     for sample, apex, height in (("a", 8.0, 1000.0), ("b", 9.0, 2300.0)):
         raw_path = tmp_path / f"{sample}.raw"
@@ -343,8 +341,6 @@ def test_pipeline_retains_distinct_inferred_features_from_one_ms2_in_both_csvs(
     monkeypatch: pytest.MonkeyPatch,
     reverse_products: bool,
 ) -> None:
-    # Both inferred ions fit one 1.6 m/z isolation around 258.3. Repeating a
-    # product is duplicate evidence; the second MS1 feature is not a duplicate.
     products = [(142.0611, 5_000.0), (142.0611, 5_000.0), (142.5611, 150_000.0)]
     if reverse_products:
         products.reverse()
@@ -387,10 +383,8 @@ def test_pipeline_retains_distinct_inferred_features_from_one_ms2_in_both_csvs(
     )
     assert len({row["peak_id"] for row in rows}) == 2
     assert {row["best_ms2_scan_id"] for row in rows} == {"19561"}
-    # Neither inferred ion has a parent MS1 reading, so no event attaches.
     assert {row["status"] for row in rows} == {"no_nl_event"}
     events = _read_csv(outputs.events_csv)
-    # The repeated product of one scan is one event, not two.
     assert len(events) == 2
     assert {row["unattached_reason"] for row in events} == {"parent_ms1_unavailable"}
 
@@ -1345,7 +1339,6 @@ def test_pipeline_scores_ms1_scan_support_against_the_profile_target(
     )
 
     rows = _read_csv(outputs.peaks_csv)
-    # The published capture conditions measure the peak again, as Alignment does.
     window_start = float(rows[0]["ms1_search_rt_min"])
     window_end = float(rows[0]["ms1_search_rt_max"])
     (trace,) = raw.extract_xic_many(
@@ -1774,8 +1767,6 @@ def test_acquisition_open_observations_keep_sample_attribution_in_serial_and_spa
             return vendor_fake_discovery_opener(job, recorder)(path, dll_dir)
 
         if parallel:
-            # One real spawn worker preserves the first completed sample before
-            # the second fails; pool parallelism itself is covered elsewhere.
             run = partial(
                 run_discovery_batch_process,
                 paths,
@@ -1879,7 +1870,6 @@ def test_process_worker_records_raw_open_through_its_production_opener(
         item,
         instrument_diagnostics=True,
     )
-    # Only the vendor is substituted; the worker's own opener supplies the recorder.
     monkeypatch.setattr("xic_extractor.raw_reader.open_raw", vendor_fake_open_raw(job))
 
     result = run_discovery_sample_process_job(

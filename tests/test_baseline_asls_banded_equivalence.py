@@ -67,14 +67,10 @@ def test_banded_asls_corrected_area_matches_spsolve_to_1e_9() -> None:
         )
         area_new = float(np.trapezoid(corrected_new))
         area_ref = float(np.trapezoid(corrected_ref))
-        # rtol 1e-9 on real peak areas; atol covers no-peak windows whose area
-        # is ~0 (where a relative tolerance is undefined).
         assert abs(area_new - area_ref) <= 1e-9 * abs(area_ref) + 1e-3
 
 
 def test_banded_asls_baseline_values_stay_bounded_vs_spsolve() -> None:
-    # Documents that baseline values track spsolve closely (flip divergence is
-    # bounded well under 1e-3); the corrected-area gate above is the science one.
     for y in _representative_traces():
         assert np.allclose(
             asls_baseline(y), _asls_spsolve_reference(y), rtol=1e-3, atol=1e-1
@@ -88,9 +84,6 @@ def test_banded_asls_handles_degenerate_flat_trace() -> None:
 
 
 def test_banded_asls_degenerate_traces_match_spsolve_and_stay_finite() -> None:
-    # Edge cases that exercise the non-PD fallback and minimal sizes; each must
-    # stay finite and track the spsolve reference (all-zero hits the singular
-    # penalty -> spsolve fallback in both paths).
     cases = {
         "all_zero": np.zeros(50),
         "n_equals_3": np.array([1.0, 5.0, 2.0]),

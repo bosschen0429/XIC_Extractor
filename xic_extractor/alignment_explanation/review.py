@@ -12,8 +12,6 @@ if TYPE_CHECKING:
         FinalGroupCellObservation,
     )
 
-# Extraction stages of the peaks providing cell values. The persisted names
-# are retained; an origin does not imply method support or authorize a value.
 RECORDED_ORIGINS = ("backfill_support", "discovery_support")
 SUPPORT_ORIGINS = frozenset((*RECORDED_ORIGINS, "unavailable"))
 
@@ -146,7 +144,6 @@ def assessment_attention(method_result: Any) -> str | None:
 
 def review_cell(decision: ProductionCellDecision) -> dict[str, Any]:
     """Project the decision owner and its effective observations without hashing."""
-    # Review rows are built only for Untargeted final-group cells.
     evidence = cast("FinalGroupCellObservation", decision.evidence)
     cells = evidence.effective_cells
     stages = {

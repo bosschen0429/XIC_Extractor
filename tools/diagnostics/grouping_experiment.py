@@ -206,11 +206,9 @@ def _execute(parser: argparse.ArgumentParser, argv: Sequence[str] | None) -> int
                 if calibration is not None
                 else None
             )
-            # Compare the validated configs without the Backfill-only switch.
             grouping_config_changed = config != replace(
                 inputs.alignment_config, backfill_enabled=config.backfill_enabled
             )
-            # An explicit sample calibration also replaces each workset's drift model.
             variant = grouping_config_changed or (
                 calibration is not None
                 and any(

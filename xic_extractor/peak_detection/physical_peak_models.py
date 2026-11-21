@@ -17,8 +17,6 @@ PHYSICAL_PEAK_REFERENCE_POLICY = "reference_localized_contour_peak"
 PHYSICAL_PEAK_ENVELOPE_POLICY = "localized_total_envelope"
 PHYSICAL_PEAK_NO_SELECTION_POLICY = "no_selected_physical_segment"
 PHYSICAL_PEAK_WINDOW_POLICY = "unique_baseline_peak_in_context"
-# The group RT resolves several peaks in the context, and a tail that settles
-# near the baseline closes the peak before the acquired edge.
 PHYSICAL_PEAK_GROUP_WINDOW_POLICY = "group_rt_resolved_peak_in_context"
 PHYSICAL_PEAK_BACKFILL_POLICY = "sample_local_background_qualified_peak_in_context"
 PHYSICAL_PEAK_UNLOCATED_BACKFILL_POLICY = "backfill_localization_unreliable"
@@ -90,7 +88,6 @@ class PreparedSignalResult:
     operations: tuple[PhysicalPeakOperation, ...]
     trace_context_rt_start_min: float | None = None
     trace_context_rt_end_min: float | None = None
-    # Live AsLS intermediate; excluded from prepared-signal persistence and identity.
     baseline_unclipped: tuple[float, ...] | None = None
 
 
@@ -108,8 +105,6 @@ class PhysicalSegment:
     segment_class: str
     boundary_stop_reason: str
     evidence_sources: tuple[str, ...]
-    # Worker-local assignment made when this raw component is measured.
-    # Completed readers decode retained answers and never rebuild this live map.
     raw_component: RawPeakComponent | None = field(default=None, compare=False)
 
     @property
@@ -131,7 +126,6 @@ class RawPeakComponent:
     apex_index: int
     clips_left_edge: bool
     clips_right_edge: bool
-    # Raw segmentation's return extent is for bounded acquisition planning only.
     left_return_index: int | None = None
     right_return_index: int | None = None
 
@@ -154,7 +148,6 @@ class PhysicalPeakQuestion:
     query_rt_min: float
     admissible_segments: tuple[PhysicalSegment, ...]
     selection_policy_version: str
-    # Candidate apex eligibility, independent of the measured signal context.
     search_rt_window: tuple[float, float] | None = None
 
     @property
@@ -185,12 +178,9 @@ class PhysicalPeakEvaluation:
     answer: PhysicalPeakAnswer
     integration: IntegrationResult | None
     operations: tuple[PhysicalPeakOperation, ...]
-    # Live owner intermediates for projection; not scientific equality or identity.
     retained_prepared_signal: PreparedSignal | None = field(default=None, compare=False)
 
     def __deepcopy__(self, memo: dict[int, object]) -> PhysicalPeakEvaluation:
-        # The complete answer graph is frozen dataclasses, tuples and scalars.
-        # Copies of mutable run containers can share it without walking signals.
         return self
 
     @property

@@ -145,8 +145,6 @@ def test_run_no_nl_reference_selects_each_samples_component(
             return None
 
         def extract_xic(self, mz, rt_min, rt_max, ppm_tol):
-            # Acquired scan spacing is fixed; requesting more context must
-            # not resample the same resolved doublet onto a coarser grid.
             acquired_rt = np.arange(0.0, 18.0025, 0.0025)
             rt = acquired_rt[(acquired_rt >= rt_min) & (acquired_rt <= rt_max)]
             apex, height = expected[self.sample]
@@ -180,8 +178,6 @@ def test_run_no_nl_reference_selects_each_samples_component(
 
         def acquire_with_anchor_evidence(*args, **kwargs):
             acquired = acquire(*args, **kwargs)
-            # Publication intentionally drops candidate details. Inspect the
-            # real batch-completed result at the acquisition API boundary.
             for file in acquired.file_results:
                 peak_result = file.results[target.label].peak_result
                 anchor_rt = expected[file.sample_name][0] - 1.0
@@ -203,8 +199,6 @@ def test_run_no_nl_reference_selects_each_samples_component(
     for file in output.file_results:
         result = file.results[target.label]
         reference_apex = expected[file.sample_name][0]
-        # The generated lobes have a sustained, resolved valley. A credible
-        # paired reference selects its own region, not the stronger interferent.
         measured_apex = reference_apex
         assert result.reported_rt == pytest.approx(measured_apex, abs=0.03)
         if pair_state == "credible":
@@ -646,8 +640,6 @@ class _FakeRaw:
     def extract_xic(
         self, mz: float, rt_min: float, rt_max: float, ppm_tol: float
     ) -> tuple[np.ndarray, np.ndarray]:
-        # The worker/serialization fixture supplies a resolved physical peak,
-        # not a sparsely sampled pulse whose qualification is under test.
         rt = np.linspace(rt_min, rt_max, 1001)
         return rt, 1.0 + 1000.0 * np.exp(-0.5 * ((rt - 8.5) / 0.08) ** 2)
 

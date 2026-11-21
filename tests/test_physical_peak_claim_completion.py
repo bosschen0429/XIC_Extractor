@@ -70,8 +70,6 @@ def _view(
     rt = np.linspace(7.0, 9.2, 221)[crop:]
     raw = 1000 * np.exp(-0.5 * ((rt - center) / 0.25) ** 2) + 100 * (rt - 7) ** 2
     if broad_context:
-        # Overlapping shoulders share one lobe in complete acquired context.
-        # Cropping the right context changes baseline, apex and selected bounds.
         full_rt = np.linspace(7.0, 13.0, 301)
         full_raw = 1000 * np.exp(-0.5 * ((full_rt - 9.3) / 0.5) ** 2)
         full_raw += 700 * np.exp(-0.5 * ((full_rt - 10.4) / 0.5) ** 2)
@@ -193,8 +191,6 @@ def test_one_measured_lobe_keeps_one_direct_claim_or_one_backfill_winner(
         )
     }
     if broad_context and not fresh_context:
-        # A group made only of envelope peaks is not a Matrix row. Here one
-        # member per group shows its own peak where its envelope peer peaks.
         for stem, peer in (("A", "B"), ("C", "D")):
             apex = pairs[peer][1].candidate_peaks[0].integration.rt_apex_min
             pairs[stem] = _view(fixture, stem, center=apex)
@@ -311,8 +307,6 @@ def test_one_measured_lobe_keeps_one_direct_claim_or_one_backfill_winner(
                 for request in requests:
                     raw = full_raw.copy()
                     if request.mz > 500.0:
-                        # A different ion far outside the original questions is
-                        # not part of this comparison, even in a shared batch.
                         raw[-10] += 2000.0
                     result.append(XICTrace.from_arrays(shifted_rt, raw))
                 return tuple(result)
@@ -416,9 +410,6 @@ def test_low_localization_still_selects_one_shared_acquired_peak(tmp_path):
 def test_full_acquired_lobes_not_selected_interval_overlap_define_identity(
     second_apex, expected
 ):
-    # One broad lobe plus a separated second peak. Context-dependent selections
-    # may put apices outside the other view's integral; identity uses the full
-    # acquired signal without changing either reported integral.
     rt = np.linspace(3.0, 9.0, 301)
     raw = 1000 * np.exp(-0.5 * ((rt - 5.0) / 0.35) ** 2)
     raw += 800 * np.exp(-0.5 * ((rt - 7.0) / 0.2) ** 2)
@@ -486,8 +477,6 @@ def test_acquired_valley_keeps_lobes_distinct_at_any_smoothing_width(window_poin
         )
         for apex in (4.94, 5.06)
     ]
-    # The split is read from the acquired scans, so canonical smoothing width
-    # cannot merge two lobes that the scans separate.
     assert compare_physical_peak_views(*views) == "distinct"
 
 
@@ -497,7 +486,6 @@ def test_same_apex_does_not_hide_changed_peak_height_or_substantial_flanks(diffe
     raw = 1000 * np.exp(-0.5 * ((rt - 5.0) / 0.3) ** 2)
     other = raw.copy()
     if difference == "peak_height":
-        # Even a small amplitude change is not evidence of one measured maximum.
         other *= 1.01
     else:
         other[(abs(rt - 5.0) > 0.4) & (abs(rt - 5.0) < 0.6)] += 200

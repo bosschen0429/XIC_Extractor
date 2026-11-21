@@ -108,12 +108,9 @@ class ChildProjectionContext:
     samples: tuple[SampleMetadata, ...]
     membership_risks_by_owner: Mapping[str, AcceptedMembershipRisk]
     sample_rt_frame: SampleRtFrame | None
-    # The partition retained capture evidence, so the batch has some too.
     capture_evidence_retained: bool
 
 
-# Projects one finalized child into the outputs published from it. The
-# composition owner stores only this projection, never the child itself.
 ChildOutputProjection = Callable[
     [FinalizedUntargetApplicationResult, ChildProjectionContext], object
 ]
@@ -177,7 +174,6 @@ def compose_untargeted_batch(
         declared_candidate_ids=tuple(
             candidate_id for candidate_id, _ in plan.subject_batch.candidate_memberships
         ),
-        # Capture authorization and physical evidence belong to each child.
         capture_bindings=(),
     )
     child_outputs = store.sequence("child_outputs")
@@ -217,7 +213,6 @@ def _ordered_exclusions(
 ) -> ImmutableSequence:
     """Restore canonical peak order with finite result windows."""
     all_positions = list(positions)
-    # Planning exclusions have no acquisition partition or assessment payload.
     all_positions.extend(
         (item.candidate_id, -1, offset)
         for offset, item in enumerate(planning_exclusions)
@@ -627,7 +622,6 @@ def _runtime_observations_by_candidate(
         for peak in peaks
         if peak.peak_id in partition_ids
     }
-    # Acquisition cannot introduce a candidate outside this partition's input.
     if not set(observations) <= expected:
         raise RuntimeError("runtime acquisition crossed partition peaks")
     return observations

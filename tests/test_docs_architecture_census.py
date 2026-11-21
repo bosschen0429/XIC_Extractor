@@ -669,8 +669,6 @@ def test_import_linter_config_owns_the_static_dependency_contracts() -> None:
     assert method["type"] == "forbidden"
     assert method["allow_indirect_imports"] is True
     assert not method.get("ignore_imports")
-    # Shared configuration and product applications reach these modules through
-    # legitimate indirect paths, so these contracts check direct imports only.
     for contract_id in direct_only:
         assert contracts[contract_id]["type"] == "forbidden"
         assert contracts[contract_id]["allow_indirect_imports"] is True
@@ -1062,7 +1060,6 @@ def test_production_entry_gate_preserves_required_boundaries(
         "xic_extractor/extraction/targeted_peak_hypotheses.py": (
             "from xic_extractor.peak_detection.hypotheses import build_peak_hypotheses"
         ),
-        # Internal callers and completed quality facts are not restricted.
         "xic_extractor/alignment/other.py": (
             "from xic_extractor.peak_detection.signal_quality import SignalQuality\n"
             "execute_partition()\n"

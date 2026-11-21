@@ -70,9 +70,6 @@ def read_analysis_set(
     """
     root = Path(raw_root)
     paths = tuple(raw_paths) if raw_paths is not None else discover_raw_files(root)
-    # Skipping explicit context files needs annotations before any RAW is read.
-    # Filenames cannot tell copies of one injection apart, so this match only
-    # selects files to skip; final annotations match the injection timeline.
     overrides = _sequence_overrides(
         load_and_match_sample_metadata(sequence_source, [path.stem for path in paths])
         if sequence_source is not None and not include_context
@@ -139,10 +136,8 @@ def read_analysis_set(
                     batch_id=root.name,
                 )
         finally:
-            # Cancellation waits only for open handles, never all queued files.
             for _index, _path, future in pending:
                 future.cancel()
-    # Each report above names the file being read, so it counts the ones before.
     if progress is not None and paths:
         progress(len(paths), len(paths), "RAW 檔頭讀取完成")
     timeline = build_injection_timeline(headers, PerturbationPolicy())
@@ -200,8 +195,6 @@ def _analysis_header(
 
 
 def _raw_sample_role(path: Path, sample: RawSampleHeader) -> SampleRole:
-    # Header SampleName is free text; use the filename and method vocabulary
-    # consistently for analysis membership and auto-derived metadata.
     return infer_sample_role(
         sample.sample_type,
         sample_name=path.stem,

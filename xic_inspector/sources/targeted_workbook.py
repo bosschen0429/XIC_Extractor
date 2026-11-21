@@ -79,7 +79,6 @@ class TargetedWorkbookSource:
     def __init__(
         self, path: Path, *, expected_source: TargetedWorkbookLocator | None = None
     ) -> None:
-        # openpyxl is the largest workbench startup import; load it on first open.
         from openpyxl import load_workbook
         from openpyxl.utils.exceptions import InvalidFileException
 
@@ -90,7 +89,6 @@ class TargetedWorkbookSource:
         if expected_source is not None and self.locator != expected_source:
             raise ExplanationError("Targeted 結果已變更，請重新開啟。")
         try:
-            # This adapter never saves the workbook.
             book = load_workbook(path, read_only=True, data_only=True)
         except (
             BadZipFile,
@@ -181,17 +179,14 @@ class TargetedWorkbookSource:
         self._records_by_target = defaultdict(list)
         for row in self.records:
             self._records_by_target[row["Target"]].append(row)
-        # A role belongs to the target; Targets.Role is its only saved record.
         istd_targets = frozenset(
             row["Label"] for row in self.targets if _role(row) == "istd"
         )
-        # The saved labels say which results need a look.
         overview = summarize_targeted_results(
             self.records,
             rows_needing_look(self.records, istd_targets),
             istd_targets=istd_targets,
         )
-        # Group is recorded per sample; it colours that sample in every view.
         sample_groups: dict[str, str] = {}
         for row in self.records:
             sample_groups.setdefault(row["SampleName"], str(row.get("Group") or ""))
@@ -288,7 +283,6 @@ class TargetedWorkbookSource:
     def curve_processing_settings(
         self,
     ) -> tuple[MassRecalibration, SignalProcessingProfile]:
-        # Import processing settings only when requesting a new diagnostic XIC.
         from xic_extractor.configuration.mass_recalibration import (
             MassRecalibration,
             resolve_mass_recalibration,
@@ -389,8 +383,6 @@ class TargetedWorkbookSource:
                 0,
             )
         if selection.strategy == "attention" or selection.attention_only:
-            # Lists the targets to read first; each keeps every sample, so the
-            # minority rows are read against the majority they depart from.
             items = [item for item in items if item.is_attention]
         if selection.target_role is not None:
             role_targets = set(self.target_names_for_role(selection.target_role))

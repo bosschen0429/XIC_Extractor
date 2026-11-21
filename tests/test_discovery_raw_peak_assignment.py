@@ -60,8 +60,6 @@ def test_bounded_capture_recovers_a_tail_window_without_admitting_a_far_tail_nl(
     assert len(result.peaks) == 1
     candidate = result.peaks[0]
     assert candidate.ms1_apex_rt == pytest.approx(5.0, abs=0.03)
-    # The NL event sits beyond the peak's right bound plus the attachment
-    # tolerance, so the measured peak is kept without NL support.
     facts = result.physical_bindings[0].physical_evaluation.answer.selected_segment
     assert facts.right_rt_min + 0.1 < representative_event(candidate).rt
     assert candidate.status == "no_nl_event"
@@ -85,11 +83,8 @@ def test_raw_zero_valley_keeps_a_smaller_nl_peak_separate_from_bigger_neighbor()
 
 
 def test_component_contrast_ignores_uncut_ripple_but_never_uses_interior_minimum():
-    # One resolved component with an uncut top ripple and a lower interior point.
-    # Both measured endpoints, not that minimum, limit its contrast.
     signal = np.asarray([60.0, 10.0, 100.0, 99.0, 101.0, 55.0])
     assert local_apex_prominence(signal, 4) == 41.0
-    # A true split places the accepted valley at the component endpoint.
     assert local_apex_prominence(np.asarray([60.0, 100.0, 55.0]), 1) == 40.0
 
 

@@ -23,12 +23,8 @@ from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 if TYPE_CHECKING:
     from xic_extractor.alignment.rt_anchors import RtAnchorObservation
 
-# (precursor m/z, neutral loss Da) of a method channel; the loss is None for a
-# composition channel.
 AnchorChannel = tuple[float, float | None]
 
-# Operational support floors, not a universal mathematical LOESS minimum.
-# Count acquired RT positions, not ion aliases, interpolation knots or samples.
 _MIN_LOESS_POSITIONS = 8
 _MIN_ORDINARY_COHORT_FRACTION = 0.5
 _ROBUST_RESIDUAL_CUTOFF = 6.0
@@ -59,9 +55,7 @@ class PriorInjection:
     """Injection-timeline context that can explain a measured front shift."""
 
     pre_flagged: bool
-    # Previous run is a short method under the timeline policy, at any idle.
     after_short_run: bool
-    # The latest full-length run before this one used another method.
     after_method_change: bool
 
 
@@ -107,8 +101,6 @@ class RtEstimate:
 
     @property
     def rt_weight(self) -> float:
-        # Weak coordinates remain usable, with half the RT influence. This is
-        # separate from measured signal quality and does not downweight mass.
         return 0.5 if self.method in ("median_shift", "boundary_shift") else 1.0
 
 
@@ -116,13 +108,11 @@ class RtEstimate:
 class SampleRtCalibration:
     sample_stem: str
     status: str
-    # (observed_rt_min, reference_rt_min), strictly increasing in both.
     knots: tuple[tuple[float, float], ...]
     front_shift_min: float | None
     prior_injection: PriorInjection | None
     perturbation_status: str
     anchor_count: int = 0
-    # (label, observed, reference, fitted-minus-reference), all RTs in minutes.
     standard_residuals: tuple[tuple[str, float, float, float], ...] = ()
     estimate_support: RtEstimateSupport | None = None
 
@@ -463,7 +453,6 @@ def _anchor_coordinates(
     anchors: list[
         tuple[float, str, dict[str, float], bool, str, set[AnchorChannel]]
     ] = []
-    # An exact duplicate pattern contributes once; its channels stay listed.
     channels_by_signature: dict[tuple[tuple[str, float], ...], set[AnchorChannel]] = {}
     for is_standard, features in ((False, detected_rt_by_feature), (True, known)):
         for feature_id, rt_by_sample in sorted(features.items()):
@@ -542,7 +531,6 @@ def _anchor_coordinates(
 def _distinct_anchor_positions(
     points: Sequence[tuple[float, float]],
 ) -> tuple[tuple[float, float], ...]:
-    # Both strong and weak estimates give each acquired position one vote.
     by_rt: dict[float, list[float]] = defaultdict(list)
     for observed, reference in points:
         by_rt[observed].append(reference)
@@ -572,9 +560,6 @@ def _fit_sample_knots(
             iteration == 3 and support_count < _MIN_LOESS_POSITIONS
         ):
             return ()
-        # Robust iterations can readmit temporarily downweighted points. Only
-        # the final map must retain eight; do not stop at a transient rejection.
-        # Expand a neighborhood when rejected anchors would fill its support.
         support_index = min(_MIN_LOESS_POSITIONS, support_count) - 1
         support_radius = np.partition(abs(dx[:, supported]), support_index, axis=1)[
             :, support_index
@@ -592,7 +577,7 @@ def _fit_sample_knots(
         determinant = sw * sxx - sx * sx
         ranked = determinant > np.finfo(float).eps * np.maximum(sw * sxx, 1)
         if not np.all(ranked):
-            return ()  # No silent constant/interpolation substitute for LOESS.
+            return ()
         fitted = (sy * sxx - sxy * sx) / determinant
         if iteration == 3:
             break
@@ -613,9 +598,6 @@ def _fit_sample_knots(
             if supported_x[0] <= a <= supported_x[-1]
         )
     )
-    # Identity cannot rescue an unsupported/non-monotone trend or extend its
-    # span. Its local influence uses the same residual scale as robust fitting,
-    # estimated only from retained positions so rejected pairs cannot inflate it.
     if not standard_points or not _is_usable(knots):
         return knots
     limit = _ROBUST_RESIDUAL_CUTOFF * float(np.median(abs((y - fitted)[robust > 0])))
@@ -632,7 +614,7 @@ def _pool_order_violations(
     A map that folds broadly would fall below the LOESS support floor; it stays
     the unavailable folded fit rather than a pooled map with too few positions.
     """
-    blocks: list[list[float]] = []  # [observed sum, reference sum, count]
+    blocks: list[list[float]] = []
     for observed, reference in knots:
         blocks.append([observed, reference, 1])
         while (
@@ -667,9 +649,6 @@ def _bound_standard_landmarks(
         upper = knots[index + 1][1] if index + 1 < len(knots) else math.inf
         if lower < value < upper:
             proposed[index] = value
-    # Evaluate neighboring proposals together, not in label/insertion order.
-    # Each proposal also fits between the original neighbors, so reverting a
-    # conflicting proposal cannot invalidate an accepted one.
     result = []
     for index, (observed, reference) in enumerate(knots):
         lower = proposed[index - 1] if index else -math.inf

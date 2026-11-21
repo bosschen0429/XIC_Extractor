@@ -11,7 +11,6 @@ from xic_extractor.tabular_io import read_delimited_rows
 SUMMARY_NAME = "matrix_curation_summary.json"
 CURATED_MATRIX_NAME = "analysis_matrix.tsv"
 DECISIONS_NAME = "feature_decisions.tsv"
-# The default output name; its timestamp orders a result's curations.
 FOLDER_PREFIX = "matrix_curation_"
 
 _RELATION_NAMES = {
@@ -33,7 +32,6 @@ class PublishedCuration:
 
 
 def is_curation(folder: Path) -> bool:
-    # The summary is written last; a folder without it is incomplete.
     return (folder / SUMMARY_NAME).is_file()
 
 
@@ -64,7 +62,6 @@ def read_published_curation(folder: Path) -> PublishedCuration:
 
 
 def _removal_reason(row: dict[str, str], parameters: dict[str, dict]) -> str:
-    # Only the first removing step judged the row; later steps skip it.
     step = row["decision_reason"].removeprefix("dropped_by:").split(",")[0]
     if step == "same_compound":
         relations = "、".join(

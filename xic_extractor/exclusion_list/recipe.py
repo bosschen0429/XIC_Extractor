@@ -240,8 +240,6 @@ def _check_input_path(path: Path, outputs: set[Path]) -> None:
 def _matching_files(base: Path, pattern: Any, outputs: set[Path]) -> list[Path]:
     if not isinstance(pattern, str):
         raise ExclusionListError("targets: list file paths or patterns as text")
-    # Check even on the first run, before the output exists: otherwise a second
-    # run of the same recipe would read its previous exclusions as targets.
     absolute_pattern = str((base / pattern).resolve())
     if any(output.match(absolute_pattern) for output in outputs):
         raise ExclusionListError(

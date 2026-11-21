@@ -57,7 +57,6 @@ def test_rows_needing_look_follow_their_labels_and_role():
         ("A", "ISTD"),
         ("A", "Analyte"),
     ]
-    # A missing spiked ISTD needs a look; a missing analyte is a finished ND.
     rows[3] = rows[3] | {"Target": "ISTD"}
     assert ("B", "ISTD") in {
         (r["SampleName"], r["Target"]) for r in rows_needing_look(rows, {"ISTD"})
@@ -122,7 +121,6 @@ def test_review_focus_is_the_minority_outcome_of_each_target():
     ]
     overview = summarize_targeted_results(rows, look, istd_targets={"ISTD"})
     focus = {t.label: (t.focus_kind, t.focus_samples) for t in overview.targets}
-    # A shared absence is the batch fact; the rare detection is what may be wrong.
     assert focus == {
         "Rare": ("minority_counted", ("S3",)),
         "Common": ("minority_not_counted", ("S2",)),

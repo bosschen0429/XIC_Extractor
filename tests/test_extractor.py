@@ -149,8 +149,6 @@ def test_same_ion_valleys_remain_separate_under_supported_sample_drift(
     workbook = tmp_path / "output" / "correspondence.xlsx"
     output = _run_formal_selection(config, targets, workbook_path=workbook)
     results = {file.sample_name: file.results for file in output.file_results}
-    # Equal analytical Gaussians separated by their midpoint valley. The
-    # broad-body baseline and outer truncation are not an identity oracle.
     unit_area = 10000 * 0.7 * math.sqrt(2 * math.pi) * 60
     for sample, shift, scale in (("Reference", 0, 1), ("Shifted", -2, 2)):
         left, right = results[sample]["T0"], results[sample]["T1"]
@@ -222,8 +220,6 @@ def test_boundary_cid_nl_keeps_possible_lobes_without_merging_or_individual_supp
             return rt, 10 + signal
 
         def iter_ms2_scans(self, *_args):
-            # One event is unique to a remote peak. The other lies at the
-            # shared valley, not strictly inside either target lobe.
             for number, center in enumerate((3, 9), start=1):
                 scan = Ms2Scan(
                     scan_number=number,
@@ -376,9 +372,6 @@ def test_ms1_only_localizes_then_integrates_without_shape_veto(
     monkeypatch.setattr(_OPEN_RAW_SEAM, lambda *_args, **_kwargs: raw)
     targets = [target]
     if signal_kind == "far_only":
-        # Independent reference-linked bodies establish the sample's RT frame.
-        # A single target alone does not supply a scientifically justified
-        # universal maximum RT error.
         targets += [
             replace(
                 _target("AnchorA", neutral_loss_da=None, rt_min=4, rt_max=4), mz=400
@@ -404,8 +397,6 @@ def test_ms1_only_localizes_then_integrates_without_shape_veto(
             assert result.reported_rt == pytest.approx(9.4, abs=0.02)
             assert result.reported_peak_start > 9.1
         if signal_kind == "double_top":
-            # One target reference does not authorize adding two resolved
-            # observed peaks. The selected value is one complete lobe.
             assert min(abs(result.reported_rt - center) for center in (8.6, 9.4)) < 0.02
             assert not (
                 result.reported_peak_start < 8.6 and result.reported_peak_end > 9.4
@@ -493,9 +484,6 @@ def test_peer_alternate_band_cannot_replace_unquantifiable_target(
                 signal[:] = 0
                 if control_signal == "one_scan":
                     signal[np.argmin(abs(rt - center))] = amplitude
-            # This second band exists in every sample but is not the target
-            # chosen in the peers. Its single peer detections still carry RT
-            # correspondence evidence, even though they cannot carry quantity.
             if self.sample == "Control":
                 signal += 7000 * np.exp(-0.5 * ((rt - 13) / 0.1) ** 2)
             else:
@@ -563,8 +551,6 @@ def test_many_background_regions_do_not_erase_a_clear_targeted_body(
 
         def extract_xic(self, mz, rt_min, rt_max, ppm_tol):
             rt = np.arange(0.0, 60.005, 0.01)
-            # More background lobes than the generic universe budget. Their
-            # count cannot delete a clearly observed, unrelated main body.
             background = sum(
                 50.0 * np.exp(-0.5 * ((rt - center) / 0.025) ** 2)
                 for center in np.arange(1.0, 59.0, 0.32)
@@ -588,7 +574,6 @@ def test_many_background_regions_do_not_erase_a_clear_targeted_body(
     monkeypatch.setattr(_OPEN_RAW_SEAM, lambda *_args, **_kwargs: Raw())
     result = _run(config, [target]).file_results[0].results["Main"]
     assert result.reported_rt == pytest.approx(30.0, abs=0.03)
-    # Independent Gaussian area oracle, with truncated boundary/baseline room.
     expected_area = 20000.0 * 0.16 * np.sqrt(2 * np.pi) * 60
     assert result.reported_peak_area == pytest.approx(expected_area, rel=0.08)
     assert len(result.candidate_physical_evaluations) > 128
@@ -692,9 +677,6 @@ def test_batch_context_uses_supported_bodies_and_retention_uncertainty(
             assert result.reported_peak_area is None
             assert result.reported_rt is None
             if neutral_loss is not None:
-                # The acquired event still supports the regional population.
-                # An event at a retained valley is set-level evidence, not
-                # individual support manufactured by merging before selection.
                 relations = result.cid_nl_relations
                 assert (
                     relations.supported_candidate_indexes
@@ -850,7 +832,6 @@ def test_run_writes_success_rows_with_area_columns_and_optional_nl(
     ]
     for row, expected in zip(long_rows, expected_rows, strict=True):
         assert _core_long_row(row) == expected
-        # The other target shares this ion region; the doubt names it.
         assert "targeted_shared_ion_region:" in row["Projection Review Reasons"]
         assert "共用離子區段（" in row["疑點"]
     assert [row["Counted Detection"] for row in long_rows] == ["TRUE", "TRUE"]
@@ -886,8 +867,6 @@ def test_outside_strong_peak_cannot_erase_in_window_peak(
     known_area = 1000.0 * 0.04 * np.sqrt(2 * np.pi) * 60.0
     if outside_height == 0:
         assert result.reported_peak_area == pytest.approx(known_area, rel=0.04)
-    # A full-acquisition AsLS baseline can change quantitation under interference;
-    # Targeted must retain the component and publish the shared physical answer.
     assert result.physical_evaluation is not None
     assert result.physical_evaluation.answer.selected_segment is not None
     assert (
@@ -958,8 +937,6 @@ def test_formal_target_ranks_only_physically_supported_signal(
             fragmented = 1000.0 * np.exp(-0.5 * ((rt - 6.0) / 0.12) ** 2)
             fragmented[fragmented < 1e-4] = 0.0
             fragmented[::2] = 0.0
-            # The observed apex supplies adjacent acquired support. With empty
-            # flanks, this cluster also qualifies through local hit enrichment.
             fragmented[int(np.argmin(np.abs(rt - 6.0)))] = 1000.0
             return rt, raw + fragmented
 
@@ -977,8 +954,6 @@ def test_formal_target_ranks_only_physically_supported_signal(
     long_rows = _run_output_to_long_rows(output, [target])
 
     if with_supported_main:
-        # The asymmetric analytic lobe is supported even though its canonical
-        # shape is less symmetric than the smoothed, interrupted tail.
         assert result.reported_rt == pytest.approx(4.7, abs=0.04)
         assert evaluation.state == "available"
         assert evaluation.answer.selected_segment is not None
@@ -986,8 +961,6 @@ def test_formal_target_ranks_only_physically_supported_signal(
             result.reported_peak_area
             == evaluation.answer.selected_segment.area_counts_seconds
         )
-        # The distant interrupted component is not the reference envelope;
-        # only the localized main peak participates in shape review.
         assert projection.product_state == "detected_flagged"
         assert projection.counted_detection is True
         assert "trace_morphology_review" in projection.review_reasons
@@ -997,8 +970,6 @@ def test_formal_target_ranks_only_physically_supported_signal(
         ) == pytest.approx([4.7, 6.0], abs=0.04)
         assert long_rows[0]["Counted Detection"] == "TRUE"
     else:
-        # MS1-only measures the canonical total envelope even with interrupted
-        # acquired support; it does not switch to censored-cluster quantitation.
         assert result.reported_rt == pytest.approx(6.0, abs=0.04)
         assert evaluation.state == "available"
         assert evaluation.answer.selected_segment is not None
@@ -1037,8 +1008,6 @@ def test_formal_target_drops_selection_when_final_physical_owner_is_unavailable(
     monkeypatch.setattr(_OPEN_RAW_SEAM, _open_raw_factory(peak_centers=[9.0]))
 
     def unavailable_answer(prepared, universe, question):
-        # Consume a real, owner-bound unavailable answer. The consumer must
-        # not fall back to the value ranked before the final owner response.
         rejected_question = mint_physical_peak_question(
             prepared.projection,
             universe,
@@ -1139,7 +1108,6 @@ def test_retained_apex_outside_rt_hint_is_measured_without_inventing_nl_support(
     )
     assert len(finalized) == 1
     assert finalized[0].scientific_core.cell_observations == ()
-    # A retained measurement can be saved without establishing CID-NL identity.
     assert finalized[0].completed_projection.accepted_cell_count == 1
     assert finalized[0].completed_projection.no_write_count == 0
 
@@ -1740,8 +1708,6 @@ def test_unpaired_isomers_use_expected_rt_to_select_their_own_supported_peak(
             return rt, 10.0 + early + late
 
         def iter_ms2_scans(self, rt_min, rt_max):
-            # Both isomers have independent NL support; the later peak has
-            # denser DDA acquisition, which must not erase their RT identity.
             scan_rts = (5.2, 25.29, 25.32, 25.35, 25.38, 25.41)
             for number, scan_rt in enumerate(scan_rts, start=1):
                 scan = Ms2Scan(
@@ -2032,9 +1998,6 @@ def test_paired_analyte_with_nl_remains_counted_despite_target_anchor_mismatch(
     expected_peak = _formatted_peak_columns(
         "Analyte", output.file_results[0].results["Analyte"]
     )
-    # The fixture supplies a symmetric Gaussian on a fixed acquired
-    # grid. Its nearest sample to the known center is the independent apex
-    # oracle; the mocked ranking result does not own physical peak facts.
     assert len(raw.windows) == 2
     sampled_rt = np.arange(raw.windows[1][0], raw.windows[1][1] + 0.0025, 0.0025)
     expected_apex_rt = sampled_rt[np.argmin(np.abs(sampled_rt - 13.06))]
@@ -2053,7 +2016,6 @@ def test_paired_analyte_with_nl_remains_counted_despite_target_anchor_mismatch(
     assert "targeted_reference_displacement" in analyte_row["Projection Review Reasons"]
     assert analyte_row["Counted Detection"] == "TRUE"
     assert analyte_row["Projection Conflict Reasons"] == ""
-    # Expected RT and the paired offset are identity priors, not DDA anchor crops.
     assert all(record.issue != "NL_ANCHOR_FALLBACK" for record in output.diagnostics)
     assert output.file_results[0].results["Analyte"].candidate_ms2_evidence.nl_match
 
@@ -2541,8 +2503,6 @@ class _FakeRaw(ScopedMs2WindowReader):
         return rt, intensity
 
     def iter_ms2_scans(self, rt_min: float, rt_max: float):
-        # Acquisition is immutable and shared across all targets, not generated
-        # by whichever target happened to query NL most recently.
         scans = _active_nl_fixture_results
         for index, result in enumerate(scans):
             scan_rt = (
@@ -2786,8 +2746,6 @@ def _bind_fixture_candidates_to_physical_segments(
             physical_candidates,
             key=lambda item: abs(item.selection_apex_rt - candidate.selection_apex_rt),
         )
-        # Selection can choose an existing physical candidate, not invent new
-        # measurements while copying its segment label.
         replacements[candidate] = physical
     selected = next(
         candidate for candidate in result.candidates if candidate.peak == result.peak

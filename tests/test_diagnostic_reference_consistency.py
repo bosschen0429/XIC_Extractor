@@ -25,7 +25,6 @@ def target(label: str, rt: float) -> Target:
 
 
 def test_leave_one_out_warns_without_changing_reference() -> None:
-    # Independent oracle: other anchors obey y = 2*x; held-out x=3 predicts 6.
     groups = {
         "a": [target("left", 2), target("held", 3), target("right", 5)],
         "b": [target("left", 4), target("held", 9), target("right", 10)],
@@ -36,7 +35,7 @@ def test_leave_one_out_warns_without_changing_reference() -> None:
     assert row["predicted_rt_min"] == 6
     assert row["residual_min"] == 3
     assert "mapping_residual" in row["warnings"]
-    assert row["severity"] == "info"  # Mapping alone never proves wrong reference.
+    assert row["severity"] == "info"
     assert groups == before
 
 
@@ -168,7 +167,6 @@ def test_monotonic_mapping_collapses_duplicate_knots_and_ignores_input_order() -
             target("s", 10),
         ],
     }
-    # Keep the robust screen inactive here to isolate knot/PAVA behavior.
     policy = ReferencePolicy(mapping_residual_min=100)
     report = check_reference_consistency(groups, policy=policy)
     held = next(
@@ -176,7 +174,6 @@ def test_monotonic_mapping_collapses_duplicate_knots_and_ignores_input_order() -
         for error in report["mapping_errors"]
         if error["group"] == "b" and error["label"] == "held"
     )
-    # PAVA pools the inverted 4,3 anchors to 3.5; duplicate x=2 is one knot.
     assert held["predicted_rt_min"] == 3.5
     assert (
         report["mapping_errors"]

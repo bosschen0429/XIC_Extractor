@@ -46,7 +46,6 @@ class CellEvidence:
 
     direct: bool
     value: float
-    # None when the published output records no apex for the cell.
     apex_rt_min: float | None
 
 
@@ -61,7 +60,6 @@ class CurationInputs:
     """What the source offers, so a step can say whether it can run."""
 
     sample_binding: SampleBinding
-    # Empty when per-cell evidence can be read; otherwise why not.
     cell_evidence_problem: str = ""
     nucleoside_list: NucleosideList | None = None
 
@@ -73,8 +71,6 @@ class CurationMatrix:
     sample_binding: SampleBinding
     values: np.ndarray
     features: tuple[FeatureIdentity, ...] = ()
-    # Per Matrix row, published cells by explanation sample key; loaded only
-    # when an enabled step needs it.
     cells: tuple[Mapping[str, CellEvidence], ...] | None = None
     nucleoside_windows: tuple[MzRtWindow, ...] = ()
 

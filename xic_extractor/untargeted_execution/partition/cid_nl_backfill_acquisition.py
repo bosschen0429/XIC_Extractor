@@ -279,8 +279,6 @@ def _backfill_xic_request(
     ppm_tol: float,
     physical_context: bool,
 ) -> XICRequest:
-    # One additional search half-window per flank supplies signal context.
-    # This is a bounded acquisition budget, never an expanded search permission.
     context_half_window = half_window * (2.0 if physical_context else 1.0)
     return XICRequest(
         mz=mz,
@@ -556,8 +554,6 @@ def backfill_untargeted_cid_nl_sample_subject(
         )
     observations: tuple[PeakObservation, ...] = ()
     physical_evaluations: list[PhysicalPeakEvaluation] = []
-    # Complete observations keep their original signal and integral. Only
-    # clipped context permits one bounded reconsideration of the same search.
     for capture_request, capture_acquired in (
         (request, acquired),
         (context_request, context_acquired),
@@ -628,7 +624,6 @@ def backfill_untargeted_cid_nl_sample_subject(
                 sample=sample,
                 acquisition_source=source,
                 method_subject=method_subject,
-                # Composite workers retain RAW even with preacquired traces.
                 raw=cast(CidNlRawSource, raw),
                 settings=settings,
                 query_rt_min=query_rt_min,
@@ -699,9 +694,6 @@ def _close_backfill_attempt(
             method_subject=method_subject,
             detector_invocation_id="untargeted-cid-nl-backfill",
             evaluation_receipt=CidNlEvaluationReceipt(
-                # The physical owner may recover a complete query-containing
-                # peak from bounded context. Cover that evaluated acquisition,
-                # without expanding the search question or MS2 evidence query.
                 query_rt_min=min(
                     (
                         query_rt_min,

@@ -26,7 +26,6 @@ import {
   requestPath,
 } from "./analysis_ui.js";
 
-// This uncommitted editor copy is never shared with another view.
 let methodDraft = null;
 function untargetedValues() {
   const values = {
@@ -55,8 +54,6 @@ function untargetedValues() {
     for (const key of ["rt_min", "rt_max"]) {
       delete snapshotOverrides[key];
     }
-    // Retain valid imported parameters that have no editor control. Only
-    // displayed controls override them; unchecked RT cropping removes bounds.
     Object.assign(snapshotOverrides, values.overrides);
   }
   return values;
@@ -79,8 +76,6 @@ export async function loadMethod(preset, overrides = {}) {
   await applyMethodDetails(data, preset, overrides);
 }
 async function applyMethodDetails(data, preset, overrides = {}) {
-  // An applied draft is the current choice, not a reusable method file.
-  // Switching away must not leave an option that reloads absent or old bytes.
   const previousDraft = state.method?.path;
   if (previousDraft && previousDraft !== preset) {
     for (const item of [...$("u-preset").options])
@@ -134,7 +129,6 @@ async function applyMethodDetails(data, preset, overrides = {}) {
     lock();
     updateMethodPreview();
   });
-  // Delta Mass Discovery always reads the complete acquisition.
   if (cropFields.childElementCount) tuning.append(cropLabel, cropNote, cropFields);
   lock();
   updateMethodPreview();
@@ -154,7 +148,6 @@ function updateMethodPreview() {
         "chip accent",
       ),
     );
-  // A combination exists only with more than one piece of evidence.
   if (preview.combine_mode !== "single")
     chips.push(
       el(
@@ -179,8 +172,6 @@ function updateMethodPreview() {
   checklist("untargeted");
 }
 
-// Method editor: CID-NL and Delta Mass cards over one preset draft. Delta
-// Mass ions carry their own role flags; names in the preset follow from them.
 const DM_THRESHOLDS = [
   ["delta_mass_mz_tolerance_ppm", "m/z 容差（ppm）"],
   ["apex_floor_sec", "共洗脫容差下限（秒）"],
@@ -193,7 +184,6 @@ const DM_THRESHOLDS = [
   ["min_background_sigma", "最弱離子背景倍數（σ）"],
   ["min_base_support", "基準支撐下限"],
 ];
-// Delta Mass Discovery keys that a CID-NL-only method does not accept.
 const DELTA_MASS_ONLY_KEYS = new Set([
   "method_label",
   "positions",
@@ -207,7 +197,6 @@ const DELTA_MASS_ONLY_KEYS = new Set([
 let deltaDefaults = null;
 let methodAdvancedOpen = false;
 async function deltaMassDefaults() {
-  // New Delta Mass evidence starts from the built-in Pt method's thresholds.
   deltaDefaults ||= (await api("/api/method", { preset: "pt_pattern" })).draft
     .overrides;
   return deltaDefaults;
@@ -301,8 +290,6 @@ function editorDraft(editor) {
     );
     const hadDeltaMass = source.tags.some((tag) => tag.strategy === "delta_mass");
     overrides = {
-      // New Delta Mass evidence restores Easy-IC masses like CID-NL methods;
-      // an existing Delta Mass method keeps its policy, including omitted (none).
       ...(hadDeltaMass ? {} : { mass_recalibration: "easy_ic_restore" }),
       ...kept,
       positions: [
@@ -342,7 +329,6 @@ function editorDraft(editor) {
       },
     };
   } else {
-    // Keep every CID-NL value, including ones without a page control.
     overrides = Object.fromEntries(
       Object.entries(source.overrides || {}).filter(
         ([key]) => !DELTA_MASS_ONLY_KEYS.has(key),
@@ -383,7 +369,6 @@ function editorError(editor) {
   }
   return "";
 }
-// Delta Mass Discovery combines only with the dR loss, and only when both match.
 const DELTA_MASS_LOSS = { name: "DNA_dR", neutral_loss_da: 116.0474 };
 const bothEvidence = () => methodDraft.dmOn && methodDraft.cidOn;
 function renderCombine() {
@@ -507,7 +492,6 @@ function renderDeltaCard() {
   body.replaceChildren(editor, advanced);
   renderRoles();
 }
-// Role flags per ion; renaming an ion keeps its roles.
 function renderRoles() {
   const holder = $("method-roles");
   if (!holder) return;
@@ -573,7 +557,6 @@ function renderMethodEditor() {
 }
 function openMethodEditor(draft) {
   methodDraft = editorFromDraft(draft);
-  // Advanced settings start collapsed for each method; editing keeps them open.
   methodAdvancedOpen = false;
   renderMethodEditor();
   $("method-editor").showModal();

@@ -186,13 +186,11 @@ def _quality_review_report(
             review_reasons=(),
         )
         cells.append(review_cell(decision))
-        # Backfill admissions have no owning member; their risks stay on the cell.
         cells[-1]["membership_risks"] = [
             risk
             for risk in (membership_risks or {}).get(sid, [])
             if risk["phase"] == "backfill"
         ]
-    # A grouping risk is accepted by the member that owns the peak.
     member_risks = {
         sid: risk
         for sid, risks in (membership_risks or {}).items()
@@ -212,7 +210,6 @@ def _quality_review_report(
     with ExplanationReportWriter(report, review_only=True) as writer:
         writer.declare_samples(samples)
         keys = [("C1", "S1"), ("C2", "S2")]
-        # Each candidate's terminal is its member's hypothesis and peak.
         for cid, sid in keys:
             writer.add_peak(sid, f"obs-{sid}", (None, 1.0, None))
             writer.add_candidate(

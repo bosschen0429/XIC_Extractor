@@ -93,8 +93,6 @@ def complete_targeted_candidate_batch(
     }
     if not assessments:
         return output
-    # Retention context ranks the measured regions; it does not redefine
-    # their integration boundaries or recombine neighboring lobes.
     batch = TargetedBatchContext(
         tuple(assessment.population_context() for assessment in assessments.values())
     )
@@ -103,8 +101,6 @@ def complete_targeted_candidate_batch(
     replaced_keys = {
         key for key, assessment in assessments.items() if not assessment.target.is_istd
     }
-    # Peak-local diagnostics refer to the final batch choice, not capture's
-    # temporary single-sample answer. Keep file-level and unrelated diagnostics.
     diagnostics = [
         d
         for d in output.diagnostics
@@ -118,9 +114,6 @@ def complete_targeted_candidate_batch(
             if assessment is None:
                 continue
             if assessment.target.is_istd:
-                # Standards already own the sample-local anchor used to
-                # transfer analyte references. Do not silently replace that
-                # anchor after its dependent priors have been established.
                 continue
             trace = assessment.trace_group.primary_trace
             builder = factory(
@@ -275,8 +268,6 @@ def complete_targeted_candidate_batch(
                     (reason,),
                     ("targeted_shared_ion_region",) if different_reference else (),
                 )
-        # Retained signals and alternatives serve batch selection only. Do not
-        # carry every candidate's arrays and evaluations into publication.
         results = {
             label: replace(result, targeted_candidate_assessment=None)
             if result.targeted_candidate_assessment is not None

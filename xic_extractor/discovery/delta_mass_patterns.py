@@ -277,8 +277,6 @@ def complete_delta_mass_candidates(
     settings: DeltaMassPatternSettings,
 ) -> tuple[DeltaMassCandidate, ...]:
     """Consume the single acquisition batch; confirm missing positions then shape."""
-    # Keep native acquisition windows: cropping a wider trace by exact RT would
-    # change the vendor's scan-rounded endpoints and therefore shape decisions.
     split = len(prepared.request_positions)
     trace_map = dict(zip(prepared.request_positions, traces[:split], strict=True))
     background_trace_map = dict(
@@ -311,7 +309,6 @@ def complete_delta_mass_candidates(
         for position_index, position in enumerate(candidate.positions):
             acquired_trace = trace_map.get((index, position_index), shape_reference)
             if acquired_trace is not None and acquired_trace.rt.size >= 2:
-                # Include acquired zero-signal scans: signal gaps are not scan cadence.
                 interval_sec = float(np.median(np.diff(acquired_trace.rt))) * 60
                 position.apex_threshold_sec = max(
                     settings.apex_floor_sec,
@@ -355,7 +352,6 @@ def complete_delta_mass_candidates(
                 position.partner_source = "raw"
             else:
                 _reject(candidate, 4, "partner_not_confirmed_in_raw")
-        # The measured base owns ratio evidence and apex deltas for all partners.
         if base_was_missing and candidate.base_height is not None:
             for position in candidate.positions:
                 if position.apex_rt_min is not None:
@@ -395,7 +391,6 @@ def _apply_signal_gate(
     """Compare all positions on raw, locally background-subtracted peak heights."""
     for i, position in enumerate(candidate.positions):
         trace = traces[candidate_index, i]
-        # Round sub-nanosecond subtraction error at inclusive window boundaries.
         seconds = np.round((trace.rt - candidate.base_rt_apex_min) * 60, 9)
         flanks = [
             trace.intensity[
@@ -411,7 +406,6 @@ def _apply_signal_gate(
         peak = trace.intensity[np.abs(seconds) <= settings.shape_window_sec]
         if not flanks or not len(peak):
             continue
-        # A neighboring peak/tail on one side must not set the background.
         flank = min(flanks, key=lambda values: float(np.median(values)))
         background = float(np.median(flank))
         position.raw_peak_height = float(np.max(peak))

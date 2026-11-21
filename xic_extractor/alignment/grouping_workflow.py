@@ -452,12 +452,7 @@ def admit_cid_nl_group_backfills(
                 combined,
                 disposition=group.disposition,
                 evidence=group.evidence,
-                # Keep the reference coordinates used to choose the canonical
-                # backfill subject. New members cannot redirect another sample's
-                # already completed group-bound query to a different subject.
                 center=(group.group_center_mz, group.group_center_rt),
-                # The original inference/ISTD binding remains about its original
-                # owners; backfill does not label new owners as known standards.
                 inference_basis=group.inference_basis,
                 inference_decisions=group.inference_decisions,
             )

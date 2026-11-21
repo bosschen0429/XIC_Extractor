@@ -215,7 +215,6 @@ def install_runtime_raws(
     sources_by_path: dict[Path, _FakeRaw],
     tmp_path: Path,
 ) -> dict[Path, list[_FakeThermoRaw]]:
-    # Keep synthetic spectra on the production worker/reader path, without vendor I/O.
     monkeypatch.setattr(runtime_module, "ensure_assemblies_loaded", lambda *_: None)
 
     def _forbid_vendor_api(_import_module):

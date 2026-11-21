@@ -132,10 +132,6 @@ def test_crowded_doublet_uses_context_before_grouping_and_preserves_query_lineag
     assert initial_grouping is not None
     assert initial_grouping.rt_anchor_observations
     if missing_pattern_location:
-        # The final sample has no local pattern position for the missing peak.
-        # Other samples still supply its MS1 trajectory, including S1 where
-        # that peak has no method-supported owner. Do not discard those points
-        # and restart a prediction from only the sparse supported owners.
         initial_grouping = replace(
             initial_grouping,
             worksets=tuple(
@@ -256,9 +252,6 @@ def test_crowded_doublet_uses_context_before_grouping_and_preserves_query_lineag
 def test_review_only_input_leaves_each_group_cell_for_independent_backfill(
     tmp_path, monkeypatch
 ):
-    # Three same-m/z peaks; S0-S5 support two samples per peak. S6 shows all
-    # three in MS1 but its only MS2 event infers the precursor at the first
-    # peak, so that group reuses S6's initial HOLD while the other two search.
     group_apices = (7.80, 8.25, 8.70)
     samples = tuple(f"S{i}" for i in range(7))
     fixture = build_untargeted_cid_nl_no_raw_fixture(

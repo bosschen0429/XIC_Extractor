@@ -200,8 +200,6 @@ def test_run_alignment_rejects_stale_product_artifacts_before_raw(
     (raw_dir / "Sample_A.raw").write_text("raw", encoding="utf-8")
     output_dir = tmp_path / "out"
     output_dir.mkdir()
-    # A run that no longer writes these must still refuse to publish beside a
-    # copy an earlier run left, rather than let it pass as current output.
     stale = output_dir / retired
     stale.write_text("old artifact", encoding="utf-8")
 

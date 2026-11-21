@@ -49,7 +49,6 @@ def _two_peak_raw(*, first: float, second: float, sigma: float = 0.04) -> _FakeR
 
 
 def test_events_across_a_broad_peak_measure_one_peak() -> None:
-    # Events 0.6 min apart on one broad peak used to open separate channels.
     rt = np.linspace(26.0, 31.0, 501)
     raw = _FakeRaw(rt=rt, intensity=_gaussian(rt, center=28.4, sigma=0.5, height=1e6))
     seeds = (
@@ -93,7 +92,6 @@ def test_isomers_at_one_mass_are_two_peaks_on_one_channel() -> None:
 
 @pytest.mark.parametrize("order", list(itertools.permutations(range(3))))
 def test_channels_never_chain_masses_beyond_the_tolerance(order) -> None:
-    # 10 ppm of 500 is 5 mDa: A~B and B~C, but A and C differ by 16 ppm.
     masses = (500.000, 500.004, 500.008)
     seeds = tuple(
         _seed(scan_number=10 + index, rt=8.0, precursor_mz=masses[index])
@@ -120,12 +118,10 @@ def test_coeluting_ions_within_the_tolerance_share_one_channel() -> None:
 
     (channel,) = build_discovery_ions(seeds, settings=_settings())
 
-    # The stronger event's measured ion sets the XIC mass.
     assert channel.mz == 500.0080
 
 
 def test_an_event_on_a_shared_valley_attaches_to_the_earlier_peak() -> None:
-    # Adjacent raw components share the 7.90 min valley scan.
     raw = _two_peak_raw(first=7.8, second=8.0)
     seeds = (
         _seed(scan_number=10, rt=7.8, product_intensity=4e3),
@@ -172,12 +168,10 @@ def test_every_event_attaches_to_one_peak_or_records_why_not() -> None:
     raw = _two_peak_raw(first=7.6, second=8.2, sigma=0.03)
     seeds = (
         _seed(scan_number=10, rt=7.6),
-        # An inferred precursor whose parent MS1 scan was not read.
         replace(
             _seed(scan_number=20, rt=8.2),
             precursor_mz_basis="product_plus_neutral_loss",
         ),
-        # Located in the first peak's raw basin, beyond its bounds and margin.
         _seed(scan_number=30, rt=7.85),
     )
 
@@ -188,7 +182,6 @@ def test_every_event_attaches_to_one_peak_or_records_why_not() -> None:
     assert events[10].peak_id and not events[10].unattached_reason
     assert events[20].unattached_reason == "parent_ms1_unavailable"
     assert events[30].unattached_reason == "rt_outside_peak"
-    # The second peak was measured on the channel, but no event attaches.
     (unattached_peak,) = (p for p in result.peaks if not p.attached_event_count)
     assert unattached_peak.status == "no_nl_event"
     assert not unattached_peak.admitted
@@ -268,15 +261,12 @@ class _MassDependentRaw(_FakeRaw):
         traces = []
         for request in requests:
             intensity = self.intensity.copy()
-            # A different off-peak reading per window keeps traces unequal.
             intensity[0] += 1.0 + (request.mz - 499.0) * 1e3
             traces.append(XICTrace.from_arrays(self.rt, intensity))
         return tuple(traces)
 
 
 def test_adjacent_channels_measure_their_shared_peak_once() -> None:
-    # The first channel opens at 499.995 and takes 500.0049 within 20 ppm; the
-    # next opens at 500.0051. Both XIC windows read the ion at the same apex.
     rt = np.linspace(8.6, 9.4, 161)
     raw = _MassDependentRaw(
         rt=rt, intensity=_gaussian(rt, center=9.02, sigma=0.04, height=1e4)
@@ -347,7 +337,6 @@ def test_a_recentred_window_that_selects_another_peak_keeps_the_first() -> None:
         acquisition_source=raw.acquisition_source,
         settings=settings,
         signal_processing_profile=TEST_PROFILE,
-        # The second peak's apex reads the ion 6 ppm above its window centre.
         ms1_centroid=lambda _rt, low, high: (
             (500.003, 1.0) if low < 500.003 < high else None
         ),

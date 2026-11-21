@@ -170,11 +170,8 @@ def read_known_istd_reference(path: Path) -> KnownIstdReference:
         seen: set[tuple[str, str]] = set()
         sample: str | None = None
         for row in rows("XIC Results", ("SampleName", "Target", "RT")):
-            # The report carries SampleName across each sample block, whose
-            # first named row can be an analyte rather than an ISTD.
             if row["SampleName"] is not None and str(row["SampleName"]).strip():
                 sample = text(row, "SampleName")
-            # Targets owns each label's role; a result row only names its target.
             label = text(row, "Target")
             if label not in declared:
                 raise ValueError(f"XIC Results: undeclared target {label}")

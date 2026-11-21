@@ -5,8 +5,6 @@ from scripts.run_alignment import main
 
 
 def test_matrix_only_joins_batch_qualified_groups_and_keeps_missing_cells(tmp_path):
-    # Both batches use the same local IDs. Column ownership follows injection
-    # order, not the order of files, area fields or reference-batch selection.
     def group(key, mz, areas):
         return {
             "key": key,
@@ -80,7 +78,6 @@ def test_matrix_only_joins_batch_qualified_groups_and_keeps_missing_cells(tmp_pa
     assert run() == 2
     assert not (out / "alignment_matrix.tsv").exists()
 
-    # A pairing file from a different grouping must not silently drop a row.
     out = tmp_path / "stale"
     pairing["rows"].pop()
     assert run("--pairing", save("join", pairing)) == 2

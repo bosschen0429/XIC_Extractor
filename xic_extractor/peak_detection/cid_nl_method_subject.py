@@ -397,8 +397,6 @@ def cid_nl_alignment_subject_worksets(
                 index = parents[index]
             return index
 
-        # A bridge joins whole comparison components before dispatch. Each
-        # subject still retains its own assessment owner.
         scalar_intervals = tuple(
             (
                 index,

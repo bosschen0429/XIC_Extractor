@@ -59,7 +59,6 @@ def ordered_review_items(headers, rows, scope):
             and facts["unresolved_count"]
         ):
             selected.append((item, facts))
-    # Stable ties preserve the source's order; local query handles are not ranks.
     selected.sort(
         key=lambda value: (
             -value[1].get("unresolved_count", 0),

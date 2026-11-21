@@ -300,8 +300,6 @@ def build_targeted_capture_population(
                 )
             )
             continue
-        # Unavailable alternatives remain acquisition diagnostics; only an
-        # available physical evaluation can supply a numeric observation.
         admissible_evaluations = tuple(
             evaluation
             for index, evaluation in enumerate(result.candidate_physical_evaluations)
@@ -426,7 +424,6 @@ def _target_capture_trace(
     result: ExtractionResult,
     target: Target,
 ) -> Trace:
-    # Expected RT identifies the target; retained acquisition coverage is authoritative.
     return bound_acquisition_trace(source, sample, result)
 
 

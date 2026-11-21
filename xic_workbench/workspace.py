@@ -167,14 +167,12 @@ class ReviewWorkspace:
         return read_evidence_summary(resolve_source(Path(source)))
 
     def preview_curation(self, values: dict[str, Any]) -> dict[str, Any]:
-        # Preview is read-only: do not hold the mutable workspace lock.
         return self.analysis.curation.preview_curation(self.analysis.config_dir, values)
 
     def open(self, source: Any) -> dict[str, Any]:
         given = Path(_text(source, "結果資料夾、Targeted XLSX 或 SQLite 檔案"))
         curation = None
         if given.is_dir() and is_curation(given):
-            # An opened curation keeps its own original result and decisions.
             curation = read_published_curation(given)
             if not curation.source_dir.is_dir():
                 raise ValueError(f"找不到這次整理的原始結果：{curation.source_dir}")
@@ -213,10 +211,8 @@ class ReviewWorkspace:
                 raise ValueError(
                     f"無法讀取這份結果（舊版本或已損壞）；請重新執行 {rerun}。"
                 ) from cause
-            # A full audit is browsed as published, without Matrix scopes.
             if page.payload["selection"].get("review_scope") != "matrix":
                 curation = None
-            # Failed opens never displace the previously usable batch.
             self._report, self._page, self._curation = path, page, curation
             self._targeted_raws = {}
             self._replace_job()
@@ -344,8 +340,6 @@ class ReviewWorkspace:
         source: object,
         curation: PublishedCuration | None,
     ) -> dict[str, Any]:
-        # Translate source-owned identifiers and coordinates; never infer a group.
-        # An Alignment evidence item's ref ends with its row or candidate ID.
         identifier = (
             json.loads(item["id"])[-1] if isinstance(source, EvidenceLocator) else None
         )
@@ -360,8 +354,6 @@ class ReviewWorkspace:
             }
         )
         target_id = None
-        # A group with any observed apex can be read for every member: samples
-        # without their own apex are acquired at the group's position.
         curve_samples = (
             sorted(s["sample_id"] for s in item.get("samples", []))
             if group_id and observed
@@ -374,7 +366,6 @@ class ReviewWorkspace:
         ]
         if item["kind"] == "target":
             target_id = item["details"]["target"]["Label"]
-            # A known Target can be inspected even when its saved result is ND.
             curve_samples = [row["SampleName"] for row in item["details"]["records"]]
         summary = {
             key: item.get(key)
@@ -431,7 +422,6 @@ class ReviewWorkspace:
                     candidate_id=summary["candidate_id"],
                 )
                 self._curves = curves
-                # Samples with a location can be read; saved ones show at once.
                 summary["curve_sample_ids"] = sorted(
                     {location.sample_key for location in curves.locations}
                 )
@@ -499,7 +489,6 @@ class ReviewWorkspace:
         if raw_needed:
             self._executor.submit(self._read_curves, job_id, request, cancel)
         else:
-            # Saved curves need no RAW: show them within this request.
             self._read_curves(job_id, request, cancel)
         return self.job(job_id)
 
@@ -588,8 +577,6 @@ class ReviewWorkspace:
                 prepared = prepare_curve_view(
                     bundle, request["samples"], is_cancelled=cancel.is_set
                 )
-                # Curves and the saved result are one review, including in the
-                # offline export. Loading fewer curves does not shrink its cells.
                 curve_item = prepared.payload["items"][0]
                 prepared.payload["items"] = [
                     {
@@ -664,12 +651,9 @@ class ReviewWorkspace:
         *,
         sample_groups: dict[str, str] | None = None,
     ) -> None:
-        # Session history stays on disk, not in an accumulating curve-payload cache.
         path = self._folder / f"{view_id}.view.json"
         snapshot = prepared.render_data()
         if sample_groups:
-            # Freeze display annotations with this view, separately from source
-            # owner facts. Offline rendering does not consume this context.
             snapshot["sample_groups"] = sample_groups
         try:
             with path.open("w", encoding="utf-8") as stream:

@@ -31,7 +31,7 @@ def _write_licenses(source_root: Path, stage: Path) -> None:
         (source_root / "pyproject.toml").read_text(encoding="utf-8")
     )
     pending = [Requirement(s) for s in metadata["project"]["dependencies"]]
-    pending.append(Requirement("pyinstaller"))  # Includes the bootloader exception.
+    pending.append(Requirement("pyinstaller"))
     seen: set[tuple[str, tuple[str, ...]]] = set()
     notices: dict[str, str] = {"Python": sys.version + "\n" + sys.copyright}
     while pending:

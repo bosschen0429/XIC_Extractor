@@ -256,8 +256,6 @@ def acquire_untargeted_cid_nl_sample_trace_batch(
     context_requests = _elution_context_requests(
         requests, padding_min=CID_NL_ALIGNMENT_CONFIG.preferred_rt_sec / 60.0
     )
-    # Original requests and indices remain exact. Wider context is acquired
-    # in this batch but is never supplied to the integration owner.
     context_indices = tuple(range(len(requests), len(requests) + len(context_requests)))
     acquisition = _freeze_acquisition(
         acquire_untargeted_trace_batch(capability, (*requests, *context_requests), raw)
@@ -578,9 +576,6 @@ def _adopt_peak_observations(
                 f"{peak.peak_id}: acquired={acquired.coordinate.request!r}, "
                 f"planned={requests[index]!r}"
             )
-    # Alignment's own measurement decides admission: a peak whose measurement
-    # is not available does not enter Alignment. Overlap review travels with
-    # the observation instead of holding the peak.
     admitted = tuple(
         (peak, acquired, evaluation)
         for peak, acquired, evaluation in zip(

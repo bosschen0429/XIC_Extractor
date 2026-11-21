@@ -11,7 +11,6 @@ from enum import Enum
 class MassRecalibration(str, Enum):
     NONE = "none"
     EASY_IC_RESTORE = "easy_ic_restore"
-    # Read/replay saved results only; new executions do not fit background ions.
     EASY_IC_PROBE = "easy_ic_probe"
 
 

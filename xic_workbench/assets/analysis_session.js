@@ -1,5 +1,3 @@
-// Analysis lifecycle. Views submit intentions and observe immutable snapshots;
-// transport, application adoption and confirmation are supplied at construction.
 const browserClock = {
   now: () => Date.now(),
   setInterval: (callback, delay) => setInterval(callback, delay),
@@ -130,8 +128,6 @@ export function createAnalysisSession(
         );
         failures = 0;
         accepted = true;
-        // Bind application settings and sample action before any completion
-        // can be delivered, including when that follow-up itself fails.
         await acceptedStart(kind, submitted, data.job, context);
         return data.job;
       } finally {

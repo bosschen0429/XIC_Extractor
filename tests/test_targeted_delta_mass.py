@@ -75,7 +75,6 @@ def test_new_ions_are_named_by_offset_and_default_to_record_only_ratios():
     ).targets[0]
     ions = target.identification.delta_mass.ions
     assert [ion.label for ion in ions] == ["+4.0052", "-2.0157"]
-    # Stored offsets keep full precision; only the name is rounded.
     assert ions[0].offset_mz == 4.005213
     assert all(
         (ion.ratio_min, ion.ratio_max, ion.compare_shape) == (0.1, 10.0, True)
@@ -195,8 +194,6 @@ def test_targeted_delta_mass_quantifies_declared_position_not_lowest_mass(tmp_pa
     target, result = extract_pattern(tmp_path, raw)
     assert result.peak is not None
     assert result.reported_rt == pytest.approx(2.0, abs=0.01)
-    # The heavy channel has half the light channel's height. Quantitation must
-    # remain the declared 302 channel; sum/pattern-base quantitation is wrong.
     assert result.reported_peak_intensity == pytest.approx(100_100.0, rel=0.03)
     assert result.selected_method_supported
     assert result.targeted_product_projection.counted_detection
@@ -325,7 +322,6 @@ def test_delta_mass_reaches_finalized_workbook_and_readonly_inspector(
     assert by_sample["missing"].reported_peak_area is None
     book = load_workbook(path, read_only=True, data_only=True)
     try:
-        # Delta Mass evidence is saved record for the workbench, kept hidden.
         assert {"Delta Mass", "Method Evidence", "Delta Mass Evidence"} <= set(
             book.sheetnames
         )
@@ -336,9 +332,7 @@ def test_delta_mass_reaches_finalized_workbook_and_readonly_inspector(
             "Targets",
         ]
         rows = list(book["Delta Mass Evidence"].values)
-        assert (
-            len(rows) == 5
-        )  # header + 2 measured positions per hit; misses are in Method Evidence
+        assert len(rows) == 5
         header = rows[0]
         evidence = [dict(zip(header, row, strict=True)) for row in rows[1:]]
         assert {(r["SampleName"], r["Pattern Status"]) for r in evidence} == {
@@ -383,9 +377,6 @@ class ThreeIonRaw(PatternRaw):
 
 @pytest.mark.parametrize("heavy_sec,counted", [(0.5, True), (1.5, False)])
 def test_coelution_is_measured_from_the_quantitation_ion(tmp_path, heavy_sec, counted):
-    # The light ion (lowest m/z) elutes 0.75 s after the quantitation ion; the
-    # heavy ion must still be within the 1 s tolerance of the quantitation ion,
-    # not merely of the light ion.
     ions = (
         {"label": "light", "offset_mz": -2.0, "compare_shape": False},
         {"label": "heavy", "offset_mz": 2.0, "compare_shape": False},

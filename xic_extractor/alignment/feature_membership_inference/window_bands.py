@@ -206,8 +206,6 @@ def _join_window_bands(
                 continue
             left, right = pair
             if samples[left] & samples[right]:
-                # Occupancy cannot disappear as bands grow. Retain its cost as
-                # an alternative, but it never becomes a merge candidate.
                 continue
             if (
                 min(len(members[left]), len(members[right])) < 2
@@ -220,8 +218,6 @@ def _join_window_bands(
             deferred.append((value, pair))
         else:
             return
-        # Removing or merging an edge can expose a previously blocked band's
-        # best alternative. Reconsider those edges, not the entire graph.
         for entry in deferred:
             heappush(candidates, entry)
         left, right = pair
@@ -511,8 +507,6 @@ def _assign_window_singletons(
     }
     by_sample: dict[str, list[SampleLocalMS1Owner]] = defaultdict(list)
     candidates_by_owner: dict[str, tuple[_Candidate, ...]] = {}
-    # Identity-ineligible owners never enter a window. Earlier pairwise
-    # ambiguity must be reconsidered against the remaining band choices.
     for group in members.values():
         if len(group) != 1:
             continue
@@ -548,9 +542,6 @@ def _assign_window_singletons(
             by_sample[owner.sample_stem].append(owner)
             candidates_by_owner[owner.owner_id] = tuple(row_candidates)
     for sample in sorted(by_sample, key=lambda stem: (orders[stem], stem)):
-        # Earlier samples may already have extended these initially fixed
-        # bands. Do not let independently compatible singletons bridge two
-        # contradictory shapes through the original band members.
         for owner in by_sample[sample]:
             remaining = []
             for candidate in candidates_by_owner[owner.owner_id]:

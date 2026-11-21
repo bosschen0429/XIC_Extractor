@@ -75,7 +75,6 @@ def test_summary_from_an_older_format_is_rejected_without_conversion(
 @pytest.mark.parametrize(
     "stale_content",
     [
-        # A support origin current Alignment no longer writes.
         "UPDATE cells SET support_origin='reacquired_support' "
         "WHERE group_id=(SELECT MIN(group_id) FROM cells)",
     ],
@@ -99,7 +98,6 @@ def test_explanation_from_an_older_alignment_is_rejected_on_open(
     read_explanation_metadata(source)
     with sqlite3.connect(source) as db:
         db.execute(stale_content)
-    # Rejected where it is opened, not decoded differently by review or curation.
     with pytest.raises(ExplanationError, match="請重新執行 Alignment"):
         read_explanation_metadata(source)
     with pytest.raises(ExplanationError, match="請重新執行 Alignment"):
@@ -152,8 +150,6 @@ def test_indexed_selection_keeps_witness_scope_counts_and_bounded_loading(
             ("C5", "S1", 500, 4),
         ):
             writer.add_candidate(cid, sid, precursor_mz=mz, **discovery(cid))
-            # C5's terminal observation lies outside its group's members, so its
-            # witness has no observation and no RT.
             peak, peak_rt = ("unrelated", 99) if cid == "C5" else (cid + "-obs", rt)
             writer.add_peak(sid, peak, (None, peak_rt, None))
             writer.add_terminal(
@@ -228,8 +224,6 @@ def test_indexed_selection_keeps_witness_scope_counts_and_bounded_loading(
         result.matched_count,
         result.missing_rt_count,
     ) == expected
-    # The in-memory path counts a group's members over the whole run, so only
-    # the selected items and their witnesses are compared.
     assert [
         (item["id"], item["witnesses"]) for item in read_report_payload(output)["items"]
     ] == [
@@ -277,7 +271,6 @@ def test_default_review_keeps_values_and_query_without_curves(
     )
     assert actual == expected
     assert read_alignment_curves(report) == []
-    # Review retention keeps no full-audit cell observation payload.
     assert all("observation" not in row for row in _cells(report).values())
     result = generate_report(
         report,
@@ -286,7 +279,6 @@ def test_default_review_keeps_values_and_query_without_curves(
     )
     assert result.selected_count > 0
     assert (tmp_path / "review.html").is_file()
-    # Missing required columns cannot be supplied by compatibility reading.
     with sqlite3.connect(report) as db:
         db.execute("DROP INDEX cells_sample_apex")
         db.execute(f"ALTER TABLE cells DROP COLUMN {missing_cell_column}")
@@ -441,9 +433,6 @@ def test_produced_membership_risk_reaches_final_samples(
     completed, candidates, matrix, config = run_alignment_fixture(
         tmp_path, monkeypatch, "positive"
     )
-    # Re-evaluate the real owners with a frozen, independently measured sparse
-    # reference. The unchanged partition lets this test isolate query-fact
-    # projection rather than fabricate risk payloads or new final memberships.
     calibration = build_batch_rt_calibration(
         {"early": {"S1": 7, "S2": 7.1, "S3": 7}, "late": {"S1": 9, "S2": 9.1, "S3": 9}},
         sample_stems=("S1", "S2", "S3"),
@@ -520,7 +509,6 @@ def test_persisted_membership_fields_reject_wrong_types(tmp_path, field, value):
     import zlib
 
     report, _ = _competition_review_report(tmp_path)
-    # An accepted risk is persisted once, with its group member.
     with sqlite3.connect(report) as db:
         member, payload = db.execute(
             "SELECT id,accepted_risk FROM members WHERE accepted_risk IS NOT NULL"

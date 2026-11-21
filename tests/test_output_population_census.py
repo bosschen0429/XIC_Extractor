@@ -64,8 +64,6 @@ def test_required_population_fails_only_on_default_or_missing_output(
         return main(arguments)
 
     assert run("review.tsv", "review.tsv:tag", "review.tsv:anchored") == 0
-    # A column that only ever holds its default, an empty artifact, a missing
-    # column or artifact each fail the promoted check.
     assert run("review.tsv:has_anchor") == 1
     assert run("single.tsv:has_anchor") == 1
     assert run("single.tsv:tag") == 0

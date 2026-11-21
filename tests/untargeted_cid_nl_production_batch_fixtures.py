@@ -245,8 +245,6 @@ def _expected_retained_curve(
     observation=None,
     method_subject_id=None,
 ):
-    # Acceptance oracle starts with the original owner values, never a reader
-    # result or a re-executed signal-processing calculation.
     signal = evaluation.retained_prepared_signal if evaluation is not None else None
     provenance = {
         "processing_attempt_id": attempt_id,
@@ -422,7 +420,6 @@ def profile_replay(tmp_path, monkeypatch, request):
     paths = tuple(tmp_path / f"{stem}.raw" for stem in sample_stems)
     for path in paths:
         path.write_bytes(path.stem.encode())
-    # Observed RAW coordinates: acquisition bounds do not land on scan RTs.
     center_rt = 13.263299286133334
     precursor_mz = 307.1023254394531
     settings = replace(
@@ -524,7 +521,6 @@ def profile_replay(tmp_path, monkeypatch, request):
                     raw.scans[0],
                     rt=query_rts[index],
                     scan_number=(int(np.argmin(np.abs(raw.rt - query_rts[index]))) + 1),
-                    # Distinct MS2 receipts can now share one physical root.
                     precursor_mz=sample_mz,
                     masses=(
                         raw.scans[0].masses
@@ -574,17 +570,13 @@ def profile_replay(tmp_path, monkeypatch, request):
             if record.peak.peak_id in {c.peak_id for c in candidates[path.stem]}
         )
         if family_context:
-            # Identical mass queries now share the complete peak population in
-            # Discovery; the same peak is not left as two window-bound roots.
             assert len(candidates[path.stem]) == 1
             assert all(True for candidate in candidates[path.stem])
             if not family_precursor_delta:
-                # Both NL receipts identify one measured peak, not two records.
                 (record,) = discovery.physical_bindings
                 assert record.peak.ms1_search_rt_min <= min(query_rts)
                 assert record.peak.ms1_search_rt_max >= max(query_rts)
                 (candidate,) = discovery.peaks
-                # The physical raw apex must not replace the retained NL time.
                 observed_nl_rts = tuple(seed.rt for seed in seeds)
                 assert representative_event_rt(candidate) in observed_nl_rts
                 assert record.peak.query_rt_min not in observed_nl_rts
@@ -594,8 +586,6 @@ def profile_replay(tmp_path, monkeypatch, request):
             rt_max = max(
                 record.peak.ms1_search_rt_max for record in discovery.physical_bindings
             )
-            # The vendor boundary includes the end scan returned for the request,
-            # which may lie just beyond the requested RT upper bound.
             vendor = opened_raws[path][0]
             start = vendor.ScanNumberFromRetentionTime(rt_min) - 1
             end = vendor.ScanNumberFromRetentionTime(rt_max)
@@ -811,8 +801,6 @@ def profile_replay(tmp_path, monkeypatch, request):
                 expected_trace_count = 1 if expected_capture_candidate_ids else 0
                 if expected_trace_count:
                     assert adapter.acquisition is not None
-                    # One shared integration trace plus non-authoritative
-                    # elution context, still acquired in one initial sample batch.
                     assert len(adapter.elution_contexts) == 1
                     expected_acquisition_count = expected_trace_count + 1
                     assert len(adapter.acquisition.traces) == expected_acquisition_count
@@ -845,8 +833,6 @@ def profile_replay(tmp_path, monkeypatch, request):
                             == expected.answer.selected_segment.apex_rt_min
                         )
                     else:
-                        # Alignment measures the peak in Discovery's shared
-                        # context with its query RT and gets its measurement.
                         assert (
                             measured == source_records[candidate_id].physical_evaluation
                         )

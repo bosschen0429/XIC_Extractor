@@ -90,7 +90,6 @@ def score_candidate(
         count_no_ms2_as_detected=ctx.count_no_ms2_as_detected,
     )
     reason = projected_reason_from_candidate_facts(evidence_facts, semantics)
-    # Empty-context scoring retains the detailed quality note for diagnostics.
     if (
         quality_notes
         and not evidence_role

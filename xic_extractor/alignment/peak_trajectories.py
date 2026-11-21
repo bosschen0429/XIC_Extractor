@@ -38,9 +38,6 @@ _TRAJECTORY_NEIGHBORS = 12
 _TIE_EPSILON = 1e-9
 _TREND_SCALE_FLOOR_MIN = 0.5 / 60.0
 _TREND_TOLERANCE_MIN = 1e-8 / 60.0
-# Without a measured common coordinate, a shared displacement is unconstrained:
-# any similarly spaced peaks in the same channel would correspond. Bound raw
-# geometry only; calibrated patterns are compared without a distance bound.
 _RAW_PATTERN_SHIFT_MIN = 3.0
 
 
@@ -218,8 +215,6 @@ class PeakTrajectory:
                 if cohort in forecast_cohorts and order is not None:
                     assert cohort is not None
                     reference_orders[cohort].add(order)
-            # A sparse median has no supported slope with which to challenge
-            # an MS1-extended trend. Never borrow another cohort's references.
             comparable_cohorts = {
                 cohort
                 for cohort, orders in reference_orders.items()
@@ -249,9 +244,6 @@ class PeakTrajectory:
                     backfill_half_window_min=backfill_half_window_min,
                     drift_offsets=drift_offsets,
                 )
-                # Both estimates use the same scientific owner and empirical
-                # compatibility rule. Neither wins a conflict: retain the query
-                # for explanation, but do not authorize a selected peak there.
                 if abs(localized.location.query_rt - direct.query_rt) * 60.0 > max(
                     localized.apex_tolerance_sec, reference_tolerance
                 ):
@@ -335,8 +327,6 @@ class PeakTrajectory:
     ) -> PeakLocation:
         order = rt_frame.injection_order.get(sample_stem)
         cohort = rt_frame.sample_cohorts.get(sample_stem)
-        # Unknown drift for the target leaves its forecast unadjusted; a
-        # neighbor with unknown drift does not enter an adjusted fit.
         offsets = (
             drift_offsets if drift_offsets and sample_stem in drift_offsets else None
         )
@@ -357,8 +347,6 @@ class PeakTrajectory:
             ),
         )[:_TRAJECTORY_NEIGHBORS]
         if order is None or not nearest:
-            # Without same-cohort temporal support, the trajectory has only a
-            # reference position. Do not extrapolate from another batch's order.
             return PeakLocation(
                 float(np.median([rt for _, rt in self.sample_apices])),
                 "trajectory_reference",
@@ -396,8 +384,6 @@ class PeakTrajectory:
                     max(0.0, target_estimate.rt_min),
                     f"{'estimated' if weak else 'calibrated'}_{fitted.basis}",
                 )
-            # The inverse is unsupported: refit wholly in observed coordinates,
-            # never label a raw/common mixture as a calibrated localization.
             fitted = _fit_rt_trajectory(
                 [rt_frame.injection_order[sample] for sample, _ in nearest],
                 [rt for _, rt in nearest],
@@ -449,9 +435,6 @@ class PeakTrajectories:
             if first is not None and second is not None and first != second:
                 distinct.add((min(first, second), max(first, second)))
                 later[first].add(second)
-        # Prepare ordered separation once, not during every membership/bridge
-        # proposal. Closing the undirected distinct relation would wrongly veto
-        # tracks that merely lie on the same side of a shared reference peak.
         for first in range(len(self.tracks)):
             pending = set(later.get(first, ()))
             reached = {first}
@@ -533,8 +516,6 @@ class PeakTrajectories:
                         if owner_id not in connected:
                             connected.add(owner_id)
                             pending.extend(neighbors.pop(owner_id, ()))
-                    # Membership-only components must not borrow localization
-                    # positions through a withdrawn calibrated intermediary.
                     retained.append(PeakTrajectory(tuple(sorted(connected)), ()))
             return self.membership_subset(retained)
         return self.membership_subset(
@@ -626,9 +607,6 @@ class _LocalizationLinks:
                 continue
             left = owner.peak.integration.rt_left_min
             right = owner.peak.integration.rt_right_min
-            # A nearby landmark alone does not establish a physical binding.
-            # Both the direct binding and its selected segment must witness
-            # that the borrowed point is outside this same-sample peak.
             if not left <= self.nodes[bound].landmark.apex_rt <= right:
                 continue
             contradicted.update(
@@ -637,10 +615,6 @@ class _LocalizationLinks:
                 if node != bound
                 and not left <= self.nodes[node].landmark.apex_rt <= right
             )
-        # An anchor that also endorses a contradicted point cannot independently
-        # rescue another point on that branch. Other anchors' accepted pattern
-        # links remain evidence; do not discard them merely because the point
-        # was also linked to the contradicted branch.
         independent_anchors = {
             anchor for anchor in anchors if not self.neighbors[anchor] & contradicted
         }
@@ -768,12 +742,9 @@ class _MassIndex:
         cached = self._candidates.get(mz)
         if cached is not None:
             return cached
-        # Either operand can be the reference in within_ppm. Using the larger
-        # mass bounds both orientations without changing the acceptance rule.
         radius = mz_tolerance_da(max(mz, self._masses[-1]), self._ppm)
         first = bisect_left(self._masses, math.nextafter(mz - radius, -math.inf))
         last = bisect_right(self._masses, math.nextafter(mz + radius, math.inf))
-        # Preserve original traversal and tie order, not m/z index order.
         selected = tuple(sorted(index for _, index in self._entries[first:last]))
         self._candidates[mz] = selected
         return selected
@@ -860,8 +831,6 @@ def resolve_peak_trajectories(
         config,
         rt_frame,
     )
-    # Calibration arrives after initial grouping. Preserve the supplied context
-    # even when raw-RT pruning cannot yet use it, so regroup can reconsider it.
     retained_contexts = tuple(contexts)
     if not patterns:
         return PeakTrajectories(source_contexts=retained_contexts)
@@ -883,12 +852,6 @@ def resolve_peak_trajectories(
     ):
         comparisons += 1
         calibrated = all(index in common_peaks for index in (*left.nodes, *right.nodes))
-        # A measured map already supplies the displacement. Fit the residual
-        # within the transformed peak widths; a free shift could match a
-        # neighboring pattern instead. Compounds that drift beyond the map
-        # move by a frozen anchor's predicted displacement, so those discrete
-        # displacements are the only other hypotheses. Unsupported pairs
-        # retain raw matching.
         left_peaks = [
             common_peaks[index] if calibrated else nodes[index].landmark
             for index in left.nodes
@@ -927,8 +890,6 @@ def resolve_peak_trajectories(
         )
     )
     roots = list(range(len(nodes)))
-    # A pre-existing cycle or repeated node cannot be repaired by contraction.
-    # Check the initial graph once, including regions without candidate links.
     if not _preserves_order(roots, patterns):
         return PeakTrajectories((), comparisons, retained_contexts)
     regions = _comparison_regions(patterns, matches)
@@ -958,7 +919,6 @@ def resolve_peak_trajectories(
                 raw_pairs.add((first, second))
                 if roots[first] != roots[second]:
                     raw_linked_nodes.update((first, second))
-        # Already-connected matches still authorize locations.
         for i, j in match.pairs:
             first, second = left.nodes[i], right.nodes[j]
             neighbors[first].add(second)
@@ -977,14 +937,10 @@ def resolve_peak_trajectories(
         if root in supported_roots:
             members[root].append(index)
     for owner_id, node in owner_nodes.items():
-        # An unmatched peak has no second landmark to witness which ordered
-        # peak it observed. Ordinary RT and mass evidence decide its membership.
         if node in supported_nodes:
             bound[roots[node]].append(owner_id)
     tracks = []
     for root, owner_ids in bound.items():
-        # Separate windows can have no order edge between them. A duplicated
-        # sample is still not a usable location or membership assertion.
         if len({nodes[i].sample for i in members[root]}) != len(members[root]):
             continue
         locations = tuple(
@@ -1121,9 +1077,6 @@ def _local_patterns(
             indices.append(same)
         key = tuple(indices)
         patterns[key] = _Pattern(context.sample_stem, context.mz, key)
-        # Retain the actual mass-window/context witness while mapping its
-        # landmarks to correspondence nodes. Matching RTs on another ion's
-        # context cannot supply physical separation for these tracks.
         selected = tuple(zip(indices, peaks[start:end], strict=True))
         for position, (first, left) in enumerate(selected):
             for second, right in selected[position + 1 :]:
@@ -1190,8 +1143,6 @@ def _local_patterns(
         indices = add_pattern(context, start, end)
         owner_nodes[owner.owner_id] = indices[selected - start]
 
-    # Context from an MS1-only sample must remain usable as a location, even
-    # though that sample contributed no direct owner to this grouping scope.
     seeds = tuple(patterns.values())
     seed_index = _MassIndex([seed.mz for seed in seeds], config.preferred_ppm)
     seed_centers = [
@@ -1264,7 +1215,6 @@ def _neighbor_pairs(
         for pattern in patterns
     ]
     for index, pattern in enumerate(patterns):
-        # A single peak cannot establish an ordered correspondence.
         if len(pattern.nodes) < 2:
             continue
         center = centers[index]
@@ -1298,9 +1248,6 @@ def _neighbor_pairs(
             if len(patterns[other_index].nodes) >= 2:
                 nearby.append(other_index)
         if not nearby:
-            # Preserve usable local comparisons. Only a neighborhood containing
-            # no informative pattern searches farther: otherwise sparse samples
-            # can consume every slot with comparisons the matcher must reject.
             samples.clear()
             for _, _, sample, other_index in sorted(candidates):
                 if len(patterns[other_index].nodes) < 2:
@@ -1399,9 +1346,6 @@ def _match_patterns(
                         )
                         for previous, pairs in previous_row[j]
                     )
-                    # Two distinct paths suffice for the downstream uniqueness
-                    # check. Retaining only the tuple-order winner hides a tied
-                    # correspondence; retaining all paths would be exponential.
                     row.append(sorted(set(options), reverse=True)[:2])
                 else:
                     row.append(_merge_top_two_paths(upper, across))
@@ -1500,8 +1444,6 @@ def _fit_rt_trajectory(
     basis = "trajectory_fit"
     query_rt = float(beta[0])
     if min(orders) > query_order or max(orders) < query_order:
-        # The query row is [1, 0] in this centered design. Reuse the final fit;
-        # no cross-validation or extra trend fits belong in this hot path.
         covariance = np.linalg.pinv(design.T @ (fit_weights[:, None] * design))
         risk = scale * float(np.sqrt(1.0 + max(0.0, covariance[0, 0])))
         if risk > backfill_half_window_min:

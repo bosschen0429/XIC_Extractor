@@ -168,8 +168,6 @@ def test_queued_targeted_metadata_membership_is_frozen(tmp_path, monkeypatch):
     raw_paths = [tmp_path / "raw" / f"{stem}.raw" for stem in ("A", "B")]
     for path in raw_paths:
         path.write_bytes(b"external RAW test stand-in")
-    # Only the external RAW header read is replaced; metadata and membership
-    # decisions still cross their real owners.
     install_fake_raw_headers(monkeypatch)
     captured = []
     receipts = _record_receipts(monkeypatch)

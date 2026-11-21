@@ -39,11 +39,7 @@ from xic_extractor.xic_models import XICRequest
 
 _CACHE_SCHEMA = "untargeted_raw_fact_cache"
 _MS2_SCHEMA = "untargeted_ms2_precursor_facts"
-# Each kind is one directory under a source namespace; the names stay short so
-# the deepest entry fits Windows MAX_PATH below a run output directory.
 _FactKind = Literal["metadata", "ms2", "xic"]
-# Path names only spread entries. The envelope carries the full namespace and
-# key digest, so a name collision is a rejected entry, never a wrong fact.
 _NAME_HEX_DIGITS = 16
 _LOGGER = logging.getLogger(__name__)
 
@@ -262,7 +258,6 @@ class _FactCache:
     ) -> None:
         if not isinstance(root, Path):
             raise TypeError("acquisition cache directory must be a Path")
-        # Recalibrated facts never share entries with vendor-mass facts.
         namespace = (
             source_id
             if mass_recalibration is MassRecalibration.NONE
@@ -311,8 +306,6 @@ class _FactCache:
                 raise UntargetedAcquisitionCacheError(
                     "acquisition cache payload is not valid base64"
                 ) from exc
-            # Verify the numeric bytes directly. Re-encoding their transport
-            # envelope adds no source, request, or content identity evidence.
             if envelope["payload_sha256"] != hashlib.sha256(content).hexdigest():
                 raise UntargetedAcquisitionCacheError(
                     "acquisition cache entry failed content identity validation"
@@ -331,7 +324,6 @@ class _FactCache:
         path.parent.mkdir(parents=True, exist_ok=True)
         envelope = self._envelope(key, payload)
         content = _canonical_json(envelope)
-        # read rejects an entry for another key or namespace; this write replaces it.
         existing = self.read(kind, key)
         if existing is not None:
             if existing != payload:
@@ -345,14 +337,9 @@ class _FactCache:
             with os.fdopen(descriptor, "wb") as stream:
                 stream.write(content)
                 stream.flush()
-            # Cache facts can be reacquired after power loss. Closing before
-            # atomic replacement prevents readers seeing a partial write;
-            # per-entry disk durability is not a runtime acknowledgement.
             try:
                 os.replace(temporary, path)
             except (FileExistsError, PermissionError) as exc:
-                # Windows can deny replacement while another worker reads the
-                # winner. An identical committed fact already satisfies this write.
                 existing = self.read(kind, key)
                 if existing is None:
                     raise

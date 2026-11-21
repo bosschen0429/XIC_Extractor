@@ -15,8 +15,6 @@ from __future__ import annotations
 from collections.abc import Mapping
 from urllib.parse import unquote
 
-# 依據 labels, each with whether the row needs a look. `None` means only an
-# ISTD needs a look: an analyte without an MS1 peak is a finished ND.
 BASIS_NEEDS_LOOK: dict[str, bool | None] = {
     "NL 確認": False,
     "NL 偏差大": True,
@@ -37,7 +35,6 @@ BASIS_NEEDS_LOOK: dict[str, bool | None] = {
     "共用離子區段": True,
     "RAW 失敗": True,
 }
-# 疑點 labels in reading order; every one needs a look.
 DOUBT_LABELS: tuple[str, ...] = (
     "未見 NL",
     "無 MS2",
@@ -55,9 +52,6 @@ _PARTNER_SEPARATOR = " / "
 
 SHARED_ION_REGION = "targeted_shared_ion_region"
 _NL_FAMILY = "NL"
-# Saved review codes -> 疑點 label. `None` codes are shown elsewhere or only
-# describe how the peak was located. NL codes say a doubt exists; the selected
-# peak's NL observation names it.
 REVIEW_LABELS: dict[str, str | None] = {
     "plausible_nl_dropout_review": _NL_FAMILY,
     "missing_nl_support_review": _NL_FAMILY,
@@ -73,11 +67,9 @@ REVIEW_LABELS: dict[str, str | None] = {
     SHARED_ION_REGION: "共用離子區段",
     "insufficient_typed_evidence": "證據單薄",
     "chrom_peak_segment_requires_correlated_evidence": "證據單薄",
-    # Expressed by 依據 `證據衝突` / `無可用 MS1 峰`.
     "targeted_cross_sample_region_conflict": None,
     "targeted_no_plausible_measurable_region": None,
 }
-# Saved conflict codes; the projection drops or reroutes the others.
 CONFLICT_CODES = frozenset(
     {
         "ambiguous_evidence",
@@ -96,11 +88,8 @@ EXCLUSION_CODES = frozenset({"file_error"})
 OFF_PAIRED_ISTD_POSITION = "analyte_peak_off_paired_istd_position"
 SEARCHED_NO_OBSERVATION = "finalized_searched_no_observation"
 NOT_QUANTIFIABLE = "finalized_not_quantifiable"
-# The saved support reasons that let a paired ISTD lend its identity to a peak.
 _COHERENT_MS1_PEAK = frozenset({"ms1_peak_present", "ms1_coherent", "trace_coherent"})
 _BACKFILL_LOCALIZATION = "cross_sample_backfill_localization"
-# Support codes the 依據 rules read; the others corroborate or locate a peak
-# and are not displayed.
 BASIS_SUPPORT_CODES = _COHERENT_MS1_PEAK | {
     _BACKFILL_LOCALIZATION,
     "identification_method_supported",
@@ -120,7 +109,6 @@ _SHAPE_REVIEW = frozenset({"physical_shoulder_overlap", "trace_morphology_review
 _MISSING_MS2_CODES = frozenset(
     {"missing_ms2_not_observed", "missing_ms2_policy_not_counted"}
 )
-# 依據 that already state the selected peak's NL observation or its absence.
 _NL_BASES = frozenset({"NL 確認", "NL 偏差大", "未見 NL", "無 MS2", "ISTD 未計入"})
 
 
@@ -165,8 +153,6 @@ def basis_label(row: Mapping[str, object]) -> str:
     if not_counted and not_counted <= MISSING_NL_NOT_COUNTED:
         if str(row.get("Role", "")).upper() == "ISTD" or not row.get("ISTD Pair"):
             return _missing_nl_label(nl, not_counted)
-        # A qualified peak at a counted paired ISTD takes its identity, so an
-        # unidentified qualified peak means the ISTD was not counted here.
         return "ISTD 未計入" if qualified else "峰形不完整"
     raise ValueError(f"No 依據 label for saved decision: {reason or not_counted}")
 
@@ -180,16 +166,12 @@ def doubt_labels(row: Mapping[str, object], basis: str) -> tuple[str, ...]:
     if not _has_reported_peak(row):
         return ()
     nl = str(row.get("NL") or "")
-    # A missing NL that kept the result uncounted is still a doubt when
-    # another fact decided it.
     found = {
         label
         for code in _codes(row, "Projection Not Counted Reasons")
         & MISSING_NL_NOT_COUNTED
         if (label := _nl_doubt_label(nl, code)) is not None
     }
-    # A neutral loss seen with a large mass error has no review code; the
-    # selected peak's token is its source.
     if nl.startswith("WARN"):
         found.add("NL 偏差大")
     shared = ""

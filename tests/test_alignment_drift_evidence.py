@@ -94,8 +94,6 @@ def test_measured_istd_binding_uses_observed_peak_not_expected_rt() -> None:
         }
         assert frame.has_direct_reference_pair(*owners)
         assert frame.corrected_pair_delta_sec(*owners) == pytest.approx(0)
-        # The identity source supplies no order-gap evidence; metadata must not
-        # silently replace that absence when the two contexts are consolidated.
         assert frame.drift_injection_order_gap("early", "late") is None
     assert tuple(owner.peak.integration.rt_apex_min for owner in owners) == (8.0, 9.0)
 
@@ -317,8 +315,6 @@ def test_known_reference_only_corrects_unique_same_target_support_pairs(
         assert rejected.corrected_pair_delta_sec(early, invalid) is None
 
     def assert_unavailable_pair_uses_only_raw(right, unavailable_lookup):
-        # Lookup provenance is retained even when the trigger skips querying it.
-        # Prove its unavailable binding separately, then pin every edge field.
         assert unavailable_lookup.corrected_pair_delta_sec(early, right) is None
         raw = evaluate_owner_edge(early, right, config=config, rt_frame=SampleRtFrame())
         suffix = (
@@ -343,8 +339,6 @@ def test_known_reference_only_corrects_unique_same_target_support_pairs(
         owner_id="different-peak",
     )
     assert_unavailable_pair_uses_only_raw(other_rt, lookup)
-    # An overlapping SUPPORT owner prevents a unique binding; removing it later
-    # from a group must not recreate reference authority.
     ambiguous = reference.bind((early, late, replace(late, owner_id="overlap")))
     assert_unavailable_pair_uses_only_raw(late, ambiguous)
     workbook["XIC Results"]["C5"] = "ND"
@@ -495,7 +489,7 @@ def test_batch_reference_corrects_bootstrap_unknowns_without_merging_distinct_pe
     universe = frozenset({"early", "late"})
     order = {"early": 10, "late": 40}
     lookup = reference.bind(owners, sample_universe=universe, injection_order=order)
-    assert not lookup.bindings  # These owners are not any declared ISTD.
+    assert not lookup.bindings
     assert lookup.corrected_pair_delta_sec(early, late) == pytest.approx(0)
     assert lookup.corrected_pair_delta_sec(competitor, late) > 60
     groups = construct_cross_sample_peak_group_hypotheses(
@@ -539,8 +533,6 @@ def test_batch_reference_does_not_invent_missing_measured_landmarks(
         sample_universe=universe,
         injection_order=order,
     )
-    # Neither other injections nor interpolation may manufacture the missing
-    # measured positions needed to authorize a LOESS map.
     assert lookup.corrected_pair_delta_sec(early, middle) is None
     assert lookup.corrected_pair_delta_sec(middle, late) is None
 
@@ -664,8 +656,6 @@ def test_batch_reference_changed_universe_does_not_reuse_stale_medians(
         sample_universe=frozenset(order),
         injection_order=order,
     )
-    # The original gauge is 1.125*x; adding the third sample changes it to
-    # 1.25*x. The two owners represent x=14 and x=14.4 respectively.
     assert original.corrected_pair_delta_sec(early, late) == pytest.approx(27)
     assert changed.corrected_pair_delta_sec(early, late) == pytest.approx(30)
     assert original.reference is not changed.reference

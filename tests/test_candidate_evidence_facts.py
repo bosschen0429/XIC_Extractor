@@ -74,9 +74,6 @@ def test_seed_485_separates_required_residual_first_and_legacy_formulas() -> Non
     )
     required_facts = _twenty_percent_characterization(rt, required)
     residual_first_facts = _twenty_percent_characterization(rt, residual_first)
-    # Frozen AsLS-derived areas need a cross-runner numerical tolerance.
-    # Use the baseline solver's 1e-9 relative equivalence bound, not bitwise
-    # precision; the formulas differ by >1000 and their indices remain exact.
     assert required_facts[:3] == (48, 41, 56)
     assert required_facts[3] == pytest.approx(
         1062.1744946180106,
@@ -144,8 +141,6 @@ def test_physical_question_containment_is_closed_complete_and_owner_derived() ->
     assert answer_physical_peak_question(prepared, universe, one).state == "available"
 
     overlap_rt = np.linspace(0.0, 3.0, 301)
-    # The analytical valley is about 27% of either apex: clear enough to split,
-    # but above the 10% return, so both closed intervals share that valley.
     overlap_raw = sum(
         100.0 * np.exp(-0.5 * ((overlap_rt - center) / 0.2) ** 2)
         for center in (1.0, 1.8)

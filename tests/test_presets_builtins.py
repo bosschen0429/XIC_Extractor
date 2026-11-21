@@ -26,7 +26,6 @@ def test_dna_dr_value_matches_deoxyribose_neutral_loss_residue_mass() -> None:
         "H": 1.00782503223,
         "O": 15.99491461957,
     }
-    # C5H8O3 is the neutral-loss residue, not free deoxyribose mass.
     expected = 5 * mono["C"] + 8 * mono["H"] + 3 * mono["O"]
     observed = tag["value"]
     ppm_error = abs(observed - expected) / expected * 1_000_000

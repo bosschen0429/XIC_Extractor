@@ -52,7 +52,6 @@ def search_cid_nl_sample(
     with timing_recorder.stage(
         "discover.ion_grouping", sample_stem=raw_file.stem
     ) as stage:
-        # An inferred precursor's parent-MS1 ion decides which ion it joins.
         measured = read_parent_ms1_observations(
             raw, events, tolerance_ppm=settings.precursor_mz_tolerance_ppm
         )

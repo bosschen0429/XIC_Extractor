@@ -76,8 +76,6 @@ def _isolate_raw_reader_assembly_cache(
         monkeypatch.setattr(raw_reader, "_ASSEMBLIES_LOADED", False)
     yield
     if raw_reader is None:
-        # A test can import the reader lazily and then load fake assemblies.
-        # Its initial cache was empty; restore that state for the next test.
         imported_reader = sys.modules.get("xic_extractor.raw_reader")
         if imported_reader is not None:
             vars(imported_reader)["_ASSEMBLIES_LOADED"] = False

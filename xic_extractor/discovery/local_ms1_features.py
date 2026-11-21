@@ -303,10 +303,6 @@ def build_local_ms1_feature_table(
                 DetectedFeature(
                     sample_stem=sample_stem,
                     feature_id=feature_id,
-                    # The local detector ID is not comparable to CID-NL row
-                    # identity. ``feature_id`` already preserves provenance;
-                    # leaving the cross-provider pointer blank keeps the
-                    # bounded composite m/z/RT fallback available.
                     source_feature_row_id=None,
                     mz=float(region.mzs[region.apex_index]),
                     rt_apex_min=float(region.rts[region.apex_index]),

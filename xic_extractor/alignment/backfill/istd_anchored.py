@@ -90,9 +90,6 @@ def resolve_istd_anchored_backfill(
         )
         for support in direct_supports
     )
-    # The fixed Target is the identity: its confirmed peers form one group
-    # however far RT drifts over the run. Two bound owners in one sample remain
-    # an unresolved conflict rather than a choice between recovery windows.
     target_identity = target.label
     groups = (
         construct_cross_sample_peak_group_hypotheses(
@@ -169,8 +166,6 @@ def resolve_istd_anchored_backfill(
                 for support in direct_supports
             ),
         )
-        # Analyte recovery requires its paired ISTD; trajectory-only forecasts
-        # are useful for an ISTD itself, not an alternative analyte identity.
         locate_missing = (
             trajectory.backfill_locations
             if target.is_istd

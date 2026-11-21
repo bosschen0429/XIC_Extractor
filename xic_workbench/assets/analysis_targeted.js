@@ -42,8 +42,6 @@ import {
 let pendingTargetImport = null;
 
 let settingsTimer;
-// Every Targeted setup change also checks the settings server-side, so their
-// problems show while the setup is edited.
 export function dirtyTargeted(value = true) {
   dirty("targeted", value);
   clearTimeout(settingsTimer);
@@ -70,8 +68,6 @@ export function settingsValues() {
     const input = $(`t-${spec.key}`);
     if (!input) continue;
     if (spec.kind === "checkbox") values[spec.key] = String(input.checked);
-    // The existing placeholder represents an unselected RAW folder, including
-    // after starting a new batch; never fall back to the previous real folder.
     else
       values[spec.key] =
         input.value ||
@@ -197,7 +193,6 @@ function setTargetIons(row, ions) {
   else state.deltaMass.ions.delete(row);
   updateTarget(row, { delta_mass_mz: formatOffsets(ions) });
 }
-// A table without saved details still lists its Δm/z; those ions take defaults.
 export function loadDeltaMass(payload) {
   setDeltaMass(payload);
   for (const row of state.targets) {
@@ -206,11 +201,9 @@ export function loadDeltaMass(payload) {
     try {
       state.deltaMass.ions.set(row, ionsForOffsets(parseOffsets(row.delta_mass_mz)));
     } catch {
-      // An unreadable cell stays as typed; saving reports it.
     }
   }
 }
-// Δm/z as shown: four decimals, like the ion names; the cell keeps full precision.
 function deltaText(row) {
   try {
     return parseOffsets(row.delta_mass_mz).map(ionName).join(", ");
@@ -518,7 +511,6 @@ function applyBulk(ms1Only) {
   const offsets = deltaText ? parseOffsets(deltaText) : null;
   for (const row of rows) {
     if (ms1Only || cid) updateTarget(row, { cid_nl_loss_da: cid });
-    // Each target keeps its own copy of the ion details.
     if (ms1Only) setTargetIons(row, []);
     else if (offsets) setTargetIons(row, ionsForOffsets(offsets, targetIons(row)));
   }
@@ -545,7 +537,6 @@ function openTargetEditor() {
   expandedRow = null;
   $("target-filter").value = "";
   $("target-editor-error").hidden = true;
-  // Advanced settings start collapsed each time; editing keeps them open.
   $("target-delta-advanced").open = false;
   renderSharedSettings();
   renderTargets();
@@ -585,7 +576,6 @@ export function bindTargeted() {
       event.target.id === "t-data_dir" &&
       event.target.value !== event.target.dataset.batchPath
     ) {
-      // 上機資訊 describes one RAW folder; a new folder never inherits it.
       if ($("t-injection_order_source").value)
         done("已清空前一個 RAW 資料夾的上機資訊。");
       $("t-injection_order_source").value = "";

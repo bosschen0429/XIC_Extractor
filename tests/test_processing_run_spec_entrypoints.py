@@ -138,7 +138,6 @@ def test_actual_workbench_full_and_cli_main_reach_equal_final_run_spec(
         )
         == 0
     )
-    # Different resource budgets must not change the scientific run spec.
     assert captured["workbench_workers"] == 1
     assert captured["cli_workers"] == 2
 

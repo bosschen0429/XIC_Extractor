@@ -17,12 +17,10 @@ const state = {
 const fmt = (value, digits) =>
   Number.isFinite(value) ? value.toFixed(digits) : "—";
 const count = (value) => Number(value).toLocaleString();
-// Mass distance reads in ppm of the queried m/z, the unit used for tolerance.
 const ppm = (distance, mz) => {
   const value = (distance / mz) * 1e6;
   return value < 10 ? value.toFixed(1) : Math.round(value).toLocaleString();
 };
-// Intensities span decades, so they read as Excel-style scientific notation.
 const scientific = (value) => {
   const [mantissa, exponent] = value.toExponential(2).split("e");
   const power = Number(exponent);
@@ -33,7 +31,6 @@ const badgeTone = {
   診斷曲線: "accent",
 };
 let statusOwner = "review";
-// Headlines stay in plain language; the technical reason is one hover away.
 function status(message, kind = "", owner = "review", detail = "") {
   statusOwner = owner;
   $("status").textContent = message;
@@ -45,9 +42,6 @@ function curveStatus(message, kind = "", detail = "") {
   $("inline-curve-status").textContent = message;
   $("inline-curve-status").className = kind;
   $("inline-curve-status").title = detail;
-  // Untargeted curves report beside their plot. Targeted curve completion may
-  // replace its own page feedback, not a still-valid query or saved-result
-  // error; the drawer retains the curve's local feedback.
   if (state.page?.source_kind !== "targeted_workbook") {
     if (statusOwner === "curves") status("", "", "curves");
     return;
@@ -99,8 +93,6 @@ async function mountReview(id, view, mode) {
 let serverPage = null;
 let pageRequest = Promise.resolve();
 function requestPage(path, values) {
-  // The server owns one active query. A history restore must run after any
-  // earlier query, even when navigation discarded that query's UI response.
   setCurveJob(null);
   const request = pageRequest.then(() => api(path, values)).then(page => {
     serverPage = page;
@@ -122,8 +114,6 @@ async function restoreQuery(page, filters) {
       ...filters, review_scope: page.review_scope, offset: page.offset, limit: page.limit,
     });
     if (revision === navigation.revision && state.page === page) {
-      // The unchanged source keeps saved report/item IDs valid. Reuse its
-      // reading snapshot after restoring the corresponding server query.
       serverPage = page;
       status("");
     }
@@ -136,7 +126,6 @@ async function restoreQuery(page, filters) {
     }
   }
 }
-// Two curations of one result share its evidence file but not their items.
 const sameResult = (a, b) => Boolean(a && b) && a.source === b.source &&
   (a.curation?.path || "") === (b.curation?.path || "");
 function locked() {
@@ -322,7 +311,6 @@ navigation.register("review", {
     sample: $("xic-sample").value,
   }),
   restore(saved) {
-    // A newly opened batch supersedes old result links in this tab.
     if (saved.page && sameResult(saved.page, state.page)) {
       if (!saved.overview && (state.page !== saved.page || state.detail !== saved.detail)) {
         for (const [id, value, checked] of saved.fields) {
@@ -338,8 +326,6 @@ navigation.register("review", {
         $("targeted-overview").hidden = true;
         $("targeted-review-nav").hidden = !saved.page.overview;
         $("review").hidden = false;
-        // A discarded request can leave transient loading/error feedback
-        // even when history restores the same empty page object.
         if (!state.detail) renderSelectionEmpty();
       }
     }
@@ -356,7 +342,6 @@ async function openTargetedResults(target = "", attentionOnly = false) {
   navigation.push();
   $("query-form").reset();
   $("target-attention").checked = attentionOnly;
-  // The overview can open a target outside the current role's dropdown.
   if (await query(0, {target_id: target, attention_only: attentionOnly}))
     $("targeted-review-nav").scrollIntoView({ block: "start" });
 }
@@ -427,7 +412,6 @@ function renderTargetedOverview(summary) {
       case "minority_not_counted": return "是否漏抓";
       case "mixed": return target.focus_samples.length ? "沒有明顯多數，看需要看的結果" : "";
       default:
-        // Labels that need a look on counted peaks affect quantitation; they stay one level down.
         return target.counted && target.needs_look ? `${target.needs_look} 筆需要看` : "";
     }
   };
@@ -482,7 +466,6 @@ function renderUntargetedOverview(summary) {
   const metrics = node("div", undefined, "overview-metrics");
   const complete = node("div"); complete.append(node("strong", count(summary.complete_count)), node("span", "全部樣本都有值")); metrics.append(complete);
   if (summary.unresolved_count) {
-    // Unresolved cells stay blank in the Matrix: a count to open, not a task.
     const unresolved = node("button", undefined, "overview-metric-link"); unresolved.type = "button"; unresolved.dataset.idle = "";
     unresolved.title = "多峰無法判定，矩陣留空";
     unresolved.append(node("strong", count(summary.unresolved_count)), node("span", "部分樣本多峰留空"));
@@ -524,7 +507,6 @@ function renderPage(page) {
       if (page[key] != null) state.filters[key] = page[key];
     }
   }
-  // Targeted review items are targets; Untargeted items are candidates.
   const noun = targeted ? "目標" : "項目";
   $("targeted-overview").hidden = true;
   $("targeted-review-nav").hidden = !page.overview;
@@ -549,7 +531,6 @@ function renderPage(page) {
   $("review").hidden = false;
   $("review-empty").hidden = true;
   $("batch-title").textContent = targeted ? "Targeted 結果" : "Untargeted 結果";
-  // Untargeted evidence files share one name; the run folder identifies the batch.
   const sourceParts = page.source.split(/[\\/]/);
   $("batch-description").textContent = targeted ? sourceParts.at(-1) : sourceParts.at(-2) || sourceParts.at(-1);
   $("batch-description").hidden = false;
@@ -606,14 +587,11 @@ function renderPage(page) {
     top.append(title, rt);
     const bottom = document.createElement("span");
     bottom.className = "item-bottom";
-    // Coverage reads as a bar; a chip appears only when the saved result
-    // carries something to check.
     if (targeted) bottom.append(node("span", `${item.review_summary.scope_sample_count} 樣本`));
     else bottom.append(meter(item.numeric_count, page.samples.length, "有值樣本"));
     const label = targeted
       ? item.badge_label && item.badge_label !== "已記錄" ? item.badge_label : ""
       : item.unresolved_count ? `${item.unresolved_count} 多峰留空` : "";
-    // Left-empty cells are context, not a review step: they take no warning tone.
     if (label) bottom.append(node("span", label, targeted ? `chip ${badgeTone[label] || "warn"}` : "chip"));
     button.append(top);
     if (nearest) {
@@ -647,7 +625,6 @@ async function selectItem(item) {
     if (state.page.source_kind !== "targeted_workbook") {
       $("inline-curves").hidden = false;
       const status = $("inline-curve-status");
-      // Saved curves show at once; RAW is read only for samples the user loads.
       if (!state.item.curve_sample_ids.length) status.textContent = "沒有觀測座標，無法取得 XIC。";
       else if (!state.samples.size) status.textContent = "此項目沒有保存的曲線；勾選樣本後按「載入 XIC」從 RAW 讀取。";
       else await startCurves();
@@ -672,7 +649,6 @@ function restoreDetail(detail) {
   $("selection-empty").hidden = true;
   $("job-progress").hidden = true;
   const targeted = state.page.source_kind === "targeted_workbook";
-  // Untargeted leads with the group plot and its RAW source; Targeted with the table.
   (targeted ? $("recorded-review") : $("inline-curves")).after($("curve-settings"));
   $("item-kind").textContent = targeted ? "" : item.title;
   $("item-title").textContent = targeted
@@ -761,8 +737,6 @@ async function showCurveView(view) {
   if (!mounted || state.curveView !== view) return;
   if (!targeted) {
     $("download").href = `/reports/${view.id}.html?download=1`;
-    // The plotted curves are their own receipt beside the saved values;
-    // only samples left out of the plot need words.
     const labels = (view.unusable || []).join("、");
     curveStatus(labels ? `${labels} 在本次擷取範圍沒有可用訊號` : "");
     $("inline-curve-review").hidden = false;
@@ -825,8 +799,6 @@ function queryFields() {
     if ($(id).value.trim()) filters[key] = Number($(id).value);
   return filters;
 }
-// A list opens no item unless it has exactly one result; stepping across a
-// page boundary opens the first or last item.
 async function query(offset, filters = state.filters, select = null) {
   const revision = navigation.revision;
   if (!$("selection-empty").hidden)
@@ -870,9 +842,6 @@ async function startCurves() {
     $("curve-settings").open = true;
     const rawMissing = !$("raw-dir").value.trim();
     const missing = $(rawMissing ? "raw-dir" : "dll-dir");
-    // The click may come from far down the page; bring the field and the
-    // status line below it on screen. action() disables inputs while it
-    // runs, so focus waits until they are enabled again.
     missing.scrollIntoView({ block: "center" });
     setTimeout(() => missing.focus({ preventScroll: true }));
     const message = `看 XIC 需要${rawMissing ? " RAW 資料夾" : " RawFileReader DLL 資料夾"}。`;
@@ -1019,7 +988,6 @@ $("query-form").addEventListener("submit", (event) => {
   event.preventDefault();
   action(() => query(0, queryFields()), "正在搜尋全批結果…");
 });
-// Targeted filters are single choices, so each change applies immediately.
 $("target-role").addEventListener("change", () => {
   $("target-id").value = "";
   action(() => query(0, queryFields()), "正在更新類別結果…");
@@ -1054,12 +1022,16 @@ $("load-curves").addEventListener("click", () =>
   action(startCurves, "正在準備所選樣本 XIC…"),
 );
 async function cancelCurves() {
-  if (!state.job) return;
+  const jobId = state.job?.id;
+  if (!jobId) return;
   try {
-    setCurveJob(await api(`/api/jobs/${state.job.id}/cancel`, {}));
-    updateProgress(state.job);
+    const job = await api(`/api/jobs/${jobId}/cancel`, {});
+    if (state.job?.id !== jobId) return;
+    setCurveJob(job);
+    updateProgress(job);
     controls();
   } catch (error) {
+    if (state.job?.id !== jobId) return;
     status(error.message, "error");
   }
 }
@@ -1105,7 +1077,6 @@ document.addEventListener("click", async (event) => {
     button.removeAttribute("aria-busy");
   }
 });
-// A result opened from its run starts with that run's RAW and DLL folders.
 export function openReview(source, reviewPaths) {
   $("source").value = source;
   if (reviewPaths) {
@@ -1116,8 +1087,6 @@ export function openReview(source, reviewPaths) {
   }
   action(openBatch, "正在讀取分析結果…");
 }
-// A new curation of the open result replaces the one the page follows.
-// Completion arrives once; a busy review applies it when it unlocks.
 export function curationPublished(result) {
   state.publishedCuration = result.source_dir;
   applyPublishedCuration();
@@ -1126,8 +1095,6 @@ export function analysisBusyChanged() {
   controls();
 }
 export function analysisStarted() {
-  // The accepted analysis replaces the server's curve job, including a
-  // /curves response that has not reached this tab yet.
   if (state.job || (state.curveView && !state.curveView.id)) {
     setCurveJob(null);
     curveMessage("已停止曲線載入，分析工作已開始。", false, "");
@@ -1135,7 +1102,6 @@ export function analysisStarted() {
   }
 }
 export const session = openSession();
-// One initial read is shared with the setup page, regardless of load order.
 export const ready = action(async () => {
   const { defaults } = await session;
   $("source").value = defaults.source || "";

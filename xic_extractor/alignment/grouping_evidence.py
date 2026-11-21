@@ -154,8 +154,6 @@ def _median_shape_conflict(
         shape_comparisons is not None
         and similarity <= config.min_peak_shape_similarity + 1e-12
     ):
-        # Batched reductions can differ by roundoff. Preserve the exact boundary
-        # and the original conflicting-pair tie order for every potential veto.
         return _median_shape_conflict(left, right, config, trajectories, None)
     if similarity >= config.min_peak_shape_similarity:
         return None

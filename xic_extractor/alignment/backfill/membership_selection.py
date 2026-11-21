@@ -31,8 +31,6 @@ def select_backfill_memberships(
         key: comparison.fixed_group_cost(ids, ids)
         for key, ids in original_groups.items()
     }
-    # A candidate-to-original hard conflict cannot be repaired by adding peers.
-    # Exclude it from rescue bundles, but retain its blank in the cost universe.
     compatible_indices = tuple(
         index
         for index, (group, owner) in enumerate(proposals)
@@ -63,8 +61,6 @@ def select_backfill_memberships(
     costs: dict[frozenset[int], float] = {}
 
     def cost(selected: frozenset[int]) -> float:
-        # A blank costs one, as separation does in the membership policy.
-        # Only changes to original groups contribute; their accepted state is fixed.
         if selected not in costs:
             groups = groups_for(selected)
             costs[selected] = (
@@ -82,7 +78,6 @@ def select_backfill_memberships(
     def key(selected: frozenset[int]) -> tuple[object, ...]:
         groups = groups_for(selected)
         partition = canonical_partition(tuple(groups.values()))
-        # Peer fit only breaks primary-cost ties, in each original's model.
         return (
             cost(selected),
             _OnTie(
@@ -120,10 +115,6 @@ def select_backfill_memberships(
                 if (min(index, other), max(index, other)) in conflicts
             }
             choices.add((current - displaced) | {index})
-        # Feasibility is not hereditary: a complete group can be feasible even
-        # when each partial extension has an RT gap. Try its compatible
-        # bundles before relying on one-at-a-time improvements, nearest
-        # candidates first so one distant candidate cannot poison the rest.
         for group in original_groups:
             bundle = frozenset(i for i in current if proposals[i][0] != group)
             choices.add(bundle)

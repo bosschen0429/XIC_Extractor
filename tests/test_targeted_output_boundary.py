@@ -255,8 +255,6 @@ def test_formal_entry_retains_the_method_universe_and_publishes_its_decision(
         )
         if with_signal:
             assert result.reported_rt == pytest.approx(1.4, abs=0.01)
-            # The selected method index belongs to this exact retained population,
-            # even when its order differs from the peak's RT/ranking order.
             index = result.selected_cid_nl_candidate_index
             assert index is not None
             assert index == (1 if reverse_candidates else 0)
@@ -292,8 +290,6 @@ def test_finalized_method_hold_cannot_inherit_an_acquisition_detection_claim(tmp
     output.file_results[0].results[target.label] = with_method_universe(
         replace(source, candidate_ms2_evidence=None), target
     )
-    # The acquisition projection still says detected_clean. It is not a
-    # replacement for the completed method's observation-only hypothesis.
     assert source.targeted_product_projection.counted_detection is True
     request = build_targeted_application_request(
         config,
@@ -396,7 +392,6 @@ def test_publication_returns_concrete_public_result_models(
         injection_order={"SampleA": 1, "SampleB": 2},
     )
     finalized = execute_targeted_production_workflow(request, output)
-    # Publication consumes completed values, never the acquisition containers.
     output.file_results.reverse()
     for file_result in output.file_results:
         file_result.results.clear()
@@ -475,8 +470,6 @@ def test_publication_renders_the_finalized_numeric_hypothesis(tmp_path: Path) ->
     assert rendered.targeted_product_projection is not None
     assert rendered.targeted_product_projection.counted_detection is True
     assert rendered.reported_rt == finalized_integration.rt_apex_min
-    # The published result reports the finalized peak itself; no PeakResult
-    # is rebuilt from its integration.
     assert rendered.measured_hypothesis is finalized_hypothesis
     assert rendered.peak is None
     assert rendered.reported_peak_start == finalized_integration.rt_left_min
@@ -644,9 +637,7 @@ def test_service_publishes_finalized_numeric_values_without_counting_detection(
             assert long_rows[sample_name][field] == expected_text
             assert workbook_rows[sample_name][field] == float(expected_text)
         for row in (long_rows[sample_name], workbook_rows[sample_name]):
-            # Without a paired ISTD, the selected peak's NL observation decided.
             assert row["依據"] == ("未見 NL" if nl_status == "NL_FAIL" else "無 MS2")
-            # The peak is still reported, so its own concerns stay listed.
             assert row["疑點"] == "證據單薄"
             assert row["Counted Detection"] == "FALSE"
         assert long_rows[sample_name]["Product State"] == "not_counted"
@@ -1535,8 +1526,6 @@ def test_formal_targeted_backfill_uses_confirmed_peers_and_paired_istd(
         analyte,
         label="ISTD",
         mz=255.0,
-        # Legacy geometric targets use interval midpoints as their expected RT.
-        # Preserve the known 0.1 min analyte/ISTD offset in both hint variants.
         rt_min=analyte.rt_min - 0.1,
         rt_max=analyte.rt_max - 0.1,
         is_istd=True,
@@ -1700,9 +1689,6 @@ def test_formal_targeted_backfill_uses_confirmed_peers_and_paired_istd(
     row = next(
         r for r in rows if r["SampleName"] == "SampleC" and r["Target"] == "Analyte"
     )
-    # A Backfill-located analyte peak takes its identity from the counted
-    # paired ISTD at the confirmed offset, even when the narrow configured
-    # window truncated the first capture.
     paired_identity = not (istd_backfill or missing_pair)
     counted = istd_backfill or paired_identity
     assert row["Counted Detection"] == ("TRUE" if counted else "FALSE")
@@ -1731,8 +1717,6 @@ def test_formal_targeted_backfill_uses_confirmed_peers_and_paired_istd(
             if r["SampleName"] == "SampleC" and r["Target"] == "Analyte"
         )
         assert (saved["依據"], saved["疑點"]) == (row["依據"], row["疑點"])
-        # Identity names its source; the missing MS2 stays a doubt beside any
-        # quality concern the sample carries.
         assert row["依據"] == ("回填" if istd_backfill else "ISTD 位置")
         assert row["疑點"] == ("無 MS2、訊號缺口" if gap_review else "無 MS2")
         assert any(
@@ -1812,8 +1796,6 @@ def test_paired_position_rejects_remote_nl_peak_in_workbook_and_inspector(
                 signal[np.argmin(abs(rt - 1.5))] = 2000
                 signal += 1000 * np.exp(-(((rt - 2.1) / 0.025) ** 2))
             if self.name == "Far" and mz == 250.0:
-                # A second, recorded-NL-supported peak wins selection over
-                # the unfragmented peak at the expected paired position.
                 signal += 4000 * np.exp(-(((rt - 2.1) / 0.025) ** 2))
             return rt, signal
 
@@ -1882,8 +1864,6 @@ def test_paired_position_rejects_remote_nl_peak_in_workbook_and_inspector(
     assert rows["Far"]["Counted Detection"] == "FALSE"
     assert rows["Far"]["Area"] == "ND"
     assert rows["Far"]["RT"] == "ND"
-    # The paired ISTD identifies Near; its missing MS2 stays a doubt. A peak
-    # off the ISTD position is reported as ND and is a finished result.
     assert {s: (r["依據"], r["疑點"]) for s, r in rows.items()} == {
         "Near": ("ISTD 位置", "無 MS2"),
         "Far": ("偏離 ISTD 位置", None),
@@ -1956,7 +1936,6 @@ def test_istd_backfill_keeps_a_drifting_target_as_one_group(
     from xic_extractor.ms2_scan_models import Ms2Scan, Ms2ScanEvent
 
     mz, loss = 255.0, 116.0474
-    # Steady drift along injection order spans more than the grouping RT limit.
     apex = {"S1": 1.0, "S2": 1.8, "S3": 2.6, "S4": 3.4, "S5": 4.2}
     data = tmp_path / "raw"
     data.mkdir()
@@ -2006,7 +1985,6 @@ def test_istd_backfill_keeps_a_drifting_target_as_one_group(
             return rt, intensity
 
         def iter_ms2_scans(self, rt_min, rt_max):
-            # S3 has no qualifying local NL: its direct target answer is HOLD.
             rt = apex[self.name]
             if self.name != "S3" and rt_min <= rt <= rt_max:
                 yield Ms2ScanEvent(
@@ -2077,8 +2055,6 @@ def test_istd_backfill_keeps_a_drifting_target_as_one_group(
     ]
     assert len(accepted) == 1
     if dropout_mode != "no_ms2":
-        # The unrelated class-loss observation remains true and inspectable,
-        # but is outside this ISTD's identity-admitted candidate population.
         assert source.cid_nl_relations.supported_candidate_indexes
         assert source.context_admissible_candidate_indexes is not None
         assert not set(
@@ -2098,8 +2074,6 @@ def test_istd_backfill_keeps_a_drifting_target_as_one_group(
     assert published.candidate_ms2_evidence.nl_status == (
         "NL_FAIL" if dropout_mode == "remote_nl_local_fail" else "NO_MS2"
     )
-    # The final paired-position owner consumes the accepted ISTD identity;
-    # the analyte has no own NL and receives no direct chemical support.
     assert rows["S3", analyte.label]["Counted Detection"] == "TRUE"
     paired = next(
         f for f in execution.active_output.file_results if f.sample_name == "S3"

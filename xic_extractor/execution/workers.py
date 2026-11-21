@@ -176,8 +176,6 @@ class WorkerAdmissionPool:
     def _ensure_executor(
         self, capacity: int
     ) -> ThreadPoolExecutor | ProcessPoolExecutor | None:
-        # Process batches may overlap on the same pool. Their request windows
-        # are local; the executor owns the shared active-worker budget.
         with self._executor_lock:
             if self._closed:
                 raise RuntimeError("worker admission pool is closed")
@@ -185,7 +183,6 @@ class WorkerAdmissionPool:
                 return self._executor
             effective_workers = min(self._max_workers, max(1, capacity))
             if self._backend == "process":
-                # A small first batch must not permanently shrink a reused pool.
                 effective_workers = self._max_workers
                 if self._shared_objects:
                     bootstrap = owner_pickle_dumps(self._shared_objects, ())
@@ -193,9 +190,6 @@ class WorkerAdmissionPool:
                         self._shared_bootstrap_bytes = (
                             len(bootstrap) * effective_workers
                         )
-                    # Spawn writes initargs to the child, which reads them only
-                    # after re-importing the main module; large initargs would
-                    # start the workers one at a time. Pass a shared-memory name.
                     segment = shared_memory.SharedMemory(
                         create=True, size=max(1, len(bootstrap))
                     )
@@ -508,7 +502,6 @@ def execute_process_jobs(
                     in_flight_ordinals.add(ordinal)
     finally:
         if first_failure is not None:
-            # Stop can arrive during wait(), after the loop's last observation.
             _observe_cancellation()
         _shutdown_executor(
             executor,
@@ -517,8 +510,6 @@ def execute_process_jobs(
         )
 
     if cancellation_requested:
-        # Failure still wins, but cancellation must not acknowledge shutdown
-        # while a sibling can still write sample outputs or hold RAW handles.
         for future, ordinal in future_to_ordinal.items():
             if ordinal in in_flight_ordinals:
                 _record_finished_future(future, ordinal)

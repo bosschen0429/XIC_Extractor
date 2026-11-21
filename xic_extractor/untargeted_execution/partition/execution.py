@@ -445,7 +445,6 @@ def _prepare_runtime_work(
             elif failure is None:
                 failure = sample_failure
             report_phase("partition_seal", completed, len(states))
-        # A real failure outranks cancellation observed by other samples.
         return failure or cancellation
 
     work = _RuntimeWork(run, observed_results)

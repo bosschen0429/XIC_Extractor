@@ -80,7 +80,6 @@ def replay_grouping(
     if isinstance(rt_coordinates, SampleRtFrame):
         override = base_frame.with_calibration(rt_coordinates)
     elif rt_coordinates is not None:
-        # Legacy owner-only diagnostics do not imply measured landmark support.
         override = base_frame.with_coordinate_override(rt_coordinates.corrected_rt_min)
     else:
         override = None

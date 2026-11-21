@@ -37,8 +37,6 @@ def select(spec, named=(), targets=(), windows=(), top_n=None, settings=SETTINGS
 def test_row_is_kept_only_when_its_exclusion_window_clears_the_inclusion_window(
     offset_ppm, kept
 ):
-    # ±20 ppm exclusion around the row and ±20 ppm inclusion around the target
-    # touch when the two m/z values are 40 ppm apart.
     row_mz = 500.0
     target = Target("t", row_mz * (1 + offset_ppm * 1e-6), 0.0, math.inf, "t.csv")
 
@@ -83,8 +81,8 @@ def test_named_rows_come_first_then_the_most_often_dominant_ions_fill_the_rest()
         window(1, 200.0, 1.0, 5.0),
         window(2, 300.0, 1.0, 5.0),
         window(3, 400.0, 1.0, 5.0),
-        window(4, 500.0, 1.0, 5.0, apex=20000.0),  # below the MS2 threshold
-        window(5, 1200.0, 1.0, 5.0),  # outside the scan range
+        window(4, 500.0, 1.0, 5.0, apex=20000.0),
+        window(5, 1200.0, 1.0, 5.0),
     ]
 
     result = select(

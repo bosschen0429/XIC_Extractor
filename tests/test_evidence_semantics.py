@@ -285,7 +285,6 @@ def test_decision_anchor_mismatch_cap_with_strict_nl_skips_anchor_policy() -> No
         )
     )
 
-    # Paired-ISTD localization remains review context, not a counting policy.
     assert decision.decision_class == "review"
     assert "candidate_aligned_ms2_nl" in decision.support_reasons
     assert decision.conflict_reasons == ("anchor_conflict",)

@@ -65,7 +65,6 @@ class PeakObservation:
     signal_processing_profile: SignalProcessingProfile | None = field(
         default=None, compare=False
     )
-    # Curve-free replay retains the selected-peak fact without the evaluation.
     retained_overlap_review: bool = field(default=False, compare=False)
 
     def __post_init__(self) -> None:

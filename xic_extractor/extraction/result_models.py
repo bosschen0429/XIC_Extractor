@@ -63,8 +63,6 @@ class ExtractionResult:
     score_breakdown: tuple[tuple[str, str], ...] = ()
     selected_hypothesis: PeakHypothesis | None = None
     selection_decision: PeakHypothesisSelectionDecision | None = None
-    # The captured peak a finalized result reports; its integration is the
-    # one written as RT, area, height and bounds.
     measured_hypothesis: MeasuredPeakHypothesis | None = None
     acquisition_trace: Trace | None = None
     acquisition_observation_provenance: PeakObservationGenerationProvenance | None = (
@@ -78,11 +76,7 @@ class ExtractionResult:
     cid_nl_candidate_evidence: tuple[CandidateMS2Evidence, ...] = ()
     selected_cid_nl_candidate_index: int | None = None
     targeted_product_projection: TargetedProductProjection | None = None
-    # Capture retains alternatives until the complete batch is available. No
-    # RAW handle, callback or scoring closure crosses the worker boundary.
     targeted_candidate_assessment: TargetedCandidateAssessment | None = None
-    # Selection owner's scope for later method assessment, not a new ranking.
-    # None: no context decision; (): no candidate admitted. Full evidence remains.
     context_admissible_candidate_indexes: tuple[int, ...] | None = None
     method_candidate_evidence: tuple[MethodCandidateEvidence, ...] = ()
     selected_method_candidate_index: int | None = None
@@ -116,8 +110,6 @@ class ExtractionResult:
         if self.candidate_ms2_evidence is not None:
             return self.candidate_ms2_evidence.to_token()
         if self.cid_nl_evaluation_receipt is not None:
-            # No selected peak means no peak-owned positive claim. A different
-            # scan elsewhere in the acquired run is not an output fallback.
             return None
         if self.nl is not None:
             return self.nl.to_token()
@@ -149,7 +141,6 @@ class ExtractionResult:
     def reported_peak_area(self) -> float | None:
         integration = self._selected_integration
         if integration is not None:
-            # No morphology area publishes no area: raw area includes baseline.
             return integration.area_ms1_morphology
         peak = self.peak
         return None if peak is None else peak.area

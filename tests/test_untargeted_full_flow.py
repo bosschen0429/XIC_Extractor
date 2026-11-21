@@ -63,8 +63,6 @@ def test_complete_cid_nl_matches_workbench_intake_with_sample_values(
         rows = list(csv.DictReader(handle, delimiter="\t"))
     assert len(rows) == 1
     assert float(rows[0]["first"]) > 0
-    # Same Gaussian in two samples, with analytically distinct 1x / 2x heights.
-    # The published matrix uses six significant figures.
     assert float(rows[0]["second"]) == pytest.approx(
         2 * float(rows[0]["first"]), rel=1e-5
     )
@@ -138,7 +136,6 @@ def test_complete_diagnostic_routes_keep_candidates_sample_bound_without_matrix(
             for r in supported
         )
         assert Path(result["delta_mass"]["cid_nl_peaks_csv"]).is_file()
-        # The merged table is a download, not the composite's analysis input.
         merged = Path(result["delta_mass"]["cid_nl_peaks_csv"])
         merged.unlink()
         replay = run_delta_mass_discovery(
@@ -173,7 +170,6 @@ def test_composite_validates_across_sample_tables_before_raw(tmp_path, invalid):
         "nonfinite": header + "id-second,second,DNA_dR,admitted,nan,1\n",
     }[invalid]
     second.write_text(payload)
-    # The sample file is valid intake; no reader may open it after the CSV error.
     (tmp_path / "sample.raw").touch()
     with pytest.raises(ValueError, match=str(second).replace("\\", "\\\\")):
         run_delta_mass_discovery(

@@ -150,12 +150,7 @@ def test_ms1_diagnostics_retain_competition_without_replacing_selected_body() ->
     assert [
         candidate.peak.rt for candidate in result.peak_result.candidates
     ] == pytest.approx([8.5, 9.0, 11.0], abs=0.01)
-    # Both prominent alternatives and the weaker reference-supported body
-    # remain in the identity comparison; this is not a tallest-peak count.
     assert result.peak_result.n_prominent_peaks == 3
-    # The observed body at the supplied reference remains the provisional
-    # answer. Without calibrated RT context, the stronger alternatives remain
-    # visible competition rather than being erased by a fixed local window.
     assert [
         s.apex_rt_min for s in result.physical_evaluation.segment_universe.segments
     ] == pytest.approx([8.5, 9.0, 11.0], abs=0.01)

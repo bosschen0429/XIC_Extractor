@@ -77,8 +77,6 @@ class UntargetedAnalysis:
         progress: Callable[[int, int, str], None],
         should_cancel: Callable[[], bool],
     ) -> None:
-        # Persisted scientific inputs must not be re-read from an active locator
-        # after dispatch. RAW acquisition remains live and is not a byte snapshot.
         request = deepcopy(request)
         preset = request.preset_snapshot or load_preset(request.preset)
         request = replace(request, preset_snapshot=preset)

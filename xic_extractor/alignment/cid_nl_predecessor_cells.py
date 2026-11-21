@@ -66,7 +66,6 @@ def compose_cid_nl_predecessor_cells(
             raise CellObservationContractError(
                 "group backfill crossed its sample or method subject"
             )
-    # Match the sample and measured assessment values, not artifact identities.
     unique_assessments: dict[
         CidNlMethodAssessment,
         tuple[SampleMetadata, CidNlMethodAssessment],

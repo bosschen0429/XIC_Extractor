@@ -155,7 +155,6 @@ def test_acceptance_a3_witness_chain_query() -> None:
     )
     group_item = _make_item("group", "G", "rest", ("S1", "S2"), witnesses=(w1, w2))
 
-    # Query C1 + mz=500 + rt=8 -> 0 (C1 RT is 1min; S2 RT 8min has mz 600)
     sel, matched, missing_rt = filter_by_query(
         [group_item],
         candidate_ids=("C1",),
@@ -167,7 +166,6 @@ def test_acceptance_a3_witness_chain_query() -> None:
     assert matched == 0
     assert len(sel) == 0
 
-    # Query C1 + mz=500 + rt=1 -> Hits G once with witness C1/S1
     sel, matched, missing_rt = filter_by_query(
         [group_item],
         candidate_ids=("C1",),
@@ -180,7 +178,6 @@ def test_acceptance_a3_witness_chain_query() -> None:
     assert len(sel) == 1
     assert sel[0].identifier == "G"
 
-    # When restricting sample_ids to ("S1",), S2 cannot testify for rt=8
     sel, matched, missing_rt = filter_by_query(
         [group_item],
         sample_ids=("S1",),

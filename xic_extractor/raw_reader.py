@@ -55,7 +55,6 @@ from xic_extractor.raw_source_binding import (
 from xic_extractor.raw_superwindow_source import RawSuperWindowSource
 from xic_extractor.xic_models import XICRequest, XICTrace
 
-# RawFileReader 8 package set; OpenMcdf is its only runtime dependency.
 EXPECTED_THERMO_DLLS = (
     "OpenMcdf.dll",
     "ThermoFisher.CommonCore.Data.dll",
@@ -63,7 +62,6 @@ EXPECTED_THERMO_DLLS = (
 )
 THERMO_READER_INSTALL_COMMAND = "xic-install-thermo-reader"
 DOTNET_INSTALL_COMMAND = "winget install Microsoft.DotNet.Runtime.10"
-# Any installed .NET 8 or later major; .NET Framework cannot host RawFileReader 8.
 _DOTNET_RUNTIME_CONFIG = Path(__file__).parent.joinpath(
     "configuration", "data", "thermo_dotnet.runtimeconfig.json"
 )
@@ -148,7 +146,6 @@ class RawFileHandle:
         self._lm_found_trailer_index: int | None = None
         self._mass_recalibration_result: MassRecalibrationResult | None = None
         self._mass_scale_by_scan: dict[int, float] = {}
-        # Per MS1 scan: RT, recalibrated sorted masses and their intensities.
         self._recalibrated_ms1: dict[
             int, tuple[float, np.ndarray, np.ndarray] | None
         ] = {}
@@ -651,7 +648,6 @@ class RawFileHandle:
     ) -> tuple[XICTrace, ...]:
         """Visit each scan window once for all its distinct mass windows."""
         scan_windows: dict[tuple[float, float], tuple[int, int]] = {}
-        # Scan window -> (m/z, ppm) -> request positions sharing that trace.
         channels: dict[tuple[int, int], dict[tuple[float, float], list[int]]] = {}
         for index, request in enumerate(requests):
             rt_window = (request.rt_min, request.rt_max)
@@ -1006,7 +1002,6 @@ def _read_precursor_metadata(
 ) -> Ms2PrecursorMetadata:
     trailer_reader = getattr(raw, "GetTrailerExtraInformation", None)
     trailer = trailer_reader(scan_number) if callable(trailer_reader) else None
-    # Preserve formatted vendor values: the typed trailer API changes precision.
     trailer_values = getattr(trailer, "Values", ())
     values = {
         key: trailer_values[index]

@@ -49,8 +49,6 @@ def write_sequence(path, names):
 @pytest.mark.parametrize("suffix", [".csv", ".xlsx", ".docx"])
 def test_formats_share_matching_and_repeated_injection_order(tmp_path, suffix):
     path = tmp_path / f"sequence{suffix}"
-    # Deliberately shuffled rows and RAW paths: the printed injection order,
-    # rather than either container's order, binds repeated names.
     write_sequence(
         path,
         [

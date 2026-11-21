@@ -437,8 +437,6 @@ def test_sequence_manifest_writes_sample_metadata_for_actual_raw_rows(
     assert by_sample["SDOLEK-pretest"]["group"] == "SDOLEK"
     assert by_sample["SDOLEK-pretest-1"]["injection_order"] == ""
     assert by_sample["Blank_3"]["sample_role"] == "blank"
-    # Rows without an instrument-QC class are told apart by name, never "unknown":
-    # an ordinary sample stays in Untargeted, a wash does not.
     assert by_sample["TumorBC001_DNA"]["sample_role"] == "sample"
     assert by_sample["ColumnWash"]["sample_role"] == "other"
     assert "SDOLEK-missing" not in by_sample

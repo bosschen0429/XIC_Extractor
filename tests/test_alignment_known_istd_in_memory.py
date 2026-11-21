@@ -49,10 +49,6 @@ def test_mint_known_istd_reference_validates_inputs() -> None:
 
 def test_mint_known_istd_reference_computes_centers_and_deltas() -> None:
     targets = [_make_target("ISTD1"), _make_target("ISTD2")]
-    # Sample1: ISTD1=2.0, ISTD2=10.0
-    # Sample2: ISTD1=2.2, ISTD2=10.2
-    # Sample3: ISTD1=2.4, ISTD2=10.4
-    # Median center: ISTD1 = 2.2, ISTD2 = 10.2
     coords = {
         ("ISTD1", "S1"): 2.0,
         ("ISTD1", "S2"): 2.2,
@@ -67,10 +63,6 @@ def test_mint_known_istd_reference_computes_centers_and_deltas() -> None:
     assert ref.workbook_sha256 == ""
     assert len(ref.coordinates) == 6
 
-    # Verify deltas:
-    # ("ISTD1", "S1"): 2.0 - 2.2 = -0.2
-    # ("ISTD1", "S2"): 2.2 - 2.2 = 0.0
-    # ("ISTD1", "S3"): 2.4 - 2.2 = +0.2
     coord_map = {(t, s): (rt, delta) for t, s, rt, delta in ref.coordinates}
     assert coord_map[("ISTD1", "S1")][0] == pytest.approx(2.0)
     assert coord_map[("ISTD1", "S1")][1] == pytest.approx(-0.2)
@@ -424,9 +416,6 @@ def test_istd_reference_recovers_cross_sample_peak_without_local_nl(
                     center + int(sample[1:]) * 0.1, abs=0.021
                 )
     if separate_batch:
-        # The unrelated 9.7-minute NL peak is not an initial ISTD anchor.
-        # Without same-cohort peers, the unconfirmed 23.2-minute body cannot
-        # become a confirmed Alignment coordinate either.
         assert ("I3", "S2") not in coordinates
         return
     assert coordinates["I3", "S2"] == pytest.approx(23.2, abs=0.021)

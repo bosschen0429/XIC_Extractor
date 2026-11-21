@@ -1,5 +1,3 @@
-// Editable sample metadata, read recency and folder-scoped persistence.
-// Consumers read immutable page snapshots and submit intentions, not revisions.
 const pages = ["targeted", "untargeted"];
 const empty = () =>
   Object.freeze({
@@ -50,7 +48,6 @@ export function createSampleMetadata({ request, inputs, jobBusy = () => false })
         revisions[other] === read.revisions[other]
       ) {
         revisions[other] += 1;
-        // Metadata is shared; each flow retains its own read summary.
         sets[other] = Object.freeze({
           ...sets[read.page],
           summary: sets[other].summary,
@@ -82,7 +79,6 @@ export function createSampleMetadata({ request, inputs, jobBusy = () => false })
   async function writeFolder(rawDir, send, accept) {
     pendingWrites += 1;
     publish([]);
-    // Continue after a predecessor fails; its caller still receives that error.
     const saving = (saves.get(rawDir) || Promise.resolve()).then(send, send);
     saves.set(rawDir, saving);
     try {
@@ -106,7 +102,6 @@ export function createSampleMetadata({ request, inputs, jobBusy = () => false })
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
-    // Reserve the manual action before pointer-triggered blur validation.
     interrupt(page) {
       revisions[page] += 1;
     },

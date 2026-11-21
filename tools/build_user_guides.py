@@ -10,8 +10,6 @@ class BuildPy(build_py):
     def run(self) -> None:
         super().run()
         root = Path(__file__).resolve().parents[1]
-        # Setuptools loads this command by file in an isolated environment;
-        # the checkout is not an installed/importable package there.
         render_user_guides = runpy.run_path(str(root / "xic_workbench/user_guide.py"))[
             "render_user_guides"
         ]

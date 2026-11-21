@@ -257,8 +257,6 @@ def _validate_differential_flags(flags: dict[str, Any], where: str) -> None:
 
 
 def _decode_bundle(value: object) -> CurveBundle:
-    # Generic portable bundles need no Alignment estimate. Untargeted producers
-    # explicitly carry the final explanation's calibration and injection order.
     if isinstance(value, dict):
         value = {"sample_rt_calibration": None, "injection_order": {}, **value}
     root = _mapping(
@@ -624,8 +622,6 @@ class CurveBundleSource:
                         "bound_left_rt": trace.peak_bounds.start
                         if trace.peak_bounds
                         else None,
-                        # A curve without saved bounds still marks the apex of
-                        # the value it gave.
                         "apex_rt": trace.peak_bounds.apex
                         if trace.peak_bounds
                         else trace.integration.apex_rt_min

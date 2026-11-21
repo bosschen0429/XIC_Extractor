@@ -147,7 +147,6 @@ def test_earlier_workbook_with_named_methods_is_rejected(tmp_path):
         ),
         (
             {"conditions": [{"kind": "cid_nl", "tag": "dR"}]},
-            # A required CID-NL condition must not become ranking-only support.
             "必要條件",
         ),
     ],
@@ -178,7 +177,6 @@ def test_named_methods_convert_to_parameter_columns():
         ("", ""),
     ]
     (ion,) = details["ions"]["iso"]
-    # Names survive; the earlier method default did not compare shape.
     assert (ion["label"], ion["offset_mz"], ion["ratio_min"], ion["compare_shape"]) == (
         "m1",
         1.003355,
@@ -297,7 +295,6 @@ def test_missing_ms2_fails_cid_nl_when_both_conditions_are_required(tmp_path):
     [
         ("116.0474", 116.047344, "matched"),
         ("116.0474", 117.047344, "not_matched"),
-        # A loss outside dR/R/MeR is used as declared.
         ("162.0528", 162.052823, "matched"),
         ("162.0528", 116.047344, "not_matched"),
     ],

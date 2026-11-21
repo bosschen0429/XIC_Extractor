@@ -54,7 +54,6 @@ def test_profile_rejects_invalid_worker_counts(
 
 
 def test_worker_counts_are_internal_unless_a_caller_overrides(monkeypatch):
-    # No saved setting takes part: the machine decides, an explicit CLI value wins.
     monkeypatch.setattr(execution_settings.os, "cpu_count", lambda: 9)
 
     assert execution_settings.load_execution_profile() == (

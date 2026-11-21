@@ -52,7 +52,6 @@ class PeakCandidate:
     merge_note: str = ""
     ms2_evidence_peak_start: float | None = None
     ms2_evidence_peak_end: float | None = None
-    # The physical owner supplies this binding; proposal_sources is audit text.
     physical_segment: PhysicalSegment | None = None
 
 
@@ -105,5 +104,4 @@ class PeakDetectionResult:
     paired_istd_anchor_rt: float | None = None
 
     def __deepcopy__(self, memo: dict[int, object]) -> PeakDetectionResult:
-        # Peak geometry, scores and evidence facts are frozen scalar/tuple graphs.
         return self

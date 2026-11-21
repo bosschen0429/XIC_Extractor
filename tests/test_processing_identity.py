@@ -305,7 +305,6 @@ def test_missing_ambiguous_or_rebound_inputs_fail_closed(tmp_path: Path) -> None
     with pytest.raises(IdentityContractError, match="injection order"):
         _sources([first, second], injection_order={"sample_a": 1})
 
-    # Byte-identical copies remain different local files without a content audit.
     sources = _sources([first, second], injection_order={"sample_a": 1, "sample_b": 2})
     assert len({source.acquisition_source_id for source in sources.values()}) == 2
 

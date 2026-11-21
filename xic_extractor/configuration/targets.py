@@ -208,9 +208,7 @@ def _parse_target_row(
         else None
     )
     policy = DEFAULT_CID_NL_MASS_POLICY
-    # CID-NL alone ranks candidates; with Delta Mass it is a required condition.
     plain_loss = loss if identification is None else None
-    # Existing in-memory consumers retain a center pair, not a search window.
     return Target(
         label=label,
         mz=mz,

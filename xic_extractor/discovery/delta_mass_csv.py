@@ -101,8 +101,6 @@ def write_delta_mass_outputs(
             if p.position_label in settings.discriminating_positions
         ]
         row.update(
-            # Full precision lets the published table reproduce the CID-NL join
-            # at its ppm and RT tolerance boundaries.
             base_mz=format_machine_float(candidate.base_mz),
             base_rt_apex_min=format_machine_float(candidate.base_rt_apex_min),
             position_count=len(candidate.positions),
@@ -120,7 +118,6 @@ def write_delta_mass_outputs(
         rows.append(row)
         for position in candidate.positions:
             position_fields = asdict(position)
-            # Review reuses the actual Discovery XIC center, not a display-rounded mass.
             position_fields["expected_mz"] = format_machine_float(position.expected_mz)
             position_fields["height_ratio_to_base"] = position_fields.pop(
                 "height_ratio"

@@ -12,11 +12,6 @@ TARGETED_OUTPUT_SCHEMA_VERSION = "targeted_output"
 TARGETED_LONG_CSV_SCHEMA_VERSION = "targeted_long_csv"
 TARGETED_DIAGNOSTIC_CSV_SCHEMA_VERSION = "targeted_diagnostics_csv"
 
-# The delivered workbook is a measurement table, not the internal long-row dump.
-# Measurements, counted status and the two label columns show; the collapsed
-# secondary columns retain peak evidence. A target's role lives on Targets.
-# `依據` and `疑點` hold fixed labels (`result_labels`), which also decide
-# whether a row needs a look.
 WORKBOOK_RESULT_HEADERS: tuple[str, ...] = (
     "SampleName",
     "Target",

@@ -80,7 +80,6 @@ def test_cells_with_values_show_their_run_curves_without_raw(tmp_path, monkeypat
             alignment_config=config,
             full_audit=full_audit,
         )
-    # The run's settings travel beside its report, as Alignment publishes them.
     _write_metadata_json(
         tmp_path / "review" / "alignment_run_metadata.json",
         {
@@ -128,7 +127,6 @@ def test_cells_with_values_show_their_run_curves_without_raw(tmp_path, monkeypat
         expected = audit[trace.sample_id, keys[trace.sample_id]]
         assert list(trace.raw.rt) == expected["rt"]
         assert list(trace.raw.intensity) == expected["raw"]
-        # Processing follows the run's profile, not the default one.
         assert list(trace.gaussian15.intensity) == expected["smoothed"]
         assert list(trace.baseline.intensity) == expected["baseline"]
         assert list(trace.positive_signal.intensity) == expected["positive"]
@@ -218,8 +216,6 @@ def test_saved_curves_stay_with_their_own_cell(tmp_path):
 
 
 def test_unsaved_samples_read_raw_at_their_recorded_coordinates(tmp_path, monkeypatch):
-    # The precursors 499/501 differ from the measured ions, and S3 has a
-    # Backfill value without a Discovery candidate.
     expected = {"S1": (499.012, 20.0), "S2": (501.018, 17.0), "S3": (500.123, 23.0)}
     report, _ = _group_with_missing_apex_review(tmp_path, extraction_by_sample=expected)
     acquired = {}
@@ -446,7 +442,6 @@ def test_raw_reads_replay_each_samples_saved_mass_result(tmp_path, monkeypatch, 
     traces = {t.sample_label: t for t in bundle.transitions[0].traces}
     assert max(traces["S1"].raw.intensity) == pytest.approx(1000)
     assert max(traces["S2"].raw.intensity) == pytest.approx(2000)
-    # A saved result is replayed; the RAW is not probed again.
     assert replayed == ({"S1": saved_outcome, "S2": "none"} if saved else {})
 
 

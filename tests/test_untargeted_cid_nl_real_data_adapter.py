@@ -163,7 +163,6 @@ def test_adapter_keeps_direct_support_separate_from_same_peak_inferred_evidence(
     scenario.settings = replace(_settings(), neutral_loss_profile=None)
 
     candidates = scenario.discover(source_raw)
-    # One physical peak retains every event without promoting inference to strict NL.
     (candidate,) = candidates
     assert candidate.precursor_mz_basis == "mixed"
     assert candidate.best_ms2_scan_id == representative.scan_number
@@ -213,7 +212,6 @@ def test_inferred_precursor_retains_physical_peak_without_strict_nl_support(
 
     candidates = scenario.discover(source_raw)
     if not ms1_present:
-        # Without MS1 signal Discovery measures no peak; events record why.
         assert candidates == ()
         return
     assert all(c.precursor_mz_basis == "product_plus_neutral_loss" for c in candidates)
@@ -267,8 +265,6 @@ def test_adapter_resolves_one_event_from_same_scan_loss_product_alternatives(
     scenario = build_sample_adapter_scenario(tmp_path)
     source_raw = _FakeRaw((8.0,))
     scan = source_raw.scans[0]
-    # The weaker product's parent window contains one ion. The stronger
-    # product's shifted window contains both ions and cannot supply support.
     products = (383.9526, 383.9536)
     intensities = (11900.0, 12000.0) if parent_supported else (12000.0, 11900.0)
     if composite:
@@ -325,13 +321,9 @@ def test_adapter_resolves_one_event_from_same_scan_loss_product_alternatives(
             for number, low, high in requests
         )
 
-    # Discovery reads each inferred event's parent window once; the event
-    # table carries that observation to Alignment.
     source_raw.read_ms1_mass_windows = discovery_parent_windows
     discovered = scenario.discover(source_raw)
     candidates = scenario.through_event_table(discovered)
-    # The table hands over every located event: each tag and product, with
-    # its parent-MS1 observation.
     for before, after in zip(discovered, candidates, strict=True):
         assert [
             (e.neutral_loss_tag, e.product_mz, e.ms1_precursor_observation)

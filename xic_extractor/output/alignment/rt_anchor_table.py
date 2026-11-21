@@ -42,7 +42,6 @@ def write_rt_anchor_table(path: Path, calibration: BatchRtCalibration | None) ->
             for knot in (calibration.knots if calibration is not None else ())
         ),
         RT_ANCHOR_COLUMNS,
-        # Exact values: the table must match the persisted knots.
         formatter=str,
         lineterminator="\n",
     )

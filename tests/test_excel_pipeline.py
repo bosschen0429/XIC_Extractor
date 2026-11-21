@@ -45,7 +45,6 @@ def test_workbook_filters_belong_to_tables_not_overlapping_worksheet_ranges(tmp_
             if name.startswith("xl/worksheets/sheet"):
                 sheet = ElementTree.fromstring(archive.read(name))
                 if sheet.find("s:tableParts", ns) is not None:
-                    # Excel repairs/removes tables when a worksheet filter overlaps.
                     assert sheet.find("s:autoFilter", ns) is None, name
             elif name.startswith("xl/tables/"):
                 table = ElementTree.fromstring(archive.read(name))
@@ -115,7 +114,6 @@ def test_write_excel_from_run_output_uses_in_memory_rows_and_metadata(
     assert not config.diagnostics_csv.exists()
 
     wb = load_workbook(output_path)
-    # One sample shares the batch outcome, so there is nothing to look at first.
     assert wb.sheetnames == [
         "摘要",
         "面積",
@@ -161,7 +159,6 @@ def test_write_excel_from_run_output_uses_in_memory_rows_and_metadata(
     assert not ws.merged_cells.ranges
     assert ws.freeze_panes == "C2"
     result_columns = {cell.value: cell.column_letter for cell in ws[1]}
-    # Measurements, counted status and the labels show; evidence collapses.
     for header in headers[:8]:
         assert ws.column_dimensions[result_columns[header]].hidden is not True
     for header in headers[8:]:
@@ -204,9 +201,6 @@ def test_workbook_keeps_an_event_without_a_result_on_the_worklist(tmp_path):
 
     config = _config(tmp_path)
     original = _run_output(with_diagnostics=False)
-    # A RAW file that failed to open has no result row; it stays on the
-    # worklist, and its message on the trace sheet, because no XIC view can
-    # explain it.
     diagnostic = DiagnosticRecord(
         sample_name="Another sample",
         target_label="",
@@ -226,7 +220,6 @@ def test_workbook_keeps_an_event_without_a_result_on_the_worklist(tmp_path):
     assert record["樣本"].value == "Another sample"
     assert record["結果"].value is None
     assert record["依據"].value == "RAW 失敗"
-    # The full event also stays on the hidden trace sheet, as literal text.
     events = book["診斷事件"]
     assert events.sheet_state == "hidden"
     assert [cell.value for cell in events[1]] == [
@@ -296,7 +289,6 @@ def test_workbook_shows_backfill_labels_without_changing_saved_counts(tmp_path):
         for row in summary[summary.tables["TargetedReview"].ref]
     ]
     records = {row[1]: dict(zip(values[0], row, strict=True)) for row in values[1:]}
-    # Backfill events stay on the trace sheet; the labels say what was seen.
     assert (records["Recovered"]["結果"], records["Recovered"]["疑點"]) == (
         "已計入",
         "未見 NL",
@@ -344,7 +336,6 @@ def test_saved_workbook_overview_takes_roles_from_targets(tmp_path):
     )
     source = TargetedWorkbookSource(path)
     overview = source.summary["overview"]
-    # XIC Results carries no Role; the saved Targets sheet is its only source.
     assert {t["label"]: t["role"] for t in overview["targets"]} == {
         "A": "Analyte",
         "IS": "ISTD",
@@ -498,7 +489,6 @@ def test_counted_backfill_doubt_names_quality_not_identity(
         output_path=tmp_path / "final-peak-review.xlsx",
     )
     saved = TargetedWorkbookSource(path).records[0]
-    # The fixture's neutral loss was seen with a large mass error.
     assert (saved["依據"], saved["疑點"]) == ("回填", f"NL 偏差大、{expected}")
     assert saved["Counted Detection"] == "TRUE"
     assert saved["RT"] == result.reported_rt

@@ -73,12 +73,10 @@ def serialize_preset(
         delta_mass_settings = apply_to_delta_mass_discovery(effective_preset)
         effective = asdict(delta_mass_settings)
         effective.pop("pattern_id")
-        # Targeted reference roles are not Discovery preset parameters.
         effective.pop("shape_reference_position")
         effective.pop("ratio_reference_position")
         effective["delta_mass_mz_tolerance_ppm"] = effective.pop("mz_tolerance_ppm")
         effective["detector"] = effective_preset.discovery_overrides.get("detector", {})
-        # Omitted means none for Delta Mass; keep an explicit policy explicit.
         recalibration = effective_preset.discovery_overrides.get("mass_recalibration")
         if recalibration is not None:
             effective = {
@@ -90,7 +88,6 @@ def serialize_preset(
     else:
         discovery_settings = apply_to_discovery(effective_preset)
         recalibration = discovery_settings.mass_recalibration
-        # Human presets omit only the new default; explicit none is rollback.
         discovery_fields = tuple(
             field
             for field in _NL_DISCOVERY_FIELDS
@@ -114,8 +111,6 @@ def serialize_preset(
     )
     raw = rendered.encode("utf-8")
 
-    # Validate the actual bytes through the existing parser and semantic owners
-    # before returning them or allowing a destination replacement.
     parsed = _parse_toml(raw, source="<serialized preset>")
     _validate_loaded_preset(parsed)
     return rendered

@@ -172,8 +172,6 @@ def test_unavailable_istd_alternate_does_not_block_workbook_publication(
     published = execution.active_output.file_results[0].results[target.label]
     assert published.reported_rt == pytest.approx(9.0, abs=0.01)
     assert published.reported_peak_area == pytest.approx(source.reported_peak_area)
-    # Publication must retain unavailable diagnostics, not manufacture numeric
-    # observations for them or remove them from the acquisition result.
     assert (
         published.candidate_physical_evaluations
         == source.candidate_physical_evaluations
@@ -234,8 +232,6 @@ def test_publication_uses_final_peak_evidence_not_stale_selected_summary(tmp_pat
         ),
         target,
     )
-    # Model the stale selected summary left by a previous selected peak. The
-    # complete retained population is the authority at final selection.
     output.file_results[0].results[target.label] = replace(
         first,
         candidate_ms2_evidence=second.candidate_ms2_evidence,
@@ -297,7 +293,6 @@ def test_two_samples_reuse_exact_acquired_physical_evaluations(
     assert sample_b.area_counts_seconds == pytest.approx(
         sample_a.area_counts_seconds * 2.0
     )
-    # The published values are the acquired measurements, not a second solve.
     assert tuple(d.value for d in finalized[0].completed_projection.decisions) == (
         sample_a.area_counts_seconds,
         sample_b.area_counts_seconds,
@@ -455,7 +450,6 @@ def test_nl_event_outside_retained_peak_finalizes_without_direct_support(
     )
 
     assert len(finalized) == 1
-    # SampleA's local MS1 value stays selected beside SampleB's direct support.
     assert len(assessments) == 2
     assert assessments[0].individual_support_refs == ()
     assert assessments[0].method_result != "SUPPORT"

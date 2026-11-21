@@ -221,7 +221,6 @@ function bindShell() {
       act(() => analysis.cancel());
     } else if (event.key === "Enter") {
       event.preventDefault();
-      // Starting belongs to setup; a shown result never launches a hidden form.
       if (!isBusy() && !showingResult())
         $(`${state.view}-form`).requestSubmit();
     } else if (

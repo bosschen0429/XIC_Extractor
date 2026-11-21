@@ -528,8 +528,6 @@ def test_pipeline_publishes_projected_children_and_cleans_up(
             alignment_config=config,
         )
 
-    # The reference keeps each child beside its outputs, as a scientific
-    # fixture does; the published run stores only the production projection.
     expected = execute("expected", project_composed_child)
     completed = execute(
         "runtime",
@@ -601,11 +599,9 @@ def test_pipeline_publishes_projected_children_and_cleans_up(
 
     def counted_read(store, *args):
         nonlocal restores
-        # The preceding loop item may still be live; earlier partitions must be gone.
         assert live_outputs() <= 1
         values = read_record(store, *args)
         for value in values:
-            # Publication never restores a finalized child from the store.
             assert type(value) is not FinalizedUntargetApplicationResult
             if type(value) is UntargetChildOutputs:
                 restores += 1
@@ -663,8 +659,6 @@ def test_pipeline_publishes_projected_children_and_cleans_up(
             result = run()
             assert matrix_path.read_bytes() == matrix_bytes
             if not emit_explanation and not has_membership_risk:
-                # Nothing replays the children's report writes, so no report
-                # is written and the run still releases every output.
                 assert not report_path.exists()
                 assert result.evidence is None
             else:
@@ -1066,8 +1060,6 @@ def test_reduced_discovery_persistence_keeps_inferred_peak_and_qualifies_alignme
         )
     )
 
-    # Exercise the declared CLI's real application and publication path with
-    # the same scientific fixture; recipe/config parsing has its own CLI tests.
     from scripts import run_alignment as cli
 
     monkeypatch.setattr(
@@ -1152,15 +1144,12 @@ def test_reduced_discovery_persistence_keeps_inferred_peak_and_qualifies_alignme
     assert (cli_output / "alignment_review.tsv").read_bytes() == (
         alignment.review_tsv.read_bytes()
     )
-    # Product-derived m/z 700 keeps its peak row below, but supplies no
-    # independent NL support. Only selected-precursor m/z 701 reaches Matrix.
     assert [row["Mz"] for row in matrix] == ["701.0000"]
     by_candidate = {row["source_candidate_id"]: row for row in cells}
     assert set(by_candidate) == {
         f"{stem}@mz701_rt7.8000" for stem in ("sample-a", "sample-b")
     }
     assert {row["status"] for row in cells} == {"detected"}
-    # Fixture apex = 100 baseline + (sample index + 1) * 500.
     heights = {row["sample_stem"]: float(row["height"]) for row in cells}
     assert heights == {"sample-a": 600.0, "sample-b": 1100.0}
     areas = {row["sample_stem"]: float(row["area"]) for row in cells}

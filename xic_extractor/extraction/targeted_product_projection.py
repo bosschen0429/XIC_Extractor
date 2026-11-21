@@ -162,30 +162,21 @@ def _reported_interval_contains_rt(
     return start <= reference_rt <= end
 
 
-# RT priors describe how the peak was located, not an unresolved action. Keep
-# them in the source evidence, not the product review.
 LOCATING_REVIEWS = frozenset({"targeted_rt_review", "paired_istd_rt_review"})
 LOCATING_CONFLICTS = frozenset({"targeted_rt_conflict", "anchor_conflict"})
-# Peak-quality and NL conflicts are reviews of the selected peak, not a
-# contradiction about its identity.
 CONFLICTS_AS_REVIEW = {
     "trace_morphology_conflict": "trace_morphology_review",
     "hard_local_quality_conflict": "trace_morphology_review",
     "hard_quality_flag_conflict": "trace_morphology_review",
     "candidate_aligned_ms2_nl_conflict": "missing_nl_support_review",
 }
-# A missing direct NL/MS2 observation that identity from elsewhere resolves
-# for counting, mapped to the review that keeps it visible as a doubt.
 _MISSING_DIRECT_NL_REVIEW = {
     "cid_nl_method_not_supported": "missing_nl_support_review",
     "missing_ms2_policy_not_counted": "missing_ms2_not_observed",
 }
 _MISSING_DIRECT_NL_NOT_COUNTED = frozenset(_MISSING_DIRECT_NL_REVIEW)
 _COHERENT_MS1_PEAK = frozenset({"ms1_peak_present", "ms1_coherent", "trace_coherent"})
-# Backfill acceptance qualified the recovered peak's shape; the first capture's
-# coherence facts may describe the peak it replaced.
 _BACKFILL_LOCALIZATION = "cross_sample_backfill_localization"
-# The Backfill apex floor: closer RT agreement is not resolvable (12 s).
 _PAIRED_OFFSET_FLOOR_MIN = 0.2
 
 
@@ -194,7 +185,6 @@ class PairedIstdPositions:
     """Where analyte peaks sit relative to their counted paired isotope ISTD."""
 
     identified: frozenset[str] = frozenset()
-    # Sample -> minutes the selected peak lies from the paired-ISTD position.
     off_position: Mapping[str, float] = field(default_factory=dict)
 
 
@@ -227,7 +217,6 @@ def paired_istd_positions(
         if sample in counted_istd
         and _counted(result)
         and (rt := _finite(result.reported_rt)) is not None
-        # A contradictory counted peak cannot calibrate away its own mismatch.
         and abs(rt - counted_istd[sample] - expected_offset_min)
         <= _PAIRED_OFFSET_FLOOR_MIN
     ]
@@ -376,8 +365,6 @@ def build_targeted_product_projection(
         )
 
     if backfill_supported and not context.is_istd:
-        # Accepted Backfill located a physically qualified peak; it localizes
-        # but does not identify an analyte by itself.
         support = _merge_reasons(support, (_BACKFILL_LOCALIZATION,))
     identity = (
         "cross_sample_backfill_identity"
@@ -388,9 +375,6 @@ def build_targeted_product_projection(
     )
     if identity is not None:
         support = _merge_reasons(support, (identity,))
-        # Identity from Backfill or the paired ISTD locates the peak and lets
-        # it count without direct NL/MS2; that missing observation stays a
-        # review, as do morphology and overlap concerns.
         resolved_identity_reviews = {
             "targeted_retention_context_unavailable",
             "targeted_reference_displacement",

@@ -168,8 +168,6 @@ def _open_job_raw(
         )
 
     if job.acquisition_cache_dir is not None:
-        # The input owner already verified the content. Cache replay still checks
-        # that this path has that exact identity before returning any facts.
         bind_expected_path_identity(job.raw_path, source, expectation.path_identity)
         return CachedUntargetedRaw(
             open_native,
@@ -590,7 +588,6 @@ def _execute_backfill_sample_phase(
         if state.error is None and state.backfill_targets
     )
     for state in pending:
-        # The response transports only newly acquired attempts, not parent-local reuse.
         state.backfill_attempts = ()
     _execute_backfill_batch(local)
     return _SampleBackfillWorkerResponse(

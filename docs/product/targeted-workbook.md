@@ -139,6 +139,9 @@ sidecar is published, and Targeted runs have no replay entry point.
 | Excel tables; frozen headers and repeated print titles on single-table sheets | Native navigation at 1 or 200 targets |
 | Wide sheets print across pages | Text is never shrunk to fit one page |
 
+Each Excel Table owns its filter. Adding a worksheet filter over the same
+range makes desktop Excel repair the file and remove the Table.
+
 ## Owners
 
 - Writer: `xic_extractor.output.workbook_builder` and its `sheet_*` modules.

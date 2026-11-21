@@ -51,7 +51,6 @@ class UntargetedInputPlan:
         ],
     ]
     dll_dir: Path
-    # Only differs when reviewed Discovery peaks helped define a query channel.
     rt_reference_subjects: UntargetedCidNlMethodSubjectBatch | None = None
 
 
@@ -121,8 +120,6 @@ def prepare_untargeted_alignment_worksets(
     }
     workset_ids_by_subject: dict[str, frozenset[str]] = {}
     for workset in worksets:
-        # One set per workset, shared by its members. Building it per subject
-        # instead stores the same k ids k times.
         member_ids = frozenset(member.method_subject_id for member in workset)
         for subject in workset:
             workset_ids_by_subject[subject.method_subject_id] = member_ids
@@ -219,8 +216,6 @@ def prepare_indexed_untargeted_plan(
                 candidate, neutral_loss_by_tag=settings.neutral_loss_by_tag
             ),
         )
-        # A peak's representative MS2 scan must be in its event table; a
-        # missing row means the persisted Discovery outputs do not match.
         representative_event_rt(located)
         return located
 

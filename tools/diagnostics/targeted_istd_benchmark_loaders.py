@@ -93,7 +93,6 @@ def read_target_definitions(path: Path) -> tuple[TargetDefinition, ...]:
 
 
 def read_targeted_points(path: Path) -> dict[str, tuple[TargetedPoint, ...]]:
-    # Targets owns each label's role; a result row only names its target.
     istds = {
         target.label
         for target in read_target_definitions(path)

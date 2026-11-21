@@ -20,7 +20,6 @@ from xic_extractor.mass_accuracy import (
 
 
 def test_neutral_loss_match_uses_quadrature_window_at_boundary() -> None:
-    # At 500/400 m/z and 20 ppm, the window is about 0.012806 Da.
     inside_error, inside_window, inside = neutral_loss_match(
         500.0, 400.0128, 100.0, 20.0
     )
@@ -37,7 +36,6 @@ def test_neutral_loss_match_uses_quadrature_window_at_boundary() -> None:
 
 
 def test_neutral_loss_match_allows_asymmetric_ion_error() -> None:
-    # A 25 ppm product deviation can be within the propagated two-ion window.
     error_da, window_da, matches = neutral_loss_match(500.0, 400.01, 100.0, 20.0)
 
     assert error_da == pytest.approx(0.01)
@@ -54,7 +52,6 @@ def test_signed_ppm_error_uses_reference_mz_denominator() -> None:
 
 
 def test_signed_ppm_error_accepts_any_finite_observed_mass() -> None:
-    # An observed neutral loss can fall below zero; only the reference divides.
     assert signed_ppm_error(-1.0, 100.0) == pytest.approx(-1.01e6)
     with pytest.raises(ValueError, match="observed_mz"):
         signed_ppm_error(float("nan"), 100.0)
@@ -76,14 +73,12 @@ def test_ppm_scale_factor_applies_a_ppm_shift_multiplicatively() -> None:
 def test_reference_mz_window_holds_references_whose_window_holds_observed() -> None:
     low, high = reference_mz_window(500.0, 20.0)
 
-    # Each bound is a reference whose own 20 ppm window just reaches 500.
     assert absolute_ppm_error(500.0, low) == pytest.approx(20.0)
     assert absolute_ppm_error(500.0, high) == pytest.approx(20.0)
     assert 500.0 - low < high - 500.0
 
 
 def test_within_both_mz_tolerances_uses_the_narrower_window() -> None:
-    # 0.006 Da apart: inside the 20 ppm window of 500, outside the 5 ppm one.
     assert within_both_mz_tolerances(500.0, 20.0, 500.006, 20.0) is True
     assert within_both_mz_tolerances(500.0, 20.0, 500.006, 5.0) is False
     assert within_both_mz_tolerances(500.0, 5.0, 500.006, 20.0) is False
@@ -137,8 +132,8 @@ def test_mass_accuracy_inputs_must_be_positive_finite() -> None:
 
 def test_within_ppm_evaluates_accuracy_and_safely_handles_invalid_inputs() -> None:
     reference_mz = 500.0
-    within_mz = 500.005  # 10 ppm
-    outside_mz = 500.015  # 30 ppm
+    within_mz = 500.005
+    outside_mz = 500.015
 
     assert within_ppm(within_mz, reference_mz, 20.0) is True
     assert within_ppm(outside_mz, reference_mz, 20.0) is False
@@ -160,7 +155,6 @@ def test_weighted_ion_mz_averages_one_ion_by_intensity() -> None:
 
 
 def test_weighted_ion_mz_refuses_readings_from_two_ions() -> None:
-    # 359.2413 and 359.2440 are 7.5 ppm apart: two ions share the window.
     readings = [(359.2413, 1.0e6), (359.2440, 1.0e6)]
 
     assert weighted_ion_mz(readings, max_spread_ppm=5.0) is None

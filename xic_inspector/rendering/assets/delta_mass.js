@@ -1,4 +1,3 @@
-/* A sample-local pattern is one candidate with several positions, not a Matrix row. */
 (() => {
   const svgNS = 'http://www.w3.org/2000/svg';
   const node = (tag, text, cls) => {
@@ -16,7 +15,6 @@
   const number = value => value == null ? '—' : Number(value.toPrecision(7)).toLocaleString('en-US');
   const mass = value => value == null ? '—' : value.toLocaleString('en-US', {maximumFractionDigits:6});
   const color = index => `var(--dm-series-${Math.min(index + 1, 4)})`;
-  // Four distinct hues cover Pt; additional positions also use distinct dashes.
   const dash = index => index === 0 ? '' : index === 1 ? '7 4' : index === 2 ? '2 3' : `${index * 3} 4 2 4`;
   const positionName = (saved, label) => {
     const name = label.toLowerCase();
@@ -69,7 +67,6 @@
     const labelFor = label => positionName(saved, label);
     const nlResults = saved.neutral_losses || [];
     container.replaceChildren(root);
-    // Position/scan controls belong to this view, not the host's sample controls.
     root.addEventListener('change', event => event.stopPropagation());
     root.append(node('h2', `m/z ${mass(saved.base_mz)} · ${number(saved.base_rt_apex_min)} min`));
     if (saved.envelope) {
@@ -105,8 +102,6 @@
       const losses = [...new Set(visibleResults.map(n => `${n.tag} · ${mass(n.neutral_loss_da)} Da`))];
       const rows = [];
       for (const result of visibleResults) {
-        // Only identical non-support answers collapse. Supporting positions
-        // keep distinct actions so their evidence can never be crossed.
         const same = result.status !== 'supported' && rows.find(row => row.result.status === result.status && row.result.tag === result.tag && row.result.neutral_loss_da === result.neutral_loss_da);
         if (same) same.labels.push(labelFor(result.position_label));
         else rows.push({result, labels:[labelFor(result.position_label)]});
@@ -259,8 +254,6 @@
           'data-ms2-scan':scan.scan_number,
         });
         tick.append(mark('title', {}, `MS2 #${scan.scan_number} · RT ${number(scan.rt_min)} · precursor ${number(scan.precursor_mz)}`));
-        // Bound adjacent hit regions at their midpoint: dense runs must not
-        // silently select the last painted scan instead of the nearest time.
         const left = Math.max(x(scan.rt_min) - 6, index ? x((visibleScans[index - 1].rt_min + scan.rt_min) / 2) : +d.chartLeft);
         const right = Math.min(x(scan.rt_min) + 6, index + 1 < visibleScans.length ? x((scan.rt_min + visibleScans[index + 1].rt_min) / 2) : +d.chartLeft + +d.chartWidth);
         const hit = mark('rect', {
@@ -349,7 +342,6 @@
         if (index >= 0) {
           const product = mark('line', {x1:x(match.product_mz), x2:x(match.product_mz), y1:B, y2:y(scan.intensity[index]), stroke:'var(--ink)', 'stroke-width':3, 'data-nl-product-mz':match.product_mz});
           product.append(mark('title', {}, `NL 實測產物 m/z ${match.product_mz}`)); svg.append(product);
-          // A dedicated annotation lane stays above every spectrum peak.
           svg.append(mark('text', {x:(L+R)/2, y:18, 'text-anchor':'middle', 'font-weight':600, fill:'var(--ink)', 'data-nl-product-label':true}, `NL 產物 m/z ${mass(match.product_mz)}`));
           svg.append(mark('path', {d:`M${(L+R)/2},26 L${x(match.product_mz)},${T-8} L${x(match.product_mz)},${y(scan.intensity[index])-3}`, fill:'none', stroke:'var(--muted)', 'stroke-dasharray':'3 3', 'pointer-events':'none', 'data-nl-leader':true}));
         } else spectrum.append(node('p', '保存的 NL 產物不在此 spectrum。', 'dm-note'));

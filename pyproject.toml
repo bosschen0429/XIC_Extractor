@@ -21,7 +21,7 @@ dev = [
     "grimp>=3.15,<4",
     "import-linter>=2.13,<3",
     "packaging>=24",
-    "playwright>=1.56,<2",
+    "playwright>=1.65.0,<2",
     "pyinstaller>=6.22,<7",
     "pytest>=8",
     "pytest-cov>=5.0",
@@ -90,7 +90,6 @@ dev = [
 ]
 
 [tool.importlinter]
-# Static import graph only; dynamic loaders require targeted contracts.
 root_packages = [
     "xic_extractor",
     "scripts",
@@ -314,7 +313,6 @@ forbidden_modules = [
     "openpyxl",
     "csv",
 ]
-# Direct imports only: shared configuration lazily reads workbooks.
 allow_indirect_imports = true
 
 [[tool.importlinter.contracts]]
@@ -375,7 +373,6 @@ forbidden_modules = [
 ]
 allow_indirect_imports = true
 ignore_imports = [
-    # Complete-analysis composition may route diagnostics; Alignment and writers may not.
     "xic_extractor.applications.untargeted.full_analysis -> xic_extractor.discovery.delta_mass_pipeline",
 ]
 
@@ -448,7 +445,6 @@ forbidden_modules = [
     "xic_extractor.alignment.cell_observation.cid_nl_evidence",
     "xic_extractor.alignment.backfill.cid_nl_evidence",
 ]
-# Existing CID-NL record admission binds interpreters; shared algorithms do not.
 allow_indirect_imports = true
 
 [[tool.importlinter.contracts]]

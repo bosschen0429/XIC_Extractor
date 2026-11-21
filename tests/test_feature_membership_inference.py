@@ -768,8 +768,6 @@ def test_supported_apices_do_not_fall_back_to_raw_shapes_at_calibration_edges(
     result = _infer_feature_memberships(
         owners, config=AlignmentConfig(), rules=CID_NL_GROUPING_RULES, rt_frame=frame
     )
-    # An edge excluding the other apex does not prove disjoint regions when
-    # the opposite boundary is unknown. It also cannot activate a shape veto.
     assert _memberships(result) == {frozenset(owner.owner_id for owner in owners)}
     for owner in owners:
         boundary = (

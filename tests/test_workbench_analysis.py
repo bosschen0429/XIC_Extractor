@@ -739,7 +739,6 @@ def test_untargeted_run_reads_confirmed_metadata_over_stale_page_rows(
     monkeypatch.setattr(untargeted, "UntargetedAnalysis", Run)
     jobs = AnalysisJobs(config)
     try:
-        # The page still holds the rows it read before another flow confirmed.
         jobs.start(
             "untargeted",
             {

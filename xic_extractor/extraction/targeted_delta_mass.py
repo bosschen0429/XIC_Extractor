@@ -48,8 +48,6 @@ def assess_targeted_delta_mass(
         for evaluation in assessment.candidate_evaluations.values()
     ):
         return {candidate: () for candidate in assessment.candidate_evaluations}
-    # A bounded Target search has a known quantitation channel. Other positions
-    # provide evidence, never independent targets or quantitation anchors.
     quant_delta = next(
         p.delta_da for p in settings.positions if p.label == quant_position
     )
@@ -129,7 +127,6 @@ def assess_targeted_delta_mass(
     hypotheses = complete_delta_mass_candidates(
         pattern_preparation, confirmation, settings
     )
-    # An XIC window establishes bounded mass support, not a zero-error centroid.
     for hypothesis in hypotheses:
         for measured_position in hypothesis.positions:
             measured_position.observed_mz = None

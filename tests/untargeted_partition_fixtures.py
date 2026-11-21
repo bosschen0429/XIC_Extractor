@@ -64,7 +64,6 @@ from xic_extractor.untargeted_execution.partition_composition import (
     group_acquired_partition,
 )
 
-# Every TSV kind, so projected children can be written to any of them.
 ALL_ROW_OUTPUTS = AlignmentRunOutputs(
     review_tsv=Path("review.tsv"),
     matrix_tsv=Path("matrix.tsv"),

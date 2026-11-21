@@ -7,7 +7,6 @@ from hashlib import sha256
 
 from xic_extractor.sample_groups import sample_group_key
 
-# The curve palette in inspector.css; QC and Other stay neutral.
 PALETTE_SIZE = 8
 _NEUTRAL = {"": "var(--group-other)", "qc": "var(--group-qc)"}
 

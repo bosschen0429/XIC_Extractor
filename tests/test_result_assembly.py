@@ -347,7 +347,6 @@ def test_build_extraction_result_adds_targeted_product_projection() -> None:
             target=target,
             peak_result=peak_result,
             candidate_ms2_evidence={candidate: _ms2_evidence()},
-            # Production passes the trace; without it there is no reportable area.
             rt=np.array([8.4, 8.5, 8.6]),
             intensity=np.array([100.0, 1200.0, 100.0]),
         )
@@ -746,7 +745,6 @@ def test_confirmed_backfill_counts_and_keeps_missing_nl_as_review(quality_review
         ),
     )
     assert projection.counted_detection is True
-    # Backfill identity lets the ISTD count; its missing NL stays to be read.
     assert projection.review_reasons == (
         "plausible_nl_dropout_review",
         "missing_ms2_not_observed",

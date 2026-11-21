@@ -79,7 +79,6 @@ def write_discovery(directory: Path) -> tuple[str, ...]:
         pattern_id="three-position",
         method_label="Three positions",
         positions=tuple(
-            # Sidecar/feature precision exceeds the display-oriented position CSV.
             DeltaMassPosition(
                 label, float(i * 3) + (0.0000001234 if i else 0), 0.8, 1.25
             )

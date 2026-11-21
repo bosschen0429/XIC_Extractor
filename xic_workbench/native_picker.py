@@ -5,7 +5,6 @@ from __future__ import annotations
 import threading
 from pathlib import Path
 
-# The workspace binds to loopback, so the chooser opens on the user's own desktop.
 PICKER_KINDS: dict[str, tuple[str, str] | None] = {
     "folder": None,
     "report": ("分析結果", "*.sqlite *.db *.xlsx"),
@@ -38,7 +37,6 @@ def choose_path(kind: str, current: str = "") -> str:
 
         root = tkinter.Tk()
         root.withdraw()
-        # A withdrawn, topmost owner keeps the chooser above the browser window.
         root.attributes("-topmost", True)
         try:
             start = _starting_folder(current)
