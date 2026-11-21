@@ -1,4 +1,10 @@
-"""Read the diagnostic-only explanation from a completed CID-NL Alignment run."""
+"""Read the diagnostic-only explanation from a completed CID-NL Alignment run.
+
+Returns a compact summary or one candidate's details without reading RAW;
+``--compact-to`` writes compact review from a full report and
+``--curve-bundle`` writes review curves for Inspector. It does not recalculate
+decisions or grant Matrix authority.
+"""
 
 from __future__ import annotations
 

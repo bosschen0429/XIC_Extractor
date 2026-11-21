@@ -1,4 +1,10 @@
-"""Strict targeted ISTD benchmark gate for untargeted alignment outputs."""
+"""Strict targeted ISTD benchmark gate for untargeted alignment outputs.
+
+Reads Targeted workbooks and existing alignment review, cell and Matrix
+artifacts, and writes benchmark summary, match, JSON and Markdown outputs. It
+is validation context only and does not change alignment artifacts or
+decisions.
+"""
 
 from __future__ import annotations
 

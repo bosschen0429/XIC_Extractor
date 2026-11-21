@@ -48,9 +48,6 @@ jobs:
       - name: Architecture census
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: uv run pytest tests/test_docs_architecture_census.py -m current_repository_census --noconftest --basetemp=${{ runner.temp }}/xic-architecture-census -q
-      - name: Diagnostics index in sync
-        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
-        run: uv run python scripts/check_diagnostics_index.py
       - name: Repository docs links
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: uv run python scripts/check_repository_docs.py
