@@ -1533,7 +1533,10 @@ def test_final_grouping_failure_stops_before_any_backfill(
         owner.CidNlBatchGrouping, "finalize_grouping", finalize_or_abort
     )
     monkeypatch.setattr(owner, "CompletedUntargetBatchWorkflowResult", forbid_completed)
-    with pytest.raises(RuntimeError, match="failed before batch publication") as error:
+    with pytest.raises(
+        InterruptedError if cancel_during_grouping else RuntimeError,
+        match="cancelled" if cancel_during_grouping else "before batch publication",
+    ) as error:
         owner.execute_untargeted_plan(
             plan,
             output_dir=tmp_path / "grouping",
@@ -1812,7 +1815,10 @@ def test_sample_failure_drains_without_more_samples_or_partition_publication(
     monkeypatch.setattr(_FakeThermoRaw, "GetChromatogramData", chromatogram)
     if failure_mode == "spool_failure":
         monkeypatch.setattr(owner.StreamedResultStore, "append", fail_spool)
-    with pytest.raises(RuntimeError, match="failed before batch publication") as error:
+    with pytest.raises(
+        InterruptedError if failure_mode == "cancel" else RuntimeError,
+        match="cancelled" if failure_mode == "cancel" else "before batch publication",
+    ) as error:
         owner.execute_untargeted_plan(
             plan,
             output_dir=tmp_path / "failed",
