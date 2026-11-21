@@ -33,17 +33,7 @@ LOGGER = logging.getLogger(__name__)
 
 
 def _read_targets(path: Path, *, delta_mass: Mapping | None = None) -> list[Target]:
-    from xic_extractor.configuration.legacy_target_methods import (
-        upgrade_target_table,
-    )
-
-    numbered = _read_target_rows(path)
-    rows, legacy_details = upgrade_target_table([row for _, row in numbered])
-    return _parse_target_rows(
-        path,
-        [(number, row) for (number, _), row in zip(numbered, rows, strict=True)],
-        delta_mass if delta_mass is not None else legacy_details,
-    )
+    return _parse_target_rows(path, _read_target_rows(path), delta_mass)
 
 
 def parse_target_rows(

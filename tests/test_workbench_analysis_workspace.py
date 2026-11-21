@@ -133,7 +133,8 @@ def test_istd_upload_rejects_invalid_content_without_writing(tmp_path):
             ("bad.xlsx", b"bad"),
             (
                 "empty.csv",
-                b"label,mz,expected_rt_min,cid_nl_tag,role,istd_pair\nA,250,2,dR,analyte,\n",
+                b"label,mz,expected_rt_min,cid_nl_loss_da,role,istd_pair\n"
+                b"A,250,2,116.0474,analyte,\n",
             ),
         ]:
             status, _, _ = request(

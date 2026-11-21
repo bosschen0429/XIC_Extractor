@@ -252,6 +252,7 @@ def test_pure_cid_nl_cancellation_after_completion_skips_publication(
     with pytest.raises(InterruptedError, match="before output publication"):
         application_module.run_untargeted_application(
             UntargetedRequest(
+                execution=UntargetedExecutionPolicy(profile=in_process_execution()),
                 discovery_batch_index=batch_index,
                 raw_dir=tmp_path / "raw",
                 dll_dir=tmp_path / "dll",
@@ -300,6 +301,7 @@ def test_pure_cid_nl_cancellation_during_projection_skips_publication(
     with pytest.raises(InterruptedError, match="before output publication"):
         application_module.run_untargeted_application(
             UntargetedRequest(
+                execution=UntargetedExecutionPolicy(profile=in_process_execution()),
                 discovery_batch_index=batch_index,
                 raw_dir=tmp_path / "raw",
                 dll_dir=tmp_path / "dll",
@@ -331,6 +333,7 @@ def test_pure_cid_nl_runtime_failure_uses_alignment_error_boundary(
     with pytest.raises(AlignmentProcessExecutionError, match="retained runtime failed"):
         application_module.run_untargeted_application(
             UntargetedRequest(
+                execution=UntargetedExecutionPolicy(profile=in_process_execution()),
                 discovery_batch_index=batch_index,
                 raw_dir=tmp_path / "raw",
                 dll_dir=tmp_path / "dll",
@@ -406,6 +409,7 @@ def test_pure_cid_nl_projection_failure_publishes_no_owned_outputs(
     with pytest.raises(ValueError, match="invalid finalized projection"):
         application_module.run_untargeted_application(
             UntargetedRequest(
+                execution=UntargetedExecutionPolicy(profile=in_process_execution()),
                 discovery_batch_index=batch_index,
                 raw_dir=tmp_path / "raw",
                 dll_dir=tmp_path / "dll",
@@ -589,6 +593,7 @@ def test_pipeline_publishes_projected_children_and_cleans_up(
     def run():
         return application_module.run_untargeted_application(
             UntargetedRequest(
+                execution=UntargetedExecutionPolicy(profile=in_process_execution()),
                 discovery_batch_index=batch_index,
                 raw_dir=tmp_path,
                 dll_dir=tmp_path,
@@ -656,6 +661,7 @@ def test_pipeline_rejects_unsupported_profile_before_read_or_raw(
     with pytest.raises(ValueError, match="does not support legacy Alignment"):
         application_module.run_untargeted_application(
             UntargetedRequest(
+                execution=UntargetedExecutionPolicy(profile=in_process_execution()),
                 discovery_batch_index=tmp_path / "batch.csv",
                 raw_dir=tmp_path / "raw",
                 dll_dir=tmp_path / "dll",
@@ -699,6 +705,7 @@ def test_pipeline_rejects_owned_output_collision_before_raw(
     with pytest.raises(FileExistsError, match="owned artifact collisions"):
         application_module.run_untargeted_application(
             UntargetedRequest(
+                execution=UntargetedExecutionPolicy(profile=in_process_execution()),
                 discovery_batch_index=batch_index,
                 raw_dir=raw_dir,
                 dll_dir=tmp_path / "dll",
@@ -733,6 +740,7 @@ def test_pipeline_rejects_unsupported_discovery_before_acquisition_or_output(
     with pytest.raises(ValueError, match="pure single-provider CID-NL"):
         application_module.run_untargeted_application(
             UntargetedRequest(
+                execution=UntargetedExecutionPolicy(profile=in_process_execution()),
                 discovery_batch_index=tmp_path / "missing-batch.csv",
                 raw_dir=tmp_path / "missing-raw",
                 dll_dir=tmp_path / "missing-dll",
@@ -752,7 +760,8 @@ def test_pure_cid_nl_targets_csv_integration(
     batch_index = _write_batch(tmp_path, ("S1",))
     targets_csv = tmp_path / "targets.csv"
     targets_csv.write_text(
-        "label,mz,expected_rt_min,cid_nl_tag,role,istd_pair\nISTD1,200.0,3,dR,istd,\n",
+        "label,mz,expected_rt_min,cid_nl_loss_da,role,istd_pair\n"
+        "ISTD1,200.0,3,116.0474,istd,\n",
         encoding="utf-8",
     )
     raw_dir = tmp_path / "raw"
@@ -802,6 +811,7 @@ def test_pure_cid_nl_targets_csv_integration(
 
     application_module.run_untargeted_application(
         UntargetedRequest(
+            execution=UntargetedExecutionPolicy(profile=in_process_execution()),
             discovery_batch_index=batch_index,
             raw_dir=raw_dir,
             dll_dir=tmp_path / "dll",
@@ -856,6 +866,7 @@ def test_alignment_applies_discovery_mass_result_without_reopening_raw(
     with pytest.raises(AlignmentProcessExecutionError, match="captured"):
         application_module.run_untargeted_application(
             UntargetedRequest(
+                execution=UntargetedExecutionPolicy(profile=in_process_execution()),
                 discovery_batch_index=batch_index,
                 raw_dir=raw_path.parent,
                 dll_dir=tmp_path / "dll",
@@ -1151,6 +1162,7 @@ def test_mixed_target_list_only_supplies_istds_to_untargeted_alignment(
     )
     application_module.run_untargeted_application(
         UntargetedRequest(
+            execution=UntargetedExecutionPolicy(profile=in_process_execution()),
             discovery_batch_index=batch_index,
             raw_dir=tmp_path / "raw",
             dll_dir=tmp_path / "dll",

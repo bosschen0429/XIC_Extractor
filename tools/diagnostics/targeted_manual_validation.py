@@ -20,9 +20,15 @@ from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 
 from xic_extractor import extractor
+from xic_extractor.configuration.execution_profile import (
+    DEFAULT_WORKER_BACKEND,
+    ExecutionProfile,
+    load_execution_profile,
+)
 from xic_extractor.configuration.loader import load_config_snapshot
 from xic_extractor.configuration.models import ConfigError, Target
 from xic_extractor.extraction.result_models import RunOutput
+from xic_extractor.output.metadata import execution_metadata_rows
 from xic_extractor.raw_reader_errors import RawReaderError
 from xic_extractor.settings_schema import (
     CANONICAL_SETTINGS_DEFAULTS,
@@ -84,7 +90,7 @@ class PerTargetScoreRow:
 @dataclass(frozen=True)
 class ManualValidationScore:
     name: str
-    execution_overrides: dict[str, str]
+    execution: ExecutionProfile
     detected_rows: int
     scored_rows: int
     missing_manual_peaks: int
@@ -121,15 +127,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     output_dir = args.output_dir.resolve()
     try:
         truth_rows = read_manual_truth(args.manual_workbook.resolve())
-        execution_overrides = _execution_overrides(
-            parallel_mode=args.parallel_mode,
+        execution = load_execution_profile(
             parallel_workers=args.parallel_workers,
+            backend=(
+                "thread" if args.parallel_mode == "serial" else DEFAULT_WORKER_BACKEND
+            ),
         )
         cases = _build_cases(args)
         result = run_manual_validation(
             truth_rows,
-            lambda: _run_cases(cases, output_dir, execution_overrides),
-            execution_overrides=execution_overrides,
+            lambda: _run_cases(cases, output_dir, execution),
+            execution=execution,
         )
         output_path = write_validation_workbook(
             output_dir / "targeted_manual_validation.xlsx",
@@ -184,19 +192,6 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def _execution_overrides(
-    *,
-    parallel_mode: str | None,
-    parallel_workers: int | None,
-) -> dict[str, str]:
-    overrides: dict[str, str] = {}
-    if parallel_mode is not None:
-        overrides["parallel_mode"] = parallel_mode
-    if parallel_workers is not None:
-        overrides["parallel_workers"] = str(parallel_workers)
-    return overrides
-
-
 def _positive_int(value: str) -> int:
     parsed = int(value)
     if parsed < 1:
@@ -224,42 +219,23 @@ def _build_cases(args: argparse.Namespace) -> list[ManualValidationCase]:
 def _run_cases(
     cases: list[ManualValidationCase],
     output_dir: Path,
-    execution_overrides: dict[str, str],
+    execution: ExecutionProfile,
 ) -> list[ProgramPeakRow]:
     rows: list[ProgramPeakRow] = []
     for case in cases:
-        rows.extend(_run_case(case, output_dir, execution_overrides))
+        rows.extend(_run_case(case, output_dir, execution))
     return rows
 
 
 def _run_case(
     case: ManualValidationCase,
     output_dir: Path,
-    execution_overrides: dict[str, str],
+    execution: ExecutionProfile,
 ) -> list[ProgramPeakRow]:
     data_dir = _stage_raw_case(case, output_dir / "staged_raw" / case.name)
     config_dir = output_dir / "runs" / "canonical_targeted" / case.name / "config"
-    _write_case_config(
-        config_dir,
-        data_dir=data_dir,
-        targets_path=case.targets_path,
-        execution_overrides=execution_overrides,
-    )
+    _write_case_config(config_dir, data_dir=data_dir, targets_path=case.targets_path)
     config, targets = load_config_snapshot(config_dir)
-    execution = config.execution
-    if "parallel_mode" in execution_overrides:
-        execution = replace(
-            execution,
-            backend=(
-                "process"
-                if execution_overrides["parallel_mode"] == "process"
-                else "thread"
-            ),
-        )
-    if "parallel_workers" in execution_overrides:
-        execution = replace(
-            execution, parallel_workers=int(execution_overrides["parallel_workers"])
-        )
     config = replace(config, execution=execution)
     run_output = extractor.acquire(config, targets)
     return _collect_program_rows(run_output, targets)
@@ -284,7 +260,6 @@ def _write_case_config(
     *,
     data_dir: Path,
     targets_path: Path,
-    execution_overrides: dict[str, str],
 ) -> None:
     if not targets_path.exists():
         raise FileNotFoundError(f"{targets_path}: targets file is missing")
@@ -360,14 +335,14 @@ def run_manual_validation(
     truth_rows: list[ManualTruthRow],
     runner: ManualValidationRunner,
     *,
-    execution_overrides: dict[str, str] | None = None,
+    execution: ExecutionProfile,
     istd_targets: set[str] | None = None,
 ) -> ManualValidationResult:
     program_rows = runner()
     return ManualValidationResult(
         score=score_manual_validation(
             "canonical_targeted",
-            execution_overrides or {},
+            execution,
             truth_rows,
             program_rows,
             istd_targets=istd_targets,
@@ -401,7 +376,7 @@ def write_validation_workbook(
 
 def score_manual_validation(
     name: str,
-    execution_overrides: dict[str, str],
+    execution: ExecutionProfile,
     truth_rows: list[ManualTruthRow],
     program_rows: list[ProgramPeakRow],
     *,
@@ -475,7 +450,7 @@ def score_manual_validation(
     missing_rows = [row for row in per_target_rows if row.missing_peak]
     return ManualValidationScore(
         name=name,
-        execution_overrides=execution_overrides,
+        execution=execution,
         detected_rows=sum(not row.missing_peak for row in per_target_rows),
         scored_rows=len(area_errors),
         missing_manual_peaks=len(missing_rows),
@@ -691,8 +666,8 @@ def _write_run_config_sheet(
     _write_header(worksheet, headers)
     row_idx = 2
     for score in scores:
-        for key, value in sorted(score.execution_overrides.items()):
-            _write_row(worksheet, row_idx, [score.name, key, value], failed=False)
+        for key, value in execution_metadata_rows(score.execution):
+            _write_row(worksheet, row_idx, [score.name, key, str(value)], failed=False)
             row_idx += 1
     _autosize(worksheet, len(headers))
 

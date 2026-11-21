@@ -29,6 +29,10 @@ from xic_extractor.applications.untargeted.publication import (
 from xic_extractor.applications.untargeted.request import (
     UntargetedRequest,
 )
+from xic_extractor.configuration.execution_profile import (
+    UntargetedExecutionPolicy,
+    in_process_execution,
+)
 from xic_extractor.evidence_artifacts import EvidenceLocator
 from xic_inspector.api import (
     InspectorCancelled,
@@ -280,6 +284,7 @@ def test_acceptance_a9_pipeline_shared_callable_handoff(tmp_path, monkeypatch) -
     )
     outputs = application.run_untargeted_application(
         UntargetedRequest(
+            execution=UntargetedExecutionPolicy(profile=in_process_execution()),
             discovery_batch_index=batch_index,
             raw_dir=tmp_path,
             dll_dir=tmp_path,

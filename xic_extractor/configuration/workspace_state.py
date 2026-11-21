@@ -6,7 +6,6 @@ import json
 from pathlib import Path
 
 from xic_extractor.configuration.atomic_write import atomic_write_text
-from xic_extractor.configuration.legacy_target_methods import upgrade_target_table
 from xic_extractor.configuration.models import ConfigError
 from xic_extractor.settings_schema import CANONICAL_SETTINGS_DEFAULTS
 
@@ -28,17 +27,12 @@ def read_workspace(config_dir: Path) -> dict:
         }
     try:
         state = json.loads(path.read_text(encoding="utf-8"))
-        if not isinstance(state, dict) or set(state) - {
-            "delta_mass",
-            "identification_methods",
-        } != {
+        if not isinstance(state, dict) or set(state) - {"delta_mass"} != {
             "application",
             "batch",
             "targets",
         }:
             raise ValueError("unsupported workspace schema")
-        if isinstance(state.get("application"), dict):
-            state["application"].pop("parallel_workers", None)
         for section in ("application", "batch"):
             values = state[section]
             if not isinstance(values, dict) or any(
@@ -56,13 +50,6 @@ def read_workspace(config_dir: Path) -> dict:
             for row in state["targets"]
         ):
             raise ValueError("invalid target rows")
-        legacy = state.pop("identification_methods", None)
-        if legacy is not None and not isinstance(legacy, dict):
-            raise ValueError("invalid identification method map")
-        rows, legacy_details = upgrade_target_table(state["targets"], legacy)
-        state["targets"] = rows
-        if legacy_details is not None:
-            state["delta_mass"] = legacy_details
         if not isinstance(state.get("delta_mass", {}), dict):
             raise ValueError("invalid Delta Mass details")
         return state
@@ -95,8 +82,6 @@ def save_workspace(
         if delta_mass:
             state["delta_mass"] = delta_mass
     for key, value in (settings or {}).items():
-        if key == "parallel_workers":
-            continue
         if key not in _SECTION:
             raise ConfigError(f"不支援工作設定：{key}")
         state[_SECTION[key]][key] = value

@@ -80,16 +80,6 @@ def _sheet(path, name, rows):
     book.close()
 
 
-@pytest.mark.parametrize("retired", ["Method", "Identification Methods"])
-def test_earlier_method_workbook_is_rejected_with_the_fix(tmp_path, retired):
-    path = tmp_path / "old.xlsx"
-    files.save_target_list(files.create_target_list(targeted_rows()), path)
-    _sheet(path, retired, [["key", "value"], ["strategy", "cid-nl"]])
-    with pytest.raises(ConfigError, match=f"舊格式.*{retired}.*刪除") as error:
-        files.load_target_list(path)
-    assert "Delta Mass Settings" in str(error.value)
-
-
 def test_unknown_sheet_is_rejected(tmp_path):
     path = tmp_path / "list.xlsx"
     files.save_target_list(files.create_target_list(targeted_rows()), path)
