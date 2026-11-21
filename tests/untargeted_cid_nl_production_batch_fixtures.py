@@ -8,11 +8,9 @@ Other builders retain their own settings; they do not inherit replay defaults.
 
 from __future__ import annotations
 
-import csv
 import json
 import subprocess
 import sys
-import tempfile
 from dataclasses import asdict, replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -23,7 +21,6 @@ import xic_extractor.alignment.cid_nl_completion as cid_nl_completion_owner
 import xic_extractor.processing_identity as identity_owner
 import xic_extractor.raw_source_binding as raw_source_binding_owner
 import xic_extractor.untargeted_execution.alignment as alignment_adapter
-from tests.alignment_pipeline_helpers import render, written_cells, written_rows
 from tests.cid_nl_raw_fixture import (
     TEST_PROFILE,
     _FakeRaw,
@@ -37,10 +34,6 @@ from tests.cid_nl_runtime_fixtures import (
 )
 from tests.untargeted_cid_nl_batch_runtime_fixtures import _nearby_subject_candidates
 from tests.untargeted_partition_fixtures import (
-    children_of,
-    composed_child_outputs,
-    fixture_assessment,
-    physical_peak_keys,
     project_composed_child,
 )
 from xic_extractor.alignment.config import AlignmentConfig
@@ -61,120 +54,6 @@ from xic_extractor.untargeted_execution.partition import workers as partition_wo
 from xic_extractor.untargeted_execution.partition.models import (
     UntargetedPartitionJob,
 )
-from xic_extractor.untargeted_execution.partition_composition import (
-    compose_untargeted_partition,
-)
-
-
-def _assert_partition_composition_parity(
-    batch,
-    runtime_result,
-    completed,
-    *,
-    alignment_config,
-    known_istd_reference=None,
-    subject_worksets=None,
-):
-    from xic_extractor.alignment.result.application_result import (
-        FinalizedUntargetBatchApplicationResult,
-    )
-    from xic_extractor.peak_detection.cid_nl_method_subject import (
-        mint_untargeted_cid_nl_method_subject_batch,
-    )
-
-    parts = []
-    subject_worksets = subject_worksets or tuple(
-        (subject,) for subject in batch.subject_batch.subjects
-    )
-    for subjects in subject_worksets:
-        subject_ids = {subject.method_subject_id for subject in subjects}
-        partition = replace(
-            batch,
-            subject_batch=mint_untargeted_cid_nl_method_subject_batch(
-                subjects=subjects,
-                candidate_memberships=tuple(
-                    item
-                    for item in batch.subject_batch.candidate_memberships
-                    if item[1] in subject_ids
-                ),
-            ),
-            jobs=tuple(
-                job
-                for job in batch.jobs
-                if job.method_subject.method_subject_id in subject_ids
-            ),
-        )
-        results = tuple(
-            result
-            for result in runtime_result.sample_results
-            if result.job.method_subject.method_subject_id in subject_ids
-        )
-        with pytest.raises(RuntimeError, match="sample/subject results"):
-            compose_untargeted_partition(
-                partition,
-                results[:-1],
-                alignment_config=alignment_config,
-                known_istd_reference=known_istd_reference,
-            )
-        parts.append(
-            compose_untargeted_partition(
-                partition,
-                results,
-                alignment_config=alignment_config,
-                known_istd_reference=known_istd_reference,
-            )
-        )
-    original = completed.application_result
-    candidate_order = {
-        candidate_id: index
-        for index, candidate_id in enumerate(original.scope.declared_candidate_ids)
-    }
-    exclusions = tuple(
-        sorted(
-            (item for part in parts for item in part.excluded_candidates),
-            key=lambda item: candidate_order[item.candidate_id],
-        )
-    )
-    result = FinalizedUntargetBatchApplicationResult(
-        scope=original.scope,
-        processing_attempt_id=original.processing_attempt_id,
-        acquisition_sources=original.acquisition_sources,
-        child_outputs=tuple(
-            output
-            for part in parts
-            for output in composed_child_outputs(
-                part.children,
-                part.initial_groups,
-                samples=batch.context.samples,
-                capture_evidence_retained=bool(part.capture_evidence),
-            )
-        ),
-        excluded_candidates=exclusions,
-        has_flagged_backfill_risk=original.has_flagged_backfill_risk,
-    )
-    recomposed = replace(completed, application_result=result)
-    with tempfile.TemporaryDirectory() as directory:
-        assert written_rows(
-            Path(directory) / "recomposed", recomposed.application_result
-        ) == written_rows(Path(directory) / "original", completed.application_result)
-    assert result.excluded_candidates == original.excluded_candidates
-    assert physical_peak_keys(result) == physical_peak_keys(original)
-    assert all(
-        left is right
-        for child in children_of(result)
-        for left, right in zip(
-            child.canonical_samples, original.canonical_samples, strict=True
-        )
-    )
-    assert set(item for part in parts for item in part.method_assessments) == (
-        set(completed.method_assessments)
-    )
-    assert tuple(
-        group.group_hypothesis_id for part in parts for group in part.initial_groups
-    ) == tuple(group.group_hypothesis_id for group in completed.initial_groups)
-    assert {
-        binding.candidate_id for part in parts for binding in part.capture_bindings
-    } == {binding.candidate_id for binding in original.scope.capture_bindings}
 
 
 def _assert_jobs_match_direct_construction(batch) -> None:
@@ -962,142 +841,3 @@ def _source_verification_inputs(tmp_path: Path):
             signal_processing_profile=TEST_PROFILE,
         ),
     )
-
-
-def _assert_conservative_coverage_handoff(
-    completed, writer_inputs, batch, runtime_result, tmp_path, *, threshold: bool
-) -> None:
-    (child,) = children_of(completed.application_result)
-    scientific = child.scientific_core
-    handoff = scientific.cell_observation_handoff
-    assert handoff is not None
-    coverage = handoff.coverage
-    (position,) = tuple(
-        position
-        for position in coverage.positions
-        if position.sample.raw_stem == "Hold"
-    )
-    proof = position.no_request_decision
-    if threshold:
-        assert proof is None
-        assert position.planning_reason == "no_discovery_input"
-    else:
-        assert proof is not None
-        assert proof.variant == "completed_backfill_empty"
-        assert proof.decision.group_facts.direct_support_count_s == 3
-        assert proof.decision.group_facts.minimum_support_k == 2
-    (hold_cell,) = tuple(
-        cell
-        for cell in scientific.cell_observations
-        if cell.canonical_sample.raw_stem == "Hold"
-    )
-    assert hold_cell.evidence_states == (
-        ("not_searched",) if threshold else ("unavailable",)
-    )
-    if threshold:
-        assert hold_cell.predecessor_cells == ()
-        assert hold_cell.method_assessments == ()
-    else:
-        (source,) = hold_cell.predecessor_cells
-        assert source is proof.decision.target_cell
-        assert source.method_assessment is next(
-            fixture_assessment(result)
-            for result in runtime_result.sample_results
-            if result.job.sample is position.sample
-        )
-        assert source.method_result == "HOLD"
-        assert source.technical_state == "evaluated"
-        assert source.method_assessment.evaluation_receipt.search_completed
-        assert source.peak_observation is source.peak_hypothesis is None
-    hold_cells = tuple(
-        cell
-        for _row, sample_stem, cell in written_cells(writer_inputs)
-        if sample_stem == "Hold"
-    )
-    assert all(cell.value is None for cell in hold_cells)
-    matrix_path = tmp_path / "conservative-matrix.tsv"
-    render("matrix", matrix_path, writer_inputs)
-    with matrix_path.open(encoding="utf-8", newline="") as handle:
-        matrix_rows = tuple(csv.DictReader(handle, delimiter="\t"))
-    assert len(matrix_rows) == (0 if threshold else 1)
-    assert all(row["Hold"] == "" for row in matrix_rows)
-    if not threshold:
-        assert all(
-            float(matrix_rows[0][stem]) > 0
-            for stem in ("Support1", "Support2", "Support3")
-        )
-    if proof is not None:
-        _assert_conservative_completion_projection(
-            proof, position, coverage, handoff, hold_cell, batch, runtime_result
-        )
-
-
-def _assert_conservative_completion_projection(
-    proof, position, coverage, handoff, final_cell, batch, runtime_result
-) -> None:
-    import json
-    from copy import copy
-
-    from xic_extractor.untargeted_execution.partition.models import (
-        project_completed_backfill,
-    )
-
-    assert position.no_request_decision is proof
-    assert position in coverage.positions
-    assert position.planning_reason == proof.planning_reason
-    assert final_cell.canonical_sample is position.sample
-    assert any(item.position is position for item in handoff.position_associations)
-
-    def canonical(value):
-        return json.dumps(
-            value,
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-            allow_nan=False,
-        ).encode()
-
-    result = next(
-        item
-        for item in runtime_result.sample_results
-        if item.job.sample is position.sample
-    )
-    context = proof.decision.group_facts.group_context
-    original_result = result.effective_assessments
-    with pytest.raises(ValueError, match="not a backfill"):
-        project_completed_backfill(
-            replace(result, backfill_attempts=()), group_context=context
-        )
-    if proof.completion is not None:
-        completion = proof.completion
-        assert project_completed_backfill(result, group_context=context) == completion
-        recovery = result.backfill_attempt
-        with pytest.raises(ValueError):
-            project_completed_backfill(
-                replace(
-                    result,
-                    backfill_attempts=(
-                        replace(
-                            recovery,
-                            assessment=result.adapter_result.assessment_input.assessment,
-                        ),
-                    ),
-                ),
-                group_context=context,
-            )
-        for traces in ((), recovery.acquisition.traces * 2):
-            wrong_acquisition = copy(recovery.acquisition)
-            object.__setattr__(wrong_acquisition, "traces", traces)
-            with pytest.raises(
-                ValueError, match="backfill crossed its exact request coordinates"
-            ):
-                project_completed_backfill(
-                    replace(
-                        result,
-                        backfill_attempts=(
-                            replace(recovery, acquisition=wrong_acquisition),
-                        ),
-                    ),
-                    group_context=context,
-                )
-    assert result.effective_assessments == original_result

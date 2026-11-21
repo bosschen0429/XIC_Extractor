@@ -8,164 +8,28 @@ apex RTs are the Gaussian centres and areas scale with the intensity factor.
 
 from __future__ import annotations
 
-import csv
 import json
 import math
-from collections.abc import Mapping
 from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
-from tests.cid_nl_raw_fixture import _current_candidates, _FakeRaw, _settings
-from tests.cid_nl_runtime_fixtures import install_runtime_raws, persist_discovery_batch
+from tests.cid_nl_raw_fixture import _FakeRaw
 from tests.discovery_csv_fixtures import representative_event
+from tests.untargeted_alignment_entry_fixtures import (
+    SETTINGS,
+    cell_sources,
+    discover,
+    publish_alignment,
+    published_cells,
+    raw_paths,
+    read_tsv,
+    tsv_header,
+)
 from tests.untargeted_cid_nl_batch_runtime_fixtures import _nearby_subject_candidates
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.applications.untargeted.application import (
-    run_untargeted_application,
-)
-from xic_extractor.applications.untargeted.publication import (
-    UntargetedPublicationPolicy,
-)
-from xic_extractor.applications.untargeted.request import (
-    UntargetedRequest,
-    untargeted_peak_config,
-)
-from xic_extractor.configuration.execution_profile import (
-    ExecutionProfile,
-    UntargetedExecutionPolicy,
-)
-from xic_extractor.configuration.mass_recalibration import MassRecalibration
-from xic_extractor.discovery.csv_reader import DiscoveryBatchIndex
 from xic_extractor.sample_metadata import SampleMetadata
-
-# Synthetic acquisitions carry no lock masses, so Discovery recorded none.
-SETTINGS = replace(_settings(), mass_recalibration=MassRecalibration.NONE)
-
-
-def _raw_paths(tmp_path: Path, stems: tuple[str, ...]) -> dict[str, Path]:
-    raw_dir = tmp_path / "raw"
-    raw_dir.mkdir(exist_ok=True)
-    paths = {}
-    for stem in stems:
-        path = raw_dir / f"{stem}.raw"
-        path.write_bytes(f"acquisition:{stem}".encode())
-        paths[stem] = path
-    return paths
-
-
-def _discover(raw: _FakeRaw, path: Path, settings=SETTINGS):
-    return tuple(_current_candidates(raw, raw_file=path, settings=settings))
-
-
-def _samples(stems, **overrides: SampleMetadata) -> tuple[SampleMetadata, ...]:
-    return tuple(
-        overrides.get(
-            stem,
-            SampleMetadata(
-                sample_name=stem,
-                raw_stem=stem,
-                injection_order=index,
-                sample_role="sample",
-            ),
-        )
-        for index, stem in enumerate(stems, start=1)
-    )
-
-
-def _publish(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    *,
-    paths: Mapping[str, Path],
-    raws: Mapping[str, _FakeRaw],
-    peaks: Mapping[str, tuple],
-    settings=SETTINGS,
-    alignment_config: AlignmentConfig | None = None,
-    sample_metadata: tuple[SampleMetadata, ...] | None = None,
-    output_level: str = "machine",
-    known_istd_reference_workbook: Path | None = None,
-    name: str = "alignment",
-) -> Path:
-    """Run the formal Untargeted Alignment entry and return its output folder."""
-    stems = tuple(paths)
-    discovery = persist_discovery_batch(
-        raw_paths=tuple(paths.values()),
-        settings=settings,
-        peaks_by_sample=peaks,
-        root=tmp_path / f"{name}-discovery",
-    )
-    install_runtime_raws(
-        monkeypatch,
-        sources_by_path={paths[stem]: raws[stem] for stem in stems},
-        tmp_path=tmp_path,
-    )
-    output_dir = tmp_path / name
-    raw_dir = tmp_path / "raw"
-    run_untargeted_application(
-        UntargetedRequest(
-            discovery_batch_index=DiscoveryBatchIndex(
-                path=tmp_path / f"{name}-discovery" / "discovery_batch_index.csv",
-                sample_order=discovery.sample_order,
-                peak_csvs=discovery.peak_csvs,
-                raw_files=discovery.raw_files,
-                event_csvs=discovery.event_csvs,
-                peak_receipts=discovery.peak_receipts,
-            ),
-            raw_dir=raw_dir,
-            dll_dir=tmp_path,
-            output_dir=output_dir,
-            alignment_config=alignment_config
-            or AlignmentConfig(anchor_min_seed_events=1),
-            peak_config=untargeted_peak_config(
-                raw_dir=raw_dir,
-                dll_dir=tmp_path,
-                output_dir=output_dir,
-                discovery_settings=settings,
-            ),
-            discovery_settings=settings,
-            sample_metadata=sample_metadata or _samples(stems),
-            known_istd_reference_workbook=known_istd_reference_workbook,
-            execution=UntargetedExecutionPolicy(
-                profile=ExecutionProfile(
-                    alignment_workers=1, backend="thread", overlap_partitions=False
-                ),
-                acquisition_cache_dir=tmp_path / f"{name}-facts",
-            ),
-            publication=UntargetedPublicationPolicy(
-                output_level=output_level,
-                emit_alignment_cells=True,
-                emit_alignment_explanation=True,
-            ),
-        )
-    )
-    return output_dir
-
-
-def _tsv(path: Path) -> list[dict[str, str]]:
-    with path.open(encoding="utf-8-sig", newline="") as handle:
-        return list(csv.DictReader(handle, delimiter="\t"))
-
-
-def _header(path: Path) -> list[str]:
-    with path.open(encoding="utf-8-sig", newline="") as handle:
-        return next(csv.reader(handle, delimiter="\t"))
-
-
-def _cells(output_dir: Path) -> dict[tuple[str, str], dict[str, str]]:
-    return {
-        (row["feature_id"], row["sample_stem"]): row
-        for row in _tsv(output_dir / "alignment_cells.tsv")
-    }
-
-
-def _sources(output_dir: Path) -> set[str]:
-    return {
-        row["source_candidate_id"]
-        for row in _cells(output_dir).values()
-        if row["source_candidate_id"]
-    }
 
 
 @pytest.mark.parametrize("backfill_enabled", (True, False))
@@ -176,7 +40,7 @@ def test_completed_empty_recovery_preserves_each_compatible_source_subject(
 ) -> None:
     stems = ("SupportA1", "SupportA2", "SupportB1", "SupportB2", "Missing")
     settings = replace(SETTINGS, precursor_mz_tolerance_ppm=20.0)
-    paths = _raw_paths(tmp_path, stems)
+    paths = raw_paths(tmp_path, stems)
     raws: dict[str, _FakeRaw] = {}
     peaks: dict[str, tuple] = {}
     precursors = (500.0, 500.0, 500.0105, 500.0105)
@@ -184,12 +48,13 @@ def test_completed_empty_recovery_preserves_each_compatible_source_subject(
         raws[stem] = _FakeRaw(
             (7.98,), scan_precursor_mz=precursor_mz, neutral_loss_das=(116.0474,)
         )
-        peaks[stem] = _discover(raws[stem], paths[stem], settings)[:1]
+        peaks[stem] = discover(raws[stem], paths[stem], settings)[:1]
     raws["Missing"] = _FakeRaw((7.98,))
     raws["Missing"].intensity[:] = 0.0
     peaks["Missing"] = ()
+    opened: set[str] = set()
 
-    output = _publish(
+    output = publish_alignment(
         tmp_path,
         monkeypatch,
         paths=paths,
@@ -201,19 +66,23 @@ def test_completed_empty_recovery_preserves_each_compatible_source_subject(
             product_mz_tolerance_ppm=30.0,
             backfill_enabled=backfill_enabled,
         ),
+        opened_samples=opened,
     )
 
+    # Missing has no Discovery peak: only Backfill has a reason to read it.
+    assert ("Missing" in opened) is backfill_enabled
+
     # Both 21 ppm-apart source subjects support one row.
-    (row,) = _tsv(output / "alignment_matrix.tsv")
+    (row,) = read_tsv(output / "alignment_matrix.tsv")
     assert row["Missing"] == ""
     support_areas = [float(row[stem]) for stem in stems[:4]]
     assert min(support_areas) > 0
     assert support_areas == pytest.approx([support_areas[0]] * 4, rel=1e-6)
-    (review,) = _tsv(output / "alignment_review.tsv")
+    (review,) = read_tsv(output / "alignment_review.tsv")
     assert float(review["group_center_mz"]) == pytest.approx(
         sum(precursors) / 4, abs=1e-3
     )
-    cells = _cells(output)
+    cells = published_cells(output)
     feature = review["feature_id"]
     assert {
         stem: cells[(feature, stem)]["source_candidate_id"] for stem in stems[:4]
@@ -249,21 +118,21 @@ def test_completed_empty_recovery_preserves_each_compatible_source_subject(
 
 def _nearby_subjects(tmp_path: Path):
     settings = replace(SETTINGS, precursor_mz_tolerance_ppm=1.0)
-    paths = _raw_paths(tmp_path, ("S1",))
+    paths = raw_paths(tmp_path, ("S1",))
     source_raw, candidates = _nearby_subject_candidates(
         paths["S1"], settings=settings, peak_config=None
     )
     return settings, paths, source_raw, candidates
 
 
-def test_sample_job_builder_binds_shared_inputs_to_each_subject(
+def test_one_raw_serves_two_nearby_subjects_as_separate_rows(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     settings, paths, source_raw, candidates = _nearby_subjects(tmp_path)
     assert len(candidates) == 2
 
-    output = _publish(
+    output = publish_alignment(
         tmp_path,
         monkeypatch,
         paths=paths,
@@ -272,37 +141,56 @@ def test_sample_job_builder_binds_shared_inputs_to_each_subject(
         settings=settings,
     )
 
+    assert {path.name for path in output.iterdir() if path.is_file()} == {
+        "alignment_matrix.tsv",
+        "alignment_review.tsv",
+        "alignment_cells.tsv",
+        "alignment_rt_anchors.tsv",
+        "alignment_run_metadata.json",
+        "alignment_explanation.sqlite",
+    }
     # One RAW and one sample's settings serve two 8 ppm-apart subjects: each
-    # group keeps its own precursor and is integrated from that shared trace.
-    # A one-sample group is reviewed, not published to the Matrix.
-    assert _tsv(output / "alignment_matrix.tsv") == []
-    rows = _tsv(output / "alignment_review.tsv")
-    assert sorted(float(row["group_center_mz"]) for row in rows) == pytest.approx(
-        sorted(candidate.peak_mz for candidate in candidates), abs=1e-4
-    )
-    areas = [float(cell["area"]) for cell in _cells(output).values()]
+    # group keeps its own precursor and candidate and is integrated from that
+    # shared trace. A one-sample group is reviewed, not published to the Matrix.
+    assert read_tsv(output / "alignment_matrix.tsv") == []
+    review = {
+        row["feature_id"]: row for row in read_tsv(output / "alignment_review.tsv")
+    }
+    assert sorted(
+        float(row["group_center_mz"]) for row in review.values()
+    ) == pytest.approx(sorted(candidate.peak_mz for candidate in candidates), abs=1e-4)
+    candidate_by_mz = {round(c.peak_mz, 4): c.peak_id for c in candidates}
+    cells = published_cells(output)
+    assert {
+        feature: cell["source_candidate_id"] for (feature, _stem), cell in cells.items()
+    } == {
+        feature: candidate_by_mz[round(float(row["group_center_mz"]), 4)]
+        for feature, row in review.items()
+    }
+    areas = [float(cell["area"]) for cell in cells.values()]
     assert len(areas) == 2
     assert areas[0] > 0
     assert areas == pytest.approx([areas[0]] * 2, rel=1e-6)
 
 
-def test_alignment_adapter_prepares_and_executes_bounded_once(
+def test_sample_metadata_sets_matrix_order_and_backfill_eligibility(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Request sample metadata reaches Alignment planning unchanged."""
 
     stems = ("Support1", "Support2", "Hold")
-    paths = _raw_paths(tmp_path, stems)
+    paths = raw_paths(tmp_path, stems)
     raws = {
         stem: _FakeRaw((rt,)) for stem, rt in zip(stems, (7.98, 8.0, 8.02), strict=True)
     }
-    peaks = {stem: _discover(raws[stem], paths[stem])[:1] for stem in stems[:2]}
+    peaks = {stem: discover(raws[stem], paths[stem])[:1] for stem in stems[:2]}
     peaks["Hold"] = ()
     outcomes = {}
     for role, excluded in (("sample", False), ("blank", False), ("sample", True)):
         name = f"{role}-{excluded}"
-        output = _publish(
+        opened: set[str] = set()
+        output = publish_alignment(
             tmp_path,
             monkeypatch,
             paths=paths,
@@ -331,60 +219,33 @@ def test_alignment_adapter_prepares_and_executes_bounded_once(
                 ),
             ),
             name=name,
+            opened_samples=opened,
         )
         # Matrix columns follow the requested injection order.
-        assert _header(output / "alignment_matrix.tsv")[2:] == [
+        assert tsv_header(output / "alignment_matrix.tsv")[2:] == [
             "Support2",
             "Hold",
             "Support1",
         ]
-        (row,) = _tsv(output / "alignment_matrix.tsv")
+        (row,) = read_tsv(output / "alignment_matrix.tsv")
         (hold,) = (
-            cell for (_f, stem), cell in _cells(output).items() if stem == "Hold"
+            cell
+            for (_f, stem), cell in published_cells(output).items()
+            if stem == "Hold"
         )
-        outcomes[(role, excluded)] = (row["Hold"] != "", hold["status"])
+        outcomes[(role, excluded)] = (
+            row["Hold"] != "",
+            hold["status"],
+            "Hold" in opened,
+        )
 
     # Backfill needs two eligible direct supports; a blank or excluded
-    # Support2 leaves only Support1.
+    # Support2 leaves only Support1, and Hold, without a Discovery peak, is
+    # then never read.
     assert outcomes == {
-        ("sample", False): (True, "backfilled"),
-        ("blank", False): (False, "not_searched"),
-        ("sample", True): (False, "not_searched"),
-    }
-
-
-def test_production_batch_executes_one_atomic_sample_phase(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    settings, paths, source_raw, candidates = _nearby_subjects(tmp_path)
-
-    output = _publish(
-        tmp_path,
-        monkeypatch,
-        paths=paths,
-        raws={"S1": source_raw},
-        peaks={"S1": candidates},
-        settings=settings,
-    )
-
-    assert {path.name for path in output.iterdir() if path.is_file()} == {
-        "alignment_matrix.tsv",
-        "alignment_review.tsv",
-        "alignment_cells.tsv",
-        "alignment_rt_anchors.tsv",
-        "alignment_run_metadata.json",
-        "alignment_explanation.sqlite",
-    }
-    review = {row["feature_id"]: row for row in _tsv(output / "alignment_review.tsv")}
-    assert len(review) == 2
-    candidate_by_mz = {round(c.peak_mz, 4): c.peak_id for c in candidates}
-    assert {
-        feature: cell["source_candidate_id"]
-        for (feature, _stem), cell in _cells(output).items()
-    } == {
-        feature: candidate_by_mz[round(float(row["group_center_mz"]), 4)]
-        for feature, row in review.items()
+        ("sample", False): (True, "backfilled", True),
+        ("blank", False): (False, "not_searched", False),
+        ("sample", True): (False, "not_searched", False),
     }
 
 
@@ -410,7 +271,7 @@ def test_discovery_review_rows_cannot_become_alignment_roots(
     above_threshold = scenario == "ambiguous_hold_above_threshold"
     ambiguous = scenario.startswith("ambiguous_hold_")
     stems = ("Support", "Hold", "Support2") if above_threshold else ("Support", "Hold")
-    paths = _raw_paths(tmp_path, stems)
+    paths = raw_paths(tmp_path, stems)
     settings = replace(SETTINGS, precursor_mz_tolerance_ppm=1.0)
 
     def observation_only_raw(peak_rts: tuple[float, ...]) -> _FakeRaw:
@@ -439,8 +300,8 @@ def test_discovery_review_rows_cannot_become_alignment_roots(
     )
     for stem in rejected_samples:
         raws[stem].intensity[:] = 0
-    support_candidates = _discover(raws["Support"], paths["Support"], settings)
-    hold_candidates = _discover(raws["Hold"], paths["Hold"], settings)
+    support_candidates = discover(raws["Support"], paths["Support"], settings)
+    hold_candidates = discover(raws["Hold"], paths["Hold"], settings)
     peaks: dict[str, tuple] = {
         "Support": support_candidates[:1],
         "Hold": hold_candidates[:1],
@@ -457,7 +318,7 @@ def test_discovery_review_rows_cannot_become_alignment_roots(
             )
             second_raw.intensity = first_raw.intensity.copy()
             nearby = tuple(
-                _discover(raw, path, settings)[0] for raw in (first_raw, second_raw)
+                discover(raw, path, settings)[0] for raw in (first_raw, second_raw)
             )
             second_raw.scans = (first_raw.scans[0], second_raw.scans[0])
             raws[stem] = second_raw
@@ -465,7 +326,7 @@ def test_discovery_review_rows_cannot_become_alignment_roots(
                 sorted(nearby, key=lambda item: representative_event(item).precursor_mz)
             )
     if above_threshold:
-        peaks["Support2"] = _discover(raws["Support2"], paths["Support2"], settings)
+        peaks["Support2"] = discover(raws["Support2"], paths["Support2"], settings)
 
     admitted = {c.peak_id for values in peaks.values() for c in values if c.admitted}
     rejected = {c.peak_id for values in peaks.values() for c in values} - admitted
@@ -484,40 +345,47 @@ def test_discovery_review_rows_cannot_become_alignment_roots(
         }[scenario]
     )
 
-    output = _publish(
+    opened: set[str] = set()
+    output = publish_alignment(
         tmp_path,
         monkeypatch,
         paths=paths,
         raws=raws,
         peaks=peaks,
         settings=settings,
+        opened_samples=opened,
     )
 
-    assert _header(output / "alignment_matrix.tsv")[2:] == list(stems)
-    written = _sources(output)
+    # Only admitted peaks start Alignment work. With two admitted supports,
+    # Backfill also reads Hold.
+    assert opened == {
+        stem for stem, values in peaks.items() if any(c.admitted for c in values)
+    } | ({"Hold"} if above_threshold else set())
+    assert tsv_header(output / "alignment_matrix.tsv")[2:] == list(stems)
+    written = cell_sources(output)
     assert written <= admitted
     assert not written & rejected
     assert bool(written) == bool(admitted)
     if not admitted:
-        assert not _tsv(output / "alignment_matrix.tsv")
-        assert not _tsv(output / "alignment_review.tsv")
+        assert not read_tsv(output / "alignment_matrix.tsv")
+        assert not read_tsv(output / "alignment_review.tsv")
 
 
 @pytest.mark.parametrize("supported_samples", [2, 3])
-def test_production_initial_groups_use_complete_feature_inference_batch(
+def test_owners_from_every_supported_sample_join_one_row(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     supported_samples: int,
 ) -> None:
     stems = ("Early", "Middle", "Late")
     apexes = (8.0, 8.1, 8.2)
-    paths = _raw_paths(tmp_path, stems)
+    paths = raw_paths(tmp_path, stems)
     raws = {stem: _FakeRaw((rt,)) for stem, rt in zip(stems, apexes, strict=True)}
     for stem in stems[supported_samples:]:
         raws[stem].intensity[:] = 0
-    peaks = {stem: _discover(raws[stem], paths[stem]) for stem in stems}
+    peaks = {stem: discover(raws[stem], paths[stem]) for stem in stems}
 
-    output = _publish(
+    output = publish_alignment(
         tmp_path,
         monkeypatch,
         paths=paths,
@@ -527,14 +395,14 @@ def test_production_initial_groups_use_complete_feature_inference_batch(
     )
 
     # Owners from every supported sample join one row, centred on their mean.
-    (row,) = _tsv(output / "alignment_matrix.tsv")
-    (review,) = _tsv(output / "alignment_review.tsv")
+    (row,) = read_tsv(output / "alignment_matrix.tsv")
+    (review,) = read_tsv(output / "alignment_review.tsv")
     assert review["identity_reason"] == "established"
     assert review["detected_count"] == str(supported_samples)
     assert float(review["group_center_rt"]) == pytest.approx(
         sum(apexes[:supported_samples]) / supported_samples, abs=1e-3
     )
-    cells = _cells(output)
+    cells = published_cells(output)
     for stem in stems[:supported_samples]:
         assert float(row[stem]) > 0
         cell = cells[(review["feature_id"], stem)]
@@ -544,7 +412,7 @@ def test_production_initial_groups_use_complete_feature_inference_batch(
         assert row[stem] == ""
 
 
-def test_known_istd_reference_closes_drifting_group_and_cell_proof(
+def test_known_istd_reference_joins_drifting_samples_in_one_row(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -553,7 +421,7 @@ def test_known_istd_reference_closes_drifting_group_and_cell_proof(
     stems = ("S0", "S1")
     drift_min = 1.067
     settings = replace(SETTINGS, precursor_mz_tolerance_ppm=20.0, rt_max=10)
-    paths = _raw_paths(tmp_path, stems)
+    paths = raw_paths(tmp_path, stems)
     raws = {}
     for i, (stem, precursor_mz, observed_loss) in enumerate(
         zip(stems, (500.0, 500.03), (116.0474, 116.0474005), strict=True)
@@ -567,7 +435,7 @@ def test_known_istd_reference_closes_drifting_group_and_cell_proof(
             replace(scan, rt=scan.rt + i * drift_min) for scan in raw.scans
         )
         raws[stem] = raw
-    peaks = {stem: _discover(raws[stem], paths[stem], settings) for stem in stems}
+    peaks = {stem: discover(raws[stem], paths[stem], settings) for stem in stems}
 
     workbook = Workbook()
     targets = workbook.active
@@ -601,8 +469,8 @@ def test_known_istd_reference_closes_drifting_group_and_cell_proof(
         settings=settings,
         alignment_config=AlignmentConfig(),
     )
-    plain = _publish(tmp_path, monkeypatch, name="plain", **common)
-    corrected = _publish(
+    plain = publish_alignment(tmp_path, monkeypatch, name="plain", **common)
+    corrected = publish_alignment(
         tmp_path,
         monkeypatch,
         name="corrected",
@@ -612,21 +480,21 @@ def test_known_istd_reference_closes_drifting_group_and_cell_proof(
 
     # Without the reference, 60 ppm and 1.067 min apart stay two one-sample
     # groups, which are reviewed but not published to the Matrix.
-    assert len(_tsv(plain / "alignment_review.tsv")) == 2
-    assert _tsv(plain / "alignment_matrix.tsv") == []
+    assert len(read_tsv(plain / "alignment_review.tsv")) == 2
+    assert read_tsv(plain / "alignment_matrix.tsv") == []
     plain_values = {
         stem: float(cell["area"])
-        for (_f, stem), cell in _cells(plain).items()
+        for (_f, stem), cell in published_cells(plain).items()
         if cell["area"]
     }
     assert set(plain_values) == set(stems)
-    assert len(_tsv(corrected / "alignment_review.tsv")) == 1
+    assert len(read_tsv(corrected / "alignment_review.tsv")) == 1
     # The known ISTD reference binds both samples and closes one row whose
     # cells keep each sample's own drifted apex and area.
-    (row,) = _tsv(corrected / "alignment_matrix.tsv")
+    (row,) = read_tsv(corrected / "alignment_matrix.tsv")
     assert {stem: float(row[stem]) for stem in stems} == pytest.approx(plain_values)
     assert plain_values["S1"] / plain_values["S0"] == pytest.approx(1.4, rel=1e-3)
-    cells = _cells(corrected)
+    cells = published_cells(corrected)
     assert {
         stem: float(cell["apex_rt"]) for (_f, stem), cell in cells.items()
     } == pytest.approx({"S0": 8.0, "S1": 8.0 + drift_min}, abs=0.01)
@@ -637,7 +505,7 @@ def test_known_istd_reference_closes_drifting_group_and_cell_proof(
 
 
 @pytest.mark.parametrize("recovery_case", ("positive", "threshold", "completed_empty"))
-def test_production_composition_closes_recovered_observation_without_candidate(
+def test_backfill_recovers_sample_without_discovery_peak(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     recovery_case: str,
@@ -650,21 +518,23 @@ def test_production_composition_closes_recovered_observation_without_candidate(
     apexes = (7.97, 8.03) if recovery_case == "threshold" else (7.97, 7.99, 8.01, 8.03)
     # Unequal heights separate the owner-mean RT from an area-weighted RT.
     scales = (1.0, 9.0) if recovery_case == "threshold" else (1.0, 9.0, 2.0, 9.0)
-    paths = _raw_paths(tmp_path, stems)
+    paths = raw_paths(tmp_path, stems)
     raws = {}
     for stem, apex, scale in zip(stems, apexes, scales, strict=True):
         raws[stem] = _FakeRaw((apex,))
         raws[stem].intensity *= scale
     if recovery_case != "positive":
         raws["Hold"].intensity[:] = 0.0
-    peaks = {stem: _discover(raws[stem], paths[stem])[:1] for stem in stems[:-1]}
+    peaks = {stem: discover(raws[stem], paths[stem])[:1] for stem in stems[:-1]}
     peaks["Hold"] = ()
 
-    output = _publish(tmp_path, monkeypatch, paths=paths, raws=raws, peaks=peaks)
+    output = publish_alignment(
+        tmp_path, monkeypatch, paths=paths, raws=raws, peaks=peaks
+    )
 
-    matrix = _tsv(output / "alignment_matrix.tsv")
-    (review,) = _tsv(output / "alignment_review.tsv")
-    cells = _cells(output)
+    matrix = read_tsv(output / "alignment_matrix.tsv")
+    (review,) = read_tsv(output / "alignment_review.tsv")
+    cells = published_cells(output)
     feature = review["feature_id"]
     hold = cells[(feature, "Hold")]
     supports = stems[:-1]
@@ -677,7 +547,7 @@ def test_production_composition_closes_recovered_observation_without_candidate(
         assert hold["status"] == "not_searched"
         return
     (row,) = matrix
-    assert _header(output / "alignment_matrix.tsv")[2:] == list(stems)
+    assert tsv_header(output / "alignment_matrix.tsv")[2:] == list(stems)
     if recovery_case == "completed_empty":
         assert row["Hold"] == "" and hold["status"] == "unavailable"
         assert all(float(row[stem]) > 0 for stem in supports)
@@ -723,7 +593,7 @@ def test_atomic_publication_preserves_ms1_only_backfill_and_no_peak(
 
     stems = ("Support1", "Support2", "Support3", "MS1Only", "NoPeak")
     apexes = (7.97, 7.99, 8.01, 8.03, 8.05)
-    paths = _raw_paths(tmp_path, stems)
+    paths = raw_paths(tmp_path, stems)
     raws = {}
     for scale, (stem, apex) in enumerate(zip(stems, apexes, strict=True), start=1):
         raw = _FakeRaw((apex,))
@@ -733,11 +603,11 @@ def test_atomic_publication_preserves_ms1_only_backfill_and_no_peak(
         if stem == "NoPeak":
             raw.intensity[:] = 0.0
         raws[stem] = raw
-    peaks = {stem: _discover(raws[stem], paths[stem]) for stem in stems}
+    peaks = {stem: discover(raws[stem], paths[stem]) for stem in stems}
     assert all(len(peaks[stem]) == 1 for stem in stems[:3])
     assert peaks["MS1Only"] == peaks["NoPeak"] == ()
 
-    output = _publish(
+    output = publish_alignment(
         tmp_path,
         monkeypatch,
         paths=paths,
@@ -746,9 +616,9 @@ def test_atomic_publication_preserves_ms1_only_backfill_and_no_peak(
         output_level=output_level,
     )
 
-    (matrix_row,) = _tsv(output / "alignment_matrix.tsv")
-    (review_row,) = _tsv(output / "alignment_review.tsv")
-    cells = {stem: cell for (_f, stem), cell in _cells(output).items()}
+    (matrix_row,) = read_tsv(output / "alignment_matrix.tsv")
+    (review_row,) = read_tsv(output / "alignment_review.tsv")
+    cells = {stem: cell for (_f, stem), cell in published_cells(output).items()}
     assert set(cells) == set(stems)
     # Areas scale 1:2:3:4 with the synthetic intensity factor.
     areas = [float(matrix_row[stem]) for stem in stems[:4]]
