@@ -1,6 +1,6 @@
 ---
 name: delete-comment
-description: Audit and retire source comments in XIC Extractor, and preserve decision rationale.
+description: Audit and retire source comments in XIC Extractor, preserve decision rationale, and check the no-new-comments ratchet.
 ---
 
 # Delete comments
@@ -8,7 +8,7 @@ description: Audit and retire source comments in XIC Extractor, and preserve dec
 Run from the repository root with this checkout’s Python. Use the requested scope;
 without a path, inventory the entire tracked codebase. Stage new files before measuring.
 
-1. Run `python scripts/list_comments.py` (JSONL: path, line, comment).
+1. Run `python scripts/check_comments.py --inventory` (JSONL: path, line, comment).
    Read the containing code and consumer before deciding. Group continuations, not
    different decisions. Strings, docstrings, shipped user instructions, legal notices
    and machine directives are not prose to delete.
@@ -23,7 +23,7 @@ without a path, inventory the entire tracked codebase. Stage new files before me
    instead of creating a second specification. Remove the source text only after
    its rationale (including any independent test oracle) is recoverable. Mark
    remaining decisions as deferred; never mechanically strip every token.
-4. Run the relevant checks and `git diff --check`. Verify behavior, e.g.
-   compare Python ASTs for a comment-only batch. Report removed and remaining
-   **physical comment-only lines** separately from inline comments and the net
-   diff including ADRs/tooling.
+4. Run `python scripts/check_comments.py --base <starting-commit>`, the relevant
+   checks and `git diff --check`. Verify behavior, e.g. compare Python ASTs for a
+   comment-only batch. Report removed and remaining **physical comment-only lines**
+   separately from inline comments and the net diff including ADRs/tooling.

@@ -33,6 +33,10 @@ jobs:
         run: uv sync --locked --all-extras --dev
       - run: uv run ruff check xic_extractor xic_inspector xic_workbench scripts tools tests
       - run: uv run ruff format --check xic_extractor xic_inspector xic_workbench scripts tools tests
+      - name: Reject new source comments
+        env:
+          COMMENT_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: uv run python scripts/check_comments.py --base "$COMMENT_BASE"
       - name: Internal-defense growth gate
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         env:
