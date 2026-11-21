@@ -589,6 +589,11 @@ class PartitionPipelineScheduler:
                     failure.add_note(
                         f"Acquisition cleanup also failed: {cleanup_error}"
                     )
+                if isinstance(failure, InterruptedError) and (
+                    cancelled.is_set()
+                    or (should_cancel is not None and should_cancel())
+                ):
+                    raise
                 raise RuntimeError(
                     "Partition pipeline execution failed before batch publication: "
                     f"{failure}"

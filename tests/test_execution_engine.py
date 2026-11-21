@@ -485,10 +485,7 @@ def test_scheduler_execute_cancellation_cleans_up(tmp_path: Path) -> None:
         nonlocal cleanup_calls
         cleanup_calls += 1
 
-    with pytest.raises(
-        RuntimeError,
-        match="Partition pipeline execution failed before batch publication",
-    ):
+    with pytest.raises(InterruptedError, match="cancelled"):
         PartitionPipelineScheduler.execute(
             adapter,
             output_dir=output_dir,
@@ -796,7 +793,7 @@ def test_parallel_partition_acquisition_cancellation_closes_all_producers(
 
     adapter = MockAdapter(fixture.samples, on_acquisition=cancel_acquisitions)
     output_dir = tmp_path / "output"
-    with pytest.raises(RuntimeError, match="before batch publication"):
+    with pytest.raises(InterruptedError, match="cancelled"):
         PartitionPipelineScheduler.execute(
             adapter,
             output_dir=output_dir,
@@ -882,7 +879,7 @@ def test_consumer_composition_failure_marks_partition_failed(
     assert statuses == ["failed", "cancelled"]
 
 
-def test_closure_boundary_cancellation_fails_completed_batch(
+def test_closure_boundary_cancellation_withholds_completed_batch(
     tmp_path: Path,
 ) -> None:
     """Cancellation at the closure boundary withholds an otherwise complete batch."""
@@ -903,10 +900,7 @@ def test_closure_boundary_cancellation_fails_completed_batch(
         if event.get("stage") == "global_closure":
             cancel = True
 
-    with pytest.raises(
-        RuntimeError,
-        match="Partition pipeline execution failed before batch publication",
-    ) as raised:
+    with pytest.raises(InterruptedError, match="cancelled"):
         PartitionPipelineScheduler.execute(
             adapter,
             output_dir=output_dir,
@@ -915,7 +909,6 @@ def test_closure_boundary_cancellation_fails_completed_batch(
             pipeline_overlap=True,
         )
 
-    assert isinstance(raised.value.__cause__, InterruptedError)
     assert not any(e.get("stage") == "batch_completed" for e in events)
 
     timeline_events = [e for e in events if e.get("event") == "partition_timeline"]
@@ -1432,7 +1425,10 @@ def test_scheduler_phase_preparation_abort_prevents_admission(
             raise ValueError("invalid handoff")
 
     output_dir = tmp_path / "output"
-    with pytest.raises(RuntimeError, match="before batch publication") as raised:
+    with pytest.raises(
+        InterruptedError if cancel else RuntimeError,
+        match="cancelled" if cancel else "before batch publication",
+    ) as raised:
         PartitionPipelineScheduler.execute(
             adapter,
             phases=(
@@ -1444,9 +1440,7 @@ def test_scheduler_phase_preparation_abort_prevents_admission(
             pipeline_overlap=pipeline_overlap,
         )
     assert sorted(acquired) == [0, 1]
-    if cancel:
-        assert isinstance(raised.value.__cause__, InterruptedError)
-    else:
+    if not cancel:
         assert isinstance(raised.value.__cause__, ValueError)
         assert str(raised.value.__cause__) == "invalid handoff"
     preserved = list(output_dir.glob(".partition_spool-*/failed-results.pickle"))
