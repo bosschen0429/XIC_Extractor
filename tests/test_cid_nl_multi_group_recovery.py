@@ -1,15 +1,22 @@
+"""CID-NL Backfill across several groups, through the formal Untargeted entry.
+
+Scenario tests persist Discovery results, replace only the Thermo RAW boundary
+and assert what ``run_untargeted_application`` and the replay CLI publish.
+Expected values follow from the synthetic RAW: Gaussian centres give apex RTs,
+and a sample without an admitted Discovery peak is filled only by Backfill.
+
+Two tests keep their runtime seams. The shape-risk test exercises the Backfill
+admission algorithm on in-memory domain models. The query-RT test injects a
+batch RT warp, which the formal entry learns only from data, to show that a
+Backfill query follows each sample's own RT rather than the group centre.
+"""
+
 from dataclasses import replace
 
 import numpy as np
 import pytest
 
-from tests.alignment_explanation_fixtures import explanation_discovery_facts
-from tests.alignment_pipeline_helpers import (
-    render,
-    written_cells,
-    written_groups,
-    written_rows,
-)
+from tests.alignment_pipeline_helpers import render, written_cells
 from tests.cid_nl_peak_support_no_raw_fixture import (
     cid_nl_evidence,
     cid_nl_support_policy,
@@ -19,23 +26,30 @@ from tests.cid_nl_raw_fixture import (
     TEST_PROFILE,
     _current_candidates,
     _FakeRaw,
+    _FakeThermoRaw,
     _multi_tag_settings,
     _settings,
 )
-from tests.cid_nl_runtime_fixtures import build_discovery_receipts, install_runtime_raws
+from tests.cid_nl_runtime_fixtures import install_runtime_raws
 from tests.owner_peak_fixtures import trace_peak
 from tests.processing_identity_no_raw_fixture import (
     build_processing_identity_no_raw_fixture,
 )
+from tests.untargeted_alignment_entry_fixtures import (
+    SETTINGS,
+    discover,
+    publish_alignment,
+    published_cells,
+    raw_paths,
+    read_tsv,
+    sample_metadata_for,
+)
 from tests.untargeted_cid_nl_real_data_adapter_fixtures import _without_ms1_peak
 from tests.untargeted_partition_fixtures import (
     build_dense_partition,
-    children_of,
     complete_dense_partition,
     execute_partition_inline,
-    project_composed_child,
 )
-from xic_extractor.alignment.cid_nl_inputs import CID_NL_ALIGNMENT_CONFIG
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample.grouping_result import (
     CrossSampleGroupingResult,
@@ -54,31 +68,56 @@ from xic_extractor.alignment.hypothesis_owner_adapter import (
 from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.configuration.execution_profile import ExecutionProfile
 from xic_extractor.execution.timing import TimingRecorder
-from xic_extractor.output.alignment.tsv_writer import (
-    backfill_query_bounds,
-    cell_status,
-)
+from xic_extractor.output.alignment.tsv_writer import backfill_query_bounds
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlEvaluationReceipt,
-    is_ms1_only_cid_nl_backfill_assessment,
     mint_cid_nl_method_assessment,
-)
-from xic_extractor.peak_detection.cid_nl_method_subject import (
-    mint_untargeted_cid_nl_method_subject,
 )
 from xic_extractor.peak_detection.hypotheses import IntegrationResult
 from xic_extractor.peak_detection.traces import Trace
 from xic_extractor.sample_metadata import SampleMetadata
-from xic_extractor.untargeted_execution.partition import cid_nl_backfill_acquisition
-from xic_extractor.untargeted_execution.partition import models as partition_models
 from xic_extractor.untargeted_execution.partition.models import (
     BACKFILL_HALF_WINDOW_MIN,
-    UntargetedPartitionJob,
-    project_completed_backfill,
 )
-from xic_extractor.untargeted_execution.partition.request import (
-    build_partition_context,
-)
+
+ALIGNMENT = AlignmentConfig(anchor_min_seed_events=1)
+
+
+def _gaussian_raw(
+    ms1_centers: tuple[float, ...],
+    nl_centers: tuple[float, ...] | None = None,
+    *,
+    rt_range: tuple[float, float, int] = (7.4, 8.7, 521),
+    width: float = 0.035,
+    height: float = 1000.0,
+) -> _FakeRaw:
+    """MS1 Gaussians at ``ms1_centers``; CID-NL scans at ``nl_centers``."""
+    raw = _FakeRaw(ms1_centers if nl_centers is None else nl_centers)
+    raw.rt = np.linspace(*rt_range)
+    raw.intensity = sum(
+        (
+            height * np.exp(-0.5 * ((raw.rt - center) / width) ** 2)
+            for center in ms1_centers
+        ),
+        np.zeros_like(raw.rt),
+    )
+    raw.scans = tuple(
+        replace(scan, scan_number=int(np.argmin(np.abs(raw.rt - scan.rt))) + 1)
+        for scan in raw.scans
+    )
+    return raw
+
+
+def _cells_of(output, stem):
+    """One sample's published cells, each with its feature's review row."""
+    review = {
+        row["feature_id"]: row for row in read_tsv(output / "alignment_review.tsv")
+    }
+    return {
+        feature: (cell, review[feature])
+        for (feature, sample), cell in published_cells(output).items()
+        if sample == stem
+    }
 
 
 @pytest.mark.parametrize("conflicting", [False, True])
@@ -358,118 +397,77 @@ def test_backfill_query_and_empty_completion_keep_sample_rt_separate_from_group(
 def test_rejected_discovery_input_cannot_supply_backfill_support(
     tmp_path, monkeypatch, outcome
 ):
-
+    """A Discovery peak held at peak level is not admitted to Alignment. Only an
+    authorized Backfill reads the rejected sample's RAW.
+    """
     stems = ("S1", "S2", "Rejected")
-    paths = tuple(tmp_path / f"{stem}.synthetic" for stem in stems)
-    settings = _settings()
-    raws, candidates = {}, {}
-    for path in paths:
-        path.write_bytes(path.stem.encode())
-        raw = _FakeRaw((8.0,))
-        raws[path] = raw
-        candidates[path.stem] = _current_candidates(
-            raw,
-            raw_file=path,
-            settings=settings,
-        )
-        if path.stem == "Rejected":
-            candidates[path.stem] = tuple(
-                _without_ms1_peak(candidate) for candidate in candidates[path.stem]
-            )
-            if outcome == "empty":
-                raw.intensity[:] = 0.0
-    batch = build_dense_partition(
-        raw_paths=paths,
-        sample_metadata=tuple(
-            SampleMetadata(
-                sample_name=stem,
-                raw_stem=stem,
-                injection_order=i + 1,
-                sample_role="blank"
-                if (
-                    (outcome == "blank" and stem == "Rejected")
-                    or (outcome == "below-quorum" and stem == "S2")
+    paths = raw_paths(tmp_path, stems)
+    raws = {stem: _FakeRaw((8.0,)) for stem in stems}
+    peaks = {stem: discover(raws[stem], paths[stem]) for stem in stems}
+    peaks["Rejected"] = tuple(_without_ms1_peak(peak) for peak in peaks["Rejected"])
+    assert peaks["Rejected"]
+    assert not any(peak.admitted for peak in peaks["Rejected"])
+    if outcome == "empty":
+        raws["Rejected"].intensity[:] = 0.0
+    blank = {"blank": "Rejected", "below-quorum": "S2"}.get(outcome)
+    metadata = sample_metadata_for(
+        stems,
+        **(
+            {
+                blank: SampleMetadata(
+                    sample_name=blank,
+                    raw_stem=blank,
+                    injection_order=stems.index(blank) + 1,
+                    sample_role="blank",
                 )
-                else "sample",
-            )
-            for i, stem in enumerate(stems)
+            }
+            if blank
+            else {}
         ),
-        settings=settings,
-        peaks_by_sample=candidates,
-        dll_dir=tmp_path,
-        signal_processing_profile=TEST_PROFILE,
-    )
-    opened = install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
-    recovery_calls = []
-    acquire = cid_nl_backfill_acquisition.acquire_untargeted_cid_nl_backfill_trace_batch
-
-    def acquire_recovery(**kwargs):
-        recovery_calls.append(kwargs["sample"].raw_stem)
-        if outcome == "failed":
-            raise OSError("recovery acquisition failed")
-        return acquire(**kwargs)
-
-    monkeypatch.setattr(
-        cid_nl_backfill_acquisition,
-        "acquire_untargeted_cid_nl_backfill_trace_batch",
-        acquire_recovery,
-    )
-    result = execute_partition_inline(
-        batch.jobs,
-        partition_key="runtime-fixture",
-        alignment_config=CID_NL_ALIGNMENT_CONFIG,
     )
     if outcome == "failed":
-        assert not result.succeeded
-        assert recovery_calls == ["Rejected"]
-        assert "recovery acquisition failed" in str(result.failure)
+        read = _FakeThermoRaw.GetChromatogramData
+
+        def fail_rejected(self, *args):
+            if self.source is raws["Rejected"]:
+                raise OSError("recovery acquisition failed")
+            return read(self, *args)
+
+        monkeypatch.setattr(_FakeThermoRaw, "GetChromatogramData", fail_rejected)
+    opened: set[str] = set()
+    run = dict(
+        paths=paths,
+        raws=raws,
+        peaks=peaks,
+        alignment_config=ALIGNMENT,
+        sample_metadata=metadata,
+        opened_samples=opened,
+    )
+    if outcome == "failed":
+        with pytest.raises(Exception, match="recovery acquisition failed"):
+            publish_alignment(tmp_path, monkeypatch, **run)
+        assert not (tmp_path / "alignment" / "alignment_matrix.tsv").exists()
         return
-    assert result.succeeded, result.failure
-    rejected = next(
-        r for r in result.sample_results if r.job.sample.raw_stem == "Rejected"
-    )
-    initial = rejected.adapter_result.assessment_input.assessment
-    assert initial.method_result is None
-    assert initial.technical_state == "not_evaluated"
-    assert initial.reason_codes == ("no_search_eligible_discovery_input",)
-    completed = complete_dense_partition(
-        batch, result, alignment_config=AlignmentConfig(anchor_min_seed_events=1)
-    )
-    rejected_id = candidates["Rejected"][0].peak_id
-    assert rejected_id not in completed.application_result.candidate_ids
-    assert not completed.application_result.excluded_candidates
-    writer = completed.application_result
-    ((row, _stem, decision),) = tuple(
-        item for item in written_cells(writer) if item[1] == "Rejected"
-    )
+
+    output = publish_alignment(tmp_path, monkeypatch, **run)
+
+    cells = published_cells(output)
+    rejected_ids = {peak.peak_id for peak in peaks["Rejected"]}
+    assert not rejected_ids & {cell["source_candidate_id"] for cell in cells.values()}
+    (rejected,) = (cell for (_f, stem), cell in cells.items() if stem == "Rejected")
+    assert rejected["source_candidate_id"] == ""
     if outcome == "support":
-        assert decision.value is not None and decision.value > 0
-        (recovery,) = rejected.backfill_attempts
-        assert recovery.assessment.method_result == "HOLD"
-        assert not recovery.assessment.evidence_observations
-        assert not recovery.assessment.individual_support_refs
-        assert all(
-            cell["source_candidate_id"] == ""
-            for cell in written_rows(tmp_path / "written", writer)["cells"]
-            if cell["sample_stem"] == "Rejected"
-        )
+        assert rejected["status"] == "backfilled"
+        assert float(rejected["area"]) > 0
     elif outcome == "empty":
-        (recovery,) = rejected.backfill_attempts
-        assert recovery.assessment.method_result == "HOLD"
-        assert not recovery.assessment.candidate_peaks
-        assert decision.value is None
+        assert rejected["status"] == "unavailable"
+        assert rejected["area"] == ""
     else:
-        assert rejected.backfill_attempts == ()
-        assert decision.value is None
-    assert recovery_calls == (
-        [] if outcome in {"blank", "below-quorum"} else ["Rejected"]
-    )
-    assert sum(
-        sum(raw.chromatogram_request_counts) for raw in opened.get(paths[-1], ())
-    ) == (0 if outcome in {"blank", "below-quorum"} else 2)
+        assert rejected["status"] == "not_searched"
+        assert rejected["area"] == ""
+    assert ("Rejected" in opened) is (outcome in {"support", "empty"})
 
 
-@pytest.mark.parametrize("batched", [False, True], ids=["direct", "sample-batched"])
 @pytest.mark.parametrize(
     "recovery_peaks",
     [(8.0, 12.0), (8.0,), ()],
@@ -480,587 +478,97 @@ def test_rejected_discovery_input_cannot_supply_backfill_support(
     ["separate", "shared", "below-quorum"],
     ids=["separate-support", "multi-hypothesis-support", "one-unauthorized-group"],
 )
-def test_runtime_recovers_every_authorized_rt_group(
-    tmp_path, monkeypatch, batched, recovery_peaks, shared_support
+def test_backfill_recovers_every_authorized_rt_group(
+    tmp_path, monkeypatch, recovery_peaks, shared_support
 ):
+    """One direct support does not authorize a Backfill of the 12 min group."""
     support = {"S1": (8.0,), "S2": (8.0,), "S3": (12.0,), "S4": (12.0,)}
-    if shared_support == "configured":
-        support = {"S1": (8.0,), "S2": (8.0,), "S3": (8.12,)}
     if shared_support == "shared":
         support = {"S1": (8.0, 12.0), "S2": (8.0, 12.0)}
     if shared_support == "below-quorum":
         support.pop("S4")
-    authorized_centers = (8.0,) if shared_support == "below-quorum" else (8.0, 12.0)
+    authorized = (8.0,) if shared_support == "below-quorum" else (8.0, 12.0)
     centers = {**support, "Missing": recovery_peaks}
-    paths = tuple(tmp_path / f"{stem}.synthetic" for stem in centers)
-    settings = replace(_settings(), neutral_loss_profile=None, rt_max=12.6)
-    raws, candidates = {}, {}
-    for path in paths:
-        path.write_bytes(path.stem.encode())
-        raw = _FakeRaw(centers[path.stem])
-        raw.rt = np.linspace(7.4, 12.7, 2121)
-        raw.intensity = sum(
-            (
-                1000 * np.exp(-0.5 * ((raw.rt - center) / 0.035) ** 2)
-                for center in centers[path.stem]
-            ),
-            np.zeros_like(raw.rt),
+    settings = replace(SETTINGS, neutral_loss_profile=None, rt_max=12.6)
+    paths = raw_paths(tmp_path, tuple(centers))
+    raws = {
+        stem: _gaussian_raw(values, rt_range=(7.4, 12.7, 2121))
+        for stem, values in centers.items()
+    }
+    peaks = {stem: discover(raws[stem], paths[stem], settings) for stem in support}
+    held = recovery_peaks == (8.0, 12.0) and shared_support == "separate"
+    peaks["Missing"] = (
+        tuple(
+            _without_ms1_peak(peak)
+            for peak in discover(raws["Missing"], paths["Missing"], settings)
         )
-        raw.scans = tuple(
-            replace(scan, scan_number=int(np.argmin(np.abs(raw.rt - scan.rt))) + 1)
-            for scan in raw.scans
-        )
-        if shared_support == "configured" and path.stem in {"S1", "S2"}:
-            raw.scans = tuple(
-                replace(
-                    raw.scans[0],
-                    rt=rt,
-                    scan_number=int(np.argmin(np.abs(raw.rt - rt))) + 1,
-                )
-                for rt in (7.99, 8.01)
-            )
-        raws[path] = raw
-        current_candidates = _current_candidates(
-            raw,
-            raw_file=path,
-            settings=settings,
-        )
-        current_candidates = tuple(
-            sorted(current_candidates, key=lambda candidate: candidate.peak_id)
-        )
-        candidates[path.stem] = (
-            current_candidates
-            if path.stem in support
-            else (
-                tuple(_without_ms1_peak(candidate) for candidate in current_candidates)
-                if recovery_peaks == (8.0, 12.0) and shared_support == "separate"
-                else ()
-            )
-        )
-    kwargs = dict(
-        raw_paths=paths,
-        sample_metadata=tuple(
-            SampleMetadata(
-                sample_name=stem,
-                raw_stem=stem,
-                injection_order=i + 1,
-                sample_role="sample",
-            )
-            for i, stem in enumerate(centers)
-        ),
+        if held
+        else ()
+    )
+
+    output = publish_alignment(
+        tmp_path,
+        monkeypatch,
+        paths=paths,
+        raws=raws,
+        peaks=peaks,
         settings=settings,
-        peaks_by_sample=candidates,
-        signal_processing_profile=TEST_PROFILE,
+        alignment_config=ALIGNMENT,
     )
-    if shared_support == "configured":
-        _assert_alignment_uses_configured_recovery_groups(
-            tmp_path,
-            monkeypatch,
-            paths,
-            raws,
-            candidates,
-            kwargs,
-            settings,
-        )
-        return
-    if batched:
-        batch = build_dense_partition(**kwargs, dll_dir=tmp_path)
-        context, jobs = batch.context, batch.jobs
-        assert len(batch.subject_batch.subjects) == 1
-    else:
-        subject = mint_untargeted_cid_nl_method_subject(
-            precursor_mz=500.0,
-            precursor_tolerance_ppm=settings.precursor_mz_tolerance_ppm,
-            neutral_loss_da=116.0474,
-        )
-        context = build_partition_context(
-            **kwargs,
-            discovery_receipts_by_sample=build_discovery_receipts(
-                tmp_path, paths, candidates
-            ),
-            method_subject=subject,
-        )
-        jobs = tuple(
-            UntargetedPartitionJob(
-                processing_attempt_id=context.processing_attempt_id,
-                method_subjects=context.method_subject,
-                sample=sample,
-                acquisition_source_expectation=context.acquisition_sources_by_sample[
-                    sample.raw_stem
-                ],
-                method_subject=subject,
-                candidates=candidates[sample.raw_stem],
-                discovery_receipt=context.discovery_receipts_by_sample[sample.raw_stem],
-                settings=settings,
-                raw_path=context.raw_paths_by_sample[sample.raw_stem],
-                dll_dir=tmp_path,
-                work_unit_key=sample.raw_stem,
-                signal_processing_profile=context.signal_processing_profile,
-            )
-            for sample in context.samples
-        )
-    opened = install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
-    result = execute_partition_inline(
-        jobs,
-        partition_key="runtime-fixture",
-        alignment_config=CID_NL_ALIGNMENT_CONFIG,
-    )
-    assert result.succeeded, result.failure
-    missing = next(
-        item for item in result.sample_results if item.job.sample.raw_stem == "Missing"
-    )
-    assert sum(
-        sum(raw.chromatogram_request_counts) for raw in opened.get(paths[-1], ())
-    ) == 2 * len(authorized_centers)
-    assert len(missing.backfill_attempts) == len(authorized_centers)
-    assert sorted(
-        len(attempt.assessment.candidate_peaks) for attempt in missing.backfill_attempts
-    ) == sorted(int(center in recovery_peaks) for center in authorized_centers)
-    for center, attempt in zip(
-        authorized_centers, missing.backfill_attempts, strict=True
-    ):
-        assert attempt.group_hypothesis_id is not None
-        assert (
-            missing.backfill_for_group(
-                center, group_hypothesis_id=attempt.group_hypothesis_id
-            )
-            is attempt
-        )
-        receipt = attempt.assessment.evaluation_receipt
-        assert (receipt.query_rt_min, receipt.query_rt_max) == (
-            center - BACKFILL_HALF_WINDOW_MIN,
-            center + BACKFILL_HALF_WINDOW_MIN,
-        )
-    if len(authorized_centers) > 1:
-        with pytest.raises(ValueError, match="multiple backfill attempts"):
-            _ = missing.backfill_attempt
-    if batched:
-        completed = complete_dense_partition(
-            batch, result, alignment_config=AlignmentConfig(anchor_min_seed_events=1)
-        )
-        assert len(completed.initial_groups) == 2
-        projection_context = partition_models._SampleResultContext(jobs)
 
-        (child,) = children_of(completed.application_result)
-        scientific = child.scientific_core
-        transition = scientific.partition_transition
-        assert len(transition.predecessors) == len(transition.successors) == 2
-        assert len(completed.initial_groups) == len(transition.predecessors)
-        for predecessor in transition.predecessors:
-            successors = tuple(
-                successor
-                for successor in transition.successors
-                if set(predecessor.member_subjects).issubset(successor.member_subjects)
-            )
-            assert len(successors) == 1
-        recovery_is_support = all(
-            attempt.assessment.method_result == "SUPPORT"
-            for attempt in missing.backfill_attempts
-        )
-        if recovery_peaks == (8.0, 12.0) and shared_support == "separate":
-            assert all(
-                attempt.assessment.method_result == "HOLD"
-                for attempt in missing.backfill_attempts
-            )
-        if (
-            recovery_peaks == (8.0, 12.0)
-            and shared_support == "separate"
-            and recovery_is_support
-        ):
-            assert len(transition.admitted_members) == 2
-            assert all(
-                member.sample_key == missing.job.sample.sample_name
-                for member in transition.admitted_members
-            )
-        missing_cells = tuple(
-            cell
-            for cell in scientific.cell_observations
-            if cell.canonical_sample.raw_stem == "Missing"
-        )
-        assert len(missing_cells) == 2
-        if recovery_peaks == (8.0, 12.0) and recovery_is_support:
-            assert all(cell.backfill_cell is not None for cell in missing_cells)
-            assert all(
-                cell.backfill_cell.method_result == "SUPPORT" for cell in missing_cells
-            )
-        if (
-            recovery_peaks == (8.0, 12.0)
-            and shared_support == "separate"
-            and recovery_is_support
-        ):
-            initial_groups = tuple(completed.initial_groups)
-            member_observations = {
-                source.peak_observation.physical_peak_key: (source.peak_observation)
-                for cell in scientific.cell_observations
-                for source in cell.predecessor_cells
-                if source.peak_observation is not None
-            }
-            initial_transition = CrossSamplePartitionTransition(
-                status="assessable",
-                predecessors=transition.predecessors,
-                successors=transition.predecessors,
-                lineage=(),
-                reason="unchanged_membership_no_lineage",
-            )
-            initial_result = CrossSampleGroupingResult(
-                samples=scientific.grouping_result.samples,
-                partition_transition=initial_transition,
-                rt_frame=replace(
-                    scientific.grouping_result.rt_frame,
-                    injection_order={},
-                    sample_cohorts={},
-                ).with_warp(None),
-            )
-            bound_recoveries = {
-                (
-                    group.group_hypothesis_id,
-                    missing.job.sample.sample_name,
-                    missing.job.method_subject.method_subject_id,
-                ): (
-                    missing.job.sample,
-                    missing.backfill_for_group(
-                        next(
-                            source.group_context.group.group_center_rt
-                            for cell in missing_cells
-                            for source in cell.predecessor_cells
-                            if (
-                                source.group_context.group.group_hypothesis_id
-                                == group.group_hypothesis_id
-                            )
-                        ),
-                        group_hypothesis_id=group.group_hypothesis_id,
-                    ).assessment,
-                )
-                for group in transition.predecessors
-            }
-            forward = admit_cid_nl_group_backfills(
-                result=initial_result,
-                groups=initial_groups,
-                backfills=bound_recoveries,
-                alignment_config=AlignmentConfig(anchor_min_seed_events=1),
-                member_observations=member_observations,
-            )
-            reverse = admit_cid_nl_group_backfills(
-                result=initial_result,
-                groups=tuple(reversed(initial_groups)),
-                backfills=dict(reversed(tuple(bound_recoveries.items()))),
-                alignment_config=AlignmentConfig(anchor_min_seed_events=1),
-                member_observations=member_observations,
-            )
-
-            def normalized_admission(admission):
-                grouping, groups, successor_ids, hypotheses, _ = admission
-                return (
-                    tuple(
-                        sorted(
-                            (
-                                group.group_hypothesis_id,
-                                frozenset(group.member_subjects),
-                            )
-                            for group in groups
-                        )
-                    ),
-                    tuple(sorted(successor_ids.items())),
-                    tuple(
-                        sorted(
-                            (
-                                key,
-                                tuple(
-                                    sorted(
-                                        hypothesis.hypothesis_id
-                                        for hypothesis in values
-                                    )
-                                ),
-                            )
-                            for key, values in hypotheses.items()
-                        )
-                    ),
-                    frozenset(grouping.partition_transition.admitted_members),
-                )
-
-            assert normalized_admission(forward) == normalized_admission(reverse)
-
-            first_group, second_group = initial_groups
-            shared_recovery = next(iter(bound_recoveries.values()))
-            ambiguous = {
-                (
-                    first_group.group_hypothesis_id,
-                    missing.job.sample.sample_name,
-                    missing.job.method_subject.method_subject_id,
-                ): shared_recovery,
-                (
-                    second_group.group_hypothesis_id,
-                    missing.job.sample.sample_name,
-                    missing.job.method_subject.method_subject_id,
-                ): shared_recovery,
-            }
-            rejected = admit_cid_nl_group_backfills(
-                result=initial_result,
-                groups=initial_groups,
-                backfills=ambiguous,
-                alignment_config=AlignmentConfig(anchor_min_seed_events=1),
-                member_observations=member_observations,
-            )
-            rejected_reverse = admit_cid_nl_group_backfills(
-                result=initial_result,
-                groups=tuple(reversed(initial_groups)),
-                backfills=dict(reversed(tuple(ambiguous.items()))),
-                alignment_config=AlignmentConfig(anchor_min_seed_events=1),
-                member_observations=member_observations,
-            )
-            assert len(rejected[0].partition_transition.admitted_members) == 1
-            assert normalized_admission(rejected) == normalized_admission(
-                rejected_reverse
-            )
-            assert (
-                sum(
-                    group_id != successor_id
-                    for group_id, successor_id in rejected[2].items()
-                )
-                == 1
-            )
-        initial_groups_by_id = {
-            group.group_hypothesis_id: group for group in completed.initial_groups
-        }
-        has_initial_evidence = bool(missing.job.candidates)
-        allocated = []
-        for cell in missing_cells:
-            predecessor_group_ids = {
-                association.position.group.group_hypothesis_id
-                for association in cell.position_associations
-            }
-            assert len(predecessor_group_ids) <= 1
-            source = cell.predecessor_cells[0] if cell.predecessor_cells else None
-            if has_initial_evidence:
-                assert source is not None
-                assert len(predecessor_group_ids) == 1
-                predecessor_group_id = next(iter(predecessor_group_ids))
-                initial_group = initial_groups_by_id[predecessor_group_id]
-                assert source.group_context.group is initial_group
-                center = initial_group.group_center_rt
-            else:
-                center = (
-                    initial_groups_by_id[
-                        next(iter(predecessor_group_ids))
-                    ].group_center_rt
-                    if predecessor_group_ids
-                    else None
-                )
-            recovery = (
-                missing.backfill_for_group(
-                    center,
-                    group_hypothesis_id=next(iter(predecessor_group_ids)),
-                )
-                if center is not None
-                else None
-            )
-            if recovery is None:
-                assert cell.evidence_states == ("not_searched",)
-                assert cell.backfill_cell is None
-                if not has_initial_evidence:
-                    assert cell.predecessor_cells == ()
-                if source is not None:
-                    assert (
-                        source.method_assessment
-                        is missing.adapter_result.assessment_input.assessment
-                    )
-                    assert source.peak_observation is None
-                    assert source.peak_hypothesis is None
-                assert cell.integrations == ()
-            elif not recovery.assessment.candidate_peaks:
-                assert cell.evidence_states == ("unavailable",)
-                if source is not None:
-                    assert source.method_assessment is recovery.assessment
-                    assert source.peak_observation is None
-                    assert source.peak_hypothesis is None
-                    recovery_context = source.group_context
-                else:
-                    assert cell.backfill_cell is not None
-                    assert cell.backfill_cell.method_assessment is recovery.assessment
-                    recovery_context = cell.backfill_cell.group_context
-                completion = project_completed_backfill(
-                    missing, group_context=recovery_context
-                )
-                assert (
-                    projection_context.project_completed_backfill(
-                        missing, group_context=recovery_context
-                    )
-                    == completion
-                )
-                with pytest.raises(ValueError, match="exact runtime batch job"):
-                    projection_context.project_completed_backfill(
-                        replace(missing, job=replace(missing.job)),
-                        group_context=recovery_context,
-                    )
-                assert completion.backfill_assessment is recovery.assessment
-            else:
-                if recovery_is_support:
-                    if source is not None:
-                        assert source.method_assessment is (
-                            missing.adapter_result.assessment_input.assessment
-                        )
-                    assert cell.backfill_cell is not None
-                    assert cell.backfill_cell.method_assessment is recovery.assessment
-                    allocated.append(
-                        cell.backfill_cell.peak_observation.physical_peak_key
-                    )
-                elif source is not None:
-                    assert source.method_assessment is recovery.assessment
-                    allocated.append(source.peak_observation.physical_peak_key)
-                else:
-                    assert cell.backfill_cell is not None
-                    assert cell.backfill_cell.method_assessment is recovery.assessment
-                    allocated.append(
-                        cell.backfill_cell.peak_observation.physical_peak_key
-                    )
-        assert len(set(allocated)) == len(allocated)
-        expected_assessments = {
-            item.adapter_result.assessment_input.assessment
-            for item in result.sample_results
-            if item.job.candidates
-        }
-        expected_assessments.update(
-            attempt.assessment
-            for item in result.sample_results
-            for attempt in item.backfill_attempts
-        )
-        assert set(completed.method_assessments) == expected_assessments
-
-        writer = completed.application_result
-        decisions = tuple(
-            cell for _row, stem, cell in written_cells(writer) if stem == "Missing"
-        )
-        if recovery_is_support:
-            assert all(decision.value is not None for decision in decisions)
+    missing = {
+        round(float(review["group_center_rt"]), 1): cell
+        for cell, review in _cells_of(output, "Missing").values()
+    }
+    assert set(missing) == {8.0, 12.0}
+    assert all(cell["source_candidate_id"] == "" for cell in missing.values())
+    for center in authorized:
+        cell = missing[center]
+        if center in recovery_peaks:
+            assert cell["status"] == "backfilled"
+            assert float(cell["area"]) > 0
+            assert float(cell["apex_rt"]) == pytest.approx(center, abs=0.01)
         else:
-            ms1_only_cells = tuple(
-                cell
-                for cell in missing_cells
-                if cell.evidence_states == ("ms1_only_backfill_observation",)
-            )
-            assert len(ms1_only_cells) == sum(
-                center in recovery_peaks for center in authorized_centers
-            )
-            for cell in ms1_only_cells:
-                (source,) = cell.predecessor_cells
-                assessment = source.method_assessment
-                assert assessment.reason_codes == ("no_unique_qualifying_relation",)
-                assert len(assessment.candidate_peaks) == 1
-                assert assessment.evidence_observations == ()
-                assert cell.integrations == (assessment.candidate_peaks[0].integration,)
-            written = tuple(
-                decision for decision in decisions if decision.value is not None
-            )
-            assert len(written) == len(ms1_only_cells)
-            assert all(cell_status(decision) == "backfilled" for decision in written)
-            assert sorted(
-                cell_status(decision)
-                for decision in decisions
-                if decision.value is None
-            ) == sorted(
-                cell.evidence_state
-                for cell in missing_cells
-                if cell not in ms1_only_cells
-            )
-            assert not any(
-                cell_status(decision) == "detected" for decision in decisions
-            )
-        if shared_support == "shared" and recovery_peaks == (8.0, 12.0):
-            from xic_extractor.alignment.grouping_bootstrap import (
-                bootstrap_cid_nl_initial_population,
-            )
-
-            inputs = tuple(
-                (item.job.sample, assessment)
-                for item in result.sample_results
-                for assessment in item.effective_assessments
-            )
-            options = dict(
-                rt_frame=SampleRtFrame(),
-                alignment_config=AlignmentConfig(anchor_min_seed_events=1),
-                retain_observation_only_candidates=True,
-            )
-            baseline = bootstrap_cid_nl_initial_population(
-                sample_assessments=inputs, **options
-            )
-            replayed = bootstrap_cid_nl_initial_population(
-                sample_assessments=tuple(pair for pair in inputs for _ in range(2)),
-                **options,
-            )
-            assert replayed[:2] == baseline[:2]
+            assert cell["status"] == "unavailable"
+            assert cell["area"] == ""
+    if shared_support == "below-quorum":
+        assert missing[12.0]["status"] == "not_searched"
 
 
-def _shared_peak_inputs(
-    tmp_path, monkeypatch, mz_separation_ppm, *, observed=("S1", "S2")
-):
-    from xic_extractor.configuration.mass_recalibration import MassRecalibration
-
+def _shared_peak_scenario(tmp_path, mz_separation_ppm, *, observed=("S1", "S2")):
+    """Two groups 0.12 min apart; Missing has one MS1 peak between them."""
     centers = {**dict.fromkeys(observed, (8.0, 8.12)), "Missing": (8.06,)}
-    paths = tuple(tmp_path / f"{stem}.synthetic" for stem in centers)
-    settings = replace(
-        _settings(),
-        neutral_loss_profile=None,
-        rt_max=8.6,
-        mass_recalibration=MassRecalibration.NONE,
-    )
-    raws, candidates = {}, {}
-    for index, path in enumerate(paths, start=1):
-        path.write_bytes(path.stem.encode())
-        raw = _FakeRaw(centers[path.stem])
-        raw.rt = np.linspace(7.4, 8.7, 521)
-        raw.intensity = sum(
-            (
-                (1000 if path.stem == "Missing" else 1000 * index)
-                * np.exp(-0.5 * ((raw.rt - center) / 0.018) ** 2)
-                for center in centers[path.stem]
-            ),
-            np.zeros_like(raw.rt),
+    settings = replace(SETTINGS, neutral_loss_profile=None, rt_max=8.6)
+    paths = raw_paths(tmp_path, tuple(centers))
+    raws, peaks = {}, {}
+    for index, stem in enumerate(centers, start=1):
+        raw = _gaussian_raw(
+            centers[stem],
+            width=0.018,
+            height=1000 if stem == "Missing" else 1000 * index,
         )
         raw.scans = tuple(
             replace(
                 scan,
-                scan_number=int(np.argmin(np.abs(raw.rt - scan.rt))) + 1,
-                precursor_mz=scan.precursor_mz
-                + 500.0
-                * mz_separation_ppm
-                * 1e-6
-                * (0.5 if path.stem == "Missing" else float(scan.rt > 8.06)),
-                masses=scan.masses
-                + 500.0
-                * mz_separation_ppm
-                * 1e-6
-                * (0.5 if path.stem == "Missing" else float(scan.rt > 8.06)),
+                precursor_mz=scan.precursor_mz + shift,
+                masses=scan.masses + shift,
             )
             for scan in raw.scans
-        )
-        raws[path] = raw
-        current = _current_candidates(
-            raw,
-            raw_file=path,
-            settings=settings,
-        )
-        candidates[path.stem] = (
-            current
-            if path.stem != "Missing"
-            else tuple(_without_ms1_peak(candidate) for candidate in current)
-        )
-    install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
-    return dict(
-        raw_paths=paths,
-        sample_metadata=tuple(
-            SampleMetadata(
-                sample_name=stem,
-                raw_stem=stem,
-                injection_order=index + 1,
-                sample_role="sample",
+            for shift in (
+                500.0
+                * mz_separation_ppm
+                * 1e-6
+                * (0.5 if stem == "Missing" else float(scan.rt > 8.06)),
             )
-            for index, stem in enumerate(centers)
-        ),
-        settings=settings,
-        peaks_by_sample=candidates,
-        dll_dir=tmp_path,
-        signal_processing_profile=TEST_PROFILE,
-    )
+        )
+        raws[stem] = raw
+        discovered = discover(raw, paths[stem], settings)
+        peaks[stem] = (
+            discovered
+            if stem != "Missing"
+            else tuple(_without_ms1_peak(peak) for peak in discovered)
+        )
+    return paths, raws, peaks, settings
 
 
 @pytest.mark.parametrize("mz_separation_ppm", [0.0, 12.0])
@@ -1068,53 +576,22 @@ def test_shared_physical_recovery_claim_is_not_assigned_to_two_groups(
     tmp_path, monkeypatch, mz_separation_ppm
 ):
     """A shared physical peak must not be assigned to both groups."""
+    paths, raws, peaks, settings = _shared_peak_scenario(tmp_path, mz_separation_ppm)
 
-    batch = build_dense_partition(
-        **_shared_peak_inputs(tmp_path, monkeypatch, mz_separation_ppm)
+    output = publish_alignment(
+        tmp_path,
+        monkeypatch,
+        paths=paths,
+        raws=raws,
+        peaks=peaks,
+        settings=settings,
+        alignment_config=ALIGNMENT,
     )
-    result = execute_partition_inline(
-        batch.jobs,
-        partition_key="runtime-fixture",
-        alignment_config=CID_NL_ALIGNMENT_CONFIG,
-    )
-    assert result.succeeded
-    missing = next(
-        item for item in result.sample_results if item.job.sample.raw_stem == "Missing"
-    )
-    completed = complete_dense_partition(
-        batch, result, alignment_config=AlignmentConfig(anchor_min_seed_events=1)
-    )
-    assert len(missing.backfill_attempts) == 2, (
-        tuple(len(a.assessment.candidate_peaks) for a in missing.backfill_attempts),
-        len(completed.initial_groups),
-        tuple(group.group_center_rt for group in completed.initial_groups),
-    )
-    assert all(
-        attempt.assessment.method_result == "HOLD"
-        for attempt in missing.backfill_attempts
-    )
-    physical_ids = tuple(
-        attempt.assessment.candidate_peaks[0].physical_peak_key
-        for attempt in missing.backfill_attempts
-    )
-    assert len(set(physical_ids)) == 1
 
-    (child,) = children_of(completed.application_result)
-    transition = child.scientific_core.partition_transition
-    assert len(transition.predecessors) == len(transition.successors) == 2
-    assert transition.admitted_members == ()
-    missing_cells = tuple(
-        cell
-        for cell in child.scientific_core.cell_observations
-        if cell.canonical_sample.raw_stem == "Missing"
-    )
-    assert len(missing_cells) == 2
-    assert sum(cell.evidence_states == ("unresolved",) for cell in missing_cells) == 1
-    writer = completed.application_result
-    missing_decisions = tuple(
-        cell for _row, stem, cell in written_cells(writer) if stem == "Missing"
-    )
-    assert sum(decision.value is not None for decision in missing_decisions) == 1
+    assert len(read_tsv(output / "alignment_matrix.tsv")) == 2
+    missing = [cell for cell, _review in _cells_of(output, "Missing").values()]
+    assert sorted(cell["status"] for cell in missing) == ["backfilled", "unresolved"]
+    assert sum(bool(cell["area"]) for cell in missing) == 1
 
 
 @pytest.mark.parametrize("mz_separation_ppm", [0.0, 12.0, 21.1])
@@ -1124,318 +601,146 @@ def test_shared_ms1_only_backfill_peak_is_not_written_to_two_rows(
     tmp_path, monkeypatch, mz_separation_ppm, reverse, sloped_background
 ):
     """Overlapping extraction windows cannot supply one peak to two rows."""
+    from xic_extractor.alignment_explanation.reader import read_review_evidence
 
-    ms1_centers = {"S1": (8.0, 8.12), "S2": (8.0, 8.12), "Missing": (8.06,)}
-    nl_centers = {"S1": (8.0, 8.12), "S2": (8.0, 8.12), "Missing": ()}
-    paths = tuple(tmp_path / f"{stem}.synthetic" for stem in ms1_centers)
+    stems = ("S1", "S2", "Missing")
     if reverse:
-        paths = tuple(reversed(paths))
+        stems = tuple(reversed(stems))
     first_mz = 500.0
     second_mz = first_mz * (1 + mz_separation_ppm * 1e-6)
-    physical_mz = (first_mz + second_mz) / 2
-
-    class MassAwareRaw(_FakeRaw):
-        def __init__(self, centers):
-            super().__init__(centers)
-            self.scans = tuple(
-                replace(
-                    scan,
-                    precursor_mz=second_mz if scan.rt > 8.06 else first_mz,
-                    masses=scan.masses
-                    + (second_mz - first_mz if scan.rt > 8.06 else 0.0),
-                )
-                for scan in self.scans
-            )
-
-        def _trace(self, request):
-            trace = super()._trace(request)
-            if abs(physical_mz - request.mz) > request.mz * request.ppm_tol * 1e-6:
-                return replace(trace, intensity=np.zeros_like(trace.intensity))
-            return trace
-
-    settings = replace(_settings(), neutral_loss_profile=None, rt_max=8.6)
-    raws, candidates = {}, {}
-    for path in paths:
-        path.write_bytes(path.stem.encode())
-        raw = MassAwareRaw(nl_centers[path.stem])
-        raw.rt = np.linspace(7.4, 8.7, 521)
-        if sloped_background and path.stem == "Missing":
-            raw.rt = np.linspace(6.8, 9.4, 1041)
-        raw.intensity = sum(
-            (
-                1000 * np.exp(-0.5 * ((raw.rt - center) / 0.018) ** 2)
-                for center in ms1_centers[path.stem]
-            ),
-            np.zeros_like(raw.rt),
+    settings = replace(SETTINGS, neutral_loss_profile=None, rt_max=8.6)
+    paths = raw_paths(tmp_path, stems)
+    raws, peaks = {}, {}
+    for stem in stems:
+        observed = stem != "Missing"
+        slope = sloped_background and not observed
+        raw = _gaussian_raw(
+            (8.0, 8.12) if observed else (8.06,),
+            None if observed else (),
+            rt_range=(6.8, 9.4, 1041) if slope else (7.4, 8.7, 521),
+            width=0.018,
         )
-        if sloped_background and path.stem == "Missing":
+        if slope:
             raw.intensity = raw.intensity + 40.0 * (raw.rt - 6.8)
         raw.scans = tuple(
-            replace(scan, scan_number=int(np.argmin(np.abs(raw.rt - scan.rt))) + 1)
+            replace(
+                scan,
+                precursor_mz=second_mz if scan.rt > 8.06 else first_mz,
+                masses=scan.masses + (second_mz - first_mz if scan.rt > 8.06 else 0),
+            )
             for scan in raw.scans
         )
-        raws[path] = raw
-        candidates[path.stem] = (
-            _current_candidates(
-                raw,
-                raw_file=path,
-                settings=settings,
-            )
-            if path.stem != "Missing"
-            else ()
-        )
-        if reverse:
-            candidates[path.stem] = tuple(reversed(candidates[path.stem]))
-    batch = build_dense_partition(
-        raw_paths=paths,
-        sample_metadata=tuple(
-            SampleMetadata(
-                sample_name=stem,
-                raw_stem=stem,
-                injection_order=index + 1,
-                sample_role="sample",
-            )
-            for index, stem in enumerate(ms1_centers)
-        ),
+        raws[stem] = raw
+        found = discover(raw, paths[stem], settings) if observed else ()
+        peaks[stem] = tuple(reversed(found)) if reverse else found
+
+    output = publish_alignment(
+        tmp_path,
+        monkeypatch,
+        paths=paths,
+        raws=raws,
+        peaks=peaks,
         settings=settings,
-        peaks_by_sample=candidates,
-        dll_dir=tmp_path,
-        signal_processing_profile=TEST_PROFILE,
+        alignment_config=ALIGNMENT,
     )
-    install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
-    result = execute_partition_inline(
-        batch.jobs,
-        partition_key="runtime-fixture",
-        alignment_config=CID_NL_ALIGNMENT_CONFIG,
-    )
-    assert result.succeeded
-    missing_attempts = tuple(
-        attempt
-        for item in result.sample_results
-        if item.job.sample.raw_stem == "Missing"
-        for attempt in item.backfill_attempts
-    )
-    assert len(missing_attempts) == 2
-    assert all(
-        is_ms1_only_cid_nl_backfill_assessment(attempt.assessment)
-        for attempt in missing_attempts
-    )
-    first, second = (
-        attempt.assessment.candidate_peaks[0] for attempt in missing_attempts
-    )
-    assert first.rt == second.rt
-    assert first.intensity == second.intensity
-    assert (first.integration == second.integration) is not sloped_background
-    assert first.generation_provenance.acquisition_source_id == (
-        second.generation_provenance.acquisition_source_id
-    )
-    assert len(
-        {
-            first.physical_peak_key,
-            second.physical_peak_key,
-        }
-    ) == (1 if mz_separation_ppm <= 20.0 else 2)
 
-    completed = complete_dense_partition(
-        batch, result, alignment_config=AlignmentConfig(anchor_min_seed_events=1)
-    )
-    (child,) = children_of(completed.application_result)
-    missing_cells = tuple(
-        cell
-        for cell in child.scientific_core.cell_observations
-        if cell.canonical_sample.raw_stem == "Missing"
-    )
-    assert len(missing_cells) == 2
-    writer = completed.application_result
-    missing_decisions = tuple(
-        cell for _row, stem, cell in written_cells(writer) if stem == "Missing"
-    )
-    assert len(missing_decisions) == 2
-    assert sum(decision.value is not None for decision in missing_decisions) == 1
-    assert all(
-        sum(cell_status(cell) == "detected" for cell in cells) == 2
-        for child in children_of(writer)
-        for _group, cells in child.group_cells
-    )
-    assert sum(cell.evidence_states == ("unresolved",) for cell in missing_cells) == 1
-    assert len(child.scientific_core.grouping_result.backfill_membership_risks) == 1
-    if mz_separation_ppm == 0 and not reverse:
-        _assert_backfill_risk_publication(tmp_path, completed, writer, candidates)
+    cells = published_cells(output)
+    features = {feature for feature, _stem in cells}
+    assert len(features) == 2
+    for feature in features:
+        assert [cells[(feature, stem)]["status"] for stem in ("S1", "S2")] == [
+            "detected",
+            "detected",
+        ]
+    missing = [cells[(feature, "Missing")] for feature in features]
+    assert sorted(cell["status"] for cell in missing) == ["backfilled", "unresolved"]
+    assert sum(bool(cell["area"]) for cell in missing) == 1
 
-
-def _assert_backfill_risk_publication(tmp_path, completed, writer, candidates):
-    from xic_extractor.alignment_explanation.reader import read_review_evidence
-    from xic_extractor.applications.untargeted.alignment_explanation_projection import (
-        write_alignment_explanation,
-    )
-    from xic_inspector.api import SelectionRequest, prepare_report
-
-    config = AlignmentConfig(anchor_min_seed_events=1)
-    matrix = tmp_path / "matrix.tsv"
-    render("matrix", matrix, writer)
-    original = matrix.read_bytes()
-    report = write_alignment_explanation(
-        tmp_path / "backfill.sqlite",
-        full_audit=False,
-        completed=completed,
-        children=children_of(completed.application_result),
-        **explanation_discovery_facts(completed),
-        peaks_by_sample=candidates,
-        matrix_path=matrix,
-        alignment_config=config,
-    )
-    cells = [
-        cell
-        for group in read_review_evidence(report).groups.values()
+    evidence = read_review_evidence(output / "alignment_explanation.sqlite")
+    competing = [
+        (cell, risk)
+        for group in evidence.groups.values()
         for cell in group.cells.values()
+        for risk in cell["membership_risks"]
+        if risk["phase"] == "backfill"
     ]
-    accepted = [
-        cell
-        for cell in cells
-        if any(risk["phase"] == "backfill" for risk in cell["membership_risks"])
-    ]
-    assert len(accepted) == 1
-    risk = next(
-        risk for risk in accepted[0]["membership_risks"] if risk["phase"] == "backfill"
-    )
+    assert len(competing) == 1
+    ((cell, risk),) = competing
     assert "backfill_competition" in risk["risk_flags"]
     assert risk["alternative_partition"] and risk["cost_gap"] >= 0
-    payload = prepare_report(
-        report,
-        SelectionRequest(strategy="query", group_ids=(accepted[0]["feature_id"],)),
-    ).payload
-    labels = {
-        sample["sample_id"]: sample["risk_labels"]
-        for item in payload["items"]
-        for sample in item["samples"]
-    }
-    flagged = {sid for sid, names in labels.items() if any("可能" in n for n in names)}
-    assert flagged == {accepted[0]["sample_key"]}
-    assert matrix.read_bytes() == original
+    if mz_separation_ppm == 0 and not reverse and not sloped_background:
+        from xic_inspector.api import SelectionRequest, prepare_report
+
+        payload = prepare_report(
+            output / "alignment_explanation.sqlite",
+            SelectionRequest(strategy="query", group_ids=(cell["feature_id"],)),
+        ).payload
+        flagged = {
+            sample["sample_id"]
+            for item in payload["items"]
+            for sample in item["samples"]
+            if any("可能" in name for name in sample["risk_labels"])
+        }
+        assert flagged == {cell["sample_key"]}
 
 
 @pytest.mark.parametrize(
-    ("missing_peaks", "expected_state"),
-    [
-        ((8.0,), "ms1_only_backfill_observation"),
-        ((7.8, 8.2), "unavailable"),
-    ],
+    ("missing_peaks", "expected_status"),
+    [((8.0,), "backfilled"), ((7.8, 8.2), "unavailable")],
     ids=["one-ms1-peak", "two-ms1-peaks"],
 )
 @pytest.mark.parametrize("composition", [None, "union", "intersection"])
 def test_ms1_only_backfill_fills_only_one_unique_group_window_peak(
-    tmp_path, monkeypatch, missing_peaks, expected_state, composition
+    tmp_path, monkeypatch, missing_peaks, expected_status, composition
 ):
+    """The Missing peak has the supports' shape, so it integrates alike."""
     centers = {"S1": (8.0,), "S2": (8.0,), "Missing": missing_peaks}
-    paths = tuple(tmp_path / f"{stem}.synthetic" for stem in centers)
     settings = (
-        replace(_multi_tag_settings(), tag_combine_mode=composition)
+        replace(
+            _multi_tag_settings(),
+            tag_combine_mode=composition,
+            mass_recalibration=SETTINGS.mass_recalibration,
+        )
         if composition
-        else replace(_settings(), neutral_loss_profile=None, rt_max=8.6)
+        else replace(SETTINGS, neutral_loss_profile=None, rt_max=8.6)
     )
-    raws, candidates = {}, {}
-    for path in paths:
-        path.write_bytes(path.stem.encode())
-        raw = _FakeRaw(centers[path.stem])
-        if composition == "intersection" and path.stem != "Missing":
-            raw = _FakeRaw((7.98, 8.02), neutral_loss_das=(116.0474, 132.0423))
-        raw.rt = np.linspace(7.4, 8.7, 521)
-        raw.intensity = sum(
-            (
-                1000 * np.exp(-0.5 * ((raw.rt - center) / 0.035) ** 2)
-                for center in centers[path.stem]
-            ),
-            np.zeros_like(raw.rt),
-        )
-        raw.scans = tuple(
-            replace(scan, scan_number=int(np.argmin(np.abs(raw.rt - scan.rt))) + 1)
-            for scan in raw.scans
-        )
-        if composition and path.stem == "Missing":
-            raw.scans = ()
-        raws[path] = raw
-        candidates[path.stem] = (
-            _current_candidates(
-                raw,
-                raw_file=path,
-                settings=settings,
+    paths = raw_paths(tmp_path, tuple(centers))
+    raws, peaks = {}, {}
+    for stem, values in centers.items():
+        raw = _gaussian_raw(values, () if composition and stem == "Missing" else None)
+        if composition == "intersection" and stem != "Missing":
+            dual = _FakeRaw((7.98, 8.02), neutral_loss_das=(116.0474, 132.0423))
+            raw.scans = tuple(
+                replace(scan, scan_number=int(np.argmin(np.abs(raw.rt - scan.rt))) + 1)
+                for scan in dual.scans
             )
-            if path.stem != "Missing"
-            else ()
-        )
-    batch = build_dense_partition(
-        raw_paths=paths,
-        sample_metadata=tuple(
-            SampleMetadata(
-                sample_name=stem,
-                raw_stem=stem,
-                injection_order=index + 1,
-                sample_role="sample",
-            )
-            for index, stem in enumerate(centers)
-        ),
-        settings=settings,
-        peaks_by_sample=candidates,
-        dll_dir=tmp_path,
-        signal_processing_profile=TEST_PROFILE,
-    )
-    install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
-    result = execute_partition_inline(
-        batch.jobs,
-        partition_key="runtime-fixture",
-        alignment_config=CID_NL_ALIGNMENT_CONFIG,
-    )
-    assert result.succeeded
-    missing = next(
-        item for item in result.sample_results if item.job.sample.raw_stem == "Missing"
-    )
-    (attempt,) = missing.backfill_attempts
-    if len(missing_peaks) == 1:
-        assert attempt.assessment.reason_codes == ("no_unique_qualifying_relation",)
-        assert len(attempt.assessment.candidate_peaks) == 1
-    else:
-        assert attempt.assessment.reason_codes == ("insufficient_method_evidence",)
-        assert attempt.assessment.candidate_peaks == ()
-    completed = complete_dense_partition(
-        batch, result, alignment_config=AlignmentConfig(anchor_min_seed_events=1)
-    )
-    (child,) = children_of(completed.application_result)
-    (missing_cell,) = tuple(
-        cell
-        for cell in child.scientific_core.cell_observations
-        if cell.canonical_sample.raw_stem == "Missing"
-    )
-    assert missing_cell.evidence_states == (expected_state,)
-    writer = completed.application_result
-    (decision,) = tuple(
-        cell for _row, stem, cell in written_cells(writer) if stem == "Missing"
-    )
-    if expected_state == "unavailable":
-        assert decision.value is None
-    else:
-        assert cell_status(decision) == "backfilled"
-        integration = attempt.assessment.candidate_peaks[0].integration
-        assert decision.value == pytest.approx(integration.area_ms1_morphology)
-        from tools.diagnostics.output_population_census import main as population_main
-        from xic_extractor.output.alignment.pipeline_outputs import (
-            output_paths,
-            write_completed_untargeted_outputs_atomic,
-        )
+        raws[stem] = raw
+        peaks[stem] = discover(raw, paths[stem], settings) if stem != "Missing" else ()
 
-        writer_dir = tmp_path / "writer"
-        writer_dir.mkdir()
-        write_completed_untargeted_outputs_atomic(
-            output_paths(
-                writer_dir,
-                output_level="validation-minimal",
-                emit_alignment_cells=True,
-                emit_alignment_status_matrix=False,
-            ),
-            writer,
-            metadata={},
-            rt_calibration=None,
-            timing_recorder=TimingRecorder.disabled("writer"),
+    output = publish_alignment(
+        tmp_path,
+        monkeypatch,
+        paths=paths,
+        raws=raws,
+        peaks=peaks,
+        settings=settings,
+        alignment_config=ALIGNMENT,
+        output_level="validation-minimal",
+    )
+
+    ((cell, review),) = _cells_of(output, "Missing").values()
+    assert cell["status"] == expected_status
+    assert cell["source_candidate_id"] == ""
+    if expected_status == "unavailable":
+        assert cell["area"] == ""
+    else:
+        support_area = float(
+            published_cells(output)[(review["feature_id"], "S1")]["area"]
         )
+        assert float(cell["area"]) == pytest.approx(support_area, rel=0.05)
+        assert float(cell["apex_rt"]) == pytest.approx(8.0, abs=0.01)
+        from tools.diagnostics.output_population_census import main as population_main
+
         required = (
             "alignment_backfill_cell_evidence.tsv",
             "alignment_review.tsv:neutral_loss_tag",
@@ -1444,20 +749,16 @@ def test_ms1_only_backfill_fills_only_one_unique_group_window_peak(
         requirements = [
             part for item in required for part in ("--require-populated", item)
         ]
-        backfill_tsv = writer_dir / "alignment_backfill_cell_evidence.tsv"
+        backfill_tsv = output / "alignment_backfill_cell_evidence.tsv"
         populated = backfill_tsv.read_text(encoding="utf-8")
         backfill_tsv.write_text(populated.splitlines()[0] + "\n", encoding="utf-8")
-        assert population_main([str(writer_dir), *requirements]) == 1
+        assert population_main([str(output), *requirements]) == 1
         backfill_tsv.write_text(populated, encoding="utf-8")
-        assert population_main([str(writer_dir), *requirements]) == 0
-    (review,) = written_rows(tmp_path / "written", writer)["review"]
+        assert population_main([str(output), *requirements]) == 0
     assert review["detected_count"] == "2"
     assert review["warning"] != "no_anchor"
-    assert review["neutral_loss_tag"] == (
-        batch.subject_batch.subjects[0].method_subject_id
-        if composition
-        else "cid_nl:116.0474"
-    )
+    if not composition:
+        assert review["neutral_loss_tag"] == "cid_nl:116.0474"
     expected_loss = (
         (116.0474 + 132.0423) / 2 if composition == "intersection" else 116.0474
     )
@@ -1474,196 +775,99 @@ def test_backfill_reaches_a_sample_whose_support_belongs_to_another_group(
 ):
     ms1_centers = {"S1": (8.0,), "S2": (8.0,), "Missing": (8.0, 9.6)}
     nl_centers = {"S1": (8.0,), "S2": (8.0,), "Missing": (9.6,)}
-    paths = tuple(tmp_path / f"{stem}.synthetic" for stem in ms1_centers)
-    settings = replace(_settings(), neutral_loss_profile=None, rt_max=10.1)
-    raws, candidates = {}, {}
-    for path in paths:
-        path.write_bytes(path.stem.encode())
-        raw = _FakeRaw(nl_centers[path.stem])
-        raw.rt = np.linspace(7.4, 10.2, 1121)
-        raw.intensity = sum(
-            (
-                1000 * np.exp(-0.5 * ((raw.rt - center) / 0.035) ** 2)
-                for center in ms1_centers[path.stem]
-            ),
-            np.zeros_like(raw.rt),
+    settings = replace(SETTINGS, neutral_loss_profile=None, rt_max=10.1)
+    paths = raw_paths(tmp_path, tuple(ms1_centers))
+    raws = {
+        stem: _gaussian_raw(
+            ms1_centers[stem], nl_centers[stem], rt_range=(7.4, 10.2, 1121)
         )
-        raw.scans = tuple(
-            replace(scan, scan_number=int(np.argmin(np.abs(raw.rt - scan.rt))) + 1)
-            for scan in raw.scans
-        )
-        raws[path] = raw
-        candidates[path.stem] = _current_candidates(
-            raw,
-            raw_file=path,
-            settings=settings,
-        )
-    batch = build_dense_partition(
-        raw_paths=paths,
-        sample_metadata=tuple(
-            SampleMetadata(
-                sample_name=stem,
-                raw_stem=stem,
-                injection_order=index + 1,
-                sample_role="sample",
-            )
-            for index, stem in enumerate(ms1_centers)
-        ),
+        for stem in ms1_centers
+    }
+    peaks = {stem: discover(raws[stem], paths[stem], settings) for stem in raws}
+    (own,) = peaks["Missing"]
+
+    output = publish_alignment(
+        tmp_path,
+        monkeypatch,
+        paths=paths,
+        raws=raws,
+        peaks=peaks,
         settings=settings,
-        peaks_by_sample=candidates,
-        dll_dir=tmp_path,
-        signal_processing_profile=TEST_PROFILE,
+        alignment_config=ALIGNMENT,
     )
-    install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
-    result = execute_partition_inline(
-        batch.jobs,
-        partition_key="runtime-fixture",
-        alignment_config=CID_NL_ALIGNMENT_CONFIG,
-    )
-    assert result.succeeded
-    missing = next(
-        item for item in result.sample_results if item.job.sample.raw_stem == "Missing"
-    )
-    assert missing.adapter_result.assessment_input.assessment.method_result == (
-        "SUPPORT"
-    )
-    completed = complete_dense_partition(
-        batch, result, alignment_config=AlignmentConfig(anchor_min_seed_events=1)
-    )
-    writer = completed.application_result
-    group_rows = dict(
-        zip(
-            (
-                round(float(review["group_center_rt"]), 1)
-                for review in written_rows(tmp_path / "written", writer)["review"]
-            ),
-            written_groups(writer),
-            strict=True,
-        )
-    )
-    group_8 = group_rows[8.0]
-    (missing_decision,) = tuple(
-        cell
-        for row, stem, cell in written_cells(writer)
-        if row is group_8 and stem == "Missing"
-    )
-    assert missing_decision.value is not None
-    assert cell_status(missing_decision) == "backfilled"
+
+    missing = {
+        round(float(review["group_center_rt"]), 1): cell
+        for cell, review in _cells_of(output, "Missing").values()
+    }
+    assert missing[8.0]["status"] == "backfilled"
+    assert float(missing[8.0]["area"]) > 0
+    assert missing[8.0]["source_candidate_id"] == ""
+    assert missing[9.6]["status"] == "detected"
+    assert missing[9.6]["source_candidate_id"] == own.peak_id
 
 
 def test_alignment_uses_configured_recovery_groups(tmp_path, monkeypatch):
-    test_runtime_recovers_every_authorized_rt_group(
-        tmp_path, monkeypatch, True, (), "configured"
-    )
-
-
-def _assert_alignment_uses_configured_recovery_groups(
-    tmp_path, monkeypatch, paths, raws, candidates, kwargs, settings
-):
-    from tests.cid_nl_runtime_fixtures import persist_discovery_batch
-    from xic_extractor.discovery.input_source import DiscoveryInputSource
-    from xic_extractor.untargeted_execution import execution as bounded_runtime
-    from xic_extractor.untargeted_execution.alignment import (
-        complete_untargeted_alignment,
-    )
-
-    opened = install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
-    runtime_results = []
-    execute = bounded_runtime.execute_partition
-
-    def retain_runtime(*args, **options):
-        result = execute(*args, **options)
-        assert result.succeeded
-        if options.get("initial_only"):
-            return result
-        missing = next(
-            item
-            for item in result.sample_results
-            if item.job.sample.raw_stem == "Missing"
+    """At 2 s preferred RT spacing, S3's 0.12 min offset forms its own group, and only
+    the two-support group authorizes a Backfill.
+    """
+    centers = {"S1": (8.0,), "S2": (8.0,), "S3": (8.12,), "Missing": ()}
+    settings = replace(SETTINGS, neutral_loss_profile=None, rt_max=12.6)
+    paths = raw_paths(tmp_path, tuple(centers))
+    raws = {
+        stem: _gaussian_raw(values, rt_range=(7.4, 12.7, 2121))
+        for stem, values in centers.items()
+    }
+    for stem in ("S1", "S2"):
+        raws[stem].scans = tuple(
+            replace(
+                raws[stem].scans[0],
+                rt=rt,
+                scan_number=int(np.argmin(np.abs(raws[stem].rt - rt))) + 1,
+            )
+            for rt in (7.99, 8.01)
         )
-        (recovery,) = missing.backfill_attempts
-        receipt = recovery.assessment.evaluation_receipt
-        half_window = BACKFILL_HALF_WINDOW_MIN
-        assert (receipt.query_rt_min, receipt.query_rt_max) == (
-            8.0 - half_window,
-            8.0 + half_window,
-        )
-        runtime_results.append(result)
-        return result
+    peaks = {stem: discover(raws[stem], paths[stem], settings) for stem in centers}
 
-    monkeypatch.setattr(bounded_runtime, "execute_partition", retain_runtime)
-    batch = persist_discovery_batch(
-        raw_paths=paths,
-        settings=settings,
-        peaks_by_sample=candidates,
-        root=tmp_path / "discovery",
-    )
-    completed = complete_untargeted_alignment(
-        signal_processing_profile=TEST_PROFILE,
-        discovery_batch=batch,
-        peaks_by_sample=DiscoveryInputSource(batch),
-        sample_metadata=kwargs["sample_metadata"],
-        raw_dir=tmp_path,
-        dll_dir=tmp_path,
-        output_dir=tmp_path / "alignment",
+    output = publish_alignment(
+        tmp_path,
+        monkeypatch,
+        paths=paths,
+        raws=raws,
+        peaks=peaks,
         settings=settings,
         alignment_config=AlignmentConfig(
             anchor_min_seed_events=2, preferred_rt_sec=2.0
         ),
-        project_child=project_composed_child,
-        execution=ExecutionProfile(backend="thread"),
     )
-    assert sorted(len(group.owners) for group in completed.initial_groups) == [1, 2]
-    missing = next(
-        item
-        for item in runtime_results[0].sample_results
-        if item.job.sample.raw_stem == "Missing"
-    )
-    (recovery,) = missing.backfill_attempts
-    assert recovery.assessment.candidate_peaks == ()
-    (child,) = children_of(completed.application_result)
-    missing_cells = tuple(
-        cell
-        for cell in child.scientific_core.cell_observations
-        if cell.canonical_sample.raw_stem == "Missing"
-    )
-    initial_groups_by_id = {
-        group.group_hypothesis_id: group for group in completed.initial_groups
+
+    missing = {
+        review["detected_count"]: cell
+        for cell, review in _cells_of(output, "Missing").values()
     }
+    assert set(missing) == {"1", "2"}
+    assert missing["2"]["status"] == "unavailable"
+    assert missing["1"]["status"] == "not_searched"
+    assert all(cell["area"] == "" for cell in missing.values())
 
-    def predecessor_center(cell):
-        predecessor_group_ids = {
-            association.position.group.group_hypothesis_id
-            for association in cell.position_associations
-        }
-        assert len(predecessor_group_ids) == 1
-        return initial_groups_by_id[next(iter(predecessor_group_ids))].group_center_rt
 
-    recovered = next(cell for cell in missing_cells if predecessor_center(cell) == 8.0)
-    no_input = next(cell for cell in missing_cells if predecessor_center(cell) != 8.0)
-    assert all(
-        cell.peak_observation is None and cell.peak_hypothesis is None
-        for cell in recovered.predecessor_cells
+def _shared_peak_inputs(
+    tmp_path, monkeypatch, mz_separation_ppm, *, observed=("S1", "S2")
+):
+    paths, raws, peaks, settings = _shared_peak_scenario(
+        tmp_path, mz_separation_ppm, observed=observed
     )
-    if recovered.backfill_cell is not None:
-        assert recovered.backfill_cell.method_assessment is recovery.assessment
-    else:
-        assert len(recovered.predecessor_cells) == 1
-        assert recovered.predecessor_cells[0].method_assessment == recovery.assessment
-        assert recovered.predecessor_cells[0].peak_observation is None
-        assert recovered.predecessor_cells[0].peak_hypothesis is None
-    assert recovered.evidence_states == ("unavailable",)
-    assert no_input.predecessor_cells == ()
-    assert no_input.backfill_cell is None
-    assert no_input.evidence_states == ("not_searched",)
-    assert no_input.integrations == ()
-    writer = completed.application_result
-    assert all(
-        cell.value is None
-        for _row, stem, cell in written_cells(writer)
-        if stem == "Missing"
+    install_runtime_raws(
+        monkeypatch,
+        sources_by_path={paths[stem]: raws[stem] for stem in paths},
+        tmp_path=tmp_path,
     )
-    assert sum(sum(raw.chromatogram_request_counts) for raw in opened[paths[-1]]) == 2
+    return dict(
+        raw_paths=tuple(paths.values()),
+        sample_metadata=sample_metadata_for(tuple(paths)),
+        settings=settings,
+        peaks_by_sample=peaks,
+    )
 
 
 def _run_cached_backfill_cli(home, directory, output):
@@ -1671,25 +875,17 @@ def _run_cached_backfill_cli(home, directory, output):
     from pathlib import Path
 
     from scripts.run_alignment import main
-    from xic_extractor.untargeted_execution import execution as runtime
-    from xic_extractor.untargeted_execution import partition_composition as composition
     from xic_extractor.untargeted_execution.partition import execution as phases
     from xic_extractor.untargeted_execution.partition import workers
 
     def forbidden(*args, **kwargs):
-        raise AssertionError(
-            "Replay ran initial acquisition, grouping or native RAW I/O"
-        )
+        raise AssertionError("Replay opened a RAW")
 
     with pytest.MonkeyPatch.context() as patch:
         patch.setattr(Path, "home", lambda: Path(home))
         patch.setattr(phases, "ensure_assemblies_loaded", lambda *_: None)
         patch.setattr(workers, "ensure_assemblies_loaded", lambda *_: None)
         patch.setattr(workers, "open_raw", forbidden)
-        patch.setattr(phases, "_execute_initial_sample_phase", forbidden)
-        patch.setattr(runtime, "group_acquired_partition", forbidden)
-        patch.setattr(runtime.CidNlBatchGrouping, "finalize_grouping", forbidden)
-        patch.setattr(composition, "group_acquired_partition", forbidden)
         return main(["backfill", "--inputs", directory, "--output-dir", output])
 
 
@@ -1716,7 +912,7 @@ def _backfill_request(tmp_path, options, config):
         ),
         sample_metadata=options["sample_metadata"],
         alignment_config=config,
-        raw_dir=tmp_path,
+        raw_dir=tmp_path / "raw",
         dll_dir=tmp_path,
         output_dir=tmp_path / "grouping",
         discovery_settings=options["settings"],
@@ -1730,7 +926,10 @@ def _backfill_request(tmp_path, options, config):
 def test_full_alignment_captures_competing_rows_and_single_batch_matrix(
     tmp_path, monkeypatch
 ):
-    import csv
+    """Capturing replay inputs does not repeat any stage. A single batch captures no
+    pairing input. S1 and S2 each own one peak of both groups. The cells TSV
+    publishes areas to two decimals.
+    """
     import subprocess
     import sys
     from collections import Counter, defaultdict
@@ -1738,9 +937,13 @@ def test_full_alignment_captures_competing_rows_and_single_batch_matrix(
 
     from scripts.run_alignment import main
     from xic_extractor.applications.untargeted import application
-    from xic_extractor.applications.untargeted.request import AlignmentReplayOptions
-    from xic_extractor.output.alignment.tsv_writer import cell_status
-    from xic_extractor.untargeted_execution import execution as runtime
+    from xic_extractor.applications.untargeted.publication import (
+        UntargetedPublicationPolicy,
+    )
+    from xic_extractor.applications.untargeted.request import (
+        AlignmentReplayOptions,
+        UntargetedExecutionContext,
+    )
 
     monkeypatch.setattr(Path, "home", lambda: tmp_path / "user-state")
     options = _shared_peak_inputs(tmp_path, monkeypatch, 0.0)
@@ -1749,81 +952,32 @@ def test_full_alignment_captures_competing_rows_and_single_batch_matrix(
     )
     control_dir = tmp_path / "control"
     capture_dir = tmp_path / "capture"
-    calls = Counter()
-    expected_cells = Counter()
-    expected_members = set()
-    complete = application.complete_untargeted_alignment
-    acquire = runtime.UntargetedPartitionPipelineAdapter.execute_acquisition
-    finalize = runtime.CidNlBatchGrouping.finalize_grouping
 
-    def track_acquisition(adapter, partition, **kwargs):
-        stage = "initial" if adapter._is_bootstrap(partition) else "backfill"
-        calls[stage] += 1
-        return acquire(adapter, partition, **kwargs)
+    def run(changed_request):
+        recorder = TimingRecorder("alignment")
+        application.run_untargeted_application(
+            changed_request, UntargetedExecutionContext(timing_recorder=recorder)
+        )
+        stages = Counter((r.stage, r.sample_stem) for r in recorder.records)
+        assert [stage for stage, count in stages.items() if count > 1] == []
 
-    def track_final_grouping(*args, **kwargs):
-        calls["grouping"] += 1
-        return finalize(*args, **kwargs)
-
-    def forbid_pairing(*args, **kwargs):
-        pytest.fail("A single batch must not enter correspondence")
-
-    def observe_formal(**kwargs):
-        project = kwargs["project_child"]
-
-        def observe_cells(child, context):
-            if kwargs["output_dir"] == control_dir:
-                expected_cells.update(
-                    (
-                        group.group_hypothesis_id,
-                        cell.subject.canonical_sample.raw_stem,
-                        cell.value,
-                        cell.variant,
-                        cell.source,
-                        cell_status(cell),
-                    )
-                    for group, decisions in child.group_cells
-                    for cell in decisions
-                )
-            return project(child, context)
-
-        result = complete(**{**kwargs, "project_child": observe_cells})
-        if kwargs["output_dir"] == control_dir:
-            expected_members.update(
-                frozenset(group.owner_ids) for group in result.initial_groups
-            )
-        return result
-
-    monkeypatch.setattr(
-        runtime.UntargetedPartitionPipelineAdapter,
-        "execute_acquisition",
-        track_acquisition,
-    )
-    monkeypatch.setattr(
-        runtime.CidNlBatchGrouping, "finalize_grouping", track_final_grouping
-    )
-    monkeypatch.setattr(application, "pair_grouped_batches", forbid_pairing)
-    monkeypatch.setattr(application, "complete_untargeted_alignment", observe_formal)
-
-    application.run_untargeted_application(
+    run(
         replace(
             request,
             output_dir=control_dir,
             execution=replace(
                 request.execution, acquisition_cache_dir=tmp_path / "control-facts"
             ),
-        ),
+            publication=UntargetedPublicationPolicy(emit_alignment_cells=True),
+        )
     )
-    assert calls == {"initial": 1, "grouping": 1, "backfill": 1}
-    calls.clear()
-    application.run_untargeted_application(
+    run(
         replace(
             request,
             output_dir=capture_dir,
             replay=AlignmentReplayOptions(grouping=True, backfill=True, matrix=True),
-        ),
+        )
     )
-    assert calls == {"initial": 1, "grouping": 1, "backfill": 1}
     replay_names = {
         "grouping-inputs.json.gz",
         "backfill-inputs",
@@ -1843,10 +997,6 @@ def test_full_alignment_captures_competing_rows_and_single_batch_matrix(
         assert main([stage, *map(str, args), "--output-dir", str(out)]) == 0
         return out
 
-    def tsv(path):
-        with path.open(encoding="utf-8", newline="") as stream:
-            return list(csv.DictReader(stream, delimiter="\t"))
-
     matrix = replay("matrix", "--backfill", capture_dir / "matrix-cells.json")
     filename = "alignment_matrix.tsv"
     assert list(matrix.iterdir()) == [matrix / filename]
@@ -1855,17 +1005,16 @@ def test_full_alignment_captures_competing_rows_and_single_batch_matrix(
         == (capture_dir / filename).read_bytes()
         == (control_dir / filename).read_bytes()
     )
-    matrix_rows = tsv(matrix / filename)
+    matrix_rows = read_tsv(matrix / filename)
     assert len(matrix_rows) == 2
     assert all(float(row["S1"]) < float(row["S2"]) for row in matrix_rows)
     assert sorted(bool(row["Missing"]) for row in matrix_rows) == [False, True]
 
     regrouped = replay("regroup", "--inputs", capture_dir / "grouping-inputs.json.gz")
     groups = defaultdict(set)
-    for row in tsv(regrouped / "members.tsv"):
+    for row in read_tsv(regrouped / "members.tsv"):
         groups[row["group_id"]].add(row["owner_id"])
-    assert {frozenset(members) for members in groups.values()} == expected_members
-    assert sorted(map(len, expected_members)) == [2, 2]
+    assert sorted(map(len, groups.values())) == [2, 2]
 
     directory = capture_dir / "backfill-inputs"
     backfilled = tmp_path / "backfill"
@@ -1882,27 +1031,26 @@ def test_full_alignment_captures_competing_rows_and_single_batch_matrix(
         check=True,
         timeout=60,
     )
-    actual = Counter(
-        (
-            row["group_id"],
-            row["sample_stem"],
-            float(row["area"]) if row["area"] else None,
-            row["decision"],
-            row["source"],
-            row["status"],
+
+    def published(rows):
+        return sorted(
+            (
+                row["sample_stem"],
+                row["status"],
+                float(row["area"]) if row["area"] else 0,
+            )
+            for row in rows
         )
-        for row in tsv(backfilled / "backfill-cells.tsv")
+
+    actual = published(read_tsv(backfilled / "backfill-cells.tsv"))
+    expected = published(read_tsv(control_dir / "alignment_cells.tsv"))
+    assert [item[:2] for item in actual] == [item[:2] for item in expected]
+    assert [item[2] for item in actual] == pytest.approx(
+        [item[2] for item in expected], abs=0.006
     )
-    assert actual == expected_cells
-    missing = [
-        (area, decision, status)
-        for _, sample, area, decision, _, status in actual.elements()
-        if sample == "Missing"
-    ]
-    assert len(missing) == 2
-    assert sorted(status for _, _, status in missing) == ["backfilled", "unresolved"]
-    assert sum(v is not None and v > 0 for v, _, _ in missing) == 1
-    assert [reason for value, reason, _ in missing if value is None] == ["unresolved"]
+    missing = [(status, area) for stem, status, area in actual if stem == "Missing"]
+    assert sorted(status for status, _area in missing) == ["backfilled", "unresolved"]
+    assert sum(area > 0 for _status, area in missing) == 1
 
     (directory / "0.bin").write_bytes(b"not the captured partition")
     rejected = tmp_path / "rejected"
