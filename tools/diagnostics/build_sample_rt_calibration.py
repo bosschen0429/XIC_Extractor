@@ -10,7 +10,10 @@ With an injection timeline, a sample's front shift (the median shift at the
 batch's earliest knots) is an outlier when it differs from the batch median by
 more than max(k x batch MAD, a minimum shift). An outlier is ``confirmed`` when
 the timeline pre-flags the sample, it follows a short method, or it is the
-first full-length run after a method change; otherwise it is
+first full-length run after a method change. A short method uses the
+timeline's persisted run-length limits without the idle limit; a method change
+compares with the latest earlier run longer than the persisted length fraction,
+skipping blanks and SDO/LEK. Otherwise the outlier is
 ``unexplained_outlier``, or ``outlier_without_timeline`` without a timeline
 row. A pre-flagged sample within tolerance is ``flagged_unconfirmed``; a
 missing front knot is ``unmeasured``. No consumer reads the status, and it does

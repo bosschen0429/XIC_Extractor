@@ -16,7 +16,8 @@ owner detection and integration changes need a new snapshot. ``--compare-to``
 writes ``membership-diff.tsv`` against another replay or capture.
 
 Outputs are ``groups.tsv`` and ``members.tsv`` (``comparison_rt_basis`` names
-the RT frame), ``decisions.tsv``, ``changes.tsv`` against the baseline,
+the RT frame), ``decisions.tsv`` (``accepted_risk_json`` is empty when no
+risk decision was recorded), ``changes.tsv`` against the baseline,
 ``samples.tsv`` including zero-observation samples, and ``summary.json``. They
 are initial-grouping results; final Backfill and Matrix output stay with the
 full workflow.
