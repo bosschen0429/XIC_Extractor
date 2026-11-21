@@ -38,10 +38,6 @@ _RT_POPULATION_MIN_MEMBERS = 4
 _RT_POPULATION_MIN_GAP_SEC = 20.0
 _RT_POPULATION_RANGE_RATIO = 2.0
 _COEFFICIENT_COST_SEC = 10.0
-# Injection-order neighbours in one group may differ by at most this once the
-# model's sample-shift response b*M is removed. The batch-state term a*B is
-# never removed: a group's own trajectory can define B and would then excuse
-# its own jump.
 _NEIGHBOR_JUMP_SEC = 120.0
 
 
@@ -358,8 +354,6 @@ class MembershipComparison:
         self._batch_lookup = (
             self.drift.batch_state_lookup() if self.drift is not None else None
         )
-        # Injection order, measured tie-break and sample shift M of each owner
-        # whose sample has an injection order; others have no neighbours.
         shift = self.drift.sample_shift_min if self.drift is not None else {}
         self._sequence = {
             o.owner_id: (
@@ -635,7 +629,6 @@ class MembershipComparison:
                 else ()
             )
             if candidates:
-                # A zero model broken only by a neighbour jump bounds nothing.
                 bound = math.inf if zero.population_gap or jumps else zero.evidence
                 for coefficients in candidates:
                     model = self._evaluate(
@@ -652,10 +645,14 @@ class MembershipComparison:
         return self._models[key]
 
     def _breaks_sequence(self, key: tuple[str, ...], sample_shift: float) -> bool:
-        """Whether injection-order neighbours jump beyond the neighbour limit
+        """Whether injection-order neighbours jump beyond ``_NEIGHBOR_JUMP_SEC``
         after removing ``sample_shift`` times each sample's shift M.
 
-        A sample whose shift is unknown keeps its general coordinate.
+        The batch-state term a*B is never removed: a group's own trajectory
+        can define B and would then excuse its own jump. A sample whose shift
+        is unknown keeps its general coordinate; a sample without an injection
+        order has no neighbours. A zero model broken only by a jump does not
+        bound the drift candidates, since one of them may remove the jump.
         """
         sequence = self._sequence
         placed = sorted(

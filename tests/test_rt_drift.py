@@ -119,8 +119,10 @@ def test_unknown_sample_shift_affects_only_that_member():
 def test_neighbor_jump_left_after_removing_sample_shift_breaks_the_group(
     displaced, feasible
 ):
-    # Raw neighbours s09 -> s10 differ by 2.8 min, all explained by b*M (b=2).
-    # Displacing s05 leaves a 2.5 min jump that no shift response explains.
+    """Raw neighbours s09 -> s10 differ by 2.8 min, all explained by b*M (b=2).
+
+    Displacing s05 leaves a 2.5 min jump that no shift response explains.
+    """
     owners = tuple(
         cid_nl_owner(
             sample,
