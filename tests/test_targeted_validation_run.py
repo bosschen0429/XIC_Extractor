@@ -5,6 +5,7 @@ import pytest
 
 from tools.diagnostics.targeted_validation_run import run_targeted_case
 from xic_extractor.applications.targeted.application import TargetedApplicationExecution
+from xic_extractor.configuration.execution_profile import ExecutionProfile
 from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.extraction.result_models import RunOutput
 
@@ -64,8 +65,7 @@ def test_validation_uses_finalized_targeted_application(tmp_path, monkeypatch):
     )
     assert len(requests) == 1
     assert requests[0].excel_output_path == workbook
-    assert requests[0].config.parallel_mode == "process"
-    assert requests[0].config.parallel_workers == 4
+    assert requests[0].config.execution == ExecutionProfile(parallel_workers=4)
 
 
 def test_targeted_validation_run_applies_data_dir_override_before_validation(
@@ -150,8 +150,7 @@ def test_targeted_validation_run_applies_additional_settings_overrides(
     assert captured_configs[0].data_dir == validation_dir
     assert captured["order"] == order
     assert not captured_configs[0].injection_order_source.exists()
-    assert captured_configs[0].parallel_mode == "process"
-    assert captured_configs[0].parallel_workers == 4
+    assert captured_configs[0].execution == ExecutionProfile(parallel_workers=4)
     assert captured["approvals"] is None
 
 

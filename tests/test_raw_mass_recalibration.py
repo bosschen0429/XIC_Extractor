@@ -6,6 +6,10 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
+from xic_extractor.configuration.execution_profile import (
+    ExecutionProfile,
+    in_process_execution,
+)
 from xic_extractor.configuration.mass_recalibration import (
     MassRecalibration,
     MassRecalibrationResult,
@@ -208,7 +212,7 @@ def test_batch_prepares_each_raw_once_and_preserves_sample_attribution(
         inputs,
         tmp_path,
         MassRecalibration.EASY_IC_RESTORE,
-        workers=2,
+        execution=ExecutionProfile(alignment_workers=2, backend="thread"),
     )
     assert sorted(opened) == sorted(closed) == ["applied", "unavailable"]
     for path, source in inputs:
@@ -218,7 +222,10 @@ def test_batch_prepares_each_raw_once_and_preserves_sample_attribution(
     assert prepared["applied"].result.n_anchor == 3
     assert (
         raw_mass_recalibration_batch.prepare_batch_mass_recalibration(
-            inputs, tmp_path, MassRecalibration.NONE
+            inputs,
+            tmp_path,
+            MassRecalibration.NONE,
+            execution=in_process_execution(),
         )
         == {}
     )

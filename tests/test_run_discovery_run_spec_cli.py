@@ -52,7 +52,7 @@ def test_discovery_cli_reports_batch_execution_failure(
     )
 
     def fail_batch(_paths, **kwargs):
-        assert kwargs["max_workers"] == workers
+        assert kwargs["execution"].parallel_workers == workers
         assert (kwargs["timing_recorder"] is not None) is timing
         if workers == 1:
             raise RawReaderError("A.raw: unable to open RAW")
@@ -92,10 +92,10 @@ def test_discovery_cli_reports_batch_execution_failure(
 @pytest.mark.parametrize(
     ("input_mode", "default_workers", "override", "expected_workers"),
     [
-        ("raw-dir", 8, None, 2),
+        ("raw-dir", 8, None, 8),
         ("raw-dir", 1, None, 1),
         ("raw-dir", 8, 1, 1),
-        ("raw-dir", 1, 3, 2),
+        ("raw-dir", 1, 3, 3),
         ("raw", 8, None, None),
         ("raw", 8, 3, None),
     ],
@@ -153,9 +153,9 @@ def test_discovery_cli_forwards_worker_budget_and_run_spec(
     ((paths, forwarded),) = observed
     assert paths == (raw_paths if input_mode == "raw-dir" else raw_paths[0])
     if expected_workers is None:
-        assert "max_workers" not in forwarded
+        assert "execution" not in forwarded
     else:
-        assert forwarded["max_workers"] == expected_workers
+        assert forwarded["execution"].parallel_workers == expected_workers
     assert (forwarded["timing_recorder"] is not None) is timing
     assert forwarded["run_spec"].discovery_method.settings == forwarded["settings"]
     assert not forwarded["settings"].enable_blank_qualification

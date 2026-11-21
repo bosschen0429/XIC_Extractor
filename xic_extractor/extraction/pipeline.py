@@ -40,7 +40,7 @@ def run_pipeline(
         else {"acquisition_sources_by_sample": acquisition_sources_by_sample}
     )
 
-    if config.parallel_mode == "process":
+    if config.execution.backend == "process":
         from xic_extractor.extraction.process_backend import run_process
 
         output = run_process(

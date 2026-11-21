@@ -116,8 +116,8 @@ def run_untargeted_application(
         "alignment.run_config",
         elapsed_sec=0.0,
         metrics={
-            "raw_workers": request.execution.raw_workers,
-            "raw_worker_backend": request.execution.raw_worker_backend,
+            "raw_workers": request.execution.profile.alignment_workers,
+            "raw_worker_backend": request.execution.profile.backend,
             "raw_xic_batch_size": 1,
             "owner_backfill_xic_backend": "raw",
             "owner_backfill_window_strategy": "exact",
@@ -210,8 +210,7 @@ def run_untargeted_application(
                     known_istd_reference=resolved_known_istd_reference,
                     timing_recorder=recorder,
                     signal_processing_profile=signal_processing_profile,
-                    raw_workers=request.execution.raw_workers,
-                    raw_worker_backend=request.execution.raw_worker_backend,
+                    execution=request.execution.profile,
                     should_cancel=context.should_cancel,
                     progress_callback=context.progress_callback,
                     retain_partition_memory=False,
@@ -366,8 +365,7 @@ def _prepare_mass_recalibration(
             ),
             request.dll_dir,
             policy,
-            workers=request.execution.raw_workers,
-            backend=request.execution.raw_worker_backend,
+            execution=request.execution.profile,
             should_cancel=context.should_cancel,
         )
         stage.metrics["raw_file_count"] = len(results)
@@ -416,6 +414,7 @@ def _resolve_known_istd_reference(
                 raw_paths_by_sample=raw_paths_by_sample,
                 dll_dir=request.dll_dir,
                 peak_config=request.peak_config,
+                execution=request.execution.profile,
                 mass_recalibration_by_sample=(
                     mass_recalibration_by_sample
                     if request.peak_config.mass_recalibration
@@ -616,8 +615,7 @@ def _group_batch(
         sample_metadata=request.sample_metadata,
         timing_recorder=recorder,
         signal_processing_profile=request.resolve_processing_profile(),
-        raw_workers=request.execution.raw_workers,
-        raw_worker_backend=request.execution.raw_worker_backend,
+        execution=request.execution.profile,
         should_cancel=context.should_cancel,
         verified_acquisition_sources=(
             {
@@ -640,8 +638,7 @@ def _group_batch(
             timing_recorder=recorder,
             acquisition_cache_dir=request.execution.acquisition_cache_dir,
             retain_acquisition_cache=request.execution.retain_acquisition_cache,
-            raw_workers=request.execution.raw_workers,
-            raw_worker_backend=request.execution.raw_worker_backend,
+            execution=request.execution.profile,
             max_partition_jobs=request.execution.max_partition_jobs,
             should_cancel=context.should_cancel,
             grouping_only=True,

@@ -41,7 +41,11 @@ from xic_extractor.applications.untargeted.request import (
     UntargetedExecutionContext,
     UntargetedRequest,
 )
-from xic_extractor.configuration.execution_profile import UntargetedExecutionPolicy
+from xic_extractor.configuration.execution_profile import (
+    ExecutionProfile,
+    UntargetedExecutionPolicy,
+    in_process_execution,
+)
 from xic_extractor.configuration.mass_recalibration import (
     MassRecalibration,
     MassRecalibrationResult,
@@ -177,7 +181,9 @@ def test_pure_cid_nl_wrapper_reports_retained_route_and_typed_handoff(
                     alignment_config=AlignmentConfig(),
                     peak_config=_peak_config(),
                     discovery_settings=_settings(),
-                    execution=UntargetedExecutionPolicy(raw_workers=raw_workers),
+                    execution=UntargetedExecutionPolicy(
+                        profile=ExecutionProfile(alignment_workers=raw_workers)
+                    ),
                     publication=UntargetedPublicationPolicy(
                         emit_alignment_explanation=True
                     ),
@@ -200,14 +206,18 @@ def test_pure_cid_nl_wrapper_reports_retained_route_and_typed_handoff(
             known_istd_reference_workbook=tmp_path / "reference.xlsx"
             if with_reference
             else None,
-            execution=UntargetedExecutionPolicy(raw_workers=raw_workers),
+            execution=UntargetedExecutionPolicy(
+                profile=ExecutionProfile(alignment_workers=raw_workers)
+            ),
             publication=UntargetedPublicationPolicy(emit_alignment_explanation=True),
         )
     )
 
     assert report.read_text(encoding="utf-8") == "published"
     assert captured_retained["sample_metadata"] is retained_sample_metadata
-    assert captured_retained["raw_workers"] == raw_workers
+    assert captured_retained["execution"] == ExecutionProfile(
+        alignment_workers=raw_workers
+    )
     assert captured_retained["known_istd_reference"] is (
         reference if with_reference else None
     )
@@ -364,60 +374,8 @@ def test_pure_cid_nl_collision_rejects_before_retained_runtime(
                 alignment_config=AlignmentConfig(),
                 peak_config=_peak_config(),
                 discovery_settings=_settings(),
-                execution=UntargetedExecutionPolicy(raw_workers=2),
-            )
-        )
-
-
-def test_pure_cid_nl_rejects_invalid_worker_budget_before_acquisition(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    batch_index = _write_batch(tmp_path, ("S1",))
-    monkeypatch.setattr(
-        application_module,
-        "complete_untargeted_alignment",
-        lambda **_kwargs: pytest.fail("invalid knobs reached retained acquisition"),
-    )
-
-    with pytest.raises(ValueError, match="raw_workers"):
-        application_module.run_untargeted_application(
-            UntargetedRequest(
-                discovery_batch_index=batch_index,
-                raw_dir=tmp_path / "raw",
-                dll_dir=tmp_path / "dll",
-                output_dir=tmp_path / "out",
-                alignment_config=AlignmentConfig(),
-                peak_config=_peak_config(),
-                discovery_settings=_settings(),
-                execution=UntargetedExecutionPolicy(raw_workers=0),
-            )
-        )
-
-
-def test_pure_cid_nl_rejects_invalid_worker_backend_before_acquisition(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    batch_index = _write_batch(tmp_path, ("S1",))
-    monkeypatch.setattr(
-        application_module,
-        "complete_untargeted_alignment",
-        lambda **_kwargs: pytest.fail("invalid knobs reached retained acquisition"),
-    )
-
-    with pytest.raises(ValueError, match="raw_worker_backend"):
-        application_module.run_untargeted_application(
-            UntargetedRequest(
-                discovery_batch_index=batch_index,
-                raw_dir=tmp_path / "raw",
-                dll_dir=tmp_path / "dll",
-                output_dir=tmp_path / "out",
-                alignment_config=AlignmentConfig(),
-                peak_config=_peak_config(),
-                discovery_settings=_settings(),
                 execution=UntargetedExecutionPolicy(
-                    raw_worker_backend="invalid_backend"
+                    profile=ExecutionProfile(alignment_workers=2)
                 ),
             )
         )
@@ -521,6 +479,7 @@ def test_pipeline_publishes_projected_children_and_cleans_up(
             max_partition_jobs=4,
             retain_partition_memory=False,
             project_child=project_child,
+            execution=in_process_execution(),
         ).bind_publication_inputs(
             peaks_by_sample=candidates,
             precursor_mz_by_candidate=representative_precursors(candidates),
@@ -1008,6 +967,7 @@ def test_reduced_discovery_persistence_keeps_inferred_peak_and_qualifies_alignme
         dll_dir=tmp_path / "dll",
         raw_opener=lambda path, _dll_dir: discovery_handles[path],
         run_spec=spec,
+        execution=in_process_execution(),
     )
     batch = read_discovery_batch_index(
         discovery.batch_index_csv,
@@ -1052,7 +1012,7 @@ def test_reduced_discovery_persistence_keeps_inferred_peak_and_qualifies_alignme
             peak_config=_discovery_peak_config(tmp_path),
             discovery_settings=settings,
             execution=UntargetedExecutionPolicy(
-                raw_workers=1, raw_worker_backend="thread"
+                profile=ExecutionProfile(alignment_workers=1, backend="thread")
             ),
             publication=UntargetedPublicationPolicy(
                 output_level="machine", emit_alignment_cells=True

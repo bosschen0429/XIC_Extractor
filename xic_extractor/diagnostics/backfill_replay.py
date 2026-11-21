@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import cast
 
 from xic_extractor.configuration.atomic_write import atomic_write_text
+from xic_extractor.configuration.execution_profile import ExecutionProfile
 from xic_extractor.diagnostics.matrix_replay import CompletedMatrixCells
 from xic_extractor.execution._serialization import (
     owner_pickle_dumps,
@@ -91,7 +92,11 @@ def _partitions(
 
 
 def replay_backfill(
-    directory: Path, output_dir: Path, *, save_matrix_inputs: bool = False
+    directory: Path,
+    output_dir: Path,
+    *,
+    execution: ExecutionProfile,
+    save_matrix_inputs: bool = False,
 ) -> Path:
     """Write diagnostic row/sample decisions, never a production Matrix."""
     output = output_dir / "backfill-cells.tsv"
@@ -120,7 +125,10 @@ def replay_backfill(
                 )
             )
             for index, frozen in enumerate(_partitions(directory, digests)):
-                with WorkerAdmissionPool() as pool:
+                with WorkerAdmissionPool(
+                    max_workers=execution.alignment_workers,
+                    backend=execution.backend,
+                ) as pool:
                     result = frozen.execute(f"partition-{index:05d}-backfill", pool)
                 if result.failure is not None:
                     raise result.failure

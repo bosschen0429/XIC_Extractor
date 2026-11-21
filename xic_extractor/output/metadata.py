@@ -23,8 +23,11 @@ def build_metadata_rows(config: ExtractionConfig) -> list[tuple[str, object]]:
         ("generated_at", generated_at),
         ("target_config_hash", config.target_config_hash),
         ("targeted_output_schema_version", TARGETED_OUTPUT_SCHEMA_VERSION),
-        ("parallel_mode", config.parallel_mode),
-        ("parallel_workers", config.parallel_workers),
+        (
+            "parallel_mode",
+            "process" if config.execution.backend == "process" else "serial",
+        ),
+        ("parallel_workers", config.execution.parallel_workers),
         ("mass_recalibration", config.mass_recalibration.value),
         ("targeted_strategy", json.dumps(strategy_receipt(), sort_keys=True)),
         ("signal_processing_method", config.signal_processing_method),

@@ -18,7 +18,10 @@ from tests.discovery_csv_fixtures import representative_event
 from tests.untargeted_cid_nl_batch_runtime_fixtures import (
     _nearby_subject_candidates,
 )
-from tests.untargeted_partition_fixtures import fixture_assessment
+from tests.untargeted_partition_fixtures import (
+    execute_partition_inline,
+    fixture_assessment,
+)
 from xic_extractor.alignment.cid_nl_inputs import CID_NL_ALIGNMENT_CONFIG
 from xic_extractor.discovery.models import DiscoveryPeak
 from xic_extractor.peak_detection.cid_nl_method_subject import (
@@ -27,7 +30,6 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
     mint_untargeted_cid_nl_method_subject_batch,
 )
 from xic_extractor.sample_metadata import SampleMetadata
-from xic_extractor.untargeted_execution.partition.execution import execute_partition
 from xic_extractor.untargeted_execution.partition.models import UntargetedPartitionJob
 from xic_extractor.untargeted_execution.partition.request import (
     build_partition_context,
@@ -156,7 +158,7 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
         for sample in context.samples
     )
     if initial_trace_without_peak:
-        partition = execute_partition(
+        partition = execute_partition_inline(
             jobs,
             partition_key="initial-and-recovery",
             alignment_config=CID_NL_ALIGNMENT_CONFIG,
@@ -181,7 +183,7 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
         return
 
     events = []
-    result = execute_partition(
+    result = execute_partition_inline(
         jobs,
         partition_key="runtime-fixture",
         alignment_config=CID_NL_ALIGNMENT_CONFIG,

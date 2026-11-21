@@ -343,6 +343,14 @@ writer, or publication authority.
 - Timing counts describe cost and locality only; they do not select a cell,
   value, state, or writer decision.
 
+How a run uses the machine has one owner. Each entry point (CLI, Workbench,
+diagnostic tool) builds one `ExecutionProfile`: worker budgets, process or
+thread backend, and whether Alignment overlaps partitions. Every stage below
+receives that value and sizes its work from it; no stage reads the CPU count,
+a setting, or a constant of its own to decide. Only `xic_extractor.execution`
+opens thread or process pools; the `only-execution-opens-pools` import contract
+fails any other module that imports `concurrent` or `multiprocessing`.
+
 A Windows spawn worker reads its initializer after importing the main module:
 pass a shared-memory name, not a payload that serializes each worker's startup.
 Overlapping batches share the executor's capacity. On stop, observe outstanding

@@ -7,6 +7,7 @@ from threading import Event
 
 import pytest
 
+from xic_extractor.configuration.execution_profile import ExecutionProfile
 from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.extraction.result_models import FileResult, RawFileExtractionResult
 
@@ -105,7 +106,7 @@ def test_raw_process_collector_does_not_schedule_when_already_cancelled(
         collect_raw_file_results_process,
     )
 
-    config = replace(_config(tmp_path), parallel_mode="process", parallel_workers=2)
+    config = replace(_config(tmp_path), execution=ExecutionProfile(parallel_workers=2))
     calls = []
 
     def _runner(jobs, **_kwargs):

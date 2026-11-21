@@ -1,7 +1,6 @@
 """Resolve analysis membership and chronology from native RAW and SLD facts."""
 
 from collections.abc import Callable, Sequence
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from pathlib import Path, PureWindowsPath
 
@@ -12,6 +11,8 @@ from xic_extractor.analysis_set import (
     discover_raw_files,
     select_analysis_set,
 )
+from xic_extractor.configuration.execution_profile import RAW_HEADER_READ_THREADS
+from xic_extractor.execution.workers import iter_thread_results
 from xic_extractor.injection_timeline import (
     InjectionHeader,
     PerturbationPolicy,
@@ -106,38 +107,44 @@ def read_analysis_set(
             )
             continue
         header_paths.append((index, path))
-    with ThreadPoolExecutor(max_workers=8) as pool:
-        pending = [
-            (index, path, pool.submit(_analysis_header, path, dll_dir))
-            for index, path in header_paths
-        ]
+
+    def read_header(
+        item: tuple[int, Path],
+    ) -> tuple[InjectionHeader, SampleRole, str] | RawReaderError | ValueError:
         try:
-            for index, path, future in pending:
-                if should_cancel is not None and should_cancel():
-                    raise InterruptedError("RAW 樣本準備已停止。")
-                if progress is not None:
-                    progress(index, len(paths), f"讀取 RAW 檔頭：{path.name}")
-                try:
-                    header, role, header_name = future.result()
-                except (RawReaderError, ValueError) as exc:
-                    unread_errors[str(path.resolve())] = str(exc)
-                    unread[str(path.resolve())] = SampleMetadata(
-                        sample_name=path.stem,
-                        raw_stem=path.stem,
-                        sample_role=infer_sample_role(None, sample_name=path.stem),
-                        batch_id=root.name,
-                    )
-                    continue
-                headers.append(header)
-                header_rows[header.raw_path] = SampleMetadata(
-                    sample_name=header_name,
+            return _analysis_header(item[1], dll_dir)
+        except (RawReaderError, ValueError) as exc:
+            return exc
+
+    outcomes = iter_thread_results(
+        read_header, header_paths, max_workers=RAW_HEADER_READ_THREADS
+    )
+    try:
+        for index, path in header_paths:
+            if should_cancel is not None and should_cancel():
+                raise InterruptedError("RAW 樣本準備已停止。")
+            if progress is not None:
+                progress(index, len(paths), f"讀取 RAW 檔頭：{path.name}")
+            outcome = next(outcomes)
+            if isinstance(outcome, Exception):
+                unread_errors[str(path.resolve())] = str(outcome)
+                unread[str(path.resolve())] = SampleMetadata(
+                    sample_name=path.stem,
                     raw_stem=path.stem,
-                    sample_role=role,
+                    sample_role=infer_sample_role(None, sample_name=path.stem),
                     batch_id=root.name,
                 )
-        finally:
-            for _index, _path, future in pending:
-                future.cancel()
+                continue
+            header, role, header_name = outcome
+            headers.append(header)
+            header_rows[header.raw_path] = SampleMetadata(
+                sample_name=header_name,
+                raw_stem=path.stem,
+                sample_role=role,
+                batch_id=root.name,
+            )
+    finally:
+        outcomes.close()
     if progress is not None and paths:
         progress(len(paths), len(paths), "RAW 檔頭讀取完成")
     timeline = build_injection_timeline(headers, PerturbationPolicy())

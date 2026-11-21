@@ -14,6 +14,7 @@ from tests.cid_nl_raw_fixture import (
     _working_imports,
 )
 from tests.raw_header_fakes import install_fake_raw_headers
+from xic_extractor.configuration.execution_profile import ExecutionProfile
 from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
@@ -143,7 +144,7 @@ def prepare_persisted_discovery_plan(
         peak_config=peak_config,
         sample_metadata=sample_metadata,
         signal_processing_profile=signal_processing_profile,
-        raw_workers=1,
+        execution=ExecutionProfile(alignment_workers=1, backend="thread"),
     )
 
 

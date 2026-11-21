@@ -28,6 +28,7 @@ from tests.processing_identity_no_raw_fixture import (
     build_targeted_processing_identity_raw_fixture,
 )
 from tests.untargeted_cid_nl_real_data_adapter_fixtures import _without_ms1_peak
+from tests.untargeted_partition_fixtures import execute_partition_inline
 from xic_extractor.acquisition_contract import (
     acquire_trace_batch,
     mint_trace_acquisition_capability,
@@ -52,7 +53,6 @@ from xic_extractor.untargeted_execution.acquisition_cache import (
 from xic_extractor.untargeted_execution.partition import execution as runtime_module
 from xic_extractor.untargeted_execution.partition import models as partition_models
 from xic_extractor.untargeted_execution.partition import workers as partition_workers
-from xic_extractor.untargeted_execution.partition.execution import execute_partition
 from xic_extractor.untargeted_execution.partition.models import (
     UntargetedPartitionJob,
     build_sample_jobs,
@@ -714,7 +714,7 @@ def test_runtime_delivers_one_real_subject_cohort_with_cache_replay(
     ):
         _open_job_raw(replace(jobs[0], raw_path=changed_path))
 
-    result = execute_partition(
+    result = execute_partition_inline(
         jobs,
         partition_key="runtime-fixture",
         alignment_config=CID_NL_ALIGNMENT_CONFIG,
@@ -755,7 +755,7 @@ def test_runtime_delivers_one_real_subject_cohort_with_cache_replay(
         return installed_warm_open(path, *args, **kwargs)
 
     monkeypatch.setattr(partition_workers, "open_raw", count_warm_open)
-    warm_result = execute_partition(
+    warm_result = execute_partition_inline(
         jobs,
         partition_key="runtime-fixture",
         alignment_config=CID_NL_ALIGNMENT_CONFIG,
@@ -929,7 +929,7 @@ def test_runtime_recovers_from_single_scan_cid_nl_support_owners(
 
         monkeypatch.setattr(_FakeThermoRaw, "GetChromatogramData", stop_backfill)
 
-    result = execute_partition(
+    result = execute_partition_inline(
         jobs,
         partition_key="runtime-fixture",
         alignment_config=CID_NL_ALIGNMENT_CONFIG,
@@ -1263,7 +1263,7 @@ def test_runtime_does_not_open_recovery_resource_when_owner_condition_is_false(
         for sample in context.samples
     )
 
-    result = execute_partition(
+    result = execute_partition_inline(
         jobs,
         partition_key="runtime-fixture",
         alignment_config=CID_NL_ALIGNMENT_CONFIG,

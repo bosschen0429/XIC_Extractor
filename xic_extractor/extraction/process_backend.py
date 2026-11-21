@@ -95,7 +95,7 @@ def collect_raw_file_results_process(
     raw_runner = runner if runner is not None else run_raw_file_jobs
     results = raw_runner(
         jobs,
-        max_workers=config.parallel_workers,
+        max_workers=config.execution.parallel_workers,
         should_stop=should_stop,
         progress_callback=progress_callback,
         total=len(raw_paths),

@@ -7,7 +7,10 @@ from pathlib import Path
 
 import pytest
 
-from tests.untargeted_full_flow_fixtures import install_full_flow_raws
+from tests.untargeted_full_flow_fixtures import (
+    FULL_FLOW_EXECUTION,
+    install_full_flow_raws,
+)
 from xic_extractor.applications.untargeted.full_analysis import (
     FullAnalysisRequest,
     UntargetedAnalysis,
@@ -40,7 +43,9 @@ def test_complete_cid_nl_matches_workbench_intake_with_sample_values(
         raw_dir=tmp_path,
         dll_dir=tmp_path,
         output_dir=tmp_path / "direct",
-        execution_profile=ExecutionProfile(parallel_workers=1, alignment_workers=1),
+        execution_profile=ExecutionProfile(
+            parallel_workers=1, alignment_workers=1, backend="thread"
+        ),
         sample_metadata=samples,
     )
     direct = UntargetedAnalysis(
@@ -101,6 +106,7 @@ def test_complete_diagnostic_routes_keep_candidates_sample_bound_without_matrix(
             raw_dir=tmp_path,
             dll_dir=tmp_path,
             output_dir=tmp_path / "result",
+            execution_profile=FULL_FLOW_EXECUTION,
         ),
         progress=lambda *_: None,
         should_cancel=lambda: False,
@@ -202,6 +208,7 @@ def test_cancel_preserves_previous_matrix(tmp_path, monkeypatch, stage):
             raw_dir=tmp_path,
             dll_dir=tmp_path,
             output_dir=output,
+            execution_profile=FULL_FLOW_EXECUTION,
         ),
         progress=progress,
         should_cancel=lambda: stage == "before_start" or bool(cancelled),
@@ -247,6 +254,7 @@ def test_diagnostic_interruption_does_not_publish_completion(
             raw_dir=tmp_path,
             dll_dir=tmp_path,
             output_dir=tmp_path / "result",
+            execution_profile=FULL_FLOW_EXECUTION,
         ),
         progress=progress,
         should_cancel=lambda: bool(cancelled),

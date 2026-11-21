@@ -4,6 +4,7 @@ from collections.abc import Callable, Sequence
 from functools import partial
 from pathlib import Path
 
+from xic_extractor.configuration.execution_profile import ExecutionProfile
 from xic_extractor.configuration.mass_recalibration import MassRecalibration
 from xic_extractor.processing_identity import (
     AcquisitionSourceExpectation,
@@ -19,8 +20,7 @@ def prepare_batch_mass_recalibration(
     dll_dir: Path,
     policy: MassRecalibration,
     *,
-    workers: int = 1,
-    backend: str = "thread",
+    execution: ExecutionProfile,
     should_cancel: Callable[[], bool] | None = None,
 ) -> dict[str, PreparedRawMassRecalibration]:
     """Prepare once per sample, close every handle, and share only small results."""
@@ -35,7 +35,9 @@ def prepare_batch_mass_recalibration(
         stem, prepared = result
         results[stem] = prepared
 
-    with WorkerAdmissionPool(max_workers=workers, backend=backend) as pool:
+    with WorkerAdmissionPool(
+        max_workers=execution.alignment_workers, backend=execution.backend
+    ) as pool:
         pool.run_windowed(
             inputs,
             partial(_prepare_raw_mass_recalibration, dll_dir=dll_dir, policy=policy),

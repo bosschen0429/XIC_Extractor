@@ -1,7 +1,10 @@
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from xic_extractor.configuration.execution_profile import default_parallel_workers
+from xic_extractor.configuration.execution_profile import (
+    ExecutionProfile,
+    in_process_execution,
+)
 from xic_extractor.configuration.mass_recalibration import (
     MassRecalibration,
     resolve_mass_recalibration,
@@ -42,8 +45,7 @@ class ExtractionConfig:
     nl_rt_anchor_half_window_min: float = 1.0
     injection_order_source: Path | None = None
     baseline_integration_method: str = "asls"
-    parallel_mode: str = "serial"
-    parallel_workers: int = field(default_factory=default_parallel_workers)
+    execution: ExecutionProfile = field(default_factory=in_process_execution)
     target_config_hash: str = ""
     signal_processing_method: str = DEFAULT_SIGNAL_PROCESSING_PROFILE.method
     signal_processing_window_points: int = (

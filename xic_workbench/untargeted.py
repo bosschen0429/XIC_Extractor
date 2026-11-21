@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from xic_extractor.applications.untargeted.full_analysis import FullAnalysisRequest
+from xic_extractor.configuration.execution_profile import load_execution_profile
 from xic_workbench.methods import preset_from_payload
 from xic_workbench.samples import from_payload as samples_from_payload
 
@@ -52,6 +53,7 @@ def parse_request(values: dict[str, Any]) -> FullAnalysisRequest:
         targets_csv=_optional_path(values.get("targets_csv")),
         sample_metadata=samples_from_payload(values.get("samples")),
         preset_snapshot=snapshot,
+        execution_profile=load_execution_profile(),
     )
 
 

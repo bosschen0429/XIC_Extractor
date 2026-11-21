@@ -44,6 +44,7 @@ from tests.untargeted_partition_fixtures import (
     project_composed_child,
 )
 from xic_extractor.alignment.config import AlignmentConfig
+from xic_extractor.configuration.execution_profile import ExecutionProfile
 from xic_extractor.discovery.csv_reader import DiscoveryBatchInput
 from xic_extractor.discovery.models import representative_event_rt
 from xic_extractor.execution.process_memory import (
@@ -880,6 +881,7 @@ def profile_replay(tmp_path, monkeypatch, request):
             ),
         ),
         project_child=project_composed_child,
+        execution=ExecutionProfile(backend="thread"),
     )
     try:
         yield SimpleNamespace(

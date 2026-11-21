@@ -17,6 +17,7 @@ from tests.physical_peak_evaluation_fixtures import (
 )
 from tests.untargeted_partition_fixtures import children_of, project_composed_child
 from xic_extractor.alignment.config import AlignmentConfig
+from xic_extractor.configuration.execution_profile import ExecutionProfile
 from xic_extractor.discovery.csv_reader import (
     DiscoveryBatchInput,
     read_owner_bound_discovery_peaks_csv,
@@ -176,7 +177,7 @@ def test_held_rows_never_become_alignment_roots(tmp_path, monkeypatch, with_supp
             )
             for i, stem in enumerate(stems)
         ),
-        raw_workers=1,
+        execution=ExecutionProfile(alignment_workers=1, backend="thread"),
     )
     assert {cid for cid, _ in plan.subject_batch.candidate_memberships} == expected_ids
     if with_supported:
@@ -221,7 +222,9 @@ def test_held_rows_never_become_alignment_roots(tmp_path, monkeypatch, with_supp
         plan,
         output_dir=tmp_path / "alignment",
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
-        raw_workers=1,
+        execution=ExecutionProfile(
+            alignment_workers=1, backend="thread", overlap_partitions=False
+        ),
         project_child=project_composed_child,
     )
     assert set(result.application_result.candidate_ids) == expected_ids
@@ -307,7 +310,7 @@ def test_alignment_measurement_decides_admission_through_the_whole_run(
             )
             for i, stem in enumerate(stems)
         ),
-        raw_workers=1,
+        execution=ExecutionProfile(alignment_workers=1, backend="thread"),
     )
     (kept,) = candidates["Clean1"]
     (dropped,) = candidates["Clean2"]
@@ -320,7 +323,9 @@ def test_alignment_measurement_decides_admission_through_the_whole_run(
         plan,
         output_dir=tmp_path / "alignment",
         alignment_config=config,
-        raw_workers=1,
+        execution=ExecutionProfile(
+            alignment_workers=1, backend="thread", overlap_partitions=False
+        ),
         project_child=project_composed_child,
     )
     measured = {
@@ -416,7 +421,7 @@ def test_alignment_rejects_raw_replaced_after_discovery_without_recalibration(
                 )
                 for i, stem in enumerate(stems)
             ),
-            raw_workers=1,
+            execution=ExecutionProfile(alignment_workers=1, backend="thread"),
         )
 
 
@@ -492,7 +497,7 @@ def test_peak_without_its_representative_event_row_fails_at_alignment_input(
             )
             for i, stem in enumerate(stems)
         ),
-        raw_workers=1,
+        execution=ExecutionProfile(alignment_workers=1, backend="thread"),
     )
 
     with pytest.raises(ValueError, match="Clean1.*lack the representative scan"):

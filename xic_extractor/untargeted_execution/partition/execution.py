@@ -8,7 +8,6 @@ from dataclasses import dataclass
 
 from xic_extractor.alignment.cid_nl_initial_grouping import CidNlGrouping
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.configuration.execution_profile import DEFAULT_ALIGNMENT_WORKERS
 from xic_extractor.execution.workers import WorkerAdmissionPool
 from xic_extractor.raw_reader import ensure_assemblies_loaded
 from xic_extractor.untargeted_execution.partition.models import (
@@ -44,9 +43,7 @@ def execute_partition(
     alignment_config: AlignmentConfig,
     progress_callback: Callable[[Mapping[str, object]], None] | None = None,
     should_cancel: Callable[[], bool] | None = None,
-    raw_workers: int = DEFAULT_ALIGNMENT_WORKERS,
-    raw_worker_backend: str = "thread",
-    pool: WorkerAdmissionPool | None = None,
+    pool: WorkerAdmissionPool,
     backfill_templates: tuple[UntargetedPartitionJob, ...] = (),
     initial_only: bool = False,
     initial_results: tuple[UntargetedInitialSampleResult, ...] | None = None,
@@ -61,16 +58,6 @@ def execute_partition(
     assessments and performs only Backfill acquisition under the same attempt.
     """
     _required_text(partition_key, field="partition_key")
-    if pool is not None:
-        raw_workers = pool.max_workers
-        raw_worker_backend = pool.backend
-    else:
-        if type(raw_workers) is not int or raw_workers < 1:
-            raise UntargetedPartitionError("raw_workers must be a positive integer")
-        if raw_worker_backend not in {"process", "thread"}:
-            raise UntargetedPartitionError(
-                "raw_worker_backend must be 'process' or 'thread'"
-            )
     if not isinstance(alignment_config, AlignmentConfig):
         raise UntargetedPartitionError("alignment_config must be an AlignmentConfig")
     if (
@@ -89,8 +76,6 @@ def execute_partition(
         progress_callback=progress_callback,
         partition_key=partition_key,
         should_cancel=should_cancel,
-        raw_workers=raw_workers,
-        raw_worker_backend=raw_worker_backend,
         pool=pool,
         backfill_templates=backfill_templates,
         prepare_grouping=prepare_grouping,
@@ -119,9 +104,7 @@ def _prepare_runtime_work(
     progress_callback: Callable[[Mapping[str, object]], None] | None,
     partition_key: str,
     should_cancel: Callable[[], bool] | None = None,
-    raw_workers: int = DEFAULT_ALIGNMENT_WORKERS,
-    raw_worker_backend: str = "thread",
-    pool: WorkerAdmissionPool | None = None,
+    pool: WorkerAdmissionPool,
     backfill_templates: tuple[UntargetedPartitionJob, ...] = (),
     initial_only: bool = False,
     initial_results: tuple[UntargetedInitialSampleResult, ...] | None = None,
@@ -130,13 +113,6 @@ def _prepare_runtime_work(
     ]
     | None = None,
 ) -> _RuntimeWork:
-    if pool is not None:
-        raw_workers = pool.max_workers
-        raw_worker_backend = pool.backend
-    elif raw_worker_backend not in {"process", "thread"}:
-        raise UntargetedPartitionError(
-            "raw_worker_backend must be 'process' or 'thread'"
-        )
 
     def report_phase(stage: str, completed: int, total: int) -> None:
         if progress_callback is not None:
@@ -209,16 +185,8 @@ def _prepare_runtime_work(
     def run() -> Exception | None:
         failure: Exception | None = None
         cancellation: InterruptedError | None = None
-        worker_pool = pool or WorkerAdmissionPool(
-            max_workers=raw_workers,
-            backend=raw_worker_backend,
-            thread_name_prefix="cid-nl-sample",
-            initializer=lambda: ensure_assemblies_loaded(
-                jobs[0].dll_dir, importlib.import_module
-            ),
-        )
-        if worker_pool.initializer is None:
-            worker_pool.set_initializer(
+        if pool.initializer is None:
+            pool.set_initializer(
                 lambda: ensure_assemblies_loaded(
                     jobs[0].dll_dir, importlib.import_module
                 )
@@ -226,7 +194,7 @@ def _prepare_runtime_work(
         stop_applied = False
 
         def stop(error: Exception) -> None:
-            worker_pool.stop(error)
+            pool.stop(error)
 
         cancellation_observed = False
 
@@ -234,15 +202,15 @@ def _prepare_runtime_work(
             nonlocal cancellation_observed
             requested = should_cancel is not None and should_cancel()
             cancellation_observed = cancellation_observed or requested
-            return worker_pool.observe_cancellation(lambda: requested)
+            return pool.observe_cancellation(lambda: requested)
 
         def apply_stop() -> None:
             nonlocal stop_applied
-            if worker_pool.stopped and not stop_applied:
+            if pool.stopped and not stop_applied:
                 stop_applied = True
                 for state in states:
                     if state.error is None:
-                        state.error = worker_pool.first_error
+                        state.error = pool.first_error
 
         phases_by_sample = {
             phase.job.sample.sample_name: phase for phase in batch_phases
@@ -269,7 +237,7 @@ def _prepare_runtime_work(
             for state in sample_states:
                 if state.error is None:
                     state.error = exc
-            worker_pool.stop(exc)
+            pool.stop(exc)
 
         def on_sample_completed(
             stage: str,
@@ -282,7 +250,7 @@ def _prepare_runtime_work(
                 None,
             )
             if err is not None:
-                worker_pool.stop(err)
+                pool.stop(err)
             report_phase(stage, comp, tot)
 
         def make_process_initial_req(
@@ -350,8 +318,8 @@ def _prepare_runtime_work(
 
         try:
             if not observe_cancellation() and initial_results is None:
-                if raw_worker_backend == "process":
-                    worker_pool.run_windowed(
+                if pool.backend == "process":
+                    pool.run_windowed(
                         sample_groups,
                         _execute_sample_initial_worker,
                         task_arg_fn=make_process_initial_req,
@@ -361,7 +329,7 @@ def _prepare_runtime_work(
                         stop_on_error=True,
                     )
                 else:
-                    worker_pool.run_windowed(
+                    pool.run_windowed(
                         sample_groups,
                         initial,
                         on_completed=handle_initial_response,
@@ -404,8 +372,8 @@ def _prepare_runtime_work(
                         )
                         if phase is not None:
                             phase.states = sample_states
-                    if raw_worker_backend == "process":
-                        worker_pool.run_windowed(
+                    if pool.backend == "process":
+                        pool.run_windowed(
                             backfill_groups,
                             _execute_sample_backfill_worker,
                             task_arg_fn=make_process_backfill_req,
@@ -416,7 +384,7 @@ def _prepare_runtime_work(
                             stop_on_error=True,
                         )
                     else:
-                        worker_pool.run_windowed(
+                        pool.run_windowed(
                             backfill_groups,
                             backfill,
                             on_completed=handle_backfill_response,
@@ -426,9 +394,6 @@ def _prepare_runtime_work(
                         )
         except Exception as exc:
             stop(exc)
-        finally:
-            if pool is None:
-                worker_pool.shutdown()
         apply_stop()
 
         for completed, state in enumerate(states, 1):

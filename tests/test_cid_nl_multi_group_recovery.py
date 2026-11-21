@@ -33,6 +33,7 @@ from tests.untargeted_partition_fixtures import (
     build_dense_partition,
     children_of,
     complete_dense_partition,
+    execute_partition_inline,
     project_composed_child,
 )
 from xic_extractor.alignment.cid_nl_inputs import CID_NL_ALIGNMENT_CONFIG
@@ -52,6 +53,7 @@ from xic_extractor.alignment.hypothesis_owner_adapter import (
     owner_from_cid_nl_assessment_support,
 )
 from xic_extractor.alignment.rt_frame import SampleRtFrame
+from xic_extractor.configuration.execution_profile import ExecutionProfile
 from xic_extractor.execution.timing import TimingRecorder
 from xic_extractor.output.alignment.tsv_writer import (
     backfill_query_bounds,
@@ -70,7 +72,6 @@ from xic_extractor.peak_detection.traces import Trace
 from xic_extractor.sample_metadata import SampleMetadata
 from xic_extractor.untargeted_execution.partition import cid_nl_backfill_acquisition
 from xic_extractor.untargeted_execution.partition import models as partition_models
-from xic_extractor.untargeted_execution.partition.execution import execute_partition
 from xic_extractor.untargeted_execution.partition.models import (
     UntargetedPartitionJob,
     project_completed_backfill,
@@ -311,7 +312,7 @@ def test_backfill_query_and_empty_completion_keep_sample_rt_separate_from_group(
             bootstrap, rt_frame=SampleRtFrame().with_warp(warp)
         )
 
-    result = execute_partition(
+    result = execute_partition_inline(
         batch.jobs,
         partition_key="runtime-fixture",
         alignment_config=config,
@@ -420,7 +421,7 @@ def test_rejected_discovery_input_cannot_supply_backfill_support(
         "acquire_untargeted_cid_nl_backfill_trace_batch",
         acquire_recovery,
     )
-    result = execute_partition(
+    result = execute_partition_inline(
         batch.jobs,
         partition_key="runtime-fixture",
         alignment_config=CID_NL_ALIGNMENT_CONFIG,
@@ -612,7 +613,7 @@ def test_runtime_recovers_every_authorized_rt_group(
             for sample in context.samples
         )
     opened = install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
-    result = execute_partition(
+    result = execute_partition_inline(
         jobs,
         partition_key="runtime-fixture",
         alignment_config=CID_NL_ALIGNMENT_CONFIG,
@@ -1088,7 +1089,7 @@ def test_shared_physical_recovery_claim_is_not_assigned_to_two_groups(
     batch = build_dense_partition(
         **_shared_peak_inputs(tmp_path, monkeypatch, mz_separation_ppm)
     )
-    result = execute_partition(
+    result = execute_partition_inline(
         batch.jobs,
         partition_key="runtime-fixture",
         alignment_config=CID_NL_ALIGNMENT_CONFIG,
@@ -1223,7 +1224,7 @@ def test_shared_ms1_only_backfill_peak_is_not_written_to_two_rows(
         signal_processing_profile=TEST_PROFILE,
     )
     install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
-    result = execute_partition(
+    result = execute_partition_inline(
         batch.jobs,
         partition_key="runtime-fixture",
         alignment_config=CID_NL_ALIGNMENT_CONFIG,
@@ -1402,7 +1403,7 @@ def test_ms1_only_backfill_fills_only_one_unique_group_window_peak(
         signal_processing_profile=TEST_PROFILE,
     )
     install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
-    result = execute_partition(
+    result = execute_partition_inline(
         batch.jobs,
         partition_key="runtime-fixture",
         alignment_config=CID_NL_ALIGNMENT_CONFIG,
@@ -1541,7 +1542,7 @@ def test_backfill_reaches_a_sample_whose_support_belongs_to_another_group(
         signal_processing_profile=TEST_PROFILE,
     )
     install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
-    result = execute_partition(
+    result = execute_partition_inline(
         batch.jobs,
         partition_key="runtime-fixture",
         alignment_config=CID_NL_ALIGNMENT_CONFIG,
@@ -1638,6 +1639,7 @@ def _assert_alignment_uses_configured_recovery_groups(
             anchor_min_seed_events=2, preferred_rt_sec=2.0
         ),
         project_child=project_composed_child,
+        execution=ExecutionProfile(backend="thread"),
     )
     assert sorted(len(group.owners) for group in completed.initial_groups) == [1, 2]
     missing = next(
@@ -1748,8 +1750,7 @@ def _backfill_request(tmp_path, options, config):
         discovery_settings=options["settings"],
         peak_config=options["peak_config"],
         execution=UntargetedExecutionPolicy(
-            raw_workers=1,
-            raw_worker_backend="thread",
+            profile=ExecutionProfile(alignment_workers=1, backend="thread"),
             acquisition_cache_dir=tmp_path / "raw-facts",
         ),
     )

@@ -282,9 +282,7 @@ def test_delta_mass_reaches_finalized_workbook_and_readonly_inspector(
     from xic_inspector.sources.targeted_workbook import TargetedWorkbookSource
 
     install_fake_raw_headers(monkeypatch)
-    config = replace(
-        _config(tmp_path), data_dir=tmp_path / "raw", parallel_mode="serial"
-    )
+    config = replace(_config(tmp_path), data_dir=tmp_path / "raw")
     config.data_dir.mkdir()
     for sample in ["one", "two", "missing"]:
         (config.data_dir / f"{sample}.raw").write_bytes(

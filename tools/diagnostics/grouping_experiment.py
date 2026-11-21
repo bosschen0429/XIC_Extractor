@@ -27,7 +27,10 @@ from xic_extractor.alignment.grouping_experiment import (
     replay_grouping,
 )
 from xic_extractor.alignment.rt_frame import RtFrame, SampleRtFrame
-from xic_extractor.configuration.execution_profile import default_parallel_workers
+from xic_extractor.configuration.execution_profile import (
+    ExecutionProfile,
+    load_execution_profile,
+)
 from xic_extractor.diagnostics.grouping_experiment_io import (
     query_discovery,
     read_grouping_inputs,
@@ -135,6 +138,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 def _execute(parser: argparse.ArgumentParser, argv: Sequence[str] | None) -> int:
     args = parser.parse_args(argv)
+    execution = load_execution_profile()
     started = perf_counter()
     args.output_dir.mkdir(parents=True, exist_ok=True)
     try:
@@ -223,15 +227,18 @@ def _execute(parser: argparse.ArgumentParser, argv: Sequence[str] | None) -> int
             baseline: Sequence[CrossSamplePeakGroupHypothesis] | Path = ()
             if grouping_config_changed or rt_model_changed:
                 groups = _replay_grouping(
-                    current, config=config, rt_coordinates=rt_frame
+                    current,
+                    execution=execution,
+                    config=config,
+                    rt_coordinates=rt_frame,
                 )
                 baseline = (
                     args.compare_to
                     if args.compare_to is not None
-                    else _replay_grouping(inputs)
+                    else _replay_grouping(inputs, execution=execution)
                 )
             else:
-                groups = _replay_grouping(inputs)
+                groups = _replay_grouping(inputs, execution=execution)
             summary = {
                 **write_grouping_result(
                     args.output_dir,
@@ -257,6 +264,7 @@ def _execute(parser: argparse.ArgumentParser, argv: Sequence[str] | None) -> int
 def _replay_grouping(
     inputs: GroupingInputs,
     *,
+    execution: ExecutionProfile,
     config: AlignmentConfig | None = None,
     rt_coordinates: RtFrame | None = None,
 ) -> tuple[CrossSamplePeakGroupHypothesis, ...]:
@@ -265,8 +273,8 @@ def _replay_grouping(
     Worksets share no grouping state, so the groups and their order are unchanged.
     """
     worksets = inputs.worksets
-    workers = min(default_parallel_workers(), len(worksets))
-    if workers < 2:
+    workers = min(execution.parallel_workers, len(worksets))
+    if execution.backend != "process" or workers < 2:
         return replay_grouping(inputs, config=config, rt_coordinates=rt_coordinates)
     context = (inputs, config, rt_coordinates)
     results: dict[int, tuple[CrossSamplePeakGroupHypothesis, ...]] = {}
@@ -280,7 +288,7 @@ def _replay_grouping(
         results[index] = groups
 
     with WorkerAdmissionPool(
-        max_workers=workers, backend="process", shared_objects=(context,)
+        max_workers=workers, backend=execution.backend, shared_objects=(context,)
     ) as pool:
         pool.run_windowed(
             sorted(range(len(worksets)), key=lambda i: -len(worksets[i].owners)),

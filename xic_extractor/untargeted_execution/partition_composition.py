@@ -35,7 +35,6 @@ from xic_extractor.alignment.result.application_result import (
     UntargetedCandidateExclusion,
 )
 from xic_extractor.alignment.rt_frame import SampleRtFrame
-from xic_extractor.configuration.execution_profile import DEFAULT_ALIGNMENT_WORKERS
 from xic_extractor.execution.result_store import (
     SealedPartition,
     StreamedResultStore,
@@ -257,7 +256,6 @@ def compose_and_persist_untargeted_partition(
     known_istd_reference: KnownIstdReference | None = None,
     should_cancel: Callable[[], object] | None = None,
     retain_memory: bool = False,
-    raw_workers: int = DEFAULT_ALIGNMENT_WORKERS,
 ) -> PersistedUntargetedPartition:
     """Compose one child at a time and publish only after the full partition.
 

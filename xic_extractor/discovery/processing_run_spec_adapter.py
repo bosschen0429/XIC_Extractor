@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Mapping
-from concurrent.futures import ThreadPoolExecutor
-from contextlib import ExitStack
 from dataclasses import replace
 from pathlib import Path
 from typing import TypedDict
@@ -20,6 +18,7 @@ from xic_extractor.discovery.blank_qualification import (
     serialize_background_library,
 )
 from xic_extractor.discovery.settings import DiscoverySettings
+from xic_extractor.execution.workers import iter_thread_results
 from xic_extractor.processing_identity import (
     AcquisitionSourceExpectation,
     IdentityContractError,
@@ -72,7 +71,7 @@ def compile_discovery_processing_run_spec_with_expectations(
     signal_processing_profile: SignalProcessingProfile = (
         DEFAULT_SIGNAL_PROCESSING_PROFILE
     ),
-    fingerprint_workers: int = 1,
+    fingerprint_threads: int = 1,
     verified_acquisition_sources: Mapping[str, AcquisitionSourceExpectation]
     | None = None,
 ) -> tuple[ProcessingRunSpec, tuple[AcquisitionSourceExpectation, ...]]:
@@ -82,8 +81,8 @@ def compile_discovery_processing_run_spec_with_expectations(
         raise ValueError("raw_paths must be a non-empty Path tuple")
     if any(not isinstance(path, Path) for path in raw_paths):
         raise TypeError("raw_paths must contain Path values")
-    if type(fingerprint_workers) is not int or fingerprint_workers < 1:
-        raise ValueError("fingerprint_workers must be a positive integer")
+    if type(fingerprint_threads) is not int or fingerprint_threads < 1:
+        raise ValueError("fingerprint_threads must be a positive integer")
 
     CidNlDiscoveryMethodSpec(settings=discovery_settings)
     if not isinstance(signal_processing_profile, SignalProcessingProfile):
@@ -113,14 +112,9 @@ def compile_discovery_processing_run_spec_with_expectations(
             )
         return AcquisitionSourceExpectation(source=source, path_identity=before)
 
-    with ExitStack() as stack:
-        if fingerprint_workers > 1:
-            executor = stack.enter_context(
-                ThreadPoolExecutor(max_workers=min(fingerprint_workers, len(raw_paths)))
-            )
-            verified = tuple(executor.map(fingerprint, raw_paths))
-        else:
-            verified = tuple(map(fingerprint, raw_paths))
+    verified = tuple(
+        iter_thread_results(fingerprint, raw_paths, max_workers=fingerprint_threads)
+    )
     for ordinal, (path, expectation) in enumerate(
         zip(raw_paths, verified, strict=True)
     ):

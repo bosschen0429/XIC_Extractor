@@ -18,13 +18,13 @@ from tests.cid_nl_runtime_fixtures import (
 )
 from tests.untargeted_partition_fixtures import (
     build_dense_partition,
+    execute_partition_inline,
 )
 from xic_extractor.alignment.cid_nl_initial_grouping import (
     prepare_cid_nl_grouping,
 )
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.sample_metadata import SampleMetadata
-from xic_extractor.untargeted_execution.partition.execution import execute_partition
 
 
 @pytest.mark.parametrize(
@@ -100,7 +100,7 @@ def test_owner_decides_membership_and_exact_exclusion_from_acquired_evidence(
         "xic_extractor.untargeted_execution.partition.execution.ensure_assemblies_loaded",
         lambda *_: None,
     )
-    initial = execute_partition(
+    initial = execute_partition_inline(
         batch.jobs,
         partition_key="initial",
         initial_only=True,

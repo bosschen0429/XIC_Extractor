@@ -82,5 +82,6 @@ def test_extraction_config_default_factory_uses_shared_parallel_budget(
         nl_min_intensity_ratio=0.01,
     )
 
-    assert config.parallel_mode == "serial"
-    assert config.parallel_workers == 4
+    assert config.execution == execution_settings.ExecutionProfile(
+        parallel_workers=4, backend="thread", overlap_partitions=False
+    )

@@ -25,5 +25,4 @@ def default_extraction_config(
         peak_min_prominence_ratio=0.10,
         ms2_precursor_tol_da=policy.ms2_precursor_tol_da,
         nl_min_intensity_ratio=policy.nl_min_intensity_ratio,
-        parallel_mode="process",
     )

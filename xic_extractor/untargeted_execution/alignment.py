@@ -17,7 +17,7 @@ from typing import cast
 from xic_extractor.acquisition.raw_paths import existing_raw_paths
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.drift_evidence import KnownIstdReference
-from xic_extractor.configuration.execution_profile import DEFAULT_ALIGNMENT_WORKERS
+from xic_extractor.configuration.execution_profile import ExecutionProfile
 from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
@@ -68,8 +68,7 @@ def prepare_untargeted_alignment_inputs(
     sample_metadata: tuple[SampleMetadata, ...] | None = None,
     timing_recorder: TimingRecorder | None = None,
     signal_processing_profile: SignalProcessingProfile,
-    raw_workers: int = DEFAULT_ALIGNMENT_WORKERS,
-    raw_worker_backend: str = "thread",
+    execution: ExecutionProfile,
     should_cancel: Callable[[], bool] | None = None,
     verified_acquisition_sources: Mapping[str, AcquisitionSourceExpectation]
     | None = None,
@@ -136,7 +135,7 @@ def prepare_untargeted_alignment_inputs(
             ordered_raw_paths,
             discovery_settings=settings,
             signal_processing_profile=signal_processing_profile,
-            fingerprint_workers=raw_workers,
+            fingerprint_threads=execution.alignment_workers,
             verified_acquisition_sources=verified_acquisition_sources,
         )
         changed = [
@@ -183,8 +182,7 @@ def complete_untargeted_alignment(
     known_istd_reference: KnownIstdReference | None = None,
     timing_recorder: TimingRecorder | None = None,
     signal_processing_profile: SignalProcessingProfile,
-    raw_workers: int = DEFAULT_ALIGNMENT_WORKERS,
-    raw_worker_backend: str = "thread",
+    execution: ExecutionProfile,
     should_cancel: Callable[[], bool] | None = None,
     progress_callback: Callable[[Mapping[str, object]], None] | None = None,
     retain_partition_memory: bool = False,
@@ -215,8 +213,7 @@ def complete_untargeted_alignment(
         sample_metadata=sample_metadata,
         timing_recorder=timing_recorder,
         signal_processing_profile=signal_processing_profile,
-        raw_workers=raw_workers,
-        raw_worker_backend=raw_worker_backend,
+        execution=execution,
         should_cancel=should_cancel,
         verified_acquisition_sources=(
             {
@@ -236,8 +233,7 @@ def complete_untargeted_alignment(
                 alignment_config=alignment_config,
                 known_istd_reference=known_istd_reference,
                 timing_recorder=timing_recorder,
-                raw_workers=raw_workers,
-                raw_worker_backend=raw_worker_backend,
+                execution=execution,
                 should_cancel=should_cancel,
                 progress_callback=progress_callback,
                 retain_partition_memory=retain_partition_memory,
@@ -269,8 +265,7 @@ def execute_prepared_alignment(
     alignment_config: AlignmentConfig,
     known_istd_reference: KnownIstdReference | None = None,
     timing_recorder: TimingRecorder | None = None,
-    raw_workers: int = DEFAULT_ALIGNMENT_WORKERS,
-    raw_worker_backend: str = "thread",
+    execution: ExecutionProfile,
     should_cancel: Callable[[], bool] | None = None,
     progress_callback: Callable[[Mapping[str, object]], None] | None = None,
     retain_partition_memory: bool = False,
@@ -321,13 +316,11 @@ def execute_prepared_alignment(
             progress_callback=runtime_progress,
             alignment_config=alignment_config,
             known_istd_reference=known_istd_reference,
-            raw_workers=raw_workers,
-            raw_worker_backend=raw_worker_backend,
+            execution=execution,
             should_cancel=should_cancel,
             retain_partition_memory=retain_partition_memory,
             retain_acquisition_cache=retain_acquisition_cache,
             acquisition_cache_dir=acquisition_cache_dir,
-            pipeline_overlap=True,
             max_partition_jobs=max_partition_jobs,
             grouping_only=grouping_only,
             capture_grouping=capture_grouping,

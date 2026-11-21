@@ -10,6 +10,7 @@ from xic_extractor.applications.targeted.application import TargetedApplicationE
 from xic_extractor.applications.targeted.output_boundary import (
     TargetedOutputBoundaryError,
 )
+from xic_extractor.configuration.execution_profile import ExecutionProfile
 from xic_extractor.configuration.loader import PreparedTargetedConfig
 from xic_extractor.configuration.models import ConfigError, ExtractionConfig, Target
 from xic_extractor.extraction.result_models import RunOutput
@@ -185,7 +186,7 @@ def test_cli_preserves_loaded_parallel_settings_when_overrides_are_omitted(
     tmp_path: Path, monkeypatch, cli_execution, capsys
 ) -> None:
     module = _module()
-    config = replace(_config(tmp_path), parallel_mode="process", parallel_workers=4)
+    config = replace(_config(tmp_path), execution=ExecutionProfile(parallel_workers=4))
     targets = [_target("Analyte")]
 
     monkeypatch.setattr(
@@ -199,8 +200,9 @@ def test_cli_preserves_loaded_parallel_settings_when_overrides_are_omitted(
     exit_code = module.main(["--base-dir", str(tmp_path)])
 
     assert exit_code == 0
-    assert cli_execution.call_args.args[0].config.parallel_mode == "process"
-    assert cli_execution.call_args.args[0].config.parallel_workers == 4
+    assert cli_execution.call_args.args[0].config.execution == ExecutionProfile(
+        parallel_workers=4
+    )
     assert "Processed files: 2" in capsys.readouterr().out
 
 
@@ -390,7 +392,6 @@ def test_cli_target_list_freezes_inputs_only_until_run_finishes(
     assert config.data_dir == new_batch
     assert config.dll_dir == dll_dir
     assert config.nl_min_intensity_ratio == 0.01
-    assert config.parallel_workers >= 1
     assert [target.label for target in cli_execution.call_args.args[0].targets] == [
         "MethodTarget"
     ]

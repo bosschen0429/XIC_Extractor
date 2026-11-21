@@ -7,6 +7,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Protocol, cast
 
+from xic_extractor.configuration.execution_profile import ExecutionProfile
 from xic_extractor.configuration.mass_recalibration import (
     MassRecalibration,
     MassRecalibrationResult,
@@ -169,14 +170,12 @@ def run_discovery_batch(
     dll_dir: Path,
     raw_opener: RawOpener | None = None,
     timing_recorder: TimingRecorder | None = None,
-    max_workers: int = 1,
+    execution: ExecutionProfile,
     executor_factory: Callable[..., Any] | None = None,
     progress_callback: Callable[[int, int, str], None] | None = None,
     run_spec: ProcessingRunSpec,
     should_cancel: Callable[[], bool] | None = None,
 ) -> DiscoveryBatchOutputs:
-    if max_workers < 1:
-        raise ValueError("max_workers must be >= 1")
     raise_if_discovery_cancelled(should_cancel)
     recorder = timing_recorder or TimingRecorder.disabled("discovery")
     run_inputs = validate_processing_run_spec_call(
@@ -184,11 +183,12 @@ def run_discovery_batch(
         raw_paths,
         discovery_settings=settings,
     )
-    if max_workers > 1:
+    max_workers = min(len(raw_paths), execution.parallel_workers)
+    if execution.backend == "process" and max_workers > 1:
         if raw_opener is not None:
             raise ValueError(
                 "parallel Discovery owns RAW handles inside spawned workers; "
-                "raw_opener injection requires max_workers=1"
+                "raw_opener injection requires in-process execution"
             )
         return run_discovery_batch_process(
             raw_paths,

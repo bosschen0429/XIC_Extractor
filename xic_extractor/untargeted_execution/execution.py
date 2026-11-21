@@ -23,7 +23,7 @@ from xic_extractor.alignment.result.application_result import (
     FinalizedUntargetBatchApplicationResult,
 )
 from xic_extractor.alignment.rt_anchors import RtAnchorObservation
-from xic_extractor.configuration.execution_profile import DEFAULT_ALIGNMENT_WORKERS
+from xic_extractor.configuration.execution_profile import ExecutionProfile
 from xic_extractor.execution.partitions import (
     PartitionAcquisitionOutput,
     PartitionCompositionOutput,
@@ -100,8 +100,6 @@ class FrozenBackfillPartition:
             backfill_templates=self.batch.sample_job_templates,
             initial_results=self.initial_results,
             initial_only=False,
-            raw_workers=pool.max_workers,
-            raw_worker_backend=pool.backend,
             progress_callback=progress_callback,
             should_cancel=should_cancel,
         )
@@ -242,10 +240,8 @@ class UntargetedPartitionPipelineAdapter:
         *,
         alignment_config: AlignmentConfig,
         known_istd_reference: KnownIstdReference | None = None,
+        execution: ExecutionProfile,
         max_partition_jobs: int = 100_000,
-        raw_workers: int = DEFAULT_ALIGNMENT_WORKERS,
-        raw_worker_backend: str = "thread",
-        acquisition_workers: int = 1,
         acquisition_cache_dir: Path | None = None,
         retain_partition_spool: bool = False,
         grouping_only: bool = False,
@@ -256,8 +252,6 @@ class UntargetedPartitionPipelineAdapter:
         | None = None,
         project_child: ChildOutputProjection | None = None,
     ) -> None:
-        if type(acquisition_workers) is not int or acquisition_workers not in (1, 2):
-            raise ValueError("acquisition_workers must be 1 or 2")
         if project_child is None and not grouping_only:
             raise ValueError("composing children requires an output projection")
         self._retain_partition_spool = bool(retain_partition_spool)
@@ -282,8 +276,7 @@ class UntargetedPartitionPipelineAdapter:
             )
         )
         self._max_partition_jobs = max_partition_jobs
-        self._raw_workers = raw_workers
-        self._raw_worker_backend = raw_worker_backend
+        self._execution = execution
         self._acquisition_cache_dir = acquisition_cache_dir
         self._mass_recalibration_by_sample = mass_recalibration_by_sample
 
@@ -354,15 +347,15 @@ class UntargetedPartitionPipelineAdapter:
         subject_partitions = tuple(subject_partitions_list)
         self._acquisition_workers = (
             2
-            if acquisition_workers == 2
+            if execution.overlap_partitions
             and len(subject_partitions) > 1
-            and raw_workers >= 2
+            and execution.alignment_workers >= 2
             else 1
         )
         self._partition_raw_workers = (
-            raw_workers
-            if raw_worker_backend == "process"
-            else raw_workers // self._acquisition_workers
+            execution.alignment_workers
+            if execution.backend == "process"
+            else execution.alignment_workers // self._acquisition_workers
         )
         partitions: list[WorkPartition[tuple[CidNlMethodSubject, ...]]] = []
         for phase in ("initial",) if grouping_only else ("initial", "backfill"):
@@ -391,7 +384,7 @@ class UntargetedPartitionPipelineAdapter:
         self._process_pool_lock = threading.Lock()
         self._process_pools_closed = False
         self._process_pools: tuple[WorkerAdmissionPool, ...] = ()
-        if raw_worker_backend == "process":
+        if execution.backend == "process":
             shared_objects = _sample_worker_shared_objects(
                 self._samples,
                 _sample_worker_subject_owners(
@@ -562,9 +555,8 @@ class UntargetedPartitionPipelineAdapter:
             plan,
             alignment_config=self._alignment_config,
             known_istd_reference=self._known_istd_reference,
+            execution=replace(self._execution, overlap_partitions=False),
             max_partition_jobs=self._max_partition_jobs,
-            raw_workers=self._raw_workers,
-            raw_worker_backend=self._raw_worker_backend,
             acquisition_cache_dir=self._acquisition_cache_dir,
             mass_recalibration_by_sample=self._mass_recalibration_by_sample,
             grouping_only=True,
@@ -640,8 +632,6 @@ class UntargetedPartitionPipelineAdapter:
                 ),
                 backfill_templates=batch.sample_job_templates,
                 alignment_config=self._alignment_config,
-                raw_workers=self._partition_raw_workers,
-                raw_worker_backend=self._raw_worker_backend,
                 initial_only=True,
                 initial_results=None,
             )
@@ -658,7 +648,7 @@ class UntargetedPartitionPipelineAdapter:
             batch = frozen.batch
             execute = partial(frozen.execute, partition_key=partition.partition_key)
 
-        if self._raw_worker_backend == "process":
+        if self._execution.backend == "process":
             if self._process_pools_closed:
                 raise RuntimeError("process worker pools are already closed")
             pool = self._process_pools[0]
@@ -674,7 +664,7 @@ class UntargetedPartitionPipelineAdapter:
         else:
             pool_context = WorkerAdmissionPool(
                 max_workers=self._partition_raw_workers,
-                backend=self._raw_worker_backend,
+                backend=self._execution.backend,
                 thread_name_prefix="cid-nl-sample",
             )
         with pool_context as pool:
@@ -743,7 +733,6 @@ class UntargetedPartitionPipelineAdapter:
             known_istd_reference=self._known_istd_reference,
             should_cancel=cancel_check,
             retain_memory=retain_memory,
-            raw_workers=self._raw_workers,
         )
         return PartitionCompositionOutput(result=persisted, sealed=persisted.sealed)
 
@@ -812,15 +801,13 @@ def execute_untargeted_plan(
     alignment_config: AlignmentConfig,
     progress_callback: Callable[[Mapping[str, object]], None] | None = None,
     known_istd_reference: KnownIstdReference | None = None,
+    execution: ExecutionProfile,
     max_partition_jobs: int = 100_000,
-    raw_workers: int = DEFAULT_ALIGNMENT_WORKERS,
-    raw_worker_backend: str = "thread",
     should_cancel: Callable[[], bool] | None = None,
     retain_partition_memory: bool = False,
     retain_partition_spool: bool = False,
     retain_acquisition_cache: bool = False,
     acquisition_cache_dir: Path | None = None,
-    pipeline_overlap: bool = False,
     grouping_only: bool = False,
     capture_grouping: Callable[[PreparedGroupingExperiment], None] | None = None,
     capture_backfill: Callable[[FrozenBackfillPartition], None] | None = None,
@@ -839,16 +826,11 @@ def execute_untargeted_plan(
         raise TypeError("bounded execution requires a production plan")
     if type(max_partition_jobs) is not int or max_partition_jobs < 1:
         raise ValueError("partition job budget must be a positive integer")
-    if type(raw_workers) is not int or raw_workers < 1:
-        raise ValueError("raw_workers must be a positive integer")
-    if raw_worker_backend not in {"process", "thread"}:
-        raise ValueError("raw_worker_backend must be 'process' or 'thread'")
     if (grouping_only or capture_grouping is not None) and any(
         subject.composition is not None for subject in plan.subject_batch.subjects
     ):
         raise ValueError("Grouping replay requires a scalar CID-NL preset")
 
-    requested_acquisition_workers = 2 if pipeline_overlap and raw_workers >= 2 else 1
     cache_dir = (
         Path(acquisition_cache_dir)
         if acquisition_cache_dir is not None
@@ -858,10 +840,8 @@ def execute_untargeted_plan(
         plan,
         alignment_config=alignment_config,
         known_istd_reference=known_istd_reference,
+        execution=execution,
         max_partition_jobs=max_partition_jobs,
-        raw_workers=raw_workers,
-        raw_worker_backend=raw_worker_backend,
-        acquisition_workers=requested_acquisition_workers,
         acquisition_cache_dir=cache_dir,
         retain_partition_spool=retain_partition_spool,
         grouping_only=grouping_only,
@@ -879,7 +859,7 @@ def execute_untargeted_plan(
             progress_callback=progress_callback,
             should_cancel=should_cancel,
             retain_partition_memory=retain_partition_memory,
-            pipeline_overlap=pipeline_overlap,
+            pipeline_overlap=execution.overlap_partitions,
             acquisition_workers=adapter.acquisition_workers,
             store_factory=StreamedResultStore,
             acquisition_cleanup=adapter.close_process_worker_pools,

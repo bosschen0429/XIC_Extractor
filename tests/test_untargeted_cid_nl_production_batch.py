@@ -56,6 +56,7 @@ from xic_extractor.alignment.result.scientific_alignment import (
     ObservedSearchSubject,
 )
 from xic_extractor.alignment.rt_frame import SampleRtFrame
+from xic_extractor.configuration.execution_profile import ExecutionProfile
 from xic_extractor.discovery.csv_reader import DiscoveryBatchInput
 from xic_extractor.discovery.input_source import DiscoveryInputSource
 from xic_extractor.discovery.models import (
@@ -365,6 +366,7 @@ def test_alignment_adapter_prepares_and_executes_bounded_once(
             ),
         ),
         project_child=project_composed_child,
+        execution=ExecutionProfile(backend="thread"),
     )
 
     assert result.application_result is application_result
@@ -680,7 +682,9 @@ def test_discovery_review_rows_cannot_become_alignment_roots(
         plan,
         output_dir=tmp_path / "admission-output",
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
-        raw_workers=1,
+        execution=ExecutionProfile(
+            alignment_workers=1, backend="thread", overlap_partitions=False
+        ),
         project_child=project_composed_child,
     )
     assert set(completed.application_result.candidate_ids) == admitted

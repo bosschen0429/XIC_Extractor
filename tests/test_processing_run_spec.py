@@ -13,6 +13,7 @@ from tests.processing_run_spec_fixtures import (
     _settings,
 )
 from xic_extractor.configuration.cid_nl_profile import NeutralLossProfile
+from xic_extractor.configuration.execution_profile import in_process_execution
 from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
@@ -99,7 +100,7 @@ def test_parallel_fingerprints_preserve_identity_order_and_overlap(
         adapter, "build_local_acquisition_source_identity", concurrent_fingerprint
     )
     actual = adapter.compile_discovery_processing_run_spec_with_expectations(
-        paths, discovery_settings=_settings(), fingerprint_workers=2
+        paths, discovery_settings=_settings(), fingerprint_threads=2
     )
     assert actual == expected
     assert len(thread_ids) == 2
@@ -155,7 +156,7 @@ def test_parallel_fingerprints_reject_source_changed_during_read(
     )
     with pytest.raises(IdentityContractError, match="changed during"):
         adapter.compile_discovery_processing_run_spec_with_expectations(
-            paths, discovery_settings=_settings(), fingerprint_workers=2
+            paths, discovery_settings=_settings(), fingerprint_threads=2
         )
 
 
@@ -590,6 +591,7 @@ def test_bound_blank_snapshot_controls_each_sample_after_library_mutation(
         dll_dir=pipeline_config(tmp_path).dll_dir,
         raw_opener=lambda path, _dll: handles[path],
         run_spec=spec,
+        execution=in_process_execution(),
     )
     states = {
         output.peaks_csv.parent.name: _read_csv(output.peaks_csv)[0]["status"]

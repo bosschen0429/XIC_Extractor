@@ -1,7 +1,8 @@
-"""Reusable thread/process admission pools and one-shot process-job execution.
+"""The only place that opens thread or process pools.
 
 WorkerAdmissionPool retains its pool until close; execute_process_jobs creates
-and drains a separate executor for each call.
+and drains a separate executor for each call; iter_thread_results reads in
+input order. Callers size them from the run's ExecutionProfile.
 """
 
 from __future__ import annotations
@@ -10,6 +11,7 @@ import os
 import threading
 from collections.abc import (
     Callable,
+    Generator,
     Iterable,
     Sequence,
 )
@@ -84,14 +86,34 @@ def _execute_owner_task(
     )
 
 
+def iter_thread_results(
+    worker_fn: Callable[[TItem], TResult],
+    items: Sequence[TItem],
+    *,
+    max_workers: int,
+) -> Generator[TResult]:
+    """Yield results in input order; closing early cancels unstarted items."""
+    if max_workers < 2 or len(items) < 2:
+        yield from map(worker_fn, items)
+        return
+    with ThreadPoolExecutor(max_workers=min(max_workers, len(items))) as executor:
+        futures = [executor.submit(worker_fn, item) for item in items]
+        try:
+            for future in futures:
+                yield future.result()
+        finally:
+            for future in futures:
+                future.cancel()
+
+
 class WorkerAdmissionPool:
     """Manages worker concurrency budgets, admission windowing, and lifecycle."""
 
     def __init__(
         self,
         *,
-        max_workers: int = 1,
-        backend: str = "thread",
+        max_workers: int,
+        backend: str,
         thread_name_prefix: str = "execution-worker",
         initializer: Callable[[], None] | None = None,
         mp_context: BaseContext | None = None,
@@ -386,7 +408,10 @@ def execute_process_jobs(
     success_result_delivery: Callable[[int, Any], Any] | None = None,
     should_cancel: Callable[[], bool] | None = None,
 ) -> ProcessJobExecutionReport:
-    """Stop dispatch on failure/cancellation; drain active work on cancellation."""
+    """Stop dispatch on failure/cancellation; drain active work on cancellation.
+
+    Finished work never waits for idle workers to exit.
+    """
 
     pending_jobs = tuple(jobs)
     if max_workers < 1:
@@ -505,7 +530,7 @@ def execute_process_jobs(
             _observe_cancellation()
         _shutdown_executor(
             executor,
-            wait_for_workers=first_failure is None or cancellation_requested,
+            wait_for_workers=cancellation_requested,
             cancel_futures=first_failure is not None or cancellation_requested,
         )
 

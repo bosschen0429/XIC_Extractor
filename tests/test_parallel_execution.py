@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from xic_extractor.configuration.execution_profile import ExecutionProfile
 from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.output.messages import DiagnosticRecord
 
@@ -110,7 +111,7 @@ def test_parallel_full_extraction_submits_pickleable_scoring_jobs_and_sorts(
         RawFileExtractionResult,
     )
 
-    config = replace(_config(tmp_path), parallel_mode="process", parallel_workers=2)
+    config = replace(_config(tmp_path), execution=ExecutionProfile(parallel_workers=2))
     raw_paths = [tmp_path / "A.raw", tmp_path / "B.raw"]
     targets = (_target("Analyte"),)
     submitted = []
@@ -161,7 +162,7 @@ def test_parallel_full_extraction_worker_error_fails_with_raw_name(
         collect_raw_file_results_process,
     )
 
-    config = replace(_config(tmp_path), parallel_mode="process", parallel_workers=2)
+    config = replace(_config(tmp_path), execution=ExecutionProfile(parallel_workers=2))
     raw_paths = [tmp_path / "A.raw"]
 
     def _runner(jobs, *, max_workers, **_kwargs):
