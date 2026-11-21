@@ -71,6 +71,45 @@ def test_membership_consumes_the_composed_support_rule(bootstrap: bool) -> None:
         )
 
 
+def _heavy_owner(sample: str, precursor_mz: float, product_mz: float):
+    owner = cid_nl_owner(sample, "heavy", precursor_mz=precursor_mz, apex_rt=27.1)
+    event = replace(
+        owner.primary_identity_event,
+        product_mz=product_mz,
+        observed_neutral_loss_da=precursor_mz - product_mz,
+    )
+    return replace(owner, primary_identity_event=event)
+
+
+@pytest.mark.parametrize(
+    ("right_product_mz", "grouped"),
+    [
+        pytest.param(380.2302, True, id="derived-losses-5.1-mDa-apart"),
+        pytest.param(380.2236, False, id="product-26-ppm-apart"),
+    ],
+)
+def test_bootstrap_identity_uses_measured_ion_masses_not_derived_loss(
+    right_product_mz: float, grouped: bool
+) -> None:
+    """A loss is precursor minus product; its error scales with those masses.
+
+    Precursors 3.6 ppm and products 8.7 ppm apart derive losses 5.1 mDa apart,
+    about 44 ppm of the 116 Da loss, and stay one feature. A product 26 ppm
+    apart remains a measurement mismatch.
+    """
+    owners = (
+        _heavy_owner("a", 496.2752, 380.2335),
+        _heavy_owner("b", 496.2770, right_product_mz),
+    )
+    result = infer_feature_memberships(
+        owners,
+        config=AlignmentConfig(),
+        rt_frame=SampleRtFrame(injection_order={"a": 1, "b": 2}),
+    )
+    together = frozenset(owner.owner_id for owner in owners)
+    assert (together in _memberships(result)) is grouped
+
+
 @dataclass(frozen=True, slots=True)
 class _DriftLookup:
     deltas: dict[str, float | None]

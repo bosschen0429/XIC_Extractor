@@ -11,7 +11,6 @@ class AlignmentConfig:
     max_ppm: float = 50.0
     preferred_rt_sec: float = 60.0
     product_mz_tolerance_ppm: float = 20.0
-    observed_loss_tolerance_ppm: float = 20.0
     min_peak_shape_similarity: float = 0.80
     anchor_min_evidence_score: int = 60
     anchor_min_seed_events: int = 2
@@ -33,10 +32,6 @@ class AlignmentConfig:
             self.min_peak_shape_similarity,
             0,
             1,
-        )
-        _require_positive(
-            "observed_loss_tolerance_ppm",
-            self.observed_loss_tolerance_ppm,
         )
         _require_int_range(
             "anchor_min_evidence_score",

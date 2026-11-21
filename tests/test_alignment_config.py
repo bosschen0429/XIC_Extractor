@@ -26,7 +26,6 @@ def test_default_config_matches_alignment_contract():
     assert config.max_ppm == 50.0
     assert config.preferred_rt_sec == 60.0
     assert config.product_mz_tolerance_ppm == 20.0
-    assert config.observed_loss_tolerance_ppm == 20.0
     assert config.min_peak_shape_similarity == 0.80
     assert config.anchor_min_evidence_score == 60
     assert config.anchor_min_seed_events == 2
@@ -63,7 +62,6 @@ def test_alignment_config_owner_gate_validation(field, value):
         {"preferred_ppm": 51.0, "max_ppm": 50.0},
         {"preferred_rt_sec": 0.0},
         {"product_mz_tolerance_ppm": 0.0},
-        {"observed_loss_tolerance_ppm": -1.0},
         {"min_peak_shape_similarity": -0.1},
         {"min_peak_shape_similarity": 1.1},
         {"min_peak_shape_similarity": math.nan},
@@ -84,7 +82,6 @@ def test_invalid_tolerance_windows_are_rejected(kwargs):
         "max_ppm",
         "preferred_rt_sec",
         "product_mz_tolerance_ppm",
-        "observed_loss_tolerance_ppm",
     ],
 )
 @pytest.mark.parametrize("value", [math.nan, math.inf, -math.inf])
@@ -102,7 +99,6 @@ def test_non_finite_tolerance_windows_are_rejected(field, value):
         "max_ppm",
         "preferred_rt_sec",
         "product_mz_tolerance_ppm",
-        "observed_loss_tolerance_ppm",
     ],
 )
 def test_bool_tolerance_windows_are_rejected(field):
