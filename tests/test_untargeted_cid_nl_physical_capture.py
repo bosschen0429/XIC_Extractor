@@ -11,7 +11,6 @@ import pytest
 from tests.cid_nl_raw_fixture import (
     _FakeRaw,
     _open_bound_raw,
-    _peak_config,
     _settings,
 )
 from tests.discovery_csv_fixtures import located_scan_ids, representative_event
@@ -102,7 +101,6 @@ def test_alignment_remeasures_the_discovery_peak_and_preserves_support(
         rt_min=12.8,
         rt_max=13.4,
     )
-    peak_config = _peak_config(tmp_path)
     profile = SignalProcessingProfile(window_points=15)
     raw, vendor = _open_bound_raw(fixture, "S1", source_raw, tmp_path=tmp_path)
     if precursor_case == "inferred":
@@ -179,7 +177,6 @@ def test_alignment_remeasures_the_discovery_peak_and_preserves_support(
         method_subject=fixture.method_subject,
         peaks=discovery.peaks,
         settings=settings,
-        peak_config=peak_config,
         raw=raw,
         signal_processing_profile=profile,
     )
@@ -230,7 +227,6 @@ def test_alignment_remeasures_the_discovery_peak_and_preserves_support(
         method_subject=fixture.method_subject,
         peaks=discovery.peaks,
         settings=settings,
-        peak_config=peak_config,
         raw=raw,
         signal_processing_profile=profile,
         _preacquired_traces=batch,
@@ -302,7 +298,6 @@ def test_apex_ion_window_is_measured_once_and_adopted_by_alignment(
 
     monkeypatch.setattr(vendor, "GetChromatogramData", mass_filtered_chromatogram)
     settings = replace(_settings(), neutral_loss_profile=None)
-    peak_config = _peak_config(tmp_path)
     profile = SignalProcessingProfile(window_points=15)
 
     def discover(ms1_centroid):
@@ -352,7 +347,6 @@ def test_apex_ion_window_is_measured_once_and_adopted_by_alignment(
         method_subject=method_subject,
         peaks=(candidate,),
         settings=settings,
-        peak_config=peak_config,
         raw=raw,
         signal_processing_profile=profile,
     )
@@ -402,7 +396,6 @@ def test_adapter_supports_adjacent_physical_peaks_with_interior_scans(
         for height, center in ((200.0, 7.8), (1000.0, 8.2))
     )
     settings = replace(_settings(), neutral_loss_profile=None)
-    peak_config = _peak_config(tmp_path)
     profile = SignalProcessingProfile(window_points=15)
     raw, _vendor = _open_bound_raw(fixture, "S1", source_raw, tmp_path=tmp_path)
     seeds = collect_strict_nl_events(
@@ -424,7 +417,6 @@ def test_adapter_supports_adjacent_physical_peaks_with_interior_scans(
         method_subject=fixture.method_subject,
         peaks=discovery.peaks,
         settings=settings,
-        peak_config=peak_config,
         raw=raw,
         signal_processing_profile=profile,
     )

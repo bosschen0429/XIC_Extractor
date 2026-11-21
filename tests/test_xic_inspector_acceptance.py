@@ -260,7 +260,7 @@ def test_acceptance_a9_pipeline_shared_callable_handoff(tmp_path, monkeypatch) -
         tmp_path, monkeypatch, "positive"
     )
     import xic_extractor.applications.untargeted.application as application
-    from tests.alignment_pipeline_helpers import peak_config, write_batch
+    from tests.alignment_pipeline_helpers import write_batch
     from tests.cid_nl_raw_fixture import _settings
 
     batch_index = write_batch(tmp_path, ("S1", "S2"))
@@ -285,7 +285,6 @@ def test_acceptance_a9_pipeline_shared_callable_handoff(tmp_path, monkeypatch) -
             dll_dir=tmp_path,
             output_dir=tmp_path / "published",
             alignment_config=config,
-            peak_config=peak_config(),
             discovery_settings=replace(
                 _settings(), mass_recalibration=MassRecalibration.NONE
             ),

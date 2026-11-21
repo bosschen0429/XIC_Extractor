@@ -306,7 +306,6 @@ def test_application_outputs_formal_groups_with_an_optional_snapshot(
                 output_dir=tmp_path / "snapshot",
                 alignment_config=AlignmentConfig(anchor_min_seed_events=1),
                 discovery_settings=plan.context.settings,
-                peak_config=plan.context.peak_config,
                 execution=UntargetedExecutionPolicy(
                     profile=ExecutionProfile(
                         alignment_workers=raw_workers, backend="thread"
@@ -1159,7 +1158,6 @@ def test_grouping_anchor_table_lists_istd_knots_without_any_workset(
             output_dir=tmp_path / "grouping",
             alignment_config=AlignmentConfig(),
             discovery_settings=plan.context.settings,
-            peak_config=plan.context.peak_config,
         )
     )
 

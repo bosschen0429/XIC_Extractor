@@ -116,7 +116,6 @@ def test_retained_alignment_keeps_full_root_injection_order(
         TEST_PROFILE,
         _current_candidates,
         _FakeRaw,
-        _peak_config,
         _settings,
     )
     from tests.cid_nl_runtime_fixtures import persist_discovery_batch
@@ -154,7 +153,7 @@ def test_retained_alignment_keeps_full_root_injection_order(
         original_header, role, name = facts[paths[1]]
         facts[copy] = (replace(original_header, raw_path=str(copy)), role, name)
         selected_paths = (copy, paths[2])
-    settings, config = _settings(), _peak_config(tmp_path)
+    settings = _settings()
     candidates = {
         p.stem: _current_candidates(
             _FakeRaw((7.98,)),
@@ -177,7 +176,6 @@ def test_retained_alignment_keeps_full_root_injection_order(
         dll_dir=tmp_path,
         output_dir=tmp_path / "out",
         settings=settings,
-        peak_config=config,
         execution=in_process_execution(),
     )
     orders = {s.raw_stem: s.injection_order for s in plan.context.samples}
@@ -199,7 +197,6 @@ def test_supplied_metadata_with_an_excluded_sample_aligns_the_analyzed_samples(
         TEST_PROFILE,
         _current_candidates,
         _FakeRaw,
-        _peak_config,
         _settings,
     )
     from tests.cid_nl_runtime_fixtures import persist_discovery_batch
@@ -211,7 +208,7 @@ def test_supplied_metadata_with_an_excluded_sample_aligns_the_analyzed_samples(
     paths = (tmp_path / "A.raw", tmp_path / "B.raw")
     for path in paths:
         path.write_bytes(path.name.encode())
-    settings, config = _settings(), _peak_config(tmp_path)
+    settings = _settings()
     candidates = {
         p.stem: _current_candidates(
             _FakeRaw((7.98,)),
@@ -246,7 +243,6 @@ def test_supplied_metadata_with_an_excluded_sample_aligns_the_analyzed_samples(
         dll_dir=tmp_path,
         output_dir=tmp_path / "out",
         settings=settings,
-        peak_config=config,
         sample_metadata=metadata,
         execution=in_process_execution(),
     )

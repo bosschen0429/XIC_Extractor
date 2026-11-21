@@ -1,10 +1,7 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
-from xic_extractor.configuration.execution_profile import (
-    ExecutionProfile,
-    in_process_execution,
-)
+from xic_extractor.configuration.execution_profile import ExecutionProfile
 from xic_extractor.configuration.mass_recalibration import (
     MassRecalibration,
     resolve_mass_recalibration,
@@ -31,6 +28,7 @@ class ExtractionConfig:
     peak_min_prominence_ratio: float
     ms2_precursor_tol_da: float
     nl_min_intensity_ratio: float
+    execution: ExecutionProfile
     ms1_morphology_smoothing_window_points: int = 15
     resolver_mode: str = CANONICAL_RESOLVER_MODE
     resolver_chrom_threshold: float = 0.05
@@ -42,10 +40,8 @@ class ExtractionConfig:
     resolver_peak_duration_max: float = 2.0
     resolver_min_scans: int = 5
     count_no_ms2_as_detected: bool = False
-    nl_rt_anchor_half_window_min: float = 1.0
     injection_order_source: Path | None = None
     baseline_integration_method: str = "asls"
-    execution: ExecutionProfile = field(default_factory=in_process_execution)
     target_config_hash: str = ""
     signal_processing_method: str = DEFAULT_SIGNAL_PROCESSING_PROFILE.method
     signal_processing_window_points: int = (

@@ -463,7 +463,6 @@ def _runtime_sample_groups(
             or state.job.candidates != first.candidates
             or state.job.discovery_receipt != first.discovery_receipt
             or state.job.settings != first.settings
-            or state.job.peak_config != first.peak_config
             or state.job.raw_path != first.raw_path
             or state.job.dll_dir != first.dll_dir
             for state in group[1:]
