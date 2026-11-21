@@ -6,6 +6,7 @@ from openpyxl import load_workbook
 
 from tests.raw_header_fakes import install_fake_raw_headers
 from xic_extractor import extractor
+from xic_extractor.configuration.execution_profile import in_process_execution
 from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.extraction.result_models import RunOutput
 from xic_extractor.output.excel_pipeline import write_excel_from_run_output
@@ -131,6 +132,7 @@ def _config(tmp_path: Path) -> ExtractionConfig:
         peak_min_prominence_ratio=0.10,
         ms2_precursor_tol_da=0.5,
         nl_min_intensity_ratio=0.01,
+        execution=in_process_execution(),
     )
 
 

@@ -14,7 +14,6 @@ from tests.cid_nl_raw_fixture import (
     TEST_PROFILE,
     _current_candidates,
     _FakeRaw,
-    _peak_config,
 )
 from tests.cid_nl_runtime_fixtures import install_runtime_raws
 from tests.untargeted_partition_fixtures import (
@@ -72,7 +71,6 @@ def test_configured_composition_runs_discovery_to_owner_matrix(
         encoding="utf-8",
     )
     settings = apply_to_discovery(load_preset(str(preset_file)))
-    peak_config = _peak_config(tmp_path)
     recovery = scenario.startswith("recovery_")
     paths = tuple(
         tmp_path / f"S{i}.synthetic"
@@ -128,7 +126,6 @@ def test_configured_composition_runs_discovery_to_owner_matrix(
             for i, p in enumerate(paths)
         ),
         settings=settings,
-        peak_config=peak_config,
         peaks_by_sample=candidates,
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,

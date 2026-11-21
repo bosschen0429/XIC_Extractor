@@ -10,7 +10,6 @@ from tests.cid_nl_raw_fixture import (
     TEST_PROFILE,
     _current_candidates,
     _FakeRaw,
-    _peak_config,
     _settings,
 )
 from tests.cid_nl_runtime_fixtures import (
@@ -36,7 +35,6 @@ def _plan(
             5.0 if scenario == "cross_subject_recovery" else 1.0
         ),
     )
-    peak_config = _peak_config(tmp_path)
     raws = {}
     candidates = {}
     for sample_index, path in enumerate(paths):
@@ -45,7 +43,6 @@ def _plan(
         raw, sample_candidates = _nearby_subject_candidates(
             path,
             settings=settings,
-            peak_config=peak_config,
         )
         third_raw = _FakeRaw(
             (7.98,), scan_precursor_mz=500.008, neutral_loss_das=(116.0474,)
@@ -124,7 +121,6 @@ def _plan(
             for index, path in enumerate(paths)
         ),
         settings=settings,
-        peak_config=peak_config,
         peaks_by_sample=candidates,
         root=tmp_path / "persisted",
         dll_dir=tmp_path,

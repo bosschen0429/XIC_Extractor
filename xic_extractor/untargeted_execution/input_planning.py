@@ -11,7 +11,6 @@ from xic_extractor.alignment.drift_evidence import KnownIstdReference
 from xic_extractor.alignment.result.application_result import (
     UntargetedCandidateExclusion,
 )
-from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
@@ -199,7 +198,6 @@ def prepare_indexed_untargeted_plan(
     raw_paths: tuple[Path, ...],
     sample_metadata: tuple[SampleMetadata, ...],
     settings: DiscoverySettings,
-    peak_config: ExtractionConfig,
     dll_dir: Path,
     profile: SignalProcessingProfile,
     acquisition_source_expectations: tuple[AcquisitionSourceExpectation, ...],
@@ -268,7 +266,6 @@ def prepare_indexed_untargeted_plan(
     context = compose_partition_context(
         method_subject=subject_batch,
         settings=settings,
-        peak_config=peak_config,
         paths_by_stem={path.stem: path for path in raw_paths},
         metadata_by_stem={sample.raw_stem: sample for sample in sample_metadata},
         source_expectations=expectations,

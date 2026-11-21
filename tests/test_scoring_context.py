@@ -5,6 +5,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from xic_extractor.configuration.execution_profile import in_process_execution
 from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
@@ -318,6 +319,7 @@ def _config(**overrides: object) -> ExtractionConfig:
         ms2_precursor_tol_da=1.6,
         nl_min_intensity_ratio=0.01,
         injection_order_source=None,
+        execution=in_process_execution(),
     )
     return ExtractionConfig(**{**config.__dict__, **overrides})
 

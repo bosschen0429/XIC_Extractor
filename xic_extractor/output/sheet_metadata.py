@@ -24,7 +24,6 @@ _DESCRIPTIONS = {
     "nl_min_intensity_ratio": "NL 候選產物的最低相對強度設定。",
     "count_no_ms2_as_detected": "保留的相容設定，不取代每一筆正式結果的計數判定。",
     "nl_rt_anchor_search_margin_min": "尋找 NL 定位點時使用的 RT 範圍設定（min）。",
-    "nl_rt_anchor_half_window_min": "NL 定位點周圍的搜尋半寬（min）。",
     "nl_fallback_half_window_min": "無可用 NL 定位點時的備用搜尋半寬（min）。",
     "rolling_window_size": "滾動 RT 參考使用的視窗大小。",
     "dirty_matrix_mode": "保存的複雜基質模式設定。",

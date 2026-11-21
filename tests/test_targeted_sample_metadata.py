@@ -127,7 +127,6 @@ def test_cli_flows_share_tsv_groups_and_excluded_population(tmp_path, monkeypatc
     from tests.cid_nl_runtime_fixtures import install_runtime_raws
     from tests.discovery_pipeline_fixtures import (
         _OwnerBoundFakeRawHandle,
-        _peak_config,
         _scan_event,
         _settings,
     )
@@ -251,11 +250,6 @@ def test_cli_flows_share_tsv_groups_and_excluded_population(tmp_path, monkeypatc
                 alignment_config=AlignmentConfig(),
             ),
         ),
-    )
-    monkeypatch.setattr(
-        run_alignment,
-        "untargeted_peak_config",
-        lambda *_a, **_k: _peak_config(tmp_path),
     )
     destination = tmp_path / "alignment"
     assert (

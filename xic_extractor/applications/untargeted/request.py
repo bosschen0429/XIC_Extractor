@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from xic_extractor.alignment.config import (
@@ -16,12 +16,9 @@ from xic_extractor.applications.untargeted.publication import (
 from xic_extractor.configuration.execution_profile import (
     UntargetedExecutionPolicy,
 )
-from xic_extractor.configuration.extraction_defaults import default_extraction_config
-from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
     SignalProcessingProfile,
-    resolve_signal_processing_profile,
 )
 from xic_extractor.discovery.csv_reader import DiscoveryBatchIndex
 from xic_extractor.discovery.settings import DiscoverySettings
@@ -30,33 +27,6 @@ from xic_extractor.sample_metadata import SampleMetadata
 from xic_extractor.untargeted_execution.input_planning import (
     is_supported_alignment_discovery,
 )
-
-
-def untargeted_peak_config(
-    *,
-    raw_dir: Path,
-    dll_dir: Path,
-    output_dir: Path,
-    discovery_settings: DiscoverySettings,
-    baseline_integration_method: str = "asls",
-    signal_processing_profile: SignalProcessingProfile = (
-        DEFAULT_SIGNAL_PROCESSING_PROFILE
-    ),
-) -> ExtractionConfig:
-    """Build the Untargeted peak config from the bound preset and run choices."""
-    profile = signal_processing_profile
-    return replace(
-        default_extraction_config(
-            data_dir=raw_dir, dll_dir=dll_dir, output_dir=output_dir
-        ),
-        signal_processing_method=profile.method,
-        signal_processing_window_points=profile.window_points,
-        ms1_morphology_smoothing_window_points=profile.window_points,
-        nl_min_intensity_ratio=discovery_settings.nl_min_intensity_ratio,
-        resolver_mode=discovery_settings.resolver_mode,
-        baseline_integration_method=baseline_integration_method,
-        mass_recalibration=discovery_settings.mass_recalibration,
-    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,9 +52,10 @@ class UntargetedRequest:
     dll_dir: Path
     output_dir: Path
     alignment_config: AlignmentConfig
-    peak_config: ExtractionConfig
     discovery_settings: DiscoverySettings
-    signal_processing_profile: SignalProcessingProfile | None = None
+    signal_processing_profile: SignalProcessingProfile = (
+        DEFAULT_SIGNAL_PROCESSING_PROFILE
+    )
     sample_metadata: tuple[SampleMetadata, ...] | None = None
     known_istd_reference_workbook: Path | None = None
     targets_csv: Path | None = None
@@ -110,31 +81,17 @@ class UntargetedRequest:
                 "use scripts.run_alignment --preset dna_dr with an "
                 "owner-closed discovery batch index"
             )
-        profile = resolve_signal_processing_profile(
-            signal_processing_method=self.peak_config.signal_processing_method,
-            signal_processing_window_points=self.peak_config.signal_processing_window_points,
-        )
-        override = self.signal_processing_profile
-        if override is not None:
-            if not isinstance(override, SignalProcessingProfile):
-                raise TypeError(
-                    "signal_processing_profile must be a SignalProcessingProfile"
-                )
-            if override != profile:
-                raise ValueError(
-                    "signal_processing_profile conflicts with peak_config "
-                    "canonical fields"
-                )
+        profile = self.signal_processing_profile
+        if not isinstance(profile, SignalProcessingProfile):
+            raise TypeError(
+                "signal_processing_profile must be a SignalProcessingProfile"
+            )
         validate_retained_processing_profile(profile)
         return profile
 
 
 def validate_retained_processing_profile(profile: SignalProcessingProfile) -> None:
-    """Retained-route capability check, also used by CLI preflight before I/O.
-
-    Request/config conflicts are resolved by the application entry before this
-    capability check; the CLI's canonical profile is already bound to its flags.
-    """
+    """Retained-route capability check, also used by CLI preflight before I/O."""
     if profile != DEFAULT_SIGNAL_PROCESSING_PROFILE:
         raise ValueError(
             "pure CID-NL retained route does not support legacy Alignment "

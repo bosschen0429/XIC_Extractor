@@ -9,6 +9,7 @@ from xic_extractor.applications.targeted.application import (
     TargetedApplicationService,
     build_targeted_application_request,
 )
+from xic_extractor.configuration.execution_profile import in_process_execution
 from xic_extractor.configuration.models import ConfigError, ExtractionConfig, Target
 from xic_extractor.extraction.result_models import FileResult, RunOutput
 
@@ -345,6 +346,7 @@ def _config() -> ExtractionConfig:
         peak_min_prominence_ratio=0.01,
         ms2_precursor_tol_da=0.5,
         nl_min_intensity_ratio=0.01,
+        execution=in_process_execution(),
     )
 
 

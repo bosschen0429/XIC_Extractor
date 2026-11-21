@@ -28,7 +28,6 @@ from xic_extractor.applications.untargeted.publication import (
     UntargetedPublicationPolicy,
     untargeted_child_projection,
 )
-from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
@@ -148,7 +147,6 @@ def build_dense_partition(
     raw_paths: tuple[Path, ...],
     sample_metadata: tuple[SampleMetadata, ...],
     settings: DiscoverySettings,
-    peak_config: ExtractionConfig,
     peaks_by_sample: Mapping[str, tuple[DiscoveryPeak, ...]],
     dll_dir: Path,
     signal_processing_profile: SignalProcessingProfile,
@@ -159,7 +157,6 @@ def build_dense_partition(
         raw_paths=raw_paths,
         sample_metadata=sample_metadata,
         settings=settings,
-        peak_config=peak_config,
         peaks_by_sample=peaks_by_sample,
         dll_dir=dll_dir,
         signal_processing_profile=signal_processing_profile,
