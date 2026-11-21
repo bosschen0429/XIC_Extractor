@@ -3,7 +3,6 @@ from pathlib import Path
 import pytest
 
 import xic_extractor.applications.untargeted.application as application_module
-from tests.alignment_pipeline_helpers import peak_config as _peak_config
 from tests.alignment_pipeline_helpers import write_batch as _write_batch
 from tests.cid_nl_raw_fixture import _settings
 from xic_extractor.alignment import AlignmentConfig
@@ -41,7 +40,6 @@ def test_pipeline_rejects_stale_explanation_before_raw(
                 dll_dir=tmp_path / "dll",
                 output_dir=output_dir,
                 alignment_config=AlignmentConfig(),
-                peak_config=_peak_config(),
                 discovery_settings=_settings(),
             )
         )
@@ -81,7 +79,6 @@ def test_pipeline_rejects_stale_output_pair_before_writer_or_raw(
                 dll_dir=tmp_path / "dll",
                 output_dir=output_dir,
                 alignment_config=AlignmentConfig(),
-                peak_config=_peak_config(),
                 discovery_settings=_settings(),
             )
         )
@@ -125,7 +122,6 @@ def test_pipeline_rejects_stale_output_pair_before_replace_or_raw(
                 dll_dir=tmp_path / "dll",
                 output_dir=output_dir,
                 alignment_config=AlignmentConfig(),
-                peak_config=_peak_config(),
                 discovery_settings=_settings(),
             )
         )
@@ -167,7 +163,6 @@ def test_run_alignment_rejects_stale_owner_edge_outputs_before_raw(
                 dll_dir=tmp_path / "dll",
                 output_dir=output_dir,
                 alignment_config=AlignmentConfig(),
-                peak_config=_peak_config(),
                 discovery_settings=_settings(),
                 publication=UntargetedPublicationPolicy(output_level="debug"),
             )
@@ -220,7 +215,6 @@ def test_run_alignment_rejects_stale_product_artifacts_before_raw(
                 dll_dir=tmp_path / "dll",
                 output_dir=output_dir,
                 alignment_config=AlignmentConfig(),
-                peak_config=_peak_config(),
                 discovery_settings=_settings(),
                 publication=UntargetedPublicationPolicy(output_level="production"),
             )

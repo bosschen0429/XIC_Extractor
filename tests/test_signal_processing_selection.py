@@ -4,6 +4,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from xic_extractor.configuration.execution_profile import in_process_execution
 from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.peak_detection.candidate_scoring import score_candidate
 from xic_extractor.peak_detection.peak_integration import find_peak_and_area
@@ -32,6 +33,7 @@ def _cfg() -> ExtractionConfig:
         resolver_peak_duration_min=0.03,
         resolver_peak_duration_max=1.00,
         resolver_min_scans=5,
+        execution=in_process_execution(),
     )
 
 

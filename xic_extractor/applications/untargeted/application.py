@@ -23,6 +23,7 @@ from xic_extractor.alignment.grouping_experiment import (
 )
 from xic_extractor.applications.untargeted.istd_reference import (
     extract_batch_known_istd_reference,
+    istd_extraction_config,
     read_known_istd_reference,
 )
 from xic_extractor.applications.untargeted.publication import (
@@ -70,7 +71,6 @@ from xic_extractor.output.alignment.pipeline_outputs import (
 from xic_extractor.output.alignment.rt_anchor_table import write_rt_anchor_table
 from xic_extractor.processing_identity import AcquisitionSourceExpectation
 from xic_extractor.raw_mass_recalibration import PreparedRawMassRecalibration
-from xic_extractor.raw_mass_recalibration_batch import prepare_batch_mass_recalibration
 from xic_extractor.raw_source_binding import bind_expected_path_identity
 from xic_extractor.untargeted_execution.alignment import (
     complete_untargeted_alignment,
@@ -146,9 +146,7 @@ def run_untargeted_application(
         raise ValueError("Saving Backfill inputs requires Backfill to be enabled")
     if context.progress_callback:
         context.progress_callback({"stage": "mass_recalibration"})
-    mass_recalibration_by_sample = _prepare_mass_recalibration(
-        request, batch, recorder, context
-    )
+    mass_recalibration_by_sample = _prepare_mass_recalibration(request, batch)
     if context.progress_callback:
         context.progress_callback({"stage": "known_istd_reference"})
     resolved_known_istd_reference = _resolve_known_istd_reference(
@@ -160,7 +158,7 @@ def run_untargeted_application(
         raw_dir=request.raw_dir,
         dll_dir=request.dll_dir,
         output_level=request.publication.output_level,
-        peak_config=request.peak_config,
+        resolver_mode=request.discovery_settings.resolver_mode,
         signal_processing_profile=signal_processing_profile,
     )
     metadata["mass_recalibration_by_sample"] = json.dumps(
@@ -204,7 +202,6 @@ def run_untargeted_application(
                     dll_dir=request.dll_dir,
                     output_dir=request.output_dir,
                     settings=request.discovery_settings,
-                    peak_config=request.peak_config,
                     alignment_config=request.alignment_config,
                     sample_metadata=request.sample_metadata,
                     known_istd_reference=resolved_known_istd_reference,
@@ -331,45 +328,20 @@ def _batch_mass_recalibration(
 
 
 def _prepare_mass_recalibration(
-    request: UntargetedRequest,
-    batch: DiscoveryBatchInput,
-    recorder: TimingRecorder,
-    context: UntargetedExecutionContext,
+    request: UntargetedRequest, batch: DiscoveryBatchInput
 ) -> dict[str, PreparedRawMassRecalibration]:
     from xic_extractor.acquisition.raw_paths import existing_raw_paths
 
-    policy = request.discovery_settings.mass_recalibration
-    if policy is not MassRecalibration.NONE:
-        return {
-            stem: _bind_discovery_mass_recalibration(path, batch.peak_receipts[stem])
-            for stem, path in existing_raw_paths(
-                sample_order=batch.sample_order,
-                raw_files=batch.raw_files,
-                raw_dir=request.raw_dir,
-            ).items()
-        }
-    if request.known_istd_reference is None and request.targets_csv is not None:
-        policy = request.peak_config.mass_recalibration
-    if policy is MassRecalibration.NONE:
+    if request.discovery_settings.mass_recalibration is MassRecalibration.NONE:
         return {}
-    paths = existing_raw_paths(
-        sample_order=batch.sample_order,
-        raw_files=batch.raw_files,
-        raw_dir=request.raw_dir,
-    )
-    with recorder.stage("alignment.mass_recalibration") as stage:
-        results = prepare_batch_mass_recalibration(
-            tuple(
-                (path, batch.peak_receipts[stem].acquisition_source)
-                for stem, path in paths.items()
-            ),
-            request.dll_dir,
-            policy,
-            execution=request.execution.profile,
-            should_cancel=context.should_cancel,
-        )
-        stage.metrics["raw_file_count"] = len(results)
-        return results
+    return {
+        stem: _bind_discovery_mass_recalibration(path, batch.peak_receipts[stem])
+        for stem, path in existing_raw_paths(
+            sample_order=batch.sample_order,
+            raw_files=batch.raw_files,
+            raw_dir=request.raw_dir,
+        ).items()
+    }
 
 
 def _bind_discovery_mass_recalibration(
@@ -412,12 +384,17 @@ def _resolve_known_istd_reference(
             return extract_batch_known_istd_reference(
                 targets=selection.targets,
                 raw_paths_by_sample=raw_paths_by_sample,
-                dll_dir=request.dll_dir,
-                peak_config=request.peak_config,
-                execution=request.execution.profile,
+                config=istd_extraction_config(
+                    raw_dir=request.raw_dir,
+                    dll_dir=request.dll_dir,
+                    output_dir=request.output_dir,
+                    discovery_settings=request.discovery_settings,
+                    signal_processing_profile=request.signal_processing_profile,
+                    execution=request.execution.profile,
+                ),
                 mass_recalibration_by_sample=(
                     mass_recalibration_by_sample
-                    if request.peak_config.mass_recalibration
+                    if request.discovery_settings.mass_recalibration
                     is not MassRecalibration.NONE
                     else None
                 ),
@@ -459,9 +436,7 @@ def run_untargeted_grouping(
     batches = split_discovery_batch(batch, request.sample_metadata)
     if save_pairing_inputs and any(not batch_id for batch_id, _ in batches):
         raise ValueError("Saving pairing inputs requires a batch_id in sample metadata")
-    mass_recalibration_by_sample = _prepare_mass_recalibration(
-        request, batch, recorder, context
-    )
+    mass_recalibration_by_sample = _prepare_mass_recalibration(request, batch)
     known_istd_reference = _resolve_known_istd_reference(
         request, batch, recorder, mass_recalibration_by_sample
     )
@@ -611,7 +586,6 @@ def _group_batch(
         dll_dir=request.dll_dir,
         output_dir=request.output_dir,
         settings=request.discovery_settings,
-        peak_config=request.peak_config,
         sample_metadata=request.sample_metadata,
         timing_recorder=recorder,
         signal_processing_profile=request.resolve_processing_profile(),

@@ -172,7 +172,6 @@ def materialize_untargeted_partition(
                 candidates=candidates[stem],
                 discovery_receipt=context.discovery_receipts_by_sample[stem],
                 settings=context.settings,
-                peak_config=context.peak_config,
                 raw_path=context.raw_paths_by_sample[stem],
                 dll_dir=plan.dll_dir,
                 signal_processing_profile=context.signal_processing_profile,
@@ -885,7 +884,6 @@ def _shared_objects(plan: UntargetedInputPlan) -> tuple[object, ...]:
         plan.subject_batch,
         *plan.subject_batch.subjects,
         context.settings,
-        context.peak_config,
         context.signal_processing_profile,
     ]
     for sample in context.samples:

@@ -14,7 +14,6 @@ from tests.processing_run_spec_fixtures import (
 )
 from xic_extractor.configuration.cid_nl_profile import NeutralLossProfile
 from xic_extractor.configuration.execution_profile import in_process_execution
-from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
@@ -29,21 +28,6 @@ from xic_extractor.processing_run_spec import (
     canonical_processing_run_spec_bytes,
     compile_processing_run_spec,
 )
-
-
-def _peak_config() -> ExtractionConfig:
-    return ExtractionConfig(
-        data_dir=Path("raw"),
-        dll_dir=Path("dll"),
-        output_csv=Path("output/xic_results.csv"),
-        diagnostics_csv=Path("output/xic_diagnostics.csv"),
-        smooth_window=15,
-        smooth_polyorder=3,
-        peak_rel_height=0.95,
-        peak_min_prominence_ratio=0.10,
-        ms2_precursor_tol_da=0.5,
-        nl_min_intensity_ratio=0.01,
-    )
 
 
 def test_run_spec_identity_closes_input_order(
@@ -555,9 +539,6 @@ def test_bound_blank_snapshot_controls_each_sample_after_library_mutation(
         _read_csv,
         _scan_event,
     )
-    from tests.discovery_pipeline_fixtures import (
-        _peak_config as pipeline_config,
-    )
     from xic_extractor.discovery.pipeline import run_discovery_batch
 
     paths = []
@@ -588,7 +569,7 @@ def test_bound_blank_snapshot_controls_each_sample_after_library_mutation(
         tuple(paths),
         output_dir=tmp_path / "out",
         settings=settings,
-        dll_dir=pipeline_config(tmp_path).dll_dir,
+        dll_dir=tmp_path / "dll",
         raw_opener=lambda path, _dll: handles[path],
         run_spec=spec,
         execution=in_process_execution(),

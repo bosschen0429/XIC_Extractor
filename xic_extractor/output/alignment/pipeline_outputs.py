@@ -17,7 +17,6 @@ if TYPE_CHECKING:
 from xic_extractor.alignment.backfill.evaluation_coverage import (
     BackfillEvaluationCoverageBatch,
 )
-from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
     SignalProcessingProfile,
@@ -106,7 +105,7 @@ def alignment_metadata(
     raw_dir: Path,
     dll_dir: Path,
     output_level: AlignmentOutputLevel,
-    peak_config: ExtractionConfig,
+    resolver_mode: str,
     signal_processing_profile: SignalProcessingProfile = (
         DEFAULT_SIGNAL_PROCESSING_PROFILE
     ),
@@ -118,8 +117,8 @@ def alignment_metadata(
         "raw_dir": str(raw_dir),
         "dll_dir": str(dll_dir),
         "output_level": output_level,
-        "resolver_mode": peak_config.resolver_mode,
-        "baseline_integration_method": peak_config.baseline_integration_method,
+        "resolver_mode": resolver_mode,
+        "baseline_integration_method": "asls",
         "signal_processing_profile_json": serialize_signal_processing_profile(
             signal_processing_profile
         ).decode("utf-8"),

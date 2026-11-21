@@ -8,7 +8,6 @@ from tests.cid_nl_raw_fixture import (
     TEST_PROFILE,
     _current_candidates,
     _FakeRaw,
-    _peak_config,
     _settings,
 )
 from tests.cid_nl_runtime_fixtures import build_discovery_receipts, install_runtime_raws
@@ -166,7 +165,6 @@ def test_held_rows_never_become_alignment_roots(tmp_path, monkeypatch, with_supp
         dll_dir=tmp_path,
         output_dir=tmp_path / "inputs",
         settings=settings,
-        peak_config=_peak_config(tmp_path),
         signal_processing_profile=TEST_PROFILE,
         sample_metadata=tuple(
             SampleMetadata(
@@ -299,7 +297,6 @@ def test_alignment_measurement_decides_admission_through_the_whole_run(
         dll_dir=tmp_path,
         output_dir=tmp_path / "inputs",
         settings=settings,
-        peak_config=_peak_config(tmp_path),
         signal_processing_profile=TEST_PROFILE,
         sample_metadata=tuple(
             SampleMetadata(
@@ -410,7 +407,6 @@ def test_alignment_rejects_raw_replaced_after_discovery_without_recalibration(
             dll_dir=tmp_path,
             output_dir=tmp_path / "inputs",
             settings=settings,
-            peak_config=_peak_config(tmp_path),
             signal_processing_profile=TEST_PROFILE,
             sample_metadata=tuple(
                 SampleMetadata(
@@ -486,7 +482,6 @@ def test_peak_without_its_representative_event_row_fails_at_alignment_input(
         dll_dir=tmp_path,
         output_dir=tmp_path / "inputs",
         settings=settings,
-        peak_config=_peak_config(tmp_path),
         signal_processing_profile=TEST_PROFILE,
         sample_metadata=tuple(
             SampleMetadata(

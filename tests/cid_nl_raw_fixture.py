@@ -9,7 +9,6 @@ from types import SimpleNamespace
 import numpy as np
 
 from xic_extractor.configuration.cid_nl_profile import NeutralLossProfile
-from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
@@ -109,22 +108,6 @@ def _multi_tag_settings() -> DiscoverySettings:
         rt_min=7.5,
         rt_max=8.6,
         ms1_search_padding_min=0.20,
-        resolver_mode="local_minimum",
-    )
-
-
-def _peak_config(tmp_path: Path) -> ExtractionConfig:
-    return ExtractionConfig(
-        data_dir=tmp_path,
-        dll_dir=tmp_path,
-        output_csv=tmp_path / "unused.csv",
-        diagnostics_csv=tmp_path / "unused-diagnostics.csv",
-        smooth_window=15,
-        smooth_polyorder=3,
-        peak_rel_height=0.95,
-        peak_min_prominence_ratio=0.10,
-        ms2_precursor_tol_da=0.5,
-        nl_min_intensity_ratio=0.01,
         resolver_mode="local_minimum",
     )
 

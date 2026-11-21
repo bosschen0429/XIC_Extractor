@@ -196,8 +196,7 @@ partition is never a feature boundary.
   before/after vendor opening; it does not interpret spectra.
 - `raw_sequence` resolves analysis membership and chronology from adapter facts.
 - `raw_mass_recalibration` owns in-memory restoration decisions and arithmetic;
-  `raw_mass_recalibration_batch` prepares source-bound results through the adapter
-  and schedules workers. Neither responsibility is implemented by a facade.
+  it is not implemented by a facade.
 - Targeted review uses `xic_inspector.sources.targeted_workbook` for saved
   facts/settings and `acquisition.review_xics` for RAW lifetime, recalibration,
   full-trace preparation and near-ISTD signal diagnostics. Inspector's

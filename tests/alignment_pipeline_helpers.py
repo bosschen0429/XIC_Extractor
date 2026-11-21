@@ -25,7 +25,6 @@ from xic_extractor.alignment.ownership_models import (
 from xic_extractor.alignment.result.scientific_alignment import (
     ObservedSearchSubject,
 )
-from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.discovery.batch_contract import (
     DISCOVERY_BATCH_INDEX_COLUMNS,
     DISCOVERY_BATCH_INDEX_SCHEMA_VERSION,
@@ -481,21 +480,6 @@ def matrix(sample_order: tuple[str, ...]) -> Any:
                 (sample_stem, candidate_id(sample_stem)) for sample_stem in sample_order
             ),
         ),
-    )
-
-
-def peak_config() -> ExtractionConfig:
-    return ExtractionConfig(
-        data_dir=Path("."),
-        dll_dir=Path("."),
-        output_csv=Path("output.csv"),
-        diagnostics_csv=Path("diagnostics.csv"),
-        smooth_window=15,
-        smooth_polyorder=3,
-        peak_rel_height=0.95,
-        peak_min_prominence_ratio=0.1,
-        ms2_precursor_tol_da=1.6,
-        nl_min_intensity_ratio=0.01,
     )
 
 

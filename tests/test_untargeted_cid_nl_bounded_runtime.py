@@ -24,7 +24,6 @@ from tests.cid_nl_raw_fixture import (
     _current_candidates,
     _FakeRaw,
     _FakeThermoRaw,
-    _peak_config,
     _settings,
 )
 from tests.cid_nl_runtime_fixtures import (
@@ -56,6 +55,9 @@ from xic_extractor.untargeted_execution.execution import (
 from xic_extractor.untargeted_execution.execution_result import (
     CompletedUntargetBatchWorkflowResult,
 )
+from xic_extractor.untargeted_execution.partition.models import (
+    BACKFILL_HALF_WINDOW_MIN,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -86,7 +88,6 @@ def test_batch_rt_calibration_and_grouping_are_independent_of_partition_capacity
     )
 
     settings = replace(_settings(), precursor_mz_tolerance_ppm=1.0)
-    peak_config = _peak_config(tmp_path)
     paths = tuple(tmp_path / f"S{i:02}.synthetic" for i in range(24))
     raws, candidates = {}, {}
     for index, path in enumerate(paths):
@@ -121,7 +122,6 @@ def test_batch_rt_calibration_and_grouping_are_independent_of_partition_capacity
             for i, path in enumerate(paths, 1)
         ),
         settings=settings,
-        peak_config=peak_config,
         peaks_by_sample=candidates,
         root=tmp_path / "persisted",
         dll_dir=tmp_path,
@@ -215,7 +215,6 @@ def test_backfill_queries_are_partition_invariant_and_never_supply_ms2_support(
     )
 
     settings = replace(_settings(), precursor_mz_tolerance_ppm=1.0)
-    peak_config = _peak_config(tmp_path)
     paths = tuple(tmp_path / f"S{i:02}.synthetic" for i in range(22))
     raws, candidates = {}, {}
     for index, path in enumerate(paths):
@@ -260,7 +259,6 @@ def test_backfill_queries_are_partition_invariant_and_never_supply_ms2_support(
             for i, path in enumerate(paths, 1)
         ),
         settings=settings,
-        peak_config=peak_config,
         peaks_by_sample=candidates,
         root=tmp_path / "persisted",
         dll_dir=tmp_path,
@@ -308,7 +306,7 @@ def test_backfill_queries_are_partition_invariant_and_never_supply_ms2_support(
                 assert apex == pytest.approx(expected, abs=0.005)
                 assert rt == pytest.approx(8.0, abs=0.005)
                 assert basis.startswith("trajectory_")
-                half_window = peak_config.nl_rt_anchor_half_window_min
+                half_window = BACKFILL_HALF_WINDOW_MIN
                 assert lower == pytest.approx(rt - half_window)
                 assert upper == pytest.approx(rt + half_window)
             return queries

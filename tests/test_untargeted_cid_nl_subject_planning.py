@@ -11,7 +11,6 @@ from tests.cid_nl_raw_fixture import (
     TEST_PROFILE,
     _current_candidates,
     _FakeRaw,
-    _peak_config,
     _settings,
 )
 from tests.discovery_csv_fixtures import representative_event
@@ -112,7 +111,6 @@ def test_production_batch_preserves_bounded_subject_membership(
     settings = replace(
         _settings(), neutral_loss_profile=None, precursor_mz_tolerance_ppm=ppm
     )
-    peak_config = _peak_config(tmp_path)
     from xic_extractor.configuration.cid_nl_profile import NeutralLossProfile
 
     candidates = tuple(
@@ -139,7 +137,6 @@ def test_production_batch_preserves_bounded_subject_membership(
             ),
         ),
         settings=settings,
-        peak_config=peak_config,
         dll_dir=tmp_path,
     )
 

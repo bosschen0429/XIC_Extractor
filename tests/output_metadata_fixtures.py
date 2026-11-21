@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from xic_extractor.configuration.execution_profile import in_process_execution
 from xic_extractor.configuration.models import ExtractionConfig
 
 
@@ -21,4 +22,5 @@ def _config(output_dir: Path) -> ExtractionConfig:
         nl_min_intensity_ratio=0.02,
         resolver_mode="local_minimum",
         target_config_hash="abc12345",
+        execution=in_process_execution(),
     )
