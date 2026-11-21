@@ -23,6 +23,10 @@ from tests.discovery_pipeline_fixtures import (
     vendor_fake_discovery_opener,
     vendor_fake_open_raw,
 )
+from xic_extractor.configuration.execution_profile import (
+    ExecutionProfile,
+    in_process_execution,
+)
 from xic_extractor.discovery import pipeline as _pipeline
 from xic_extractor.discovery.batch_contract import DISCOVERY_BATCH_INDEX_COLUMNS
 from xic_extractor.discovery.csv_reader import (
@@ -212,7 +216,7 @@ def test_cancelled_batch_retains_completed_samples_without_publishing_index(
             settings=_settings(),
             dll_dir=tmp_path / "dll",
             raw_opener=None if parallel else opener,
-            max_workers=2 if parallel else 1,
+            execution=ExecutionProfile(parallel_workers=2 if parallel else 1),
             executor_factory=Executor if parallel else None,
             progress_callback=lambda done, total, sample: progress.append(sample),
             should_cancel=lambda: bool(progress),
@@ -560,7 +564,7 @@ def test_parallel_batch_preserves_serial_artifacts_and_sample_order(
         output_dir=tmp_path / "parallel",
         settings=_settings(),
         dll_dir=tmp_path / "dll",
-        max_workers=2,
+        execution=ExecutionProfile(parallel_workers=2),
         executor_factory=_SynchronousExecutor,
         progress_callback=lambda completed, total, sample: progress.append(
             (completed, total, sample)
@@ -588,12 +592,12 @@ def test_parallel_batch_preserves_serial_artifacts_and_sample_order(
 def test_parallel_batch_rejects_parent_raw_opener(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="RAW handles inside spawned workers"):
         _run_discovery_batch(
-            (tmp_path / "sample.raw",),
+            (tmp_path / "sample.raw", tmp_path / "second.raw"),
             output_dir=tmp_path / "out",
             settings=_settings(),
             dll_dir=tmp_path / "dll",
             raw_opener=lambda path, dll_dir: _FakeRawHandle(events=[]),
-            max_workers=2,
+            execution=ExecutionProfile(parallel_workers=2),
         )
 
 
@@ -654,7 +658,7 @@ def test_parallel_batch_preserves_first_failure_and_completed_census(
             settings=_settings(),
             dll_dir=tmp_path / "dll",
             timing_recorder=recorder,
-            max_workers=2,
+            execution=ExecutionProfile(parallel_workers=2),
             executor_factory=_FailFirstExecutor,
         )
 
@@ -716,7 +720,7 @@ def test_parallel_batch_preserves_every_same_batch_failure(
             output_dir=tmp_path / "out",
             settings=_settings(),
             dll_dir=tmp_path / "dll",
-            max_workers=2,
+            execution=ExecutionProfile(parallel_workers=2),
             executor_factory=_MultipleFailureExecutor,
         )
 
@@ -736,6 +740,8 @@ def test_parallel_batch_rejects_error_caller_authored_owner_counts(
 ) -> None:
     raw_path = tmp_path / "sample.raw"
     raw_path.write_bytes(b"raw")
+    second_path = tmp_path / "second.raw"
+    second_path.write_bytes(b"raw")
 
     class _ForgedErrorExecutor:
         def __init__(self, *args, **kwargs) -> None:
@@ -771,12 +777,12 @@ def test_parallel_batch_rejects_error_caller_authored_owner_counts(
 
     with pytest.raises(ValueError, match="cannot author"):
         _run_discovery_batch(
-            (raw_path,),
+            (raw_path, second_path),
             output_dir=tmp_path / "out",
             settings=_settings(),
             dll_dir=tmp_path / "dll",
             timing_recorder=TimingRecorder("discovery"),
-            max_workers=2,
+            execution=ExecutionProfile(parallel_workers=2),
             executor_factory=_ForgedErrorExecutor,
         )
 
@@ -786,6 +792,8 @@ def test_parallel_batch_projects_typed_error_measurements_and_reduces_raw_open(
 ) -> None:
     raw_path = tmp_path / "sample.raw"
     raw_path.write_bytes(b"raw")
+    second_path = tmp_path / "second.raw"
+    second_path.write_bytes(b"raw")
     measurements = _DiscoveryMs1Measurements(
         input_ion_count=0,
         input_event_count=0,
@@ -831,12 +839,12 @@ def test_parallel_batch_projects_typed_error_measurements_and_reduces_raw_open(
     recorder = TimingRecorder("discovery")
     with pytest.raises(DiscoveryProcessExecutionError, match="owner boom"):
         _run_discovery_batch(
-            (raw_path,),
+            (raw_path, second_path),
             output_dir=tmp_path / "out",
             settings=_settings(),
             dll_dir=tmp_path / "dll",
             timing_recorder=recorder,
-            max_workers=2,
+            execution=ExecutionProfile(parallel_workers=2),
             executor_factory=_TypedErrorExecutor,
         )
 
@@ -891,7 +899,7 @@ def test_parallel_batch_disabled_timing_skips_ipc_serialization(
             output_dir=tmp_path / "out",
             settings=_settings(),
             dll_dir=tmp_path / "dll",
-            max_workers=2,
+            execution=ExecutionProfile(parallel_workers=2),
             executor_factory=_FailureExecutor,
         )
 
@@ -903,7 +911,7 @@ def test_parallel_batch_disabled_timing_skips_ipc_serialization(
             settings=_settings(),
             dll_dir=tmp_path / "dll",
             timing_recorder=recorder,
-            max_workers=2,
+            execution=ExecutionProfile(parallel_workers=2),
             executor_factory=_FailureExecutor,
         )
     ipc_rows = [
@@ -1162,7 +1170,7 @@ def test_parallel_batch_failure_preserves_completed_worker_diagnostics(
             settings=_settings(),
             dll_dir=tmp_path / "dll",
             timing_recorder=recorder,
-            max_workers=2,
+            execution=ExecutionProfile(parallel_workers=2),
             executor_factory=_MixedExecutor,
         )
 
@@ -1701,6 +1709,7 @@ def _run_discovery_batch(
     opener = kwargs.pop("raw_opener", None)
     if opener is not None:
         opener = _spec_bound_opener(spec, opener)
+    kwargs.setdefault("execution", in_process_execution())
     return _pipeline.run_discovery_batch(
         raw_paths, run_spec=spec, raw_opener=opener, **kwargs
     )
@@ -1789,6 +1798,7 @@ def test_acquisition_open_observations_keep_sample_attribution_in_serial_and_spa
             run = partial(
                 _pipeline.run_discovery_batch,
                 paths,
+                execution=in_process_execution(),
                 output_dir=output_dir,
                 settings=settings,
                 dll_dir=dll_dir,

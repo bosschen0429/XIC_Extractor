@@ -20,7 +20,6 @@ from xic_extractor.applications.untargeted.request import (
     untargeted_peak_config,
 )
 from xic_extractor.configuration.execution_profile import (
-    DEFAULT_ALIGNMENT_WORKER_BACKEND,
     ExecutionProfile,
     UntargetedExecutionPolicy,
 )
@@ -64,7 +63,7 @@ class FullAnalysisRequest:
     targets_csv: Path | None = None
     sample_metadata: tuple[SampleMetadata, ...] | None = None
     preset_snapshot: Preset | None = None
-    execution_profile: ExecutionProfile = field(default_factory=ExecutionProfile)
+    execution_profile: ExecutionProfile = field(kw_only=True)
 
 
 class UntargetedAnalysis:
@@ -142,7 +141,7 @@ class UntargetedAnalysis:
             settings=settings,
             dll_dir=request.dll_dir,
             run_spec=run_spec,
-            max_workers=min(len(raw_paths), request.execution_profile.parallel_workers),
+            execution=request.execution_profile,
             should_cancel=self.should_cancel,
             progress_callback=lambda done, _total, sample: self.progress(
                 done, total_steps, f"Discovery: {sample}"
@@ -232,7 +231,7 @@ class UntargetedAnalysis:
             run_spec=compile_discovery_processing_run_spec(
                 raw_paths, discovery_settings=settings
             ),
-            max_workers=min(len(raw_paths), request.execution_profile.parallel_workers),
+            execution=request.execution_profile,
             should_cancel=self.should_cancel,
             progress_callback=lambda done, total, sample: self.progress(
                 done, total, f"CID-NL dR Discovery: {sample}"
@@ -268,10 +267,7 @@ class UntargetedAnalysis:
                 discovery_settings=recipe.discovery_settings,
                 sample_metadata=request.sample_metadata,
                 targets_csv=request.targets_csv,
-                execution=UntargetedExecutionPolicy(
-                    raw_workers=request.execution_profile.alignment_workers,
-                    raw_worker_backend=DEFAULT_ALIGNMENT_WORKER_BACKEND,
-                ),
+                execution=UntargetedExecutionPolicy(profile=request.execution_profile),
                 publication=UntargetedPublicationPolicy(
                     output_level="machine",
                     emit_alignment_explanation=True,

@@ -17,6 +17,7 @@ from tests.alignment_pipeline_helpers import (
 from xic_extractor.applications.untargeted.application import (
     AlignmentProcessExecutionError,
 )
+from xic_extractor.configuration.execution_profile import ExecutionProfile
 from xic_extractor.discovery.batch_contract import (
     DISCOVERY_BATCH_INDEX_COLUMNS,
     DISCOVERY_BATCH_INDEX_SCHEMA_VERSION,
@@ -313,8 +314,9 @@ def test_run_alignment_cli_accepts_output_level_debug(
 
     assert code == 0
     assert captured["request"].publication.output_level == "debug"
-    assert captured["request"].execution.raw_workers == raw_workers
-    assert captured["request"].execution.raw_worker_backend == "process"
+    assert captured["request"].execution.profile == ExecutionProfile(
+        alignment_workers=raw_workers
+    )
 
 
 def test_run_alignment_cli_rejects_retired_validation_output_level(
@@ -376,8 +378,9 @@ def test_run_alignment_cli_accepts_raw_worker_backend(
     )
 
     assert code == 0
-    assert captured["request"].execution.raw_workers == 2
-    assert captured["request"].execution.raw_worker_backend == "process"
+    assert captured["request"].execution.profile == ExecutionProfile(
+        alignment_workers=2
+    )
 
 
 def test_run_alignment_cli_accepts_validation_minimal_output_level(
@@ -1916,7 +1919,7 @@ def test_run_alignment_stop_after_grouping_outputs_results_without_publication(
     )
 
     assert code == 0
-    assert captured["request"].peak_config.parallel_mode == "process"
+    assert captured["request"].execution.profile.backend == "process"
     assert captured["save_pairing_inputs"] is save_inputs
     assert captured["save_backfill_inputs"] is save_inputs
     assert captured["save_snapshot"] is save_inputs

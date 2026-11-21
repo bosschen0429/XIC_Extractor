@@ -141,14 +141,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"Discovery peaks CSV: {single_outputs.peaks_csv}")
             print(f"Discovery events CSV: {single_outputs.events_csv}")
         else:
-            max_workers = min(len(raw_paths), execution_profile.parallel_workers)
             batch_outputs = run_discovery_batch(
                 raw_paths,
                 output_dir=output_dir,
                 settings=settings,
                 dll_dir=dll_dir,
                 run_spec=run_spec,
-                max_workers=max_workers,
+                execution=execution_profile,
                 timing_recorder=timing_recorder,
             )
             print(f"Discovery batch index: {batch_outputs.batch_index_csv}")

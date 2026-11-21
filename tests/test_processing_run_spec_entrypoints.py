@@ -20,6 +20,7 @@ from xic_extractor.applications.untargeted.full_analysis import (
 from xic_extractor.applications.untargeted.full_analysis import (
     compile_discovery_processing_run_spec as compile_workbench_processing_run_spec,
 )
+from xic_extractor.configuration.execution_profile import ExecutionProfile
 from xic_extractor.discovery.processing_run_spec_adapter import (
     compile_discovery_processing_run_spec,
 )
@@ -73,7 +74,6 @@ def test_actual_workbench_full_and_cli_main_reach_equal_final_run_spec(
     from scripts import run_discovery as cli_module
     from tests.raw_header_fakes import install_fake_raw_headers
 
-    monkeypatch.setattr("os.cpu_count", lambda: 2)
     install_fake_raw_headers(monkeypatch)
     raw_dir = tmp_path / "raw"
     raw_dir.mkdir()
@@ -92,7 +92,7 @@ def test_actual_workbench_full_and_cli_main_reach_equal_final_run_spec(
 
     def worker_batch(*_args, **kwargs):
         captured["workbench"] = kwargs["run_spec"]
-        captured["workbench_workers"] = kwargs["max_workers"]
+        captured["workbench_workers"] = kwargs["execution"].parallel_workers
         return SimpleNamespace(batch_index_csv=index_path, per_sample=())
 
     monkeypatch.setattr(workbench_module, "run_discovery_batch", worker_batch)
@@ -110,6 +110,7 @@ def test_actual_workbench_full_and_cli_main_reach_equal_final_run_spec(
         raw_dir=raw_dir,
         dll_dir=dll_dir,
         output_dir=tmp_path / "full",
+        execution_profile=ExecutionProfile(parallel_workers=1),
     )
     run = UntargetedAnalysis(
         request, progress=lambda *_args: None, should_cancel=lambda: False
@@ -119,7 +120,7 @@ def test_actual_workbench_full_and_cli_main_reach_equal_final_run_spec(
 
     def cli_batch(*_args, **kwargs):
         captured["cli"] = kwargs["run_spec"]
-        captured["cli_workers"] = kwargs["max_workers"]
+        captured["cli_workers"] = kwargs["execution"].parallel_workers
         return SimpleNamespace(batch_index_csv=index_path, per_sample=())
 
     monkeypatch.setattr(cli_module, "run_discovery_batch", cli_batch)

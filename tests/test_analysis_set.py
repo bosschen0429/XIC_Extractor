@@ -8,6 +8,7 @@ from tests.analysis_set_fixtures import (
 )
 from xic_extractor import raw_reader_errors
 from xic_extractor.analysis_set import discover_raw_files, select_analysis_set
+from xic_extractor.configuration.execution_profile import in_process_execution
 from xic_extractor.injection_timeline import (
     PerturbationPolicy,
     build_injection_timeline,
@@ -177,6 +178,7 @@ def test_retained_alignment_keeps_full_root_injection_order(
         output_dir=tmp_path / "out",
         settings=settings,
         peak_config=config,
+        execution=in_process_execution(),
     )
     orders = {s.raw_stem: s.injection_order for s in plan.context.samples}
     assert orders == {"A": 1 if same_stem_context else 2, "B": 3}
@@ -246,6 +248,7 @@ def test_supplied_metadata_with_an_excluded_sample_aligns_the_analyzed_samples(
         settings=settings,
         peak_config=config,
         sample_metadata=metadata,
+        execution=in_process_execution(),
     )
     assert [
         (s.raw_stem, s.injection_order, s.sample_role) for s in plan.context.samples

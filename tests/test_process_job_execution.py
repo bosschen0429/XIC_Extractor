@@ -269,7 +269,7 @@ def test_success_results_are_returned_in_input_order() -> None:
     assert report.completed_job_ordinals == (0, 1, 2)
     assert report.failed_job_ordinals == ()
     assert report.observed_results == (0, 10, 20)
-    assert executor.shutdown_calls == [(True, False)]
+    assert executor.shutdown_calls == [(False, False)]
 
 
 def test_success_delivery_replaces_payloads_with_input_order_receipts() -> None:

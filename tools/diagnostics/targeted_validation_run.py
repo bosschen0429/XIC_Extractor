@@ -11,6 +11,7 @@ from xic_extractor.applications.targeted.application import (
     build_canonical_targeted_application_service,
     build_targeted_application_request,
 )
+from xic_extractor.configuration.execution_profile import ExecutionProfile
 from xic_extractor.configuration.loader import prepare_targeted_config
 
 
@@ -34,8 +35,10 @@ def run_targeted_case(
     try:
         config = replace(
             prepared.config,
-            parallel_mode=mode,
-            parallel_workers=workers,
+            execution=ExecutionProfile(
+                parallel_workers=workers,
+                backend="process" if mode == "process" else "thread",
+            ),
         )
         workbook_path = output_dir / f"xic_results_{mode}_w{workers}.xlsx"
         build_canonical_targeted_application_service(

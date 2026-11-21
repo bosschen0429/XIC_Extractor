@@ -23,6 +23,7 @@ from xic_extractor.alignment.grouping_experiment import (
 )
 from xic_extractor.alignment.peak_trajectories import ordered_pattern_contexts
 from xic_extractor.alignment.sample_rt_calibration import BatchRtCalibrationAccumulator
+from xic_extractor.configuration.execution_profile import ExecutionProfile
 from xic_extractor.diagnostics.grouping_experiment_io import (
     group_signature,
     read_grouping_inputs,
@@ -32,13 +33,17 @@ from xic_extractor.peak_detection.ms1_shape_identity import prepare_local_peak_s
 from xic_extractor.untargeted_execution.alignment import execute_prepared_alignment
 
 
+def _replay_without_execution(inputs, *, execution, **options):
+    return replay_grouping(inputs, **options)
+
+
 def _snapshot_grouping(
     plan, *, spool_directory, workers, alignment_config, known_istd_reference=None
 ):
     return execute_prepared_alignment(
         plan,
         output_dir=spool_directory,
-        raw_workers=workers,
+        execution=ExecutionProfile(alignment_workers=workers, backend="thread"),
         alignment_config=alignment_config,
         known_istd_reference=known_istd_reference,
         grouping_only=True,
@@ -303,8 +308,9 @@ def test_application_outputs_formal_groups_with_an_optional_snapshot(
                 discovery_settings=plan.context.settings,
                 peak_config=plan.context.peak_config,
                 execution=UntargetedExecutionPolicy(
-                    raw_workers=raw_workers,
-                    raw_worker_backend="thread",
+                    profile=ExecutionProfile(
+                        alignment_workers=raw_workers, backend="thread"
+                    ),
                     max_partition_jobs=8,
                 ),
             ),
@@ -443,7 +449,7 @@ def test_istd_experiment_and_saved_replay_use_formal_batch_coordinates(
     assert group_signature(
         replay_grouping(restored, rt_coordinates=SampleRtFrame())
     ) != group_signature(expected)
-    counted_replay = Mock(wraps=replay_grouping)
+    counted_replay = Mock(wraps=_replay_without_execution)
     monkeypatch.setattr(
         "tools.diagnostics.grouping_experiment._replay_grouping", counted_replay
     )
@@ -601,7 +607,7 @@ def test_replay_refits_batch_rt_models_from_retained_anchors(
     first, second = restored.worksets
     assert first.rt_model_inputs == kept
     assert first.rt_model_inputs is second.rt_model_inputs
-    counted_replay = Mock(wraps=replay_grouping)
+    counted_replay = Mock(wraps=_replay_without_execution)
     monkeypatch.setattr(
         "tools.diagnostics.grouping_experiment._replay_grouping", counted_replay
     )
@@ -920,7 +926,7 @@ def test_calibrated_patterns_reject_shifted_decoys_without_merging_real_peaks(
 def test_replay_only_recomputes_when_grouping_inputs_change(tmp_path, monkeypatch):
     snapshot = Path(__file__).parent / "fixtures" / "synthetic-grouping.json.gz"
     a, b = "a|hypothesis|peak", "b|hypothesis|peak"
-    counted_replay = Mock(wraps=replay_grouping)
+    counted_replay = Mock(wraps=_replay_without_execution)
     monkeypatch.setattr(
         "tools.diagnostics.grouping_experiment._replay_grouping", counted_replay
     )
@@ -1011,7 +1017,9 @@ def test_parallel_regroup_writes_the_sequential_tables(tmp_path, monkeypatch):
     outputs = []
     for workers in (1, 2):
         monkeypatch.setattr(
-            experiment, "default_parallel_workers", lambda count=workers: count
+            experiment,
+            "load_execution_profile",
+            lambda count=workers: ExecutionProfile(parallel_workers=count),
         )
         outputs.append(tmp_path / f"workers{workers}")
         assert main([*command, str(outputs[-1])]) == 0

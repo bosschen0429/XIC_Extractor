@@ -924,9 +924,9 @@ def test_closure_boundary_cancellation_fails_completed_batch(
 
 def test_worker_admission_pool_validation() -> None:
     with pytest.raises(ValueError, match="max_workers"):
-        WorkerAdmissionPool(max_workers=0)
+        WorkerAdmissionPool(max_workers=0, backend="thread")
     with pytest.raises(ValueError, match="backend"):
-        WorkerAdmissionPool(backend="invalid")
+        WorkerAdmissionPool(max_workers=1, backend="invalid")
 
 
 def test_worker_admission_pool_thread_single_worker_inline() -> None:

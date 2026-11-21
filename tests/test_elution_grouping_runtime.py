@@ -19,6 +19,7 @@ from tests.untargeted_cid_nl_no_raw_fixture import (
 )
 from tests.untargeted_partition_fixtures import project_composed_child
 from xic_extractor.alignment.config import AlignmentConfig
+from xic_extractor.configuration.execution_profile import in_process_execution
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
@@ -119,6 +120,7 @@ def test_crowded_doublet_uses_context_before_grouping_and_preserves_query_lineag
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
         max_partition_jobs=100,
         project_child=project_composed_child,
+        execution=in_process_execution(),
     )
     store = StreamedResultStore(
         tmp_path / "elution-spool", adapter.get_shared_objects()
@@ -330,6 +332,7 @@ def test_review_only_input_leaves_each_group_cell_for_independent_backfill(
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
         max_partition_jobs=100,
         project_child=project_composed_child,
+        execution=in_process_execution(),
     )
     store = StreamedResultStore(tmp_path / "reuse-spool", adapter.get_shared_objects())
     initial_phase, grouping_phase, backfill_phase = adapter.execution_phases()

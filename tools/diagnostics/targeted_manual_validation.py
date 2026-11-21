@@ -9,7 +9,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 from statistics import median
-from typing import Callable, Iterable, TypedDict, cast
+from typing import Callable, Iterable
 
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -232,11 +232,6 @@ def _run_cases(
     return rows
 
 
-class _ExecutionOverrides(TypedDict, total=False):
-    parallel_mode: str
-    parallel_workers: int
-
-
 def _run_case(
     case: ManualValidationCase,
     output_dir: Path,
@@ -251,16 +246,21 @@ def _run_case(
         execution_overrides=execution_overrides,
     )
     config, targets = load_config_snapshot(config_dir)
-    config = replace(
-        config,
-        **cast(
-            _ExecutionOverrides,
-            {
-                key: int(value) if key == "parallel_workers" else value
-                for key, value in execution_overrides.items()
-            },
-        ),
-    )
+    execution = config.execution
+    if "parallel_mode" in execution_overrides:
+        execution = replace(
+            execution,
+            backend=(
+                "process"
+                if execution_overrides["parallel_mode"] == "process"
+                else "thread"
+            ),
+        )
+    if "parallel_workers" in execution_overrides:
+        execution = replace(
+            execution, parallel_workers=int(execution_overrides["parallel_workers"])
+        )
+    config = replace(config, execution=execution)
     run_output = extractor.acquire(config, targets)
     return _collect_program_rows(run_output, targets)
 

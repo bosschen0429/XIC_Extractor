@@ -3,7 +3,10 @@
 from dataclasses import dataclass, replace
 from pathlib import Path
 
-from xic_extractor.configuration.execution_profile import resolve_execution_profile
+from xic_extractor.configuration.execution_profile import (
+    ExecutionProfile,
+    resolve_execution_profile,
+)
 from xic_extractor.configuration.extraction_defaults import default_extraction_config
 from xic_extractor.configuration.models import ConfigError, ExtractionConfig
 from xic_extractor.configuration.parsing import (
@@ -18,7 +21,7 @@ class _ParsedSettings:
     data_dir: Path
     dll_dir: Path
     injection_order_source: Path | None
-    parallel_workers: int
+    execution: ExecutionProfile
 
 
 def fill_setting_defaults(raw: dict[str, str]) -> tuple[dict[str, str], list[str]]:
@@ -49,7 +52,7 @@ def validate_settings_values(
         Path(values["data_dir"]).expanduser(),
         Path(values["dll_dir"]).expanduser(),
         _parse_optional_path(values["injection_order_source"]),
-        execution.parallel_workers,
+        execution,
     )
 
 
@@ -78,5 +81,5 @@ def build_extraction_config(
             data_dir=parsed.data_dir, dll_dir=parsed.dll_dir, output_dir=output_dir
         ),
         injection_order_source=parsed.injection_order_source,
-        parallel_workers=parsed.parallel_workers,
+        execution=parsed.execution,
     )

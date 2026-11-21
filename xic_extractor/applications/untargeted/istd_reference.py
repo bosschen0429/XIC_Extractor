@@ -12,6 +12,7 @@ from xic_extractor.alignment.drift_evidence import (
     KnownIstdReference,
     mint_known_istd_reference_from_measurements,
 )
+from xic_extractor.configuration.execution_profile import ExecutionProfile
 from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.raw_mass_recalibration import PreparedRawMassRecalibration
 from xic_extractor.sample_metadata import SampleMetadata
@@ -23,6 +24,7 @@ def extract_batch_known_istd_reference(
     dll_dir: Path,
     peak_config: ExtractionConfig,
     *,
+    execution: ExecutionProfile,
     source_identifier: str = "<in-memory>",
     source_sha256: str = "",
     sample_metadata: Sequence[SampleMetadata] | None = None,
@@ -42,9 +44,9 @@ def extract_batch_known_istd_reference(
     istd_targets = [target for target in targets if target.is_istd]
     if not istd_targets:
         raise ValueError("No ISTD targets (is_istd=True) found in targets")
-    config = replace(peak_config, dll_dir=dll_dir)
+    config = replace(peak_config, dll_dir=dll_dir, execution=execution)
     samples = sorted(raw_paths_by_sample.items())
-    run_batch = run_process if config.parallel_mode == "process" else run_serial
+    run_batch = run_process if execution.backend == "process" else run_serial
     output = run_batch(
         config,
         istd_targets,

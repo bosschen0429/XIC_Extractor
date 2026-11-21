@@ -8,6 +8,7 @@ from tests.cid_nl_raw_fixture import _FakeRaw
 from tests.cid_nl_runtime_fixtures import install_runtime_raws
 from tests.discovery_pipeline_fixtures import _OwnerBoundFakeRawHandle, _scan_event
 from tests.raw_header_fakes import install_fake_raw_headers
+from xic_extractor.configuration.execution_profile import ExecutionProfile
 from xic_extractor.configuration.mass_recalibration import MassRecalibrationResult
 from xic_extractor.mass_accuracy import absolute_ppm_error
 from xic_extractor.ms1_scan_index import build_ms1_scan_index
@@ -19,6 +20,8 @@ from xic_extractor.raw_source_binding import (
 )
 from xic_extractor.xic_models import XICTrace
 
+FULL_FLOW_EXECUTION = ExecutionProfile(parallel_workers=1, backend="thread")
+
 
 def install_full_flow_raws(monkeypatch, directory, *, delta_mass=False):
     directory.mkdir(exist_ok=True)
@@ -26,11 +29,8 @@ def install_full_flow_raws(monkeypatch, directory, *, delta_mass=False):
     for path in paths:
         path.write_bytes(path.stem.encode())
     monkeypatch.setattr(
-        "xic_extractor.configuration.execution_profile.os.cpu_count", lambda: 2
-    )
-    monkeypatch.setattr(
-        "xic_extractor.applications.untargeted.full_analysis.DEFAULT_ALIGNMENT_WORKER_BACKEND",
-        "thread",
+        "xic_workbench.untargeted.load_execution_profile",
+        lambda: FULL_FLOW_EXECUTION,
     )
     if not delta_mass:
         sources = {}

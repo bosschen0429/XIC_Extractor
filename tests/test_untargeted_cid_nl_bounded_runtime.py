@@ -44,6 +44,10 @@ from tests.untargeted_partition_fixtures import (
     project_composed_child,
 )
 from xic_extractor.alignment.config import AlignmentConfig
+from xic_extractor.configuration.execution_profile import (
+    ExecutionProfile,
+    in_process_execution,
+)
 from xic_extractor.immutable_sequence import ImmutableSequence
 from xic_extractor.sample_metadata import SampleMetadata
 from xic_extractor.untargeted_execution.execution import (
@@ -157,7 +161,9 @@ def test_batch_rt_calibration_and_grouping_are_independent_of_partition_capacity
             plan,
             alignment_config=AlignmentConfig(anchor_min_seed_events=1),
             max_partition_jobs=capacity,
-            raw_workers=1,
+            execution=ExecutionProfile(
+                alignment_workers=1, backend="thread", overlap_partitions=False
+            ),
             known_istd_reference=reference,
             project_child=project_composed_child,
         )
@@ -267,7 +273,9 @@ def test_backfill_queries_are_partition_invariant_and_never_supply_ms2_support(
             plan,
             alignment_config=AlignmentConfig(anchor_min_seed_events=1),
             max_partition_jobs=capacity,
-            raw_workers=1,
+            execution=ExecutionProfile(
+                alignment_workers=1, backend="thread", overlap_partitions=False
+            ),
             project_child=project_composed_child,
         )
         store = StreamedResultStore(
@@ -358,6 +366,7 @@ def test_bounded_partition_keeps_alignment_workset_atomic(
         alignment_config=AlignmentConfig(),
         max_partition_jobs=sample_count * 2,
         project_child=project_composed_child,
+        execution=in_process_execution(),
     )
 
     assert {
@@ -373,6 +382,7 @@ def test_bounded_partition_keeps_alignment_workset_atomic(
             alignment_config=AlignmentConfig(),
             max_partition_jobs=sample_count,
             project_child=project_composed_child,
+            execution=in_process_execution(),
         )
 
 
@@ -476,6 +486,7 @@ def test_indexed_mass_partition_keeps_closed_worksets_and_budgets_neighbors(
         alignment_config=AlignmentConfig(),
         max_partition_jobs=len(plan.context.samples) * len(subjects),
         project_child=project_composed_child,
+        execution=in_process_execution(),
     )
     payloads = tuple(
         adapter_partition.payload for adapter_partition in adapter.bootstrap_partitions
@@ -510,6 +521,7 @@ def test_indexed_finalization_orders_children_by_canonical_subject(
         alignment_config=AlignmentConfig(),
         max_partition_jobs=len(plan.context.samples),
         project_child=project_composed_child,
+        execution=in_process_execution(),
     )
     canonical_ids = tuple(
         subject.method_subject_id for subject in plan.subject_batch.subjects
@@ -788,6 +800,7 @@ def test_bounded_partition_real_entry_mints_interleaved_worksets_canonically(
         alignment_config=AlignmentConfig(),
         max_partition_jobs=len(plan.context.samples) * 2,
         project_child=project_composed_child,
+        execution=in_process_execution(),
     )
 
     assert len(adapter.bootstrap_partitions) == 2
@@ -837,6 +850,7 @@ def test_bounded_runtime_skips_subjects_without_ms1_features(
         alignment_config=config,
         max_partition_jobs=len(plan.context.samples),
         project_child=project_composed_child,
+        execution=in_process_execution(),
     )
     assert {
         subject.method_subject_id
@@ -868,8 +882,9 @@ def test_bounded_runtime_skips_subjects_without_ms1_features(
         output_dir=tmp_path / "eligibility-output",
         alignment_config=config,
         max_partition_jobs=len(plan.context.samples),
-        raw_workers=raw_workers,
-        pipeline_overlap=True,
+        execution=ExecutionProfile(
+            alignment_workers=raw_workers, backend="thread", overlap_partitions=True
+        ),
         project_child=project_composed_child,
     )
     assert plan.subject_batch == subject_batch
@@ -989,7 +1004,11 @@ def test_bounded_runtime_matches_eager_after_disk_owner_round_trip(
             known_istd_reference=reference,
             progress_callback=report_progress,
             max_partition_jobs=(partition_subject_capacity * len(plan.context.samples)),
-            raw_workers=raw_workers,
+            execution=ExecutionProfile(
+                alignment_workers=raw_workers,
+                backend="thread",
+                overlap_partitions=False,
+            ),
             project_child=project_composed_child,
         )
     assert type(bounded) is CompletedUntargetBatchWorkflowResult
@@ -1140,6 +1159,7 @@ def test_bounded_runtime_failure_never_publishes_completed_batch(
             alignment_config=AlignmentConfig(anchor_min_seed_events=1),
             max_partition_jobs=len(plan.context.samples),
             project_child=project_composed_child,
+            execution=in_process_execution(),
         )
     assert len(calls) == 2
     assert error.value.__cause__ is original_error
@@ -1169,7 +1189,9 @@ def test_failed_attempt_retry_reuses_completed_raw_facts_and_recomposes(
         output_dir=tmp_path / "cold-output",
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
         max_partition_jobs=len(baseline_plan.context.samples),
-        pipeline_overlap=False,
+        execution=ExecutionProfile(
+            alignment_workers=4, backend="thread", overlap_partitions=False
+        ),
         project_child=project_composed_child,
     )
     baseline_writer = baseline.application_result
@@ -1193,7 +1215,9 @@ def test_failed_attempt_retry_reuses_completed_raw_facts_and_recomposes(
             output_dir=output_dir,
             alignment_config=AlignmentConfig(anchor_min_seed_events=1),
             max_partition_jobs=len(plan.context.samples),
-            pipeline_overlap=False,
+            execution=ExecutionProfile(
+                alignment_workers=4, backend="thread", overlap_partitions=False
+            ),
             project_child=project_composed_child,
         )
     failed_attempt_id = plan.context.processing_attempt_id
@@ -1207,7 +1231,9 @@ def test_failed_attempt_retry_reuses_completed_raw_facts_and_recomposes(
         output_dir=output_dir,
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
         max_partition_jobs=len(retry_plan.context.samples),
-        pipeline_overlap=False,
+        execution=ExecutionProfile(
+            alignment_workers=4, backend="thread", overlap_partitions=False
+        ),
         project_child=project_composed_child,
     )
 
@@ -1273,8 +1299,9 @@ def test_partition_acquisitions_overlap_with_shared_worker_budget_and_ordered_ou
         output_dir=tmp_path / "serial-partitions",
         alignment_config=config,
         max_partition_jobs=len(plan.context.samples),
-        raw_workers=4,
-        pipeline_overlap=False,
+        execution=ExecutionProfile(
+            alignment_workers=4, backend="thread", overlap_partitions=False
+        ),
         project_child=project_composed_child,
     )
 
@@ -1294,8 +1321,7 @@ def test_partition_acquisitions_overlap_with_shared_worker_budget_and_ordered_ou
     def leaf(*args, **kwargs):
         nonlocal peak_budget
         partition_key = kwargs["partition_key"]
-        budget = kwargs["raw_workers"]
-        assert kwargs["pool"].max_workers == budget
+        budget = kwargs["pool"].max_workers
         with lock:
             active_budgets[partition_key] = budget
             observed_budgets[partition_key] = budget
@@ -1336,8 +1362,9 @@ def test_partition_acquisitions_overlap_with_shared_worker_budget_and_ordered_ou
         output_dir=tmp_path / "overlapped-partitions",
         alignment_config=config,
         max_partition_jobs=len(plan.context.samples),
-        raw_workers=4,
-        pipeline_overlap=True,
+        execution=ExecutionProfile(
+            alignment_workers=4, backend="thread", overlap_partitions=True
+        ),
         project_child=project_composed_child,
     )
 
@@ -1377,7 +1404,7 @@ def test_overlapped_partition_acquisition_failure_propagates(
 
     def leaf(*args, **kwargs):
         partition_key = kwargs["partition_key"]
-        observed_budgets[partition_key] = kwargs["raw_workers"]
+        observed_budgets[partition_key] = kwargs["pool"].max_workers
         if partition_key in {"partition-00000-initial", "partition-00001-initial"}:
             barrier.wait(timeout=10)
         result = original_leaf(*args, **kwargs)
@@ -1397,8 +1424,9 @@ def test_overlapped_partition_acquisition_failure_propagates(
             output_dir=tmp_path / "overlapped-failure",
             alignment_config=AlignmentConfig(anchor_min_seed_events=1),
             max_partition_jobs=len(plan.context.samples),
-            raw_workers=4,
-            pipeline_overlap=True,
+            execution=ExecutionProfile(
+                alignment_workers=4, backend="thread", overlap_partitions=True
+            ),
             project_child=project_composed_child,
         )
     assert error.value.__cause__ is injected_error
@@ -1443,8 +1471,9 @@ def test_last_bootstrap_failure_prevents_backfill_admission(tmp_path, monkeypatc
             output_dir=tmp_path / "last-bootstrap",
             alignment_config=AlignmentConfig(anchor_min_seed_events=1),
             max_partition_jobs=len(plan.context.samples),
-            raw_workers=4,
-            pipeline_overlap=True,
+            execution=ExecutionProfile(
+                alignment_workers=4, backend="thread", overlap_partitions=True
+            ),
             project_child=project_composed_child,
         )
     assert not waiting_final.is_set()
@@ -1512,8 +1541,11 @@ def test_final_grouping_failure_stops_before_any_backfill(
             output_dir=tmp_path / "grouping",
             alignment_config=AlignmentConfig(anchor_min_seed_events=1),
             max_partition_jobs=len(plan.context.samples),
-            raw_workers=4,
-            pipeline_overlap=pipeline_overlap,
+            execution=ExecutionProfile(
+                alignment_workers=4,
+                backend="thread",
+                overlap_partitions=pipeline_overlap,
+            ),
             should_cancel=cancellation.is_set,
             progress_callback=lambda event: (
                 timeline_events.append(event)
@@ -1545,7 +1577,9 @@ def test_backfill_requires_frozen_batch_calibration(tmp_path, monkeypatch):
         plan,
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
         max_partition_jobs=len(plan.context.samples),
-        raw_workers=1,
+        execution=ExecutionProfile(
+            alignment_workers=1, backend="thread", overlap_partitions=False
+        ),
         project_child=project_composed_child,
     )
     try:
@@ -1679,7 +1713,9 @@ def test_sample_parallelism_keeps_partition_and_acquisition_counts_fixed(
         output_dir=tmp_path / "parallel",
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
         max_partition_jobs=8,
-        raw_workers=raw_workers,
+        execution=ExecutionProfile(
+            alignment_workers=raw_workers, backend="thread", overlap_partitions=False
+        ),
         progress_callback=progress,
         project_child=project_composed_child,
     )
@@ -1783,7 +1819,9 @@ def test_sample_failure_drains_without_more_samples_or_partition_publication(
             plan,
             output_dir=tmp_path / "failed",
             alignment_config=AlignmentConfig(anchor_min_seed_events=1),
-            raw_workers=2,
+            execution=ExecutionProfile(
+                alignment_workers=2, backend="thread", overlap_partitions=False
+            ),
             max_partition_jobs=8,
             should_cancel=should_cancel,
             progress_callback=progress,
@@ -1878,7 +1916,7 @@ def test_process_recovery_dispatches_only_missing_subjects(tmp_path, monkeypatch
         return execute_recovery(request)
 
     monkeypatch.setattr(runtime, "_execute_sample_backfill_worker", observe_request)
-    with LocalProcessMessages(max_workers=1) as pool:
+    with LocalProcessMessages(max_workers=1, backend="thread") as pool:
         result = runtime.execute_partition(
             batch.jobs,
             partition_key="sparse-recovery",
@@ -1909,7 +1947,7 @@ def test_two_sample_process_messages_match_serial_results_and_attribution(
     plan, _ = _plan(tmp_path, monkeypatch, sample_count=2)
     batch = materialize_untargeted_partition(plan, plan.subject_batch)
     config = AlignmentConfig(anchor_min_seed_events=1)
-    with WorkerAdmissionPool(max_workers=1) as pool:
+    with WorkerAdmissionPool(max_workers=1, backend="thread") as pool:
         serial = runtime.execute_partition(
             batch.jobs,
             partition_key="two-sample-serial",
@@ -1930,7 +1968,7 @@ def test_two_sample_process_messages_match_serial_results_and_attribution(
 
     for entry in ("_execute_sample_initial_worker", "_execute_sample_backfill_worker"):
         monkeypatch.setattr(runtime, entry, reordered_response(getattr(runtime, entry)))
-    with LocalProcessMessages(max_workers=2) as pool:
+    with LocalProcessMessages(max_workers=2, backend="thread") as pool:
         process = runtime.execute_partition(
             batch.jobs,
             partition_key="two-sample-process",
@@ -1990,7 +2028,7 @@ def test_process_outcome_must_cover_the_exact_work_units(
         )
 
     monkeypatch.setattr(runtime, "_execute_sample_initial_worker", corrupt_response)
-    with LocalProcessMessages(max_workers=1) as pool:
+    with LocalProcessMessages(max_workers=1, backend="thread") as pool:
         result = runtime.execute_partition(
             batch.jobs,
             partition_key="crossed-worker-population",
@@ -2034,9 +2072,7 @@ def test_sparse_recovery_partition_matches_dense_composition(
 ):
     from tests.untargeted_partition_fixtures import (
         execute_dense_partition,
-    )
-    from xic_extractor.untargeted_execution.partition.execution import (
-        execute_partition,
+        execute_partition_inline,
     )
     from xic_extractor.untargeted_execution.partition_composition import (
         compose_untargeted_partition,
@@ -2062,7 +2098,7 @@ def test_sparse_recovery_partition_matches_dense_composition(
         plan, plan.subject_batch, sparse=True
     )
     assert len(sparse_batch.jobs) == expected_sparse_jobs
-    sparse_runtime = execute_partition(
+    sparse_runtime = execute_partition_inline(
         sparse_batch.jobs,
         backfill_templates=sparse_batch.sample_job_templates,
         partition_key="sparse-recovery",
@@ -2136,6 +2172,7 @@ def test_formal_partition_reuses_prepared_group_ids_for_recovery_and_composition
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
         max_partition_jobs=100,
         project_child=project_composed_child,
+        execution=in_process_execution(),
     )
     assert len(adapter.bootstrap_partitions) == 1
     store = StreamedResultStore(tmp_path / "formal-spool", adapter.get_shared_objects())
@@ -2232,6 +2269,7 @@ def test_completed_partition_retains_only_light_parent_capture_metadata(
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
         max_partition_jobs=100,
         project_child=project_composed_child,
+        execution=in_process_execution(),
     )
     store = StreamedResultStore(
         tmp_path / "retention-spool", adapter.get_shared_objects()
@@ -2311,9 +2349,9 @@ def test_process_backend_reuses_one_shared_pool_and_closes_once(
         plan,
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
         max_partition_jobs=len(plan.context.samples),
-        raw_workers=8,
-        raw_worker_backend="process",
-        acquisition_workers=2,
+        execution=ExecutionProfile(
+            alignment_workers=8, backend="process", overlap_partitions=True
+        ),
         project_child=project_composed_child,
     )
 
@@ -2365,6 +2403,7 @@ def _run_for_spool(tmp_path, monkeypatch, *, retain):
         max_partition_jobs=len(plan.context.samples),
         retain_partition_spool=retain,
         project_child=project_composed_child,
+        execution=in_process_execution(),
     )
     spools = _spool_dirs(output_dir)
     assert len(spools) == 1
@@ -2446,6 +2485,7 @@ def test_result_store_close_failure_is_reported_once(tmp_path, monkeypatch, reta
         max_partition_jobs=len(plan.context.samples),
         retain_partition_spool=retain,
         project_child=project_composed_child,
+        execution=in_process_execution(),
     )
     alias = replace(result)
     operation = "preserve_results" if retain else "cleanup"
@@ -2486,6 +2526,7 @@ def _run_for_cache(tmp_path, monkeypatch, *, retain, tag, shared=None):
         retain_acquisition_cache=retain,
         acquisition_cache_dir=shared,
         project_child=project_composed_child,
+        execution=in_process_execution(),
     )
     result.close()
     return output_dir / ".cid_nl_acquisition_cache"
@@ -2539,5 +2580,6 @@ def test_acquisition_cache_survives_a_failed_attempt(tmp_path, monkeypatch):
             alignment_config=AlignmentConfig(anchor_min_seed_events=1),
             max_partition_jobs=len(plan.context.samples),
             project_child=project_composed_child,
+            execution=in_process_execution(),
         )
     assert (output_dir / ".cid_nl_acquisition_cache").is_dir()

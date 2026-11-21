@@ -156,7 +156,7 @@ def test_run_discovery_cli_passes_raw_dir_batch_settings(
         settings,
         dll_dir,
         run_spec,
-        max_workers,
+        execution,
         timing_recorder=None,
     ):
         captured["raw_paths"] = raw_paths
@@ -164,7 +164,6 @@ def test_run_discovery_cli_passes_raw_dir_batch_settings(
         captured["settings"] = settings
         captured["dll_dir"] = dll_dir
         captured["run_spec"] = run_spec
-        captured["max_workers"] = max_workers
         output_dir.mkdir(parents=True, exist_ok=True)
         output_path = output_dir / "discovery_batch_index.csv"
         sample_outputs = DiscoveryRunOutputs(
@@ -201,7 +200,6 @@ def test_run_discovery_cli_passes_raw_dir_batch_settings(
     assert captured["output_dir"] == output_dir.resolve()
     assert captured["dll_dir"] == dll_dir.resolve()
     assert captured["settings"].resolver_mode == "local_minimum"
-    assert captured["max_workers"] == 1
     assert tuple(
         item.sample_stem for item in captured["run_spec"].acquisition_inputs
     ) == ("A", "B")
@@ -287,7 +285,7 @@ def test_run_discovery_cli_writes_live_and_final_timing_json_for_batch(
         settings,
         dll_dir,
         run_spec,
-        max_workers,
+        execution,
         timing_recorder=None,
     ):
         assert run_spec.discovery_method.settings == settings

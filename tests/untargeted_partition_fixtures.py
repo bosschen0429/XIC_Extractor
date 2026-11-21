@@ -34,6 +34,7 @@ from xic_extractor.configuration.signal_processing_profile import (
 )
 from xic_extractor.discovery.models import DiscoveryPeak
 from xic_extractor.discovery.settings import DiscoverySettings
+from xic_extractor.execution.workers import WorkerAdmissionPool
 from xic_extractor.output.alignment.pipeline_outputs import AlignmentRunOutputs
 from xic_extractor.output.alignment.tsv_writer import UntargetChildOutputs
 from xic_extractor.peak_detection.cid_nl_method_subject import (
@@ -167,6 +168,12 @@ def build_dense_partition(
     return materialize_untargeted_partition(plan, plan.subject_batch)
 
 
+def execute_partition_inline(*args, **kwargs) -> UntargetedPartitionResult:
+    """Run one partition on a single in-process worker."""
+    with WorkerAdmissionPool(max_workers=1, backend="thread") as pool:
+        return execute_partition(*args, pool=pool, **kwargs)
+
+
 def execute_dense_partition(
     batch: UntargetedPartitionInputs,
     *,
@@ -176,7 +183,7 @@ def execute_dense_partition(
 ) -> UntargetedPartitionResult:
     """Run one dense partition through the production sample-batch runtime."""
 
-    result = execute_partition(
+    result = execute_partition_inline(
         batch.jobs,
         partition_key="dense-fixture",
         progress_callback=progress_callback,

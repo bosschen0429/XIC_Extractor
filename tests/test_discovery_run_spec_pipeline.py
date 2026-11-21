@@ -17,6 +17,10 @@ from tests.discovery_pipeline_fixtures import (
     _scan_event,
     _settings,
 )
+from xic_extractor.configuration.execution_profile import (
+    ExecutionProfile,
+    in_process_execution,
+)
 from xic_extractor.discovery.csv_reader import (
     read_discovery_batch_index,
     read_owner_bound_discovery_peaks_csv,
@@ -121,7 +125,7 @@ def test_discovery_persists_feature_facts_and_measured_review_support(
         settings=settings,
         dll_dir=tmp_path / "dll",
         run_spec=spec,
-        max_workers=workers,
+        execution=ExecutionProfile(parallel_workers=workers),
         raw_opener=(lambda path, _dll: handles[path]) if workers == 1 else None,
         executor_factory=ImmediateExecutor if workers > 1 else None,
     )
@@ -188,6 +192,7 @@ def test_batch_serial_and_process_share_one_run_spec_and_sample_bindings(
         dll_dir=tmp_path / "dll",
         raw_opener=lambda path, dll_dir: serial_handles[path],
         run_spec=spec,
+        execution=in_process_execution(),
     )
 
     process_handles = {
@@ -230,7 +235,7 @@ def test_batch_serial_and_process_share_one_run_spec_and_sample_bindings(
         output_dir=tmp_path / "process-spec",
         settings=settings,
         dll_dir=tmp_path / "dll",
-        max_workers=2,
+        execution=ExecutionProfile(parallel_workers=2),
         executor_factory=_SynchronousExecutor,
         run_spec=spec,
     )

@@ -131,7 +131,7 @@ def test_targeted_and_discovery_use_system_budget_not_saved_worker_value(
     prepared = prepare_targeted_config(config_dir)
     try:
         assert (
-            prepared.config.parallel_workers
+            prepared.config.execution.parallel_workers
             == load_execution_profile().parallel_workers
         )
         if workers:

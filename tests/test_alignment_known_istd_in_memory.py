@@ -15,6 +15,10 @@ from xic_extractor.alignment.drift_evidence import (
 from xic_extractor.applications.untargeted.istd_reference import (
     extract_batch_known_istd_reference,
 )
+from xic_extractor.configuration.execution_profile import (
+    ExecutionProfile,
+    in_process_execution,
+)
 from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.targets import read_targets
 from xic_extractor.ms2_scan_models import Ms2Scan, Ms2ScanEvent
@@ -168,6 +172,7 @@ def test_untargeted_istd_uses_targeted_selection_for_multiple_supported_peaks(
         {s: tmp_path / f"{s}.raw" for s in measured},
         tmp_path,
         config,
+        execution=in_process_execution(),
     )
     assert {sample: rt for _, sample, rt, _ in reference.coordinates} == expected
     assert calls == ["S1", "S2"]
@@ -222,6 +227,7 @@ def test_istd_reference_preserves_targeted_anchor_rejection(tmp_path, monkeypatc
         {"A": tmp_path / "accepted.raw", "B": tmp_path / "rejected.raw"},
         tmp_path / "dll",
         _config(tmp_path),
+        execution=in_process_execution(),
     )
     assert reference.coordinates == (("ISTD", "A", 3.0, 0.0),)
 
@@ -229,7 +235,6 @@ def test_istd_reference_preserves_targeted_anchor_rejection(tmp_path, monkeypatc
 def test_istd_reference_runs_raw_files_through_targeted_process_backend(
     tmp_path, monkeypatch
 ):
-    from dataclasses import replace
 
     from tests.target_extraction_fixtures import _candidate, _peak_result
     from xic_extractor.extraction.result_models import (
@@ -244,7 +249,7 @@ def test_istd_reference_runs_raw_files_through_targeted_process_backend(
     def run_process(
         config, targets, *, raw_paths, injection_order, mass_recalibration_by_sample
     ):
-        calls.append((config.parallel_mode, targets, raw_paths))
+        calls.append((config.execution.backend, targets, raw_paths))
         return RunOutput(
             file_results=[
                 FileResult(
@@ -267,7 +272,8 @@ def test_istd_reference_runs_raw_files_through_targeted_process_backend(
         [target, _make_target("Analyte", is_istd=False)],
         {"B": tmp_path / "b.raw", "A": tmp_path / "a.raw"},
         tmp_path / "dll",
-        replace(_config(tmp_path), parallel_mode="process"),
+        _config(tmp_path),
+        execution=ExecutionProfile(),
     )
     assert calls == [("process", [target], [tmp_path / "a.raw", tmp_path / "b.raw"])]
     assert {(label, sample) for label, sample, *_ in reference.coordinates} == {
@@ -277,9 +283,7 @@ def test_istd_reference_runs_raw_files_through_targeted_process_backend(
 
 
 @pytest.mark.parametrize("policy", ("none", "easy_ic_probe", "easy_ic_restore"))
-def test_untargeted_peak_config_follows_recipe_and_runs_istd_in_process_mode(
-    tmp_path, policy
-):
+def test_untargeted_peak_config_follows_recipe(tmp_path, policy):
     from dataclasses import replace
 
     from xic_extractor.applications.untargeted.request import untargeted_peak_config
@@ -298,7 +302,6 @@ def test_untargeted_peak_config_follows_recipe_and_runs_istd_in_process_mode(
         output_dir=tmp_path,
         discovery_settings=settings,
     )
-    assert config.parallel_mode == "process"
     assert config.mass_recalibration is settings.mass_recalibration
     assert config.resolver_mode == settings.resolver_mode
     assert config.nl_min_intensity_ratio == settings.nl_min_intensity_ratio
@@ -317,6 +320,7 @@ def test_istd_file_failure_is_not_an_empty_reference(tmp_path, monkeypatch):
             {"S1": tmp_path / "S1.raw"},
             tmp_path,
             _config(tmp_path),
+            execution=in_process_execution(),
         )
 
 
@@ -405,6 +409,7 @@ def test_istd_reference_recovers_cross_sample_peak_without_local_nl(
             )
             for s in ("S0", "S1", "S2", "S3")
         ),
+        execution=in_process_execution(),
     )
     coordinates = {
         (label, sample): rt for label, sample, rt, _ in reference.coordinates

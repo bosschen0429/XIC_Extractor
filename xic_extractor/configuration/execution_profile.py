@@ -1,3 +1,9 @@
+"""The one place that decides how a run uses this machine.
+
+An entry point builds one ``ExecutionProfile``; every pool below it is sized
+from that value and opened by ``xic_extractor.execution``.
+"""
+
 from __future__ import annotations
 
 import os
@@ -6,7 +12,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 DEFAULT_ALIGNMENT_WORKERS = 4
-DEFAULT_ALIGNMENT_WORKER_BACKEND = "process"
+DEFAULT_WORKER_BACKEND = "process"
+WORKER_BACKENDS = ("process", "thread")
+RAW_HEADER_READ_THREADS = 8
 
 
 def default_parallel_workers() -> int:
@@ -16,12 +24,29 @@ def default_parallel_workers() -> int:
 
 @dataclass(frozen=True, slots=True)
 class ExecutionProfile:
+    """Worker budgets and where the workers live.
+
+    ``parallel_workers`` bounds work that takes one worker per RAW or per
+    independent grouping workset; ``alignment_workers`` bounds Alignment's RAW
+    sample phases and source fingerprinting. ``backend="thread"`` keeps every
+    worker inside this process, where per-RAW extraction runs one file at a
+    time. ``overlap_partitions`` lets Alignment acquire one partition while
+    composing another.
+    """
+
     parallel_workers: int = field(default_factory=default_parallel_workers)
     alignment_workers: int = DEFAULT_ALIGNMENT_WORKERS
+    backend: str = DEFAULT_WORKER_BACKEND
+    overlap_partitions: bool = True
 
     def __post_init__(self) -> None:
         _validate_workers(self.parallel_workers, field="parallel_workers")
         _validate_workers(self.alignment_workers, field="alignment_workers")
+
+
+def in_process_execution() -> ExecutionProfile:
+    """Run everything in the calling process, for injected readers and tests."""
+    return ExecutionProfile(backend="thread", overlap_partitions=False)
 
 
 def resolve_execution_profile(
@@ -29,6 +54,7 @@ def resolve_execution_profile(
     *,
     parallel_workers: int | None = None,
     alignment_workers: int | None = None,
+    backend: str = DEFAULT_WORKER_BACKEND,
 ) -> ExecutionProfile:
     configured_parallel = default_parallel_workers()
     configured_value = settings.get("parallel_workers", "") if settings else ""
@@ -43,6 +69,7 @@ def resolve_execution_profile(
             if alignment_workers is None
             else alignment_workers
         ),
+        backend=backend,
     )
 
 
@@ -50,11 +77,13 @@ def load_execution_profile(
     *,
     parallel_workers: int | None = None,
     alignment_workers: int | None = None,
+    backend: str = DEFAULT_WORKER_BACKEND,
 ) -> ExecutionProfile:
     """Worker counts come from the machine; only an explicit argument overrides."""
     return resolve_execution_profile(
         parallel_workers=parallel_workers,
         alignment_workers=alignment_workers,
+        backend=backend,
     )
 
 
@@ -75,14 +104,7 @@ def _validate_workers(value: int, *, field: str) -> int:
 class UntargetedExecutionPolicy:
     """Resources for retained Alignment, independent of scientific settings."""
 
+    profile: ExecutionProfile = field(default_factory=ExecutionProfile)
     retain_acquisition_cache: bool = False
     acquisition_cache_dir: Path | None = None
-    raw_workers: int = DEFAULT_ALIGNMENT_WORKERS
-    raw_worker_backend: str = DEFAULT_ALIGNMENT_WORKER_BACKEND
     max_partition_jobs: int = 100_000
-
-    def __post_init__(self) -> None:
-        if type(self.raw_workers) is not int or self.raw_workers < 1:
-            raise ValueError("raw_workers must be a positive integer")
-        if self.raw_worker_backend not in {"process", "thread"}:
-            raise ValueError("raw_worker_backend must be 'process' or 'thread'")

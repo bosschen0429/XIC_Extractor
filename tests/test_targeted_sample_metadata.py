@@ -6,6 +6,7 @@ import openpyxl
 
 from tests.raw_header_fakes import install_fake_raw_headers
 from tests.targeted_production_workflow_fixtures import production_case
+from xic_extractor.configuration.execution_profile import in_process_execution
 from xic_extractor.extraction import pipeline, serial_backend
 from xic_extractor.extraction.result_models import RawFileExtractionResult
 from xic_extractor.sample_metadata import SAMPLE_METADATA_COLUMNS
@@ -235,6 +236,7 @@ def test_cli_flows_share_tsv_groups_and_excluded_population(tmp_path, monkeypatc
         dll_dir=tmp_path,
         raw_opener=lambda path, _dll: handles[path],
         run_spec=spec,
+        execution=in_process_execution(),
     )
     opened = install_runtime_raws(
         monkeypatch, sources_by_path=raw_spectra, tmp_path=tmp_path

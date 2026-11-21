@@ -13,7 +13,7 @@ from xic_extractor.applications.untargeted.full_analysis import (
     FullAnalysisRequest,
     UntargetedAnalysis,
 )
-from xic_extractor.configuration.execution_profile import DEFAULT_ALIGNMENT_WORKERS
+from xic_extractor.configuration.execution_profile import ExecutionProfile
 from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.output.alignment.pipeline_outputs import (
     AlignmentRunOutputs as _AlignmentRunOutputs,
@@ -64,6 +64,7 @@ def _full_request(
         "raw_dir": raw_dir,
         "dll_dir": tmp_path / "dll",
         "output_dir": tmp_path / "out",
+        "execution_profile": ExecutionProfile(parallel_workers=3, alignment_workers=2),
     }
     values.update(fields)
     return FullAnalysisRequest(**values), captured_discovery
@@ -103,10 +104,7 @@ def test_full_analysis_applies_default_runtime(
     assert peak_config.nl_min_intensity_ratio == 0.02
     assert peak_config.resolver_mode == "savgol"
     assert captured_alignment["request"].alignment_config == AlignmentConfig()
-    assert (
-        captured_alignment["request"].execution.raw_workers == DEFAULT_ALIGNMENT_WORKERS
-    )
-    assert captured_alignment["request"].execution.raw_worker_backend == "process"
+    assert captured_alignment["request"].execution.profile == request.execution_profile
     assert captured_alignment["request"].publication.output_level == "machine"
     assert captured_alignment["request"].publication.emit_alignment_cells is False
     assert captured_alignment["request"].publication.emit_alignment_explanation is True
@@ -117,7 +115,7 @@ def test_full_analysis_applies_default_runtime(
     assert summary["alignment_outputs"] == {
         "matrix_tsv": str(output_dir / "alignment_matrix.tsv"),
     }
-    assert captured_discovery["max_workers"] == 1
+    assert captured_discovery["execution"] == request.execution_profile
     run_spec = captured_discovery["run_spec"]
     assert run_spec.discovery_method.settings == settings
     assert run_spec.acquisition_inputs[0].sample_stem == "A"

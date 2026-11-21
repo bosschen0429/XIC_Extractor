@@ -36,7 +36,9 @@ from xic_extractor.applications.untargeted.request import (
     validate_retained_processing_profile,
 )
 from xic_extractor.configuration.execution_profile import (
-    DEFAULT_ALIGNMENT_WORKER_BACKEND,
+    DEFAULT_WORKER_BACKEND,
+    WORKER_BACKENDS,
+    ExecutionProfile,
     UntargetedExecutionPolicy,
     load_execution_profile,
 )
@@ -79,7 +81,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     args = _parse_args(argv)
     try:
-        execution_profile = load_execution_profile(alignment_workers=args.raw_workers)
+        execution_profile = load_execution_profile(
+            alignment_workers=args.raw_workers, backend=args.raw_worker_backend
+        )
     except (ConfigError, ValueError) as exc:
         print(str(exc), file=sys.stderr)
         return 2
@@ -99,8 +103,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     try:
         execution = UntargetedExecutionPolicy(
-            raw_workers=args.raw_workers,
-            raw_worker_backend=args.raw_worker_backend,
+            profile=execution_profile,
             retain_acquisition_cache=args.retain_acquisition_cache,
             acquisition_cache_dir=args.acquisition_cache_dir,
             max_partition_jobs=args.max_partition_jobs,
@@ -418,7 +421,10 @@ def _run_stage_replay(argv: Sequence[str]) -> int:
 
             label = "Backfill decisions"
             path = replay_backfill(
-                args.inputs, args.output_dir, save_matrix_inputs=args.save_matrix_inputs
+                args.inputs,
+                args.output_dir,
+                execution=ExecutionProfile(alignment_workers=1, backend="thread"),
+                save_matrix_inputs=args.save_matrix_inputs,
             )
         elif args.stage == "pair-batches":
             from xic_extractor.diagnostics.batch_pairing import replay_pairing
@@ -535,11 +541,11 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--raw-worker-backend",
-        choices=("process", "thread"),
-        default=DEFAULT_ALIGNMENT_WORKER_BACKEND,
+        choices=WORKER_BACKENDS,
+        default=DEFAULT_WORKER_BACKEND,
         help=(
             "Backend for persisted-input indexing and RAW sample execution "
-            f"('process' or 'thread', default: '{DEFAULT_ALIGNMENT_WORKER_BACKEND}'). "
+            f"('process' or 'thread', default: '{DEFAULT_WORKER_BACKEND}'). "
             "Fingerprinting uses threads."
         ),
     )
