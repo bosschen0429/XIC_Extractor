@@ -159,14 +159,9 @@ def compose_final_group_cell_observation_population(
     materializing method evidence.
     """
 
-    if isinstance(predecessor_cells, (str, bytes)):
-        raise CellObservationContractError(
-            "predecessor cells must be a finite owner-sealed sequence"
-        )
-    sources = tuple(predecessor_cells)
     return _compose_final_group_cell_observation_population(
         handoff=handoff,
-        predecessor_cells=sources,
+        predecessor_cells=tuple(predecessor_cells),
         backfill_cells=tuple(backfill_cells),
     )
 
@@ -268,10 +263,6 @@ def _index_predecessor_cells(
     *,
     positions: tuple[BackfillPlanningPosition, ...],
 ) -> dict[tuple[str, str], CellObservation]:
-    if isinstance(predecessor_cells, (str, bytes)):
-        raise CellObservationContractError(
-            "predecessor cells must be a finite owner-sealed sequence"
-        )
     cells = tuple(predecessor_cells)
     if len({id(cell) for cell in cells}) != len(cells):
         raise CellObservationContractError(

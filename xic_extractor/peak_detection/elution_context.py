@@ -70,8 +70,6 @@ class SampleElutionContext:
             or self.mz <= 0.0
             or self.rt_start < 0.0
             or self.rt_end <= self.rt_start
-            or type(self.landmarks) is not tuple
-            or any(not isinstance(peak, ElutionLandmark) for peak in self.landmarks)
         ):
             raise ValueError(
                 "elution context requires a sample, mass, bounds and landmarks"

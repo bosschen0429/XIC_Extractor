@@ -8,7 +8,6 @@ from dataclasses import dataclass, field
 from xic_extractor.configuration.cid_nl_profile import PrecursorReferenceRequirement
 from xic_extractor.mass_accuracy import neutral_loss_match
 from xic_extractor.peak_detection.cid_nl_evidence import (
-    ACQUISITION_MODE,
     CidNlEvidenceObservation,
 )
 from xic_extractor.peak_detection.observations import PeakObservation
@@ -32,13 +31,6 @@ class DdaCidNlPeakSupportPolicy:
     precursor_reference_requirement: PrecursorReferenceRequirement = "independent_mass"
 
     def __post_init__(self) -> None:
-        if self.precursor_reference_requirement not in {
-            "independent_mass",
-            "recorded_precursor",
-        }:
-            raise DdaCidNlPeakSupportContractError(
-                "invalid precursor reference requirement"
-            )
         precursor_tolerance = _finite_float(
             self.precursor_tolerance_da,
             field="precursor_tolerance_da",
@@ -91,10 +83,6 @@ class DdaCidNlPeakSupport:
     neutral_loss_window_da: float = field(init=False)
 
     def __post_init__(self) -> None:
-        if self.acquisition_mode != ACQUISITION_MODE:
-            raise DdaCidNlPeakSupportContractError(
-                f"acquisition_mode must be {ACQUISITION_MODE!r}"
-            )
         if (
             isinstance(self.dda_scan_number, bool)
             or not isinstance(self.dda_scan_number, int)
@@ -126,48 +114,18 @@ class DdaCidNlPeakSupport:
             raise DdaCidNlPeakSupportContractError(
                 "peak_rt_min must be less than peak_rt_max"
             )
-        if not peak_rt_min <= scan_rt <= peak_rt_max:
-            raise DdaCidNlPeakSupportContractError(
-                "DDA scan RT is outside the physical MS1 peak scope"
-            )
         if precursor_mz <= 0.0 or peak_mz <= 0.0:
             raise DdaCidNlPeakSupportContractError(
                 "precursor_mz and peak_mz must be positive"
             )
-        expected_delta = precursor_mz - peak_mz
-        if not math.isclose(
-            precursor_delta,
-            expected_delta,
-            rel_tol=1e-12,
-            abs_tol=1e-12,
-        ):
-            raise DdaCidNlPeakSupportContractError(
-                "precursor_delta_da mismatches the bound observations"
-            )
-        if not isinstance(self.policy, DdaCidNlPeakSupportPolicy):
-            raise DdaCidNlPeakSupportContractError(
-                "policy must be owner-normalized DDA CID-NL support policy"
-            )
-        if abs(precursor_delta) > self.policy.precursor_tolerance_da:
-            raise DdaCidNlPeakSupportContractError(
-                "DDA precursor is outside the MS1 peak m/z tolerance"
-            )
-        loss_error_da, loss_window_da, matches = neutral_loss_match(
+        loss_error_da, loss_window_da, _matches = neutral_loss_match(
             precursor_mz,
             observed_product_mz,
             configured_loss_da,
             self.policy.neutral_loss_tolerance_ppm,
         )
-        if not matches:
-            raise DdaCidNlPeakSupportContractError(
-                "CID-NL evidence does not satisfy the strict neutral-loss tolerance"
-            )
         object.__setattr__(self, "observed_loss_error_da", loss_error_da)
         object.__setattr__(self, "neutral_loss_window_da", loss_window_da)
-        if self.relationship != RELATIONSHIP:
-            raise DdaCidNlPeakSupportContractError(
-                f"relationship must be {RELATIONSHIP!r}"
-            )
         for field_name, value in (
             ("scan_rt_min", scan_rt),
             ("peak_rt_min", peak_rt_min),

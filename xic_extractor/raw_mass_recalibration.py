@@ -10,14 +10,17 @@ from xic_extractor.configuration.mass_recalibration import (
     MassRecalibration,
     MassRecalibrationResult,
 )
-from xic_extractor.mass_accuracy import mz_tolerance_da, ppm_scale_factor
+from xic_extractor.mass_accuracy import (
+    CARBON_ISOTOPE_SPACING_DA,
+    mz_tolerance_da,
+    ppm_scale_factor,
+)
 from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
 from xic_extractor.processing_identity import AcquisitionSourceExpectation
 from xic_extractor.raw_reader_errors import RawReaderError
 from xic_extractor.xic_models import XICRequest, XICTrace
 
 _RECORDED_PRECURSOR_ROUNDING_MZ = 1e-4
-_CARBON_ISOTOPE_SPACING_DA = 1.0033548
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,7 +82,7 @@ def is_recorded_precursor(
         and abs(precursor_mz - monoisotopic) <= _RECORDED_PRECURSOR_ROUNDING_MZ
     )
     if monoisotopic is not None and metadata.charge is not None:
-        spacing = _CARBON_ISOTOPE_SPACING_DA * parent_scale / metadata.charge
+        spacing = CARBON_ISOTOPE_SPACING_DA * parent_scale / metadata.charge
         isotope_number = round((precursor_mz - monoisotopic) / spacing)
         if isotope_number >= 1:
             measured = (

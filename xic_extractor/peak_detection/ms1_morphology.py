@@ -169,8 +169,6 @@ def canonical_gaussian_signal_traces(
 ) -> tuple[np.ndarray, np.ndarray]:
     """Return Gaussian(raw) and its positive residual over nonnegative AsLS."""
 
-    if not isinstance(profile, SignalProcessingProfile):
-        raise TypeError("profile must be a SignalProcessingProfile")
     intensity = np.asarray(intensity_values, dtype=float)
     baseline = np.asarray(baseline_values, dtype=float)
     if intensity.ndim != 1 or baseline.ndim != 1:

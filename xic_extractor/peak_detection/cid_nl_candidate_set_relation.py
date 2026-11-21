@@ -11,7 +11,6 @@ import math
 from dataclasses import dataclass
 
 from xic_extractor.peak_detection.cid_nl_evidence import (
-    ACQUISITION_MODE,
     CidNlEvidenceObservation,
 )
 from xic_extractor.peak_detection.cid_nl_peak_support import (
@@ -44,10 +43,6 @@ class DdaCidNlCandidateSetRelation:
     relationship: str = RELATIONSHIP
 
     def __post_init__(self) -> None:
-        if self.acquisition_mode != ACQUISITION_MODE:
-            raise DdaCidNlCandidateSetRelationContractError(
-                f"acquisition_mode must be {ACQUISITION_MODE!r}"
-            )
         if (
             isinstance(self.dda_scan_number, bool)
             or not isinstance(self.dda_scan_number, int)
@@ -66,14 +61,6 @@ class DdaCidNlCandidateSetRelation:
         if scan_rt < 0.0 or not math.isfinite(scan_rt):
             raise DdaCidNlCandidateSetRelationContractError(
                 "scan_rt_min must be finite and non-negative"
-            )
-        if not isinstance(self.policy, DdaCidNlPeakSupportPolicy):
-            raise DdaCidNlCandidateSetRelationContractError(
-                "policy must be owner-normalized DDA CID-NL support policy"
-            )
-        if self.relationship != RELATIONSHIP:
-            raise DdaCidNlCandidateSetRelationContractError(
-                f"relationship must be {RELATIONSHIP!r}"
             )
         object.__setattr__(self, "scan_rt_min", 0.0 if scan_rt == 0.0 else scan_rt)
 
@@ -112,13 +99,9 @@ def resolve_dda_cid_nl_candidate_set_relation(
 def _validate_inputs(
     *,
     canonical_evidence: CidNlEvidenceObservation,
-    candidate_peaks: object,
+    candidate_peaks: tuple[PeakObservation, ...],
     policy: DdaCidNlPeakSupportPolicy,
 ) -> tuple[PeakObservation, ...]:
-    if not isinstance(policy, DdaCidNlPeakSupportPolicy):
-        raise DdaCidNlCandidateSetRelationContractError(
-            "policy must be owner-normalized DDA CID-NL support policy"
-        )
     candidates = _canonical_candidates(candidate_peaks)
     observation = canonical_evidence
     if not policy.accepts_precursor(
@@ -203,14 +186,12 @@ def _intervals_touch_or_overlap(
     )
 
 
-def _canonical_candidates(value: object) -> tuple[PeakObservation, ...]:
-    if not isinstance(value, tuple) or not value:
+def _canonical_candidates(
+    value: tuple[PeakObservation, ...],
+) -> tuple[PeakObservation, ...]:
+    if not value:
         raise DdaCidNlCandidateSetRelationContractError(
             "candidate_peaks must be a non-empty immutable tuple"
-        )
-    if any(not isinstance(peak, PeakObservation) for peak in value):
-        raise DdaCidNlCandidateSetRelationContractError(
-            "candidate_peaks must contain owner-backed observations"
         )
     candidates = tuple(sorted(value, key=_candidate_sort_key))
     keys = tuple(peak.physical_peak_key for peak in candidates)

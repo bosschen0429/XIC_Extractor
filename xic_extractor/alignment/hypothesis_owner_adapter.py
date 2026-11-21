@@ -12,7 +12,6 @@ from xic_extractor.peak_detection.cid_nl_chromatographic_support import (
     CidNlChromatographicSupport,
     compose_cid_nl_chromatographic_support,
 )
-from xic_extractor.peak_detection.cid_nl_evidence import CidNlEvidenceObservation
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessment,
     supported_cid_nl_peaks,
@@ -25,7 +24,6 @@ from xic_extractor.peak_detection.observations import (
     PeakObservation,
 )
 from xic_extractor.peak_detection.peak_hypothesis_identity import (
-    HYPOTHESIS_METHOD_DDA_CID_NL,
     HYPOTHESIS_METHOD_MS1_OBSERVATION,
     MeasuredPeakHypothesis,
     compose_cid_nl_peak_hypothesis,
@@ -45,29 +43,8 @@ def compose_cid_nl_peak_hypotheses_from_assessment(
 ) -> tuple[MeasuredPeakHypothesis, ...]:
     """Preserve every individually supported physical peak as one hypothesis."""
 
-    return _compose_cid_nl_peak_hypotheses_from_assessment(
-        sample=sample,
-        assessment=assessment,
-        retained_by_peak={},
-    )
-
-
-def _compose_cid_nl_peak_hypotheses_from_assessment(
-    *,
-    sample: SampleMetadata,
-    assessment: CidNlMethodAssessment,
-    retained_by_peak: dict[PeakObservation, MeasuredPeakHypothesis],
-) -> tuple[MeasuredPeakHypothesis, ...]:
-
-    if not isinstance(assessment, CidNlMethodAssessment):
-        raise HypothesisOwnerAdapterError(
-            "assessment must be an owner-backed CID-NL method result"
-        )
-    if assessment.sample_key != sample.sample_name:
-        raise HypothesisOwnerAdapterError("assessment belongs to a different sample")
     if assessment.method_result != "SUPPORT":
         return ()
-    candidate_by_peak = {peak: peak for peak in assessment.candidate_peaks}
     supports_by_peak: dict[PeakObservation, list[DdaCidNlPeakSupport]] = {}
     for relation in assessment.individual_support_refs:
         supports_by_peak.setdefault(
@@ -76,15 +53,6 @@ def _compose_cid_nl_peak_hypotheses_from_assessment(
         ).append(relation)
     hypotheses: list[MeasuredPeakHypothesis] = []
     for supported_peak in supported_cid_nl_peaks(assessment):
-        peak = candidate_by_peak.get(supported_peak)
-        if peak is None:
-            raise HypothesisOwnerAdapterError(
-                "assessment support references a physical peak outside its universe"
-            )
-        hypothesis = retained_by_peak.get(supported_peak)
-        if hypothesis is not None:
-            hypotheses.append(hypothesis)
-            continue
         try:
             support = compose_cid_nl_chromatographic_support(
                 sample=sample,
@@ -101,17 +69,11 @@ def _compose_cid_nl_peak_hypotheses_from_assessment(
                 else (),
             )
             hypothesis = compose_cid_nl_peak_hypothesis(
-                sample=sample,
-                peak_observation=peak,
+                peak_observation=supported_peak,
                 chromatographic_support=support,
             )
         except ValueError as exc:
             raise HypothesisOwnerAdapterError(str(exc)) from exc
-        _assessment_hypothesis_components(
-            sample=sample,
-            assessment=assessment,
-            hypothesis=hypothesis,
-        )
         hypotheses.append(hypothesis)
     return tuple(sorted(hypotheses, key=lambda item: item.hypothesis_id))
 
@@ -120,94 +82,22 @@ def compose_peak_hypotheses_from_assessment_universe(
     *,
     sample: SampleMetadata,
     assessment: CidNlMethodAssessment,
-    retained_hypotheses: tuple[MeasuredPeakHypothesis, ...] = (),
 ) -> tuple[MeasuredPeakHypothesis, ...]:
     """Preserve direct and observation-only physical peaks without relabeling."""
 
-    retained_by_peak = _bind_retained_assessment_hypotheses(
+    direct = compose_cid_nl_peak_hypotheses_from_assessment(
         sample=sample,
         assessment=assessment,
-        retained_hypotheses=retained_hypotheses,
-    )
-    direct = _compose_cid_nl_peak_hypotheses_from_assessment(
-        sample=sample,
-        assessment=assessment,
-        retained_by_peak=retained_by_peak,
     )
     direct_observations = {item.peak for item in direct}
     observation_only = tuple(
-        retained_by_peak.get(observation)
-        or compose_ms1_observation_peak_hypothesis(peak_observation=observation)
+        compose_ms1_observation_peak_hypothesis(peak_observation=observation)
         for observation in assessment.candidate_peaks
         if observation not in direct_observations
     )
     return tuple(
         sorted((*direct, *observation_only), key=lambda item: item.hypothesis_id)
     )
-
-
-def bind_retained_peak_hypotheses_to_assessment_universe(
-    *,
-    sample: SampleMetadata,
-    assessment: CidNlMethodAssessment,
-    retained_hypotheses: tuple[MeasuredPeakHypothesis, ...],
-) -> tuple[MeasuredPeakHypothesis, ...]:
-    """Bind a complete earlier owner result to the same assessment universe."""
-
-    retained_by_peak = _bind_retained_assessment_hypotheses(
-        sample=sample,
-        assessment=assessment,
-        retained_hypotheses=retained_hypotheses,
-    )
-    if set(retained_by_peak) != set(assessment.candidate_peaks):
-        raise HypothesisOwnerAdapterError(
-            "retained hypotheses do not cover the exact assessment universe"
-        )
-    return tuple(sorted(retained_hypotheses, key=lambda item: item.hypothesis_id))
-
-
-def _bind_retained_assessment_hypotheses(
-    *,
-    sample: SampleMetadata,
-    assessment: CidNlMethodAssessment,
-    retained_hypotheses: tuple[MeasuredPeakHypothesis, ...],
-) -> dict[PeakObservation, MeasuredPeakHypothesis]:
-    if not isinstance(retained_hypotheses, tuple):
-        raise HypothesisOwnerAdapterError(
-            "retained hypotheses must be an immutable owner result"
-        )
-    if not retained_hypotheses:
-        return {}
-    candidate_by_peak = {
-        candidate: candidate for candidate in assessment.candidate_peaks
-    }
-    supported_peaks = supported_cid_nl_peaks(assessment)
-    retained_by_peak: dict[PeakObservation, MeasuredPeakHypothesis] = {}
-    for hypothesis in retained_hypotheses:
-        if not isinstance(hypothesis, MeasuredPeakHypothesis):
-            raise HypothesisOwnerAdapterError(
-                "retained hypothesis crossed its processing owner"
-            )
-        observation = hypothesis.peak
-        if (
-            candidate_by_peak.get(observation) is not observation
-            or observation.sample_key != sample.sample_name
-            or observation in retained_by_peak
-        ):
-            raise HypothesisOwnerAdapterError(
-                "retained hypothesis crossed its assessment sample or observation"
-            )
-        expected_method = (
-            HYPOTHESIS_METHOD_DDA_CID_NL
-            if observation in supported_peaks
-            else HYPOTHESIS_METHOD_MS1_OBSERVATION
-        )
-        if hypothesis.method != expected_method:
-            raise HypothesisOwnerAdapterError(
-                "retained hypothesis crossed its assessment support class"
-            )
-        retained_by_peak[observation] = hypothesis
-    return retained_by_peak
 
 
 def owner_from_cid_nl_assessment_support(
@@ -287,15 +177,6 @@ def owner_from_cid_nl_assessment_observation(
             "observation projection requires an MS1-only MeasuredPeakHypothesis"
         )
     observation = hypothesis.peak
-    if observation not in assessment.candidate_peaks:
-        raise HypothesisOwnerAdapterError(
-            "observation-only hypothesis is outside the assessment universe"
-        )
-    sample_id = sample.sample_name
-    if assessment.sample_key != sample_id or observation.sample_key != sample_id:
-        raise HypothesisOwnerAdapterError(
-            "assessment or observation references a different canonical sample"
-        )
     integration = observation.integration
     neutral_loss = assessment.method_subject.neutral_loss_da
     event = (
@@ -377,24 +258,11 @@ def _assessment_hypothesis_components(
     CidNlChromatographicSupport,
     tuple[DdaCidNlPeakSupport, ...],
 ]:
-    if not isinstance(assessment, CidNlMethodAssessment):
-        raise HypothesisOwnerAdapterError(
-            "assessment must be an owner-backed CID-NL method result"
-        )
     if assessment.method_result != "SUPPORT":
         raise HypothesisOwnerAdapterError(
             "only a SUPPORT assessment may enter provisional grouping"
         )
-    if not isinstance(hypothesis, MeasuredPeakHypothesis):
-        raise HypothesisOwnerAdapterError(
-            "hypothesis must be an owner-backed MeasuredPeakHypothesis"
-        )
     observation = hypothesis.peak
-    sample_id = sample.sample_name
-    if assessment.sample_key != sample_id or (observation.sample_key != sample_id):
-        raise HypothesisOwnerAdapterError(
-            "assessment or hypothesis references a different canonical sample"
-        )
     support = hypothesis.chromatographic_support
     if support is None:
         raise HypothesisOwnerAdapterError(
@@ -409,37 +277,11 @@ def _assessment_hypothesis_components(
         raise HypothesisOwnerAdapterError(
             "hypothesis does not match an assessment individual support subset"
         )
-    hypothesis_relations = tuple(member.support for member in support.scan_supports)
-    if len(selected_relations) != len(hypothesis_relations) or any(
-        relation not in hypothesis_relations for relation in selected_relations
-    ):
-        raise HypothesisOwnerAdapterError(
-            "hypothesis support does not close the assessment relations"
-        )
-    evidence_by_observation = {
-        evidence: evidence for evidence in assessment.evidence_observations
-    }
-    support_evidence: list[CidNlEvidenceObservation] = []
-    for member in support.scan_supports:
-        evidence = evidence_by_observation.get(member.support.evidence)
-        if evidence is None:
-            raise HypothesisOwnerAdapterError(
-                "hypothesis support evidence is missing from the assessment"
-            )
-        support_evidence.append(evidence)
-    if (
-        len({ref.scan_number for ref in support_evidence})
-        != support.strict_nl_scan_count
-    ):
-        raise HypothesisOwnerAdapterError(
-            "hypothesis support scan count does not close its measured evidence"
-        )
     return observation, support, selected_relations
 
 
 __all__ = [
     "HypothesisOwnerAdapterError",
-    "bind_retained_peak_hypotheses_to_assessment_universe",
     "compose_cid_nl_peak_hypotheses_from_assessment",
     "compose_peak_hypotheses_from_assessment_universe",
     "owner_from_cid_nl_assessment_observation",

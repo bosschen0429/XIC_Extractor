@@ -41,7 +41,6 @@ class LocalPeakShape:
             isinstance(self.half_window_min, bool)
             or not math.isfinite(self.half_window_min)
             or self.half_window_min <= 0
-            or type(self.intensity) is not tuple
             or len(self.intensity) < 5
             or type(self.source_point_count) is not int
             or self.source_point_count < 0
@@ -55,8 +54,7 @@ class LocalPeakShape:
             or (
                 self.edge_intensity_ratio is not None
                 and (
-                    type(self.edge_intensity_ratio) is not tuple
-                    or len(self.edge_intensity_ratio) != 2
+                    len(self.edge_intensity_ratio) != 2
                     or any(
                         isinstance(value, bool) or not math.isfinite(value) or value > 1
                         for value in self.edge_intensity_ratio

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Sequence
 from dataclasses import dataclass, fields
 from typing import Literal, TypeAlias, cast
 
@@ -133,25 +132,12 @@ class ProductionCellDecision:
 
 def decide_target_cell_population(
     projection: TargetPreCellProjection,
-    *,
-    subjects: Sequence[TargetCellSubject] | None = None,
 ) -> tuple[ProductionCellDecision, ...]:
     """Decide the complete Target subject population in canonical identity order."""
 
-    owner_subjects = projection.cell_subjects
-    requested = owner_subjects if subjects is None else tuple(subjects)
-    ordered = cast(
-        tuple[TargetCellSubject, ...],
-        _bind_complete_subject_population(
-            requested,
-            owner_subjects=owner_subjects,
-            expected_type=TargetCellSubject,
-            label="Target",
-        ),
-    )
     decisions = tuple(
         _decide_sealed_subject(subject, evidence=subject.terminal_subject)
-        for subject in ordered
+        for subject in projection.cell_subjects
     )
     return tuple(sorted(decisions, key=_decision_sort_key))
 
@@ -315,10 +301,6 @@ def _decide_group(
 
 
 def _payload_from_integration(integration: IntegrationResult) -> CellDecisionPayload:
-    if type(integration) is not IntegrationResult:
-        raise CellDecisionContractError(
-            "numeric decision requires an exact IntegrationResult"
-        )
     _reject_non_finite_integration(integration)
     selected = primary_matrix_area_from_integration(integration)
     if selected.value is None:
@@ -333,33 +315,6 @@ def _reject_non_finite_integration(integration: IntegrationResult) -> None:
             raise CellDecisionContractError(
                 f"IntegrationResult.{item.name} must be finite"
             )
-
-
-def _bind_complete_subject_population(
-    subjects: Sequence[CellSubject],
-    *,
-    owner_subjects: tuple[CellSubject, ...],
-    expected_type: type[TargetCellSubject] | type[GroupCellSubject],
-    label: str,
-) -> tuple[CellSubject, ...]:
-    if isinstance(subjects, (str, bytes)):
-        raise CellDecisionContractError(f"{label} subjects must be a finite sequence")
-    requested = tuple(subjects)
-    if any(type(subject) is not expected_type for subject in requested):
-        raise CellDecisionContractError(
-            f"{label} population contains a non-owner subject"
-        )
-    requested_ids = tuple(id(subject) for subject in requested)
-    owner_ids = tuple(id(subject) for subject in owner_subjects)
-    if len(requested_ids) != len(set(requested_ids)):
-        raise CellDecisionContractError(
-            f"{label} population contains a duplicate subject"
-        )
-    if set(requested_ids) != set(owner_ids):
-        raise CellDecisionContractError(
-            f"{label} population is missing, extra, or substituted"
-        )
-    return requested
 
 
 def _decision_sort_key(decision: ProductionCellDecision) -> tuple[str, ...]:

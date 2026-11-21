@@ -48,17 +48,6 @@ def classify_cross_sample_initial_edge(
 ) -> CrossSampleEdgeDisposition:
     """Classify raw owner evidence without caller-authored compatibility flags."""
 
-    if not isinstance(edge, OwnerEdgeEvidence):
-        raise CrossSampleContractError("initial edge evidence must be owner-minted")
-    if not isinstance(config, AlignmentConfig):
-        raise CrossSampleContractError("initial edge config must be typed")
-    if context not in {
-        "hard_gate",
-        "complete_link",
-        "full_batch_continuity",
-        "targeted_istd_continuity",
-    }:
-        raise CrossSampleContractError("initial edge context is not closed")
     if edge.decision == "blocked_edge":
         if context == "targeted_istd_continuity" and edge.failure_allows_rt_continuity:
             return _targeted_istd_rt_disposition(edge, config=config)

@@ -47,15 +47,8 @@ def group_member_subject_from_peak_hypothesis(
     sample: SampleMetadata,
     hypothesis: MeasuredPeakHypothesis,
 ) -> CrossSampleGroupMemberSubject:
-    if not isinstance(sample, SampleMetadata):
-        raise CrossSampleContractError("sample must be canonically resolved")
-    if not isinstance(hypothesis, MeasuredPeakHypothesis):
-        raise CrossSampleContractError("hypothesis must be owner-backed")
-    sample_id = sample.sample_name
-    if hypothesis.peak.sample_key != sample_id:
-        raise CrossSampleContractError("peak hypothesis crossed physical observation")
     return CrossSampleGroupMemberSubject(
-        sample_key=sample_id,
+        sample_key=sample.sample_name,
         subject_kind="peak_hypothesis",
         subject_id=hypothesis.hypothesis_id,
         physical_peaks=(hypothesis.peak.physical_identity,),
@@ -71,8 +64,6 @@ def canonical_group_members(
     physical: set[PeakObservation] = set()
     members: list[CrossSampleGroupMemberSubject] = []
     for member in member_subjects:
-        if not isinstance(member, CrossSampleGroupMemberSubject):
-            raise CrossSampleContractError("group member is not a typed subject")
         if member.sample_key in samples:
             raise CrossSampleContractError(
                 "group has two identity-bearing members for one canonical sample"

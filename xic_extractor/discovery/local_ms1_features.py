@@ -195,24 +195,11 @@ class _PeakRegion:
     overlap_suspected: bool
 
 
-def normalize_local_ms1_sample_stem(value: object) -> str:
-    """Return the canonical sample identity used by every local-MS1 artifact."""
-
-    if not isinstance(value, str):
-        raise ValueError("sample_stem must be text")
-    normalized = value.strip()
-    if not normalized:
-        raise ValueError("sample_stem must contain non-whitespace text")
-    return normalized
-
-
 def build_local_ms1_feature_table(
     index: tuple[MS1Scan, ...],
     *,
     sample_stem: str,
     raw_path: str,
-    raw_file_size_bytes: int | None = None,
-    raw_file_mtime_ns: int | None = None,
     settings: LocalMs1FeatureSettings | None = None,
 ) -> tuple[
     tuple[DetectedFeature, ...],
@@ -220,18 +207,12 @@ def build_local_ms1_feature_table(
     tuple[LocalMs1FeatureDiagnosticRow, ...],
 ]:
     """Build chromatographic features from centroid ions, not profile samples."""
-    sample_stem = normalize_local_ms1_sample_stem(sample_stem)
-    if not isinstance(raw_path, str) or not raw_path.strip():
-        raise ValueError("raw_path must be a non-empty string")
+    sample_stem = sample_stem.strip()
+    if not sample_stem:
+        raise ValueError("sample_stem must contain non-whitespace text")
     raw_path = raw_path.strip()
-    raw_file_size_bytes = _optional_nonnegative_integer(
-        raw_file_size_bytes,
-        name="raw_file_size_bytes",
-    )
-    raw_file_mtime_ns = _optional_nonnegative_integer(
-        raw_file_mtime_ns,
-        name="raw_file_mtime_ns",
-    )
+    if not raw_path:
+        raise ValueError("raw_path must be a non-empty string")
     resolved = settings or LocalMs1FeatureSettings()
     validate_ms1_scan_index(index, require_nonempty=True)
     start = time.perf_counter()
@@ -365,8 +346,8 @@ def build_local_ms1_feature_table(
         schema_version=SUMMARY_SCHEMA_VERSION,
         raw_path=raw_path,
         raw_file_name=Path(raw_path).name,
-        raw_file_size_bytes=raw_file_size_bytes,
-        raw_file_mtime_ns=raw_file_mtime_ns,
+        raw_file_size_bytes=None,
+        raw_file_mtime_ns=None,
         sample_stem=sample_stem,
         extraction_backend="local_ms1_scan_index",
         ms1_scan_selection_rule="MSOrder == Ms",
@@ -408,15 +389,6 @@ def build_local_ms1_feature_table(
 def _parameter_hash(settings: LocalMs1FeatureSettings) -> str:
     payload = json.dumps(asdict(settings), sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
-
-
-def _optional_nonnegative_integer(value: object, *, name: str) -> int | None:
-    if value is None:
-        return None
-    parsed = require_integer(value, name=name)
-    if parsed < 0:
-        raise ValueError(f"{name} must be an integer >= 0")
-    return parsed
 
 
 def _median_scan_interval_sec(index: tuple[MS1Scan, ...]) -> float | None:

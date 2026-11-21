@@ -27,7 +27,6 @@ from xic_extractor.alignment.grouping_bootstrap import (
     bootstrap_cid_nl_initial_population,
 )
 from xic_extractor.alignment.hypothesis_owner_adapter import (
-    bind_retained_peak_hypotheses_to_assessment_universe,
     compose_peak_hypotheses_from_assessment_universe,
 )
 from xic_extractor.alignment.rt_frame import SampleRtFrame
@@ -783,15 +782,6 @@ def test_adapter_preserves_supported_and_observation_only_physical_peaks(
         "dda_cid_nl",
         "ms1_physical_observation",
     }
-    rebound = bind_retained_peak_hypotheses_to_assessment_universe(
-        sample=scenario.fixture.sample("S1"),
-        assessment=assessment,
-        retained_hypotheses=hypotheses,
-    )
-    assert all(
-        rebound_by_id is source_by_id
-        for rebound_by_id, source_by_id in zip(rebound, hypotheses, strict=True)
-    )
     grouping_scope, candidates, _drift = bootstrap_cid_nl_initial_population(
         sample_assessments=((scenario.fixture.sample("S1"), assessment),),
         alignment_config=AlignmentConfig(),

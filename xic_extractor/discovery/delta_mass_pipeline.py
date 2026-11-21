@@ -23,7 +23,11 @@ from xic_extractor.discovery.delta_mass_patterns import (
     prepare_delta_mass_candidates,
 )
 from xic_extractor.discovery.delta_mass_strategy import DeltaMassDiscoveryStrategy
-from xic_extractor.discovery.detected_features import write_detected_features_csv
+from xic_extractor.discovery.detected_features import (
+    optional_row_finite_float,
+    required_row_text,
+    write_detected_features_csv,
+)
 from xic_extractor.discovery.local_ms1_features import (
     LocalMs1FeatureSettings,
     build_local_ms1_feature_table,
@@ -288,13 +292,13 @@ def _load_cid_nl_peak_rows(paths: Sequence[Path]) -> tuple[_CidNlPeakRow, ...]:
     seen: set[str] = set()
     for path, row_index, row in rows:
         label = f"{path} row {row_index}"
-        peak_id = _required_text(row.get("peak_id"), "peak_id", label)
-        sample_stem = _required_text(row.get("sample_stem"), "sample_stem", label)
+        peak_id = required_row_text(row.get("peak_id"), "peak_id", label)
+        sample_stem = required_row_text(row.get("sample_stem"), "sample_stem", label)
         for field, identity in (("peak_id", peak_id), ("sample_stem", sample_stem)):
             _reject_ambiguous_formula_escaped_identity(
                 identity, field=field, row_label=label
             )
-        status = _required_text(row.get("status"), "status", label)
+        status = required_row_text(row.get("status"), "status", label)
         if peak_id in seen:
             raise ValueError(f"{label}: duplicate CID-NL peak_id values: {peak_id}")
         seen.add(peak_id)
@@ -308,11 +312,11 @@ def _load_cid_nl_peak_rows(paths: Sequence[Path]) -> tuple[_CidNlPeakRow, ...]:
                     if tag
                 ),
                 status=status,
-                peak_mz=_optional_finite_float(row.get("peak_mz"), "peak_mz", label),
-                ms1_apex_rt=_optional_finite_float(
+                peak_mz=optional_row_finite_float(row.get("peak_mz"), "peak_mz", label),
+                ms1_apex_rt=optional_row_finite_float(
                     row.get("ms1_apex_rt"), "ms1_apex_rt", label
                 ),
-                evidence_score=_optional_finite_float(
+                evidence_score=optional_row_finite_float(
                     row.get("evidence_score"), "evidence_score", label
                 ),
             )
@@ -339,37 +343,6 @@ def _reject_ambiguous_formula_escaped_identity(
             f"{row_label} has ambiguous Excel formula-escaped machine identity "
             f"in {field!r}: {value!r}"
         )
-
-
-def _required_text(value: str | None, field: str, row_label: str) -> str:
-    text = (value or "").strip()
-    if not text:
-        raise ValueError(f"{row_label} is missing required field {field!r}")
-    return text
-
-
-def _optional_text(value: str | None) -> str | None:
-    text = (value or "").strip()
-    return text or None
-
-
-def _optional_finite_float(
-    value: str | None, field: str, row_label: str
-) -> float | None:
-    text = (value or "").strip()
-    if not text:
-        return None
-    try:
-        parsed = float(text)
-    except ValueError as error:
-        raise ValueError(
-            f"{row_label} has non-numeric optional field {field!r}: {value!r}"
-        ) from error
-    if not math.isfinite(parsed):
-        raise ValueError(
-            f"{row_label} has non-finite optional field {field!r}: {value!r}"
-        )
-    return parsed
 
 
 def _ppm_error(candidate: DeltaMassCandidate, peak_mz: float) -> float:

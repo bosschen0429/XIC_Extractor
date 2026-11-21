@@ -38,7 +38,6 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
 from xic_extractor.peak_detection.observations import PeakObservation
 from xic_extractor.peak_detection.peak_hypothesis_identity import (
     MeasuredPeakHypothesis,
-    PeakHypothesisContractError,
     compose_cid_nl_peak_hypothesis,
 )
 from xic_extractor.sample_metadata import SampleMetadata
@@ -106,12 +105,8 @@ def build_cid_nl_reference_spine(
         else method_subject
     )
     assert subject is not None
-    if not isinstance(sample_assessments, tuple) or not sample_assessments:
-        raise CidNlEvidenceSpineError(
-            "sample_assessments must be a non-empty immutable tuple"
-        )
-    if config is not None and not isinstance(config, AlignmentConfig):
-        raise CidNlEvidenceSpineError("config must be AlignmentConfig")
+    if not sample_assessments:
+        raise CidNlEvidenceSpineError("sample_assessments must be non-empty")
     ordered = tuple(sorted(sample_assessments, key=lambda item: item[0].sample_name))
     support_inputs: list[
         tuple[
@@ -157,14 +152,10 @@ def build_cid_nl_reference_spine(
                 else (),
             )
             hypothesis = compose_cid_nl_peak_hypothesis(
-                sample=sample,
                 peak_observation=peak,
                 chromatographic_support=chromatographic_support,
             )
-        except (
-            CidNlChromatographicSupportContractError,
-            PeakHypothesisContractError,
-        ) as exc:
+        except CidNlChromatographicSupportContractError as exc:
             raise CidNlEvidenceSpineError(str(exc)) from exc
         support_inputs.append((sample, assessment, peak, hypothesis))
 

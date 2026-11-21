@@ -16,7 +16,6 @@ from xic_extractor.peak_detection.cid_nl_chromatographic_support_models import (
     _member_sort_key,
 )
 from xic_extractor.peak_detection.cid_nl_evidence import (
-    ACQUISITION_MODE,
     CidNlEvidenceObservation,
 )
 from xic_extractor.peak_detection.cid_nl_peak_support import (
@@ -33,11 +32,7 @@ def compose_cid_nl_chromatographic_support(
 ) -> CidNlChromatographicSupport:
     """Compose repeated strict scan support into one physical-peak event."""
 
-    supports = _validated_scan_supports(
-        scan_support_refs,
-        sample=sample,
-        evidence_refs=evidence_refs,
-    )
+    supports = _validated_scan_supports(scan_support_refs, evidence_refs=evidence_refs)
     return _support_from_scans(
         sample=sample, supports=supports, evidence_refs=evidence_refs
     )
@@ -81,74 +76,31 @@ def _support_from_scans(
 
 
 def _validated_scan_supports(
-    scan_support_refs: object,
+    scan_support_refs: tuple[DdaCidNlPeakSupport, ...],
     *,
-    sample: SampleMetadata,
     evidence_refs: tuple[CidNlEvidenceObservation, ...] = (),
 ) -> tuple[DdaCidNlPeakSupport, ...]:
-    if not isinstance(scan_support_refs, tuple) or not scan_support_refs:
+    if not scan_support_refs:
         raise CidNlChromatographicSupportContractError(
             "missing strict DDA scan support"
         )
-    if any(
-        not isinstance(reference, DdaCidNlPeakSupport)
-        for reference in scan_support_refs
-    ):
-        raise CidNlChromatographicSupportContractError(
-            "scan_support_refs must contain owner-backed DDA peak support"
-        )
-    supports = scan_support_refs
-    loss_by_observation = {}
-    if evidence_refs:
-        for evidence in evidence_refs:
-            loss_by_observation[evidence] = evidence.configured_neutral_loss_da
-        if len(loss_by_observation) != len(evidence_refs) or set(
-            loss_by_observation
-        ) != {support.evidence for support in supports}:
-            raise CidNlChromatographicSupportContractError(
-                "measured loss evidence must exactly close scan supports"
-            )
-    for support in supports:
-        if support.sample_key != sample.sample_name:
-            raise CidNlChromatographicSupportContractError(
-                "DDA scan support references a different sample"
-            )
+    loss_by_observation = {
+        evidence: evidence.configured_neutral_loss_da for evidence in evidence_refs
+    }
     scan_numbers = tuple(
         (
             support.dda_scan_number,
             loss_by_observation.get(support.evidence),
         )
-        for support in supports
+        for support in scan_support_refs
     )
     if len(set(scan_numbers)) != len(scan_numbers):
         raise CidNlChromatographicSupportContractError(
             "duplicate DDA scan support cannot multiply one event"
         )
-    if any(
-        support.peak_observation != supports[0].peak_observation
-        for support in supports[1:]
-    ):
-        raise CidNlChromatographicSupportContractError(
-            "DDA scan support references more than one physical MS1 peak"
-        )
-    if any(
-        support.candidate_peaks != supports[0].candidate_peaks
-        for support in supports[1:]
-    ):
-        raise CidNlChromatographicSupportContractError(
-            "DDA scan support references a different candidate universe"
-        )
-    if len({support.policy for support in supports}) != 1:
-        raise CidNlChromatographicSupportContractError(
-            "DDA scan support references a different support policy"
-        )
-    if any(support.acquisition_mode != ACQUISITION_MODE for support in supports):
-        raise CidNlChromatographicSupportContractError(
-            f"DDA scan support acquisition mode must be {ACQUISITION_MODE!r}"
-        )
     return tuple(
         sorted(
-            supports,
+            scan_support_refs,
             key=lambda support: (
                 support.dda_scan_number,
                 loss_by_observation.get(support.evidence) or 0.0,

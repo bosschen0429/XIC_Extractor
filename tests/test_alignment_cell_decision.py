@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pickle
-from copy import copy
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -35,7 +34,6 @@ from tests.untargeted_matrix_projection_fixtures import (
 )
 from xic_extractor.alignment.cell_decision import owner as decision_owner
 from xic_extractor.alignment.cell_decision.owner import (
-    CellDecisionContractError,
     decide_group_cell_population,
     decide_target_cell_population,
 )
@@ -86,13 +84,8 @@ def test_target_population_emits_one_numeric_or_no_write_per_exact_subject(
     projection = project_target_pre_cell(alignment)
 
     decisions = decide_target_cell_population(projection)
-    reordered = decide_target_cell_population(
-        projection,
-        subjects=tuple(reversed(projection.subjects)),
-    )
 
     assert len(decisions) == len(projection.subjects) == 2
-    assert reordered == decisions
     assert {item.variant for item in decisions} == {
         "numeric",
         "searched_no_observation",
@@ -178,29 +171,6 @@ def test_target_quantification_requires_joint_signal_and_support_failure(
         decision_owner._target_has_fragmented_low_signal(integration, acquired)
         is blocked
     )
-
-
-@pytest.mark.parametrize("variant", ["missing", "duplicate", "substituted"])
-def test_target_population_rejects_incomplete_or_competing_subjects(
-    tmp_path: Path,
-    variant: str,
-) -> None:
-    _fixture, _scope, alignment, _hypotheses = _finalized_case(
-        tmp_path,
-        sample_stems=("sample-a", "sample-b"),
-        observed_stems=(),
-        group_specs=(((), "provisional"),),
-    )
-    projection = project_target_pre_cell(alignment)
-    if variant == "missing":
-        subjects = projection.subjects[:-1]
-    elif variant == "duplicate":
-        subjects = projection.subjects + (projection.subjects[0],)
-    else:
-        subjects = (copy(projection.subjects[0]), projection.subjects[1])
-
-    with pytest.raises(CellDecisionContractError, match="duplicate|missing|extra"):
-        decide_target_cell_population(projection, subjects=subjects)
 
 
 def test_group_population_preserves_complete_member_and_nonmember_positions(

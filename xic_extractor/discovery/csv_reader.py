@@ -161,11 +161,7 @@ def read_owner_bound_discovery_peaks_csv(
         validate_discovery_peak_artifact(receipt, path)
         peaks = read_discovery_peaks_csv(path)
         validate_discovery_peak_artifact(receipt, path)
-        return validate_discovery_peak_universe(
-            receipt,
-            acquisition_source=receipt.acquisition_source,
-            peaks=peaks,
-        )
+        return validate_discovery_peak_universe(receipt, peaks=peaks)
     except IdentityContractError as exc:
         raise ValueError(f"{path}: invalid owner-bound peak artifact: {exc}") from exc
 
@@ -447,17 +443,13 @@ def _parse_int(path: Path, row_number: int, row: dict[str, str], column: str) ->
 def _batch_nonnegative_int(
     path: Path,
     row_number: int,
-    value: object,
+    value: str,
     *,
     field: str,
 ) -> int:
-    if isinstance(value, bool) or not isinstance(value, (str, int)):
-        raise ValueError(
-            f"{path}: row {row_number}: {field} must be a non-negative integer"
-        )
     try:
         parsed = int(value)
-    except (TypeError, ValueError) as exc:
+    except ValueError as exc:
         raise ValueError(
             f"{path}: row {row_number}: {field} must be a non-negative integer"
         ) from exc

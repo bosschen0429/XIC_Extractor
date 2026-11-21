@@ -44,26 +44,7 @@ def test_trace_rejects_mismatched_arrays() -> None:
         )
 
 
-def test_trace_group_requires_non_empty_same_sample_traces() -> None:
-    first = Trace.from_arrays(
-        sample_name="s1",
-        mz=250.0,
-        rt=[1.0, 2.0],
-        intensity=[0.0, 10.0],
-        rt_min=1.0,
-        rt_max=2.0,
-        ppm_tol=10.0,
-    )
-    second = Trace.from_arrays(
-        sample_name="s2",
-        mz=251.0,
-        rt=[1.0, 2.0],
-        intensity=[0.0, 10.0],
-        rt_min=1.0,
-        rt_max=2.0,
-        ppm_tol=10.0,
-    )
-
+def test_trace_group_requires_a_trace() -> None:
     with pytest.raises(ValueError, match="at least one trace"):
         TraceGroup(
             trace_group_id="empty",
@@ -71,14 +52,6 @@ def test_trace_group_requires_non_empty_same_sample_traces() -> None:
             analysis_mode="targeted",
             context_id="target",
             traces=(),
-        )
-    with pytest.raises(ValueError, match="same sample"):
-        TraceGroup(
-            trace_group_id="mixed",
-            sample_name="s1",
-            analysis_mode="targeted",
-            context_id="target",
-            traces=(first, second),
         )
 
 

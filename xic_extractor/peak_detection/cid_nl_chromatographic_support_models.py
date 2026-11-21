@@ -5,9 +5,6 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-from xic_extractor.peak_detection.cid_nl_evidence import (
-    ACQUISITION_MODE,
-)
 from xic_extractor.peak_detection.cid_nl_peak_support import (
     DdaCidNlPeakSupport,
     DdaCidNlPeakSupportPolicy,
@@ -55,24 +52,9 @@ class CidNlChromatographicSupport:
     relationship: str
 
     def __post_init__(self) -> None:
-        if self.acquisition_mode != ACQUISITION_MODE:
-            raise CidNlChromatographicSupportContractError(
-                f"acquisition_mode must be {ACQUISITION_MODE!r}"
-            )
-        if not isinstance(self.policy, DdaCidNlPeakSupportPolicy):
-            raise CidNlChromatographicSupportContractError(
-                "policy must be owner-normalized DDA CID-NL support policy"
-            )
-        if not isinstance(self.scan_supports, tuple) or not self.scan_supports:
+        if not self.scan_supports:
             raise CidNlChromatographicSupportContractError(
                 "missing strict DDA scan support"
-            )
-        if any(
-            not isinstance(member, DdaCidNlScanSupportMember)
-            for member in self.scan_supports
-        ):
-            raise CidNlChromatographicSupportContractError(
-                "scan_supports must contain typed DDA scan support members"
             )
         canonical_members = tuple(sorted(self.scan_supports, key=_member_sort_key))
         if self.scan_supports != canonical_members:
@@ -95,18 +77,6 @@ class CidNlChromatographicSupport:
         if len(set(event_keys)) != len(event_keys):
             raise CidNlChromatographicSupportContractError(
                 "duplicate DDA scan support cannot multiply one event"
-            )
-        if self.strict_nl_scan_count != len(set(scan_numbers)):
-            raise CidNlChromatographicSupportContractError(
-                "strict_nl_scan_count mismatches exact scan support"
-            )
-        if self.chromatographic_support_event_count != 1:
-            raise CidNlChromatographicSupportContractError(
-                "one physical MS1 peak must form exactly one support event"
-            )
-        if self.relationship != RELATIONSHIP:
-            raise CidNlChromatographicSupportContractError(
-                f"relationship must be {RELATIONSHIP!r}"
             )
 
 

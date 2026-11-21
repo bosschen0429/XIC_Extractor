@@ -40,28 +40,9 @@ class CidNlComposition:
     combine_mode: Literal["union", "intersection"]
 
     def __post_init__(self) -> None:
-        if self.combine_mode not in {"union", "intersection"}:
-            raise CidNlMethodSubjectContractError(
-                "composition requires union or intersection"
-            )
-        if type(self.tags) is not tuple or len(self.tags) < 2:
-            raise CidNlMethodSubjectContractError(
-                "composition requires multiple ordered tags"
-            )
-        normalized = tuple(
-            (
-                _normalized_text(name, field="tag"),
-                _positive_finite_float(loss, field="neutral_loss_da"),
-            )
-            for name, loss in self.tags
+        object.__setattr__(
+            self, "tags", tuple((name, float(loss)) for name, loss in self.tags)
         )
-        if len({name for name, _ in normalized}) != len(normalized) or len(
-            {loss for _, loss in normalized}
-        ) != len(normalized):
-            raise CidNlMethodSubjectContractError(
-                "composition tags and losses must be distinct"
-            )
-        object.__setattr__(self, "tags", normalized)
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,50 +55,6 @@ class CidNlMethodSubject:
     neutral_loss_da: float | None
     target: Target | None = None
     composition: CidNlComposition | None = None
-
-    def __post_init__(self) -> None:
-        precursor_mz = _positive_finite_float(self.precursor_mz, field="precursor_mz")
-        precursor_tolerance_ppm = _positive_finite_float(
-            self.precursor_tolerance_ppm,
-            field="precursor_tolerance_ppm",
-        )
-        neutral_loss_da = (
-            None
-            if self.composition is not None
-            else _positive_finite_float(
-                self.neutral_loss_da,
-                field="neutral_loss_da",
-            )
-        )
-        if self.composition is not None and (
-            type(self.composition) is not CidNlComposition
-            or self.neutral_loss_da is not None
-            or self.subject_kind != "untargeted_precursor"
-        ):
-            raise CidNlMethodSubjectContractError(
-                "composite subject requires scalar-absent Untargeted identity"
-            )
-        if self.subject_kind not in {"targeted_definition", "untargeted_precursor"}:
-            raise CidNlMethodSubjectContractError(
-                "subject_kind must be targeted_definition or untargeted_precursor"
-            )
-        if self.subject_kind == "targeted_definition":
-            if not isinstance(self.target, Target):
-                raise CidNlMethodSubjectContractError(
-                    "targeted method subject requires its configured Target"
-                )
-        elif self.target is not None:
-            raise CidNlMethodSubjectContractError(
-                "Untargeted method subject cannot carry a configured Target"
-            )
-
-        object.__setattr__(self, "precursor_mz", precursor_mz)
-        object.__setattr__(
-            self,
-            "precursor_tolerance_ppm",
-            precursor_tolerance_ppm,
-        )
-        object.__setattr__(self, "neutral_loss_da", neutral_loss_da)
 
     @property
     def method_subject_id(self) -> str:
@@ -271,10 +208,6 @@ def cid_nl_method_subject_resolver_interval(
 ) -> tuple[float, float]:
     """Return the exact precursor interval searched for one method subject."""
 
-    if type(subject) is not CidNlMethodSubject:
-        raise CidNlMethodSubjectContractError(
-            "resolver interval requires an exact CID-NL method subject"
-        )
     return reference_mz_window(subject.precursor_mz, subject.precursor_tolerance_ppm)
 
 
@@ -283,11 +216,7 @@ def validate_cid_nl_alignment_subject_compatibility(
 ) -> tuple[CidNlMethodSubject, ...]:
     """Validate subjects that may share one Alignment comparison universe."""
 
-    if (
-        type(subjects) is not tuple
-        or not subjects
-        or any(type(subject) is not CidNlMethodSubject for subject in subjects)
-    ):
+    if not subjects:
         raise CidNlMethodSubjectContractError(
             "alignment subjects must be a non-empty exact tuple"
         )
@@ -325,12 +254,6 @@ def cid_nl_alignment_subject_worksets(
     feature identity. CrossSample binds identities from observed evidence.
     """
 
-    if type(subjects) is not tuple or any(
-        type(subject) is not CidNlMethodSubject for subject in subjects
-    ):
-        raise CidNlMethodSubjectContractError(
-            "alignment workset input must be an exact subject tuple"
-        )
     if not subjects:
         return ()
     if len({subject.method_subject_id for subject in subjects}) != len(subjects):
@@ -427,7 +350,7 @@ def cid_nl_alignment_subject_worksets(
             for component in merged.values()
         ]
 
-    ordered_components = tuple(
+    return tuple(
         sorted(
             components,
             key=lambda component: min(
@@ -435,17 +358,6 @@ def cid_nl_alignment_subject_worksets(
             ),
         )
     )
-    for workset in ordered_components:
-        validate_cid_nl_alignment_subject_compatibility(workset)
-    return ordered_components
-
-
-def _normalized_text(value: object, *, field: str) -> str:
-    if not isinstance(value, str) or not value or value != value.strip():
-        raise CidNlMethodSubjectContractError(
-            f"{field} must be non-empty normalized text"
-        )
-    return value
 
 
 def _mint_subject(
