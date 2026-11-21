@@ -529,20 +529,51 @@ def write_rt_calibration(path: Path, calibration: BatchRtCalibration) -> None:
     write_json(path, _rt_calibration_payload(calibration))
 
 
+_GroupDecision = tuple[tuple[str, ...], str, str, str, str]
+
+
 def group_signature(groups: Sequence[CrossSamplePeakGroupHypothesis]) -> tuple:
     """Compare scientific decisions, independent of display row numbering."""
-    return tuple(
-        sorted(
-            (
-                tuple(sorted(group.owner_ids)),
-                group.disposition,
-                group.evidence,
-                group.inference_basis.basis if group.inference_basis else "",
-                group.inference_basis.reason if group.inference_basis else "",
-            )
-            for group in groups
-        )
+    return tuple(sorted(_group_decision(group) for group in groups))
+
+
+def _group_decision(group: CrossSamplePeakGroupHypothesis) -> _GroupDecision:
+    basis = group.inference_basis
+    return (
+        tuple(sorted(group.owner_ids)),
+        group.disposition,
+        group.evidence,
+        basis.basis if basis else "",
+        basis.reason if basis else "",
     )
+
+
+def _baseline_from_tables(directory: Path) -> dict[str, tuple[str, _GroupDecision]]:
+    """Each owner's group and decision as written in groups.tsv and members.tsv."""
+    groups = {
+        row["group_id"]: row
+        for row in read_delimited_rows(
+            directory / "groups.tsv",
+            required_columns=("group_id", "disposition", "evidence", "basis", "reason"),
+        )
+    }
+    owners: dict[str, list[str]] = defaultdict(list)
+    for row in read_delimited_rows(
+        directory / "members.tsv", required_columns=("group_id", "owner_id")
+    ):
+        owners[row["group_id"]].append(row["owner_id"])
+    baseline: dict[str, tuple[str, _GroupDecision]] = {}
+    for group_id, members in owners.items():
+        row = groups[group_id]
+        decision = (
+            tuple(sorted(members)),
+            row["disposition"],
+            row["evidence"],
+            row["basis"],
+            row["reason"],
+        )
+        baseline.update(dict.fromkeys(members, (group_id, decision)))
+    return baseline
 
 
 def _members_by_owner(
@@ -665,11 +696,22 @@ def write_grouping_result(
     inputs: GroupingInputs,
     groups: Sequence[CrossSamplePeakGroupHypothesis],
     *,
-    baseline: Sequence[CrossSamplePeakGroupHypothesis] = (),
+    baseline: Sequence[CrossSamplePeakGroupHypothesis] | Path = (),
     compare_to: Path | None = None,
     rt_coordinates: RtFrame | None = None,
 ) -> dict[str, Any]:
-    before = {owner.owner_id: group for group in baseline for owner in group.owners}
+    """Write the replay tables; ``changes.tsv`` compares with ``baseline``, the
+    grouping or a directory holding its ``groups.tsv`` and ``members.tsv``.
+    """
+    before = (
+        _baseline_from_tables(baseline)
+        if isinstance(baseline, Path)
+        else {
+            owner.owner_id: (group.group_hypothesis_id, _group_decision(group))
+            for group in baseline
+            for owner in group.owners
+        }
+    )
     members = []
     changes = []
     group_rows = []
@@ -681,6 +723,7 @@ def write_grouping_result(
     }
     for group in groups:
         basis = group.inference_basis
+        signature = _group_decision(group)
         risks = {
             decision.owner_id: decision.accepted_risk
             for decision in group.inference_decisions
@@ -731,20 +774,19 @@ def write_grouping_result(
                 }
             )
             old = before.get(owner.owner_id)
-            if old is not None and group_signature((old,)) != group_signature((group,)):
+            if old is not None and old[1] != signature:
+                old_group, (old_owners, *_, old_reason) = old
                 changes.append(
                     {
                         "owner_id": owner.owner_id,
                         "sample_stem": owner.sample_stem,
                         "mz": owner.peak.mz,
                         "observed_rt": owner.peak.integration.rt_apex_min,
-                        "before_group": old.group_hypothesis_id,
+                        "before_group": old_group,
                         "after_group": group.group_hypothesis_id,
-                        "before_members": len(old.owner_ids),
+                        "before_members": len(old_owners),
                         "after_members": len(group.owner_ids),
-                        "before_reason": old.inference_basis.reason
-                        if old.inference_basis
-                        else "",
+                        "before_reason": old_reason,
                         "after_reason": basis.reason if basis else "",
                     }
                 )

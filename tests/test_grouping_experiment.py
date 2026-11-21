@@ -964,14 +964,20 @@ def test_replay_only_recomputes_when_grouping_inputs_change(tmp_path, monkeypatc
     ).read_bytes()
     assert rows(backfill_only, "changes.tsv") == []
 
-    variant = run("variant", "--set", "max_ppm=20", "--compare-to", str(baseline))
+    replayed_baseline = run("replayed-baseline", "--set", "max_ppm=20")
     assert counted_replay.call_count == 2
+    variant = run("variant", "--set", "max_ppm=20", "--compare-to", str(baseline))
+    assert counted_replay.call_count == 1
     assert membership(variant) == {frozenset((a,)), frozenset((b,))}
     assert {
         (row["owner_id"], row["before_members"], row["after_members"])
         for row in rows(variant, "changes.tsv")
     } == {(a, "2", "1"), (b, "2", "1")}
+    assert (variant / "changes.tsv").read_bytes() == (
+        replayed_baseline / "changes.tsv"
+    ).read_bytes()
     summary = json.loads((variant / "summary.json").read_text())
+    assert summary["changed_observation_count"] == 2
     assert summary["membership_diff"]["split_count"] == 1
     assert summary["membership_diff"]["merge_count"] == 0
 

@@ -16,6 +16,9 @@ from pathlib import Path
 from time import perf_counter
 from typing import Any
 
+from xic_extractor.alignment.cross_sample.peak_groups import (
+    CrossSamplePeakGroupHypothesis,
+)
 from xic_extractor.alignment.grouping_experiment import (
     GroupingInputs,
     GroupingWorkset,
@@ -104,7 +107,9 @@ def _add_replay_arguments(replay: argparse.ArgumentParser) -> None:
     replay.add_argument(
         "--compare-to",
         type=Path,
-        help="Previous replay output dir of the same snapshot (e.g. another commit)",
+        help="Previous replay or capture output dir of the same snapshot (e.g. "
+        "another commit); a variant uses it as baseline instead of replaying the "
+        "frozen snapshot",
     )
 
 
@@ -186,7 +191,6 @@ def _execute(parser: argparse.ArgumentParser, argv: Sequence[str] | None) -> int
                     tuple(decoded) if isinstance(config_values[key], tuple) else decoded
                 )
             config = replace(inputs.alignment_config, **overrides)
-            baseline = replay_grouping(inputs)
             rt_frame = None
             if args.rt_calibration:
                 calibration = read_rt_calibration(args.rt_calibration)
@@ -212,18 +216,24 @@ def _execute(parser: argparse.ArgumentParser, argv: Sequence[str] | None) -> int
             grouping_config_changed = config != replace(
                 inputs.alignment_config, backfill_enabled=config.backfill_enabled
             )
-            variant = grouping_config_changed or rt_model_changed
-            groups = (
-                replay_grouping(current, config=config, rt_coordinates=rt_frame)
-                if variant
-                else baseline
-            )
+            baseline: Sequence[CrossSamplePeakGroupHypothesis] | Path = ()
+            if grouping_config_changed or rt_model_changed:
+                groups = replay_grouping(
+                    current, config=config, rt_coordinates=rt_frame
+                )
+                baseline = (
+                    args.compare_to
+                    if args.compare_to is not None
+                    else replay_grouping(inputs)
+                )
+            else:
+                groups = replay_grouping(inputs)
             summary = {
                 **write_grouping_result(
                     args.output_dir,
                     current,
                     groups,
-                    baseline=baseline if variant else (),
+                    baseline=baseline,
                     compare_to=args.compare_to,
                     rt_coordinates=rt_frame,
                 ),

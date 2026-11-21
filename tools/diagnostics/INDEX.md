@@ -437,8 +437,11 @@ accepts retained snapshots carrying that extra metadata, without using it for
 membership; new snapshots omit it.
 Replay needs only that snapshot, with no RAW, DLL, acquisition or Backfill.
 `--compare-to <previous replay dir>` compares group membership with another
-replay of the same snapshot, such as one produced by another commit, and writes
-`membership-diff.tsv` (merges and splits with their owners, samples and apex RT gap).
+replay or the capture output of the same snapshot, such as one produced by
+another commit, and writes `membership-diff.tsv` (merges and splits with their
+owners, samples and apex RT gap). A variant (`--set` or a changed RT model)
+compares `changes.tsv` with that directory's tables; without `--compare-to` it
+replays the frozen snapshot a second time as its baseline.
 If both tables already exist, use `compare` instead. Both commands compare shared
 owner IDs, report unmatched counts, and reject a comparison with no common owner.
 Saved tables can only resolve gaps to the precision of their observed RT values.
@@ -448,9 +451,8 @@ snapshot.
 
 Replay refits each batch's RT calibration and drift model from its retained
 anchors with the current code and groups against the refit; `summary.json`
-reports `rt_model` and `rt_model_changed`. A changed model is replayed twice,
-so `changes.tsv` compares the refit grouping with the frozen one. A snapshot
-without retained anchors (`rt_model: snapshot`) reuses its frozen models.
+reports `rt_model` and `rt_model_changed`. A snapshot without retained anchors
+(`rt_model: snapshot`) reuses its frozen models.
 Which peaks become anchors (initial assessment, bootstrap grouping and the
 calibration reference population) is fixed at capture; changing it needs a new
 capture. `--rt-calibration` instead supplies an
