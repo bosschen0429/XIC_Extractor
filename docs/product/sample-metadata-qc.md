@@ -83,8 +83,8 @@ identities merely because its files were measured on different dates.
 ## Injection timeline diagnostic
 
 `tools.diagnostics.build_injection_timeline` builds a read-only batch
-chronology; its arguments, inputs and outputs are listed in the
-[Diagnostics Index](../../tools/diagnostics/INDEX.md#build_injection_timelinepy).
+chronology; its inputs and outputs are described in
+[its module docstring](../../tools/diagnostics/build_injection_timeline.py).
 The timeline does not change sample identity, analysis-set membership, RT,
 selected peaks or values.
 
@@ -98,7 +98,7 @@ minutes, at most half the current run length, and idle is between zero and 5
 minutes inclusive. A short previous method followed closely by a long one can
 leave the LC gradient or column state unsettled. These thresholds describe a
 possible perturbation, not a validated method-independent classifier; the
-[sample RT calibration diagnostic](../../tools/diagnostics/INDEX.md#build_sample_rt_calibrationpy)
+[sample RT calibration diagnostic](../../tools/diagnostics/build_sample_rt_calibration.py)
 confirms it from measured data. 25-minute blanks are excluded by default. A
 sequence row never invents a timestamp, and a RAW missing from the supplied root
 is not proof that an injection never occurred.

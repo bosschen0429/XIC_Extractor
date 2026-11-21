@@ -29,10 +29,6 @@ from xic_extractor.configuration.delta_mass_table import (
     delta_mass_setting_rows,
     parse_delta_mass_rows,
 )
-from xic_extractor.configuration.legacy_target_methods import (
-    LEGACY_METHOD_SHEET,
-    upgrade_target_table,
-)
 from xic_extractor.configuration.models import ConfigError, Target
 from xic_extractor.configuration.targets import (
     parse_target_rows,
@@ -45,7 +41,6 @@ _REQUIRED_COLUMNS = {
     DELTA_MASS_SHEET: {"Target", "Delta m/z"},
     DELTA_MASS_SETTINGS_SHEET: {"key", "value"},
 }
-_RETIRED_SHEETS = ("Method", LEGACY_METHOD_SHEET)
 _HEADER_NOTES = {
     TARGETS_SHEET: {
         "label": "目標名稱，不可重複。",
@@ -81,19 +76,11 @@ class TargetList:
 def create_target_list(
     target_rows: Sequence[Mapping[str, str]], *, delta_mass: Mapping | None = None
 ) -> TargetList:
-    """Admit an edited list without reading files.
-
-    Rows in the earlier ``method``-column format are converted to parameter
-    columns.
-    """
-    upgraded, legacy_details = upgrade_target_table(target_rows)
-    targets = parse_target_rows(
-        upgraded,
-        delta_mass=delta_mass if delta_mass is not None else legacy_details,
-    )
+    """Admit an edited list without reading files."""
+    targets = parse_target_rows(target_rows, delta_mass=delta_mass)
     return TargetList(
         targets,
-        tuple(MappingProxyType(row) for row in upgraded),
+        tuple(MappingProxyType(dict(row)) for row in target_rows),
         targets_delta_mass_payload(targets),
     )
 
@@ -152,13 +139,6 @@ def _read_workbook(path: Path) -> dict[str, list[dict[str, str]]]:
         ) from exc
     try:
         actual = set(book.sheetnames)
-        retired = [name for name in _RETIRED_SHEETS if name in actual]
-        if retired:
-            raise ConfigError(
-                f"{path}: 這是舊格式的目標清單（含 {'、'.join(retired)} 工作表）。"
-                f"請刪除這些工作表後再使用；Delta Mass 共用設定改放在 "
-                f"{DELTA_MASS_SETTINGS_SHEET} 工作表（key、value 兩欄）。"
-            )
         unknown = actual - set(_REQUIRED_COLUMNS)
         if TARGETS_SHEET not in actual or unknown:
             raise ConfigError(

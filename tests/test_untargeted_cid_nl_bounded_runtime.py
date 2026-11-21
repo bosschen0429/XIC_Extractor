@@ -1,10 +1,15 @@
-"""End-to-end bounded cohort closure through the retained scientific owners."""
+"""Bounded partition runtime: invariance, eligibility, failure and lifecycle.
+
+Tests that state a published result run the formal Untargeted entry with only
+the Thermo RAW boundary replaced, and compare published tables across
+execution profiles. Lifecycle tests (spool, acquisition cache, worker pools,
+process transport, cancellation and concurrency) keep their runtime seams:
+those properties are not visible in published files, RAW reads or timing.
+"""
 
 from __future__ import annotations
 
-import json
 import os
-import sqlite3
 from dataclasses import replace
 from pathlib import Path
 from threading import Barrier, Event, Lock, get_ident
@@ -12,32 +17,35 @@ from time import perf_counter, sleep
 
 import pytest
 
-from tests.alignment_explanation_fixtures import plan_discovery_facts
 from tests.alignment_pipeline_helpers import (
-    render,
     written_cells,
     written_groups,
     written_rows,
 )
 from tests.cid_nl_raw_fixture import (
-    TEST_PROFILE,
-    _current_candidates,
     _FakeRaw,
     _FakeThermoRaw,
-    _settings,
 )
 from tests.cid_nl_runtime_fixtures import (
-    install_runtime_raws,
     load_plan_inputs,
-    prepare_persisted_discovery_plan,
 )
 from tests.discovery_csv_fixtures import representative_event
+from tests.untargeted_alignment_entry_fixtures import (
+    PUBLISHED_TABLES,
+    SETTINGS,
+    discover,
+    publish_alignment,
+    published_cells,
+    published_tables,
+    raw_paths,
+    read_tsv,
+)
 from tests.untargeted_cid_nl_bounded_runtime_fixtures import (
     _plan,
+    entry_scenario,
 )
 from tests.untargeted_partition_fixtures import (
     children_of,
-    complete_dense_partition,
     execute_dense_partition,
     physical_peak_keys,
     project_composed_child,
@@ -47,16 +55,11 @@ from xic_extractor.configuration.execution_profile import (
     ExecutionProfile,
     in_process_execution,
 )
-from xic_extractor.immutable_sequence import ImmutableSequence
-from xic_extractor.sample_metadata import SampleMetadata
 from xic_extractor.untargeted_execution.execution import (
     materialize_untargeted_partition,
 )
 from xic_extractor.untargeted_execution.execution_result import (
     CompletedUntargetBatchWorkflowResult,
-)
-from xic_extractor.untargeted_execution.partition.models import (
-    BACKFILL_HALF_WINDOW_MIN,
 )
 
 
@@ -77,246 +80,274 @@ def _phase_partitions(adapter, store, *, reverse_initial=False):
         yield from partitions
 
 
-def test_batch_rt_calibration_and_grouping_are_independent_of_partition_capacity(
-    tmp_path, monkeypatch
-):
+def _shifted_feature_raws(tmp_path, *, samples, features, shifts, spacing):
+    """``features`` CID-NL subjects per sample; ``shifts`` move whole samples."""
     import numpy as np
 
-    from xic_extractor.execution.result_store import StreamedResultStore
-    from xic_extractor.untargeted_execution.execution import (
-        UntargetedPartitionPipelineAdapter,
-    )
-
-    settings = replace(_settings(), precursor_mz_tolerance_ppm=1.0)
-    paths = tuple(tmp_path / f"S{i:02}.synthetic" for i in range(24))
-    raws, candidates = {}, {}
-    for index, path in enumerate(paths):
-        path.write_bytes(path.stem.encode())
-        shift = 0.1 if index == 12 else 0.0
-        raw = _FakeRaw(tuple(7.985 + feature * 0.0025 + shift for feature in range(12)))
+    stems = tuple(f"S{i:02}" for i in range(samples))
+    paths = raw_paths(tmp_path, stems)
+    settings = replace(SETTINGS, precursor_mz_tolerance_ppm=1.0)
+    raws, peaks = {}, {}
+    for index, stem in enumerate(stems):
+        shift = shifts.get(index, 0.0)
+        raw = _FakeRaw(
+            tuple(7.985 + feature * 0.0025 + shift for feature in range(features))
+        )
         raw.intensity = 1000 * np.exp(-0.5 * ((raw.rt - 8.0 - shift) / 0.035) ** 2)
         raw.scans = tuple(
             replace(
                 scan,
-                precursor_mz=500.0 + feature,
-                masses=np.asarray((500.0 + feature - 116.0474, 450.0 + feature)),
-            )
-            for feature, scan in enumerate(raw.scans)
-        )
-        raws[path] = raw
-        candidates[path.stem] = _current_candidates(
-            raw,
-            raw_file=path,
-            settings=settings,
-        )
-        assert len(candidates[path.stem]) == 12
-    plan = prepare_persisted_discovery_plan(
-        raw_paths=paths,
-        sample_metadata=tuple(
-            SampleMetadata(
-                sample_name=path.stem,
-                raw_stem=path.stem,
-                injection_order=i,
-                sample_role="sample",
-            )
-            for i, path in enumerate(paths, 1)
-        ),
-        settings=settings,
-        peaks_by_sample=candidates,
-        root=tmp_path / "persisted",
-        dll_dir=tmp_path,
-        signal_processing_profile=TEST_PROFILE,
-    )
-    install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
-
-    def run(capacity, *, reverse_initial=False):
-        from xic_extractor.alignment.drift_evidence import (
-            mint_known_istd_reference_from_measurements,
-        )
-        from xic_extractor.configuration.targets import parse_target_rows
-
-        reference = mint_known_istd_reference_from_measurements(
-            parse_target_rows(
-                [
-                    {
-                        "label": label,
-                        "mz": str(mz),
-                        "expected_rt_min": str(rt),
-                        "cid_nl_loss_da": "116.0474",
-                        "role": "istd",
-                        "istd_pair": "",
-                    }
-                    for label, mz, rt in (
-                        (f"standard{i}", 300 + 20 * i, 3 + 2 * i) for i in range(8)
-                    )
-                ]
-            ),
-            {
-                (label, path.stem): rt + (0.1 if i == 12 else 0.0)
-                for i, path in enumerate(paths)
-                for label, rt in ((f"standard{j}", 3 + 2 * j) for j in range(8))
-            },
-        )
-        adapter = UntargetedPartitionPipelineAdapter(
-            plan,
-            alignment_config=AlignmentConfig(anchor_min_seed_events=1),
-            max_partition_jobs=capacity,
-            execution=ExecutionProfile(
-                alignment_workers=1, backend="thread", overlap_partitions=False
-            ),
-            known_istd_reference=reference,
-            project_child=project_composed_child,
-        )
-        store = StreamedResultStore(
-            tmp_path / f"spool-{capacity}-{reverse_initial}",
-            adapter.get_shared_objects(),
-        )
-        calibrations, memberships = [], []
-        try:
-            for partition in _phase_partitions(
-                adapter, store, reverse_initial=reverse_initial
-            ):
-                acquired = adapter.execute_acquisition(partition)
-                assert acquired.succeeded
-                prepared = acquired.result[1].prepared_grouping
-                assert prepared is not None
-                calibration = prepared.rt_frame.calibration_for_snapshot
-                if calibration is not None:
-                    calibrations.append(calibration)
-                    memberships.extend(
-                        tuple(group.owner_ids)
-                        for workset in prepared.worksets
-                        for group in workset.grouping_scope.groups
-                    )
-                adapter.execute_composition(partition, acquired, store)
-            assert calibrations and all(c == calibrations[0] for c in calibrations)
-            return calibrations[0], tuple(sorted(memberships))
-        finally:
-            adapter.close_process_worker_pools()
-            store.cleanup()
-
-    all_features_together = run(24 * 12)
-    assert run(24, reverse_initial=True) == all_features_together
-    calibration, groups = all_features_together
-    assert len(calibration.knots) == 9
-    assert calibration.has_support("S12")
-    assert calibration.offset_min("S12", 8.0) == pytest.approx(0.1, abs=0.005)
-    assert len(groups) == 12 and all(len(group) == 24 for group in groups)
-
-
-def test_backfill_queries_are_partition_invariant_and_never_supply_ms2_support(
-    tmp_path, monkeypatch
-):
-    import numpy as np
-
-    from xic_extractor.execution.result_store import StreamedResultStore
-    from xic_extractor.untargeted_execution.execution import (
-        UntargetedPartitionPipelineAdapter,
-    )
-
-    settings = replace(_settings(), precursor_mz_tolerance_ppm=1.0)
-    paths = tuple(tmp_path / f"S{i:02}.synthetic" for i in range(22))
-    raws, candidates = {}, {}
-    for index, path in enumerate(paths):
-        path.write_bytes(path.stem.encode())
-        shift = {20: 0.1, 21: -0.1}.get(index, 0.0)
-        raw = _FakeRaw(tuple(7.985 + feature * 0.0025 + shift for feature in range(2)))
-        raw.intensity = 1000 * np.exp(-0.5 * ((raw.rt - 8.0 - shift) / 0.035) ** 2)
-        raw.scans = tuple(
-            replace(
-                scan,
-                precursor_mz=500.0 + feature * 1.00335483507,
+                precursor_mz=500.0 + feature * spacing,
                 masses=np.asarray(
-                    (500.0 + feature * 1.00335483507 - 116.0474, 450.0 + feature)
+                    (500.0 + feature * spacing - 116.0474, 450.0 + feature)
                 ),
             )
             for feature, scan in enumerate(raw.scans)
         )
-        raws[path] = raw
-        candidates[path.stem] = _current_candidates(
-            raw,
-            raw_file=path,
-            settings=settings,
-        )
-        assert len(candidates[path.stem]) == 2
-        if index >= 20:
-            candidates[path.stem] = tuple(
-                c
-                for c in candidates[path.stem]
-                if representative_event(c).precursor_mz < 500.5
-            )
-        if index == 21:
-            raw.scans = tuple(s for s in raw.scans if s.precursor_mz < 500.5)
-    plan = prepare_persisted_discovery_plan(
-        raw_paths=paths,
-        sample_metadata=tuple(
-            SampleMetadata(
-                sample_name=path.stem,
-                raw_stem=path.stem,
-                injection_order=i,
-                sample_role="sample",
-            )
-            for i, path in enumerate(paths, 1)
-        ),
-        settings=settings,
-        peaks_by_sample=candidates,
-        root=tmp_path / "persisted",
-        dll_dir=tmp_path,
-        signal_processing_profile=TEST_PROFILE,
+        raws[stem] = raw
+        peaks[stem] = discover(raw, paths[stem], settings)
+        assert len(peaks[stem]) == features
+    return paths, raws, peaks, settings
+
+
+def test_partition_capacity_keeps_batch_calibration_and_grouping(tmp_path, monkeypatch):
+    """One shifted sample keeps its RT whether subjects share a partition or not."""
+    from openpyxl import Workbook
+
+    paths, raws, peaks, settings = _shifted_feature_raws(
+        tmp_path, samples=24, features=12, shifts={12: 0.1}, spacing=1.0
     )
-    install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
+    workbook = Workbook()
+    targets = workbook.active
+    targets.title = "Targets"
+    targets.append(
+        ["Label", "Role", "m/z", "RT min", "RT max", "ppm tol", "NL (Da)"]
+        + ["NL ppm warn", "NL ppm max", "ISTD Pair"]
+    )
+    standards = {f"standard{i}": (300 + 20 * i, 3 + 2 * i) for i in range(8)}
+    for label, (mz, rt) in standards.items():
+        targets.append([label, "ISTD", mz, rt - 1, rt + 1, 20, 116.0474, 20, 50, ""])
+    results = workbook.create_sheet("XIC Results")
+    results.append(["SampleName", "Target", "Role", "RT", "Area"])
+    for index, stem in enumerate(paths):
+        for label, (_mz, rt) in standards.items():
+            results.append([stem, label, "ISTD", rt + (0.1 if index == 12 else 0), -9])
+    reference = tmp_path / "reference.xlsx"
+    workbook.save(reference)
+    inputs = dict(
+        paths=paths,
+        raws=raws,
+        peaks=peaks,
+        settings=settings,
+        alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+        known_istd_reference_workbook=reference,
+    )
 
-    def run(capacity):
-        adapter = UntargetedPartitionPipelineAdapter(
-            plan,
-            alignment_config=AlignmentConfig(anchor_min_seed_events=1),
-            max_partition_jobs=capacity,
-            execution=ExecutionProfile(
-                alignment_workers=1, backend="thread", overlap_partitions=False
+    together = publish_alignment(
+        tmp_path,
+        monkeypatch,
+        name="together",
+        execution_changes={"max_partition_jobs": 24 * 12},
+        **inputs,
+    )
+    separate = publish_alignment(
+        tmp_path,
+        monkeypatch,
+        name="separate",
+        execution_changes={"max_partition_jobs": 24},
+        **inputs,
+    )
+
+    assert published_tables(separate) == published_tables(together)
+    matrix = read_tsv(together / "alignment_matrix.tsv")
+    assert len(matrix) == 12
+    assert all(all(float(row[stem]) > 0 for stem in paths) for row in matrix)
+    apexes = {
+        stem: float(cell["apex_rt"])
+        for (_feature, stem), cell in published_cells(together).items()
+        if stem in {"S00", "S12"}
+    }
+    assert apexes["S12"] - apexes["S00"] == pytest.approx(0.1, abs=0.01)
+
+
+def test_backfill_is_partition_invariant_and_never_supplies_ms2_support(
+    tmp_path, monkeypatch
+):
+    """S20 and S21 have no Discovery peak for the heavier subject; S21 also has no CID-
+    NL scan for it.
+    """
+    paths, raws, peaks, settings = _shifted_feature_raws(
+        tmp_path,
+        samples=22,
+        features=2,
+        shifts={20: 0.1, 21: -0.1},
+        spacing=1.00335483507,
+    )
+    for stem in ("S20", "S21"):
+        peaks[stem] = tuple(
+            c for c in peaks[stem] if representative_event(c).precursor_mz < 500.5
+        )
+    raws["S21"].scans = tuple(s for s in raws["S21"].scans if s.precursor_mz < 500.5)
+    inputs = dict(
+        paths=paths,
+        raws=raws,
+        peaks=peaks,
+        settings=settings,
+        alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+    )
+
+    separate = publish_alignment(
+        tmp_path,
+        monkeypatch,
+        name="separate",
+        execution_changes={"max_partition_jobs": 22},
+        **inputs,
+    )
+    together = publish_alignment(
+        tmp_path,
+        monkeypatch,
+        name="together",
+        execution_changes={"max_partition_jobs": 44},
+        **inputs,
+    )
+
+    assert published_tables(separate) == published_tables(together)
+    review = {
+        row["feature_id"]: row for row in read_tsv(together / "alignment_review.tsv")
+    }
+    (heavy,) = (f for f, row in review.items() if float(row["group_center_mz"]) > 500.5)
+    cells = published_cells(together)
+    for stem, apex in (("S20", 8.1), ("S21", 7.9)):
+        cell = cells[(heavy, stem)]
+        assert cell["status"] == "backfilled"
+        assert cell["source_candidate_id"] == ""
+        assert float(cell["apex_rt"]) == pytest.approx(apex, abs=0.005)
+
+
+@pytest.mark.parametrize("scenario", ["positive", "recovery", "istd"])
+def test_execution_profile_does_not_change_published_alignment(
+    tmp_path, monkeypatch, scenario
+):
+    """A known ISTD joins all three subjects into one workset, which a partition cannot
+    split. Sample intensities scale 1:2:3:4.
+    """
+    inputs = entry_scenario(tmp_path, scenario)
+    samples = len(inputs["paths"])
+    baseline = publish_alignment(
+        tmp_path,
+        monkeypatch,
+        name="serial",
+        execution_changes={"max_partition_jobs": 3 * samples},
+        **inputs,
+    )
+    tables = published_tables(baseline)
+    for index, (subjects, workers) in enumerate(((1, 1), (1, 2), (1, 4), (2, 2))):
+        subjects = 3 if scenario == "istd" else subjects
+        variant = publish_alignment(
+            tmp_path,
+            monkeypatch,
+            name=f"variant-{index}",
+            execution_changes={
+                "max_partition_jobs": subjects * samples,
+                "profile": ExecutionProfile(
+                    alignment_workers=workers,
+                    backend="thread",
+                    overlap_partitions=False,
+                ),
+            },
+            **inputs,
+        )
+        assert published_tables(variant) == tables
+
+    rows = read_tsv(baseline / "alignment_matrix.tsv")
+    assert rows
+    if scenario == "positive":
+        for row in rows:
+            assert float(row["S0"]) > 0
+            assert float(row["S1"]) == pytest.approx(2 * float(row["S0"]), rel=1e-3)
+    if scenario == "recovery":
+        assert {
+            cell["status"]
+            for (_f, stem), cell in published_cells(baseline).items()
+            if stem == "S3"
+        } <= {"backfilled", "unavailable", "unresolved"}
+        assert any(
+            cell["status"] == "backfilled"
+            for (_f, stem), cell in published_cells(baseline).items()
+            if stem == "S3"
+        )
+
+
+@pytest.mark.parametrize("scenario", ["mixed_eligibility", "ineligible"])
+@pytest.mark.parametrize("raw_workers", [1, 4])
+def test_bounded_runtime_skips_subjects_without_ms1_features(
+    tmp_path, monkeypatch, scenario, raw_workers
+):
+    """An ineligible cohort closes without opening RAW. The subject without an MS1
+    feature forms no row.
+    """
+    inputs = entry_scenario(tmp_path, scenario)
+    admitted = {
+        stem
+        for stem, peaks in inputs["peaks"].items()
+        if any(peak.admitted for peak in peaks)
+    }
+    assert bool(admitted) is (scenario == "mixed_eligibility")
+    opened: set[str] = set()
+
+    output = publish_alignment(
+        tmp_path,
+        monkeypatch,
+        name="eligibility",
+        execution_changes={
+            "max_partition_jobs": len(inputs["paths"]),
+            "profile": ExecutionProfile(
+                alignment_workers=raw_workers,
+                backend="thread",
+                overlap_partitions=True,
             ),
-            project_child=project_composed_child,
-        )
-        store = StreamedResultStore(
-            tmp_path / f"spool-{capacity}", adapter.get_shared_objects()
-        )
-        queries = {}
-        try:
-            for partition in _phase_partitions(adapter, store):
-                acquired = adapter.execute_acquisition(partition)
-                assert acquired.succeeded
-                for result in acquired.result[1].sample_results:
-                    for attempt in result.backfill_attempts:
-                        stem = result.job.sample.raw_stem
-                        if stem == "S21":
-                            assert attempt.assessment.method_result != "SUPPORT"
-                        receipt = attempt.assessment.evaluation_receipt
-                        queries[result.job.sample.raw_stem] = (
-                            attempt.query_rt,
-                            attempt.query_rt_basis,
-                            receipt.query_rt_min,
-                            receipt.query_rt_max,
-                            attempt.assessment.candidate_peaks[
-                                0
-                            ].integration.rt_apex_min,
-                        )
-                adapter.execute_composition(partition, acquired, store)
-            assert set(queries) == {"S20", "S21"}
-            for sample, (rt, basis, lower, upper, apex) in queries.items():
-                expected = {"S20": 8.1, "S21": 7.9}[sample]
-                assert apex == pytest.approx(expected, abs=0.005)
-                assert rt == pytest.approx(8.0, abs=0.005)
-                assert basis.startswith("trajectory_")
-                half_window = BACKFILL_HALF_WINDOW_MIN
-                assert lower == pytest.approx(rt - half_window)
-                assert upper == pytest.approx(rt + half_window)
-            return queries
-        finally:
-            adapter.close_process_worker_pools()
-            store.cleanup()
+        },
+        opened_samples=opened,
+        **inputs,
+    )
 
-    separate = run(22)
-    together = run(44)
-    assert separate == together
+    assert opened == admitted
+    review = read_tsv(output / "alignment_review.tsv")
+    if scenario == "ineligible":
+        assert review == []
+        assert read_tsv(output / "alignment_matrix.tsv") == []
+    else:
+        assert len(review) == 2
+
+
+@pytest.mark.parametrize("overlap", [False, True])
+def test_bounded_runtime_failure_never_publishes_completed_batch(
+    tmp_path, monkeypatch, overlap
+):
+    inputs = entry_scenario(tmp_path, "positive")
+    read = _FakeThermoRaw.GetChromatogramData
+    failing = inputs["raws"]["S2"]
+
+    def fail_one_sample(self, *args):
+        if self.source is failing:
+            raise OSError("injected vendor failure")
+        return read(self, *args)
+
+    monkeypatch.setattr(_FakeThermoRaw, "GetChromatogramData", fail_one_sample)
+    with pytest.raises(RuntimeError, match="failed before batch publication"):
+        publish_alignment(
+            tmp_path,
+            monkeypatch,
+            name="failed",
+            execution_changes={
+                "max_partition_jobs": len(inputs["paths"]),
+                "profile": ExecutionProfile(
+                    alignment_workers=2, backend="thread", overlap_partitions=overlap
+                ),
+            },
+            **inputs,
+        )
+    assert not any((tmp_path / "failed" / name).exists() for name in PUBLISHED_TABLES)
 
 
 def test_bounded_partition_keeps_alignment_workset_atomic(
@@ -688,354 +719,6 @@ def test_bounded_partition_real_entry_mints_interleaved_worksets_canonically(
         for batch in captured_batches
         for subject in batch.subjects
     } == {subject.method_subject_id for subject in subjects}
-
-
-@pytest.mark.parametrize("scenario", ["mixed_eligibility", "ineligible"])
-@pytest.mark.parametrize("raw_workers", [1, 4])
-def test_bounded_runtime_skips_subjects_without_ms1_features(
-    tmp_path, monkeypatch, scenario, raw_workers
-):
-    from xic_extractor.untargeted_execution.execution import (
-        UntargetedPartitionPipelineAdapter,
-        execute_untargeted_plan,
-    )
-
-    plan, reference = _plan(tmp_path, monkeypatch, scenario=scenario)
-    subject_batch = plan.subject_batch
-    candidate_by_id = {
-        candidate.peak_id: candidate
-        for candidates in load_plan_inputs(plan).values()
-        for candidate in candidates
-    }
-    eligible_subject_ids = {
-        subject_id
-        for candidate_id, subject_id in plan.subject_batch.candidate_memberships
-        if candidate_by_id[candidate_id].is_clean_peak
-    }
-    assert len(eligible_subject_ids) == (2 if scenario == "mixed_eligibility" else 0)
-    config = AlignmentConfig(anchor_min_seed_events=1)
-    adapter = UntargetedPartitionPipelineAdapter(
-        plan,
-        alignment_config=config,
-        max_partition_jobs=len(plan.context.samples),
-        project_child=project_composed_child,
-        execution=in_process_execution(),
-    )
-    assert {
-        subject.method_subject_id
-        for partition in adapter.partitions
-        for subject in partition.payload
-    } == eligible_subject_ids
-    eager = None
-    if eligible_subject_ids:
-        batch = materialize_untargeted_partition(plan, plan.subject_batch)
-        runtime = execute_dense_partition(
-            batch,
-            alignment_config=config,
-            known_istd_reference=reference,
-        )
-        eager = complete_dense_partition(
-            batch,
-            runtime,
-            alignment_config=config,
-            known_istd_reference=reference,
-        )
-    if not eligible_subject_ids:
-
-        def forbid_raw_open(*args, **kwargs):
-            pytest.fail("an ineligible cohort must close without opening RAW")
-
-        monkeypatch.setattr(_FakeThermoRaw, "__init__", forbid_raw_open)
-    result = execute_untargeted_plan(
-        plan,
-        output_dir=tmp_path / "eligibility-output",
-        alignment_config=config,
-        max_partition_jobs=len(plan.context.samples),
-        execution=ExecutionProfile(
-            alignment_workers=raw_workers, backend="thread", overlap_partitions=True
-        ),
-        project_child=project_composed_child,
-    )
-    assert plan.subject_batch == subject_batch
-    assert set(result.application_result.candidate_ids) == set(candidate_by_id)
-    assert {
-        assessment.method_subject.method_subject_id
-        for assessment in result.method_assessments
-    } == eligible_subject_ids
-    assert not result.application_result.excluded_candidates
-    assert bool(children_of(result.application_result)) is bool(eligible_subject_ids)
-    writer = result.application_result
-    if eager is not None:
-        assert written_rows(tmp_path / "bounded-written", writer) == written_rows(
-            tmp_path / "eager-written", eager.application_result
-        )
-        assert {assessment: assessment for assessment in result.method_assessments} == {
-            assessment: assessment
-            for assessment in eager.method_assessments
-            if assessment.method_subject.method_subject_id in eligible_subject_ids
-        }
-    from xic_extractor.applications.untargeted.alignment_explanation_projection import (
-        write_alignment_explanation,
-    )
-
-    matrix_path = tmp_path / "eligibility.tsv"
-    render("matrix", matrix_path, writer)
-    report = write_alignment_explanation(
-        tmp_path / "eligibility.sqlite",
-        completed=result,
-        children=children_of(result.application_result),
-        **plan_discovery_facts(plan),
-        peaks_by_sample=load_plan_inputs(plan),
-        matrix_path=matrix_path,
-        alignment_config=config,
-    )
-    with sqlite3.connect(report) as connection:
-        assert connection.execute("SELECT COUNT(*) FROM candidates").fetchone()[
-            0
-        ] == len(candidate_by_id)
-        assert connection.execute("SELECT COUNT(*) FROM method_assessments").fetchone()[
-            0
-        ] == len(result.method_assessments)
-
-
-@pytest.mark.parametrize("subjects_per_partition", [1, 2])
-@pytest.mark.parametrize("raw_workers", [1, 2, 4])
-@pytest.mark.parametrize("scenario", ["positive", "recovery", "istd"])
-def test_bounded_runtime_matches_eager_after_disk_owner_round_trip(
-    tmp_path: Path,
-    monkeypatch,
-    scenario: str,
-    subjects_per_partition: int,
-    raw_workers: int,
-):
-    import xic_extractor.execution.timing as timing_owner
-    from xic_extractor.execution.timing import TimingRecorder
-    from xic_extractor.untargeted_execution.execution import (
-        execute_untargeted_plan,
-        prepare_untargeted_alignment_worksets,
-    )
-
-    plan, reference = _plan(tmp_path, monkeypatch, scenario=scenario)
-    prepared_worksets = prepare_untargeted_alignment_worksets(
-        plan,
-        known_istd_reference=reference,
-    )
-    if scenario == "istd":
-        assert tuple(len(workset) for workset in prepared_worksets.worksets) == (3,)
-    import xic_extractor.untargeted_execution.partition.execution as runtime_owner
-
-    coordinator_thread = get_ident()
-    warm_threads = []
-    monkeypatch.setattr(
-        runtime_owner,
-        "ensure_assemblies_loaded",
-        lambda *_args: warm_threads.append(get_ident()),
-    )
-    config = AlignmentConfig(anchor_min_seed_events=1)
-    batch = materialize_untargeted_partition(plan, plan.subject_batch)
-    eager_runtime = execute_dense_partition(
-        batch,
-        alignment_config=config,
-        known_istd_reference=reference,
-    )
-    eager = complete_dense_partition(
-        batch, eager_runtime, alignment_config=config, known_istd_reference=reference
-    )
-    warm_threads.clear()
-    progress_events = []
-    live_path = tmp_path / "alignment-live.json"
-    recorder = TimingRecorder("alignment", live_output_path=live_path)
-    monkeypatch.setattr(timing_owner, "perf_counter", lambda: 1.0)
-    writes = []
-    write_live = recorder._write_live
-
-    def record_write():
-        writes.append(dict(recorder._heartbeat))
-        write_live()
-
-    monkeypatch.setattr(recorder, "_write_live", record_write)
-
-    def report_progress(event):
-        assert get_ident() == coordinator_thread
-        recorder.heartbeat_event(event)
-        progress_events.append(event)
-
-    with recorder.stage("alignment.untargeted_cid_nl_runtime"):
-        partition_subject_capacity = (
-            len(prepared_worksets.worksets[0])
-            if scenario == "istd"
-            else subjects_per_partition
-        )
-        bounded = execute_untargeted_plan(
-            plan,
-            output_dir=tmp_path / "bounded-output",
-            alignment_config=config,
-            known_istd_reference=reference,
-            progress_callback=report_progress,
-            max_partition_jobs=(partition_subject_capacity * len(plan.context.samples)),
-            execution=ExecutionProfile(
-                alignment_workers=raw_workers,
-                backend="thread",
-                overlap_partitions=False,
-            ),
-            project_child=project_composed_child,
-        )
-    assert type(bounded) is CompletedUntargetBatchWorkflowResult
-    assert bool(warm_threads) is (raw_workers > 1)
-    assert all(thread == coordinator_thread for thread in warm_threads)
-    assert type(bounded.application_result.child_outputs) is ImmutableSequence
-    bounded_writer = bounded.application_result
-    eager_writer = eager.application_result
-    assert written_rows(tmp_path / "bounded-written", bounded_writer) == (
-        written_rows(tmp_path / "eager-written", eager_writer)
-    )
-    if scenario == "positive":
-        for writer in (eager_writer, bounded_writer):
-            areas = {}
-            for group, sample, cell in written_cells(writer):
-                areas.setdefault(group.group_hypothesis_id, {})[sample] = cell.value
-            assert areas
-            for samples in areas.values():
-                assert samples["S0"] > 0
-                assert samples["S1"] == pytest.approx(2 * samples["S0"])
-    if scenario == "istd":
-        expected_areas = {
-            (group.group_hypothesis_id, sample_stem): cell.value
-            for group, sample_stem, cell in written_cells(eager_writer)
-            if cell.value is not None
-        }
-        actual_areas = {
-            (group.group_hypothesis_id, sample_stem): cell.value
-            for group, sample_stem, cell in written_cells(bounded_writer)
-            if cell.value is not None
-        }
-        assert expected_areas
-        assert actual_areas == pytest.approx(expected_areas)
-        assert all(area > 0 for area in actual_areas.values())
-    actual = bounded.application_result
-    expected = eager.application_result
-    assert actual.candidate_ids == expected.candidate_ids
-    assert physical_peak_keys(actual) == physical_peak_keys(expected)
-    assert tuple(actual.excluded_candidates) == expected.excluded_candidates
-    assert actual.processing_attempt_id == plan.context.processing_attempt_id
-    assert actual.canonical_samples == expected.canonical_samples
-    for child in children_of(actual):
-        assert child.canonical_samples == expected.canonical_samples
-    assert len(bounded.method_assessments) == len(eager.method_assessments)
-    assert {item for item in bounded.method_assessments} == {
-        item for item in eager.method_assessments
-    }
-    _assert_explanation_parity(tmp_path, plan, config, eager, bounded)
-    partition_stages = [
-        (event["stage"], event["completed"])
-        for event in progress_events
-        if event.get("event") == "partition_progress"
-        and event["stage"]
-        in {
-            "partition_start",
-            "partition_compose",
-            "partition_released",
-            "global_closure",
-            "batch_completed",
-        }
-    ]
-    partition_count = (
-        len(plan.subject_batch.subjects) + partition_subject_capacity - 1
-    ) // partition_subject_capacity
-    if scenario == "istd" and subjects_per_partition == 1:
-        assert partition_count < len(plan.subject_batch.subjects)
-    phase_count = 2 * partition_count
-    assert partition_stages == [
-        event
-        for index in range(phase_count)
-        for event in (
-            ("partition_start", index),
-            ("partition_compose", index),
-            ("partition_released", index + 1),
-        )
-    ] + [("global_closure", phase_count), ("batch_completed", phase_count)]
-    seal_writes = [row for row in writes if row.get("stage") == "partition_seal"]
-    assert len(seal_writes) <= 2 * phase_count
-    heartbeat = json.loads(live_path.read_text(encoding="utf-8"))["heartbeat"]
-    assert heartbeat["stage"] == "batch_completed"
-    assert heartbeat["completed"] == heartbeat["total"] == phase_count
-    assert actual.child_outputs
-    if scenario == "recovery":
-        assert any(result.backfill_attempts for result in eager_runtime.sample_results)
-
-
-def _assert_explanation_parity(tmp_path, plan, config, eager, bounded):
-    from xic_extractor.alignment_explanation.reader import (
-        read_alignment_explanation,
-    )
-    from xic_extractor.applications.untargeted.alignment_explanation_projection import (
-        write_alignment_explanation,
-    )
-
-    candidate_id = plan.subject_batch.candidate_memberships[0][0]
-    details = []
-    for name, completed in (("eager", eager), ("bounded", bounded)):
-        matrix = tmp_path / f"{name}.tsv"
-        render("matrix", matrix, completed.application_result)
-        report = write_alignment_explanation(
-            tmp_path / f"{name}.sqlite",
-            completed=completed,
-            children=children_of(completed.application_result),
-            **plan_discovery_facts(plan),
-            peaks_by_sample=load_plan_inputs(plan),
-            matrix_path=matrix,
-            alignment_config=config,
-        )
-        details.append(read_alignment_explanation(report, candidate_id=candidate_id))
-    assert details[0] == details[1]
-
-
-@pytest.mark.parametrize("failure_seam", ["later_partition", "later_spool"])
-def test_bounded_runtime_failure_never_publishes_completed_batch(
-    tmp_path: Path, monkeypatch, failure_seam: str
-):
-    import xic_extractor.untargeted_execution.execution as bounded_owner
-
-    plan, _ = _plan(tmp_path, monkeypatch)
-    original_error = OSError("second partition storage unavailable")
-    calls = []
-    if failure_seam == "later_partition":
-        seam_owner = bounded_owner
-        seam_name = "execute_partition"
-    else:
-        seam_owner = bounded_owner.StreamedResultStore
-        seam_name = "append_child_outputs"
-    original = getattr(seam_owner, seam_name)
-
-    def fail_second(*args, **kwargs):
-        calls.append(1)
-        if len(calls) == 2:
-            raise original_error
-        return original(*args, **kwargs)
-
-    monkeypatch.setattr(seam_owner, seam_name, fail_second)
-
-    def forbid_completed(*args, **kwargs):
-        pytest.fail("An incomplete partition must not publish a completed result")
-
-    monkeypatch.setattr(
-        bounded_owner, "CompletedUntargetBatchWorkflowResult", forbid_completed
-    )
-    with pytest.raises(RuntimeError, match="failed before batch publication") as error:
-        bounded_owner.execute_untargeted_plan(
-            plan,
-            output_dir=tmp_path / "failed-output",
-            alignment_config=AlignmentConfig(anchor_min_seed_events=1),
-            max_partition_jobs=len(plan.context.samples),
-            project_child=project_composed_child,
-            execution=in_process_execution(),
-        )
-    assert len(calls) == 2
-    assert error.value.__cause__ is original_error
-    (retained,) = (tmp_path / "failed-output").glob(
-        ".partition_spool-*/failed-results.pickle"
-    )
-    assert any(str(retained) in note for note in error.value.__notes__)
 
 
 def test_failed_attempt_retry_reuses_completed_raw_facts_and_recomposes(
@@ -1940,7 +1623,6 @@ def test_sparse_recovery_partition_matches_dense_composition(
     tmp_path, monkeypatch, scenario, expected_sparse_jobs, expected_sparse_results
 ):
     from tests.untargeted_partition_fixtures import (
-        execute_dense_partition,
         execute_partition_inline,
     )
     from xic_extractor.untargeted_execution.partition_composition import (

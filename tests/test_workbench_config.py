@@ -116,18 +116,6 @@ def test_discovery_defaults_use_bundled_shared_targets(monkeypatch, tmp_path):
     assert untargeted_config.read_untargeted_config()["targets_csv"] == ""
 
 
-def test_saved_worker_setting_is_ignored_and_not_written(tmp_path):
-    path = tmp_path / "workspace.json"
-    path.write_text(
-        json.dumps(
-            {"application": {"parallel_workers": "0"}, "batch": {}, "targets": []}
-        )
-    )
-    assert config_io.read_settings(config_dir=tmp_path)["parallel_workers"] == ""
-    config_io.write_dll_dir("shared-dll", config_dir=tmp_path)
-    assert json.loads(path.read_text())["application"] == {"dll_dir": "shared-dll"}
-
-
 def test_untargeted_save_routes_dll_to_canonical_and_preserves_unrelated_controls(
     tmp_path,
 ):
@@ -235,14 +223,13 @@ def test_bootstrap_resolves_effective_settings_once(tmp_path, monkeypatch):
 
 def test_default_workspace_save_and_cli_share_isolated_settings(isolated_config_dir):
     from tests.workbench_config_fixtures import ConfigurationWorkspace
-    from xic_extractor.configuration.execution_profile import load_execution_profile
 
     workspace = ConfigurationWorkspace()
     try:
         workspace.analysis.action(
             "targeted/save",
             {
-                "settings": {"parallel_workers": "3"},
+                "settings": {"data_dir": "test-raws"},
                 "targets": [
                     {
                         "label": "test",
@@ -260,10 +247,7 @@ def test_default_workspace_save_and_cli_share_isolated_settings(isolated_config_
         workspace.close()
 
     assert (isolated_config_dir / "workspace.json").is_file()
-    assert config_io.read_settings()["parallel_workers"] == ""
-    from xic_extractor.configuration.execution_profile import default_parallel_workers
-
-    assert load_execution_profile().parallel_workers == default_parallel_workers()
+    assert config_io.read_settings()["data_dir"] == "test-raws"
     assert untargeted_config.read_untargeted_config()["raw_dir"] == "test-raws"
 
 

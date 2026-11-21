@@ -105,6 +105,10 @@ def test_alignment_metadata_keeps_two_samples_probe_results(tmp_path, monkeypatc
     from xic_extractor.alignment import AlignmentConfig
     from xic_extractor.applications.untargeted import application
     from xic_extractor.applications.untargeted.request import UntargetedRequest
+    from xic_extractor.configuration.execution_profile import (
+        UntargetedExecutionPolicy,
+        in_process_execution,
+    )
     from xic_extractor.configuration.mass_recalibration import (
         MassRecalibrationResult,
         serialize_mass_recalibration_result,
@@ -141,6 +145,7 @@ def test_alignment_metadata_keeps_two_samples_probe_results(tmp_path, monkeypatc
     monkeypatch.setattr(application, "publish_untargeted_outputs", capture_publication)
     metadata = application.run_untargeted_application(
         UntargetedRequest(
+            execution=UntargetedExecutionPolicy(profile=in_process_execution()),
             discovery_batch_index=index,
             raw_dir=tmp_path / "raw",
             dll_dir=tmp_path / "dll",

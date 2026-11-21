@@ -1,3 +1,9 @@
+"""Compare all sheets of two workbooks with an explicit numeric tolerance.
+
+Shared workbook regression oracle for Targeted validation and operator
+comparisons; dynamic metadata handling belongs to this comparator.
+"""
+
 import argparse
 import math
 import sys

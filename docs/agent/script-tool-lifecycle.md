@@ -7,8 +7,9 @@ construction history, command diaries, or filename-by-filename snapshots.
 ## Authority
 
 - `pyproject.toml` owns installed command names and entry points.
-- [`tools/diagnostics/INDEX.md`](../../tools/diagnostics/INDEX.md) owns the
-  current entry-by-entry diagnostic index.
+- Each diagnostic entry point's module docstring owns its description;
+  [`tools/diagnostics/INDEX.md`](../../tools/diagnostics/INDEX.md) routes tasks
+  to entry points and names the command that lists them.
 - Product, architecture, validation, and agent owners define the semantics and
   public contracts consumed by a script or diagnostic.
 - Imports, tests, CI, GUI wiring, release configuration, and artifact
@@ -54,6 +55,5 @@ retirement review checks:
 5. unique scientific, compatibility, validation, or recovery capability.
 
 Retire a script when every current consumer is absent or retargeted and any
-affected public artifact has parity or an approved expected diff. Update the
-diagnostic index in the same change. When off-repository use cannot be ruled
+affected public artifact has parity or an approved expected diff. When off-repository use cannot be ruled
 out, ask the owner instead of keeping the script indefinitely.

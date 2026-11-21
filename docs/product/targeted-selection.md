@@ -53,17 +53,6 @@ CID-NL alone keeps the existing Targeted CID-NL assessment (ranking support).
 With Delta Mass, every declared condition must match the same peak; there is no
 any-of combination. HCD-PI is not implemented.
 
-Earlier tables had one `method` (or `cid_nl_tag`) column naming `dR`/`R`/`MeR`
-or a user-defined identification method. Reading converts them: tags become their
-loss values; a named method becomes its CID-NL value and Delta Mass ions (names,
-ratios and shape comparison carried over; its quantitation ion becomes `base`).
-A method the parameter columns cannot express is rejected with the affected
-targets: a method with only a CID-NL condition (it required the loss, while
-the CID-NL column alone ranks peaks), any-of combination, more than one
-condition of a kind, or tolerance and co-elution settings that differ from the
-shared values. Writing always uses the
-new columns.
-
 Delta Mass ions use signed offsets relative to the Target's quantitation
 ion (`base`) at zero. The pure settings conversion normalizes the lowest mass internally;
 users neither select a quantitation position per target nor arrange a base ion.

@@ -136,22 +136,16 @@ those. There is no suppression flag. A blocked change removes the unnecessary
 machinery or gets an explicit maintainer decision; the agent does not grant its
 own exception.
 
-### Executable Census And Dependency Gate
+### Repository Gates
 
-The architecture census is disposable evidence, not an authority registry. It
-derives current module paths, static imports, declared console scripts, and
-package patterns from source.
-
-- `[tool.importlinter]` in `pyproject.toml` owns the coarse static dependency floor.
-- `scripts/check_architecture_census.py` owns the census integrity, naming,
-  and internal-defense growth gates.
-- Dynamic loaders, installed entry points, frozen applications, workflow
-  checks, diagnostics indexes, and test selection remain with their respective
-  executable owners.
+- `[tool.importlinter]` in `pyproject.toml` owns the static dependency floor.
+- `scripts/check_architecture_census.py` owns what import contracts cannot
+  express: versioned identifiers, documented names that no source defines, ppm
+  arithmetic outside its owner, tests that patch or read production source,
+  frozen entry points calling `freeze_support` first, and internal-defense
+  growth.
 - A dependency ignore is temporary migration debt: it needs a named owner and
   rationale, and unmatched-ignore alerting must remove it when the edge closes.
-- Optional census output belongs outside the repository or under an ignored
-  path. It is review/debug evidence only.
 
 ## System Shape
 
@@ -387,8 +381,6 @@ loading, models, summaries, plotting and writers live in
 or writers. Diagnostic writers render; they never recompute evidence or rescan
 RAW. Gate diagnostics emit a machine-readable status and reason. Optional
 diagnostics use sidecars instead of changing established schemas.
-Adding, removing or renaming an entry point updates
-[`tools/diagnostics/INDEX.md`](../tools/diagnostics/INDEX.md) in the same change.
 
 ## Refactor And Verification
 
