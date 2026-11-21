@@ -21,9 +21,7 @@ grouping consumes this frame.
 Bootstrap obtains measured anchors from consistent directional grouping
 results; ordinary bootstrap membership is not used directly as the final
 answer. Pattern seeds participate in both directions. Extensions that disagree
-between directions remain unresolved without downgrading the seed. Bootstrap
-pairs precursors only within `preferred_ppm`, not `max_ppm`: ions co-isolated
-for MS2 share one product, so the precursor alone separates them.
+between directions remain unresolved without downgrading the seed.
 
 Known-ISTD reference acquisition reuses Targeted's authoritative peak selection
 and credible-anchor decisions rather than adding a separate rule that makes all

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections import Counter, defaultdict
 from collections.abc import Mapping, Sequence
-from dataclasses import replace
 from typing import cast
 
 from xic_extractor.alignment.config import AlignmentConfig
@@ -44,11 +43,7 @@ def infer_feature_memberships(
 
     Directional inference supplies bootstrap anchors for the batch warp and
     handles composition groups. Its groups do not constrain ordinary bands.
-    Bootstrap pairs precursors only within ``preferred_ppm``: ions co-isolated
-    for MS2 share one product, so the precursor alone separates them.
     """
-    if bootstrap:
-        config = replace(config, max_ppm=config.preferred_ppm)
     unique_owners, duplicate_rows = _unique_owners(owners)
     owner_by_id = {owner.owner_id: owner for owner in unique_owners}
     counts: Counter[str] = Counter(
