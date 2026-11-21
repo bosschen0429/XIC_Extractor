@@ -118,6 +118,31 @@ def test_unknown_sample_shift_affects_only_that_member():
     assert comparison.coefficients(group).sample_shift == pytest.approx(1.1)
 
 
+@pytest.mark.parametrize(("displaced", "feasible"), ((0.0, True), (2.5, False)))
+def test_neighbor_jump_left_after_removing_sample_shift_breaks_the_group(
+    displaced, feasible
+):
+    # Raw neighbours s09 -> s10 differ by 2.8 min, all explained by b*M (b=2).
+    # Displacing s05 leaves a 2.5 min jump that no shift response explains.
+    owners = tuple(
+        cid_nl_owner(
+            sample,
+            "drift",
+            apex_rt=10.0 + 2.0 * SHIFT[sample] + (displaced if sample == "s05" else 0),
+        )
+        for sample in SAMPLES
+    )
+    comparison = MembershipComparison(
+        owners,
+        rules=CID_NL_GROUPING_RULES,
+        config=AlignmentConfig(),
+        rt_frame=_frame(_model()),
+        trajectories=PeakTrajectories(),
+    )
+    group = tuple(sorted(owner.owner_id for owner in owners))
+    assert math.isfinite(comparison.group_cost(group)) is feasible
+
+
 def test_settled_model_judges_a_moved_owner_instead_of_its_refit():
     # Each refit after one owner leaves perturbs the coefficients; with this
     # jitter, removing an interior owner raised the group's own refit cost.

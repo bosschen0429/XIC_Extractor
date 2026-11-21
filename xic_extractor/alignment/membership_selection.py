@@ -40,6 +40,11 @@ _RT_POPULATION_MIN_GAP_SEC = 20.0
 _RT_POPULATION_RANGE_RATIO = 2.0
 # One nonzero drift coefficient costs what this RT difference costs a pair.
 _COEFFICIENT_COST_SEC = 10.0
+# Injection-order neighbours in one group may differ by at most this once the
+# model's sample-shift response b*M is removed. The batch-state term a*B is
+# never removed: a group's own trajectory can define B and would then excuse
+# its own jump.
+_NEIGHBOR_JUMP_SEC = 120.0
 
 
 class _PairTerms(NamedTuple):
@@ -360,6 +365,18 @@ class MembershipComparison:
         self._batch_lookup = (
             self.drift.batch_state_lookup() if self.drift is not None else None
         )
+        # Injection order, measured tie-break and sample shift M of each owner
+        # whose sample has an injection order; others have no neighbours.
+        shift = self.drift.sample_shift_min if self.drift is not None else {}
+        self._sequence = {
+            o.owner_id: (
+                self.orders[o.sample_stem],
+                self._measured_rank[o.owner_id],
+                shift.get(o.sample_stem, 0.0),
+            )
+            for o in owners
+            if o.sample_stem in self.orders
+        }
         self._pair_terms: dict[tuple[str, str], _PairTerms | None] = {}
         # Packed upper triangle: every feasible pair's fixed numeric terms
         # are converted once, then gathered for each proposed group.
@@ -621,7 +638,10 @@ class MembershipComparison:
         if key not in self._models:
             inputs = _GroupInputs(self, key)
             zero = self._evaluate(key, DriftCoefficients(), inputs=inputs)
-            models = [zero]
+            jumps = math.isfinite(zero.evidence) and self._breaks_sequence(key, 0.0)
+            models = [
+                _GroupModel(zero.coefficients, math.inf, False) if jumps else zero
+            ]
             candidates = (
                 self._candidate_coefficients(key)
                 if math.isfinite(zero.evidence)
@@ -630,15 +650,40 @@ class MembershipComparison:
             if candidates:
                 # A drift model matters only if it can cost less than a
                 # feasible zero model; it is reported infinite once it cannot.
-                bound = math.inf if zero.population_gap else zero.evidence
-                models.extend(
-                    self._evaluate(key, coefficients, bound=bound, inputs=inputs)
-                    for coefficients in candidates
-                )
+                # A zero model broken only by a neighbour jump bounds nothing.
+                bound = math.inf if zero.population_gap or jumps else zero.evidence
+                for coefficients in candidates:
+                    model = self._evaluate(
+                        key, coefficients, bound=bound, inputs=inputs
+                    )
+                    if math.isfinite(model.evidence) and self._breaks_sequence(
+                        key, coefficients.sample_shift
+                    ):
+                        model = _GroupModel(coefficients, math.inf, False)
+                    models.append(model)
             self._models[key] = tuple(models)
             self.group_costs[key] = models[0].evidence
             self.population_gaps[key] = models[0].population_gap
         return self._models[key]
+
+    def _breaks_sequence(self, key: tuple[str, ...], sample_shift: float) -> bool:
+        """Whether injection-order neighbours jump beyond the neighbour limit
+        after removing ``sample_shift`` times each sample's shift M.
+
+        A sample whose shift is unknown keeps its general coordinate.
+        """
+        sequence = self._sequence
+        placed = sorted(
+            (p for p in key if p in sequence), key=lambda p: sequence[p][:2]
+        )
+        limit = _NEIGHBOR_JUMP_SEC / 60.0
+        previous = None
+        for p in placed:
+            value = self.rts[p] - sample_shift * sequence[p][2]
+            if previous is not None and abs(value - previous) > limit:
+                return True
+            previous = value
+        return False
 
     def _candidate_coefficients(
         self, key: tuple[str, ...]
