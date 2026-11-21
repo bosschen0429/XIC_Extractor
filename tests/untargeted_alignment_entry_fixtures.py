@@ -92,6 +92,7 @@ def publish_alignment(
     known_istd_reference_workbook: Path | None = None,
     name: str = "alignment",
     opened_samples: set[str] | None = None,
+    peak_config_changes: Mapping[str, object] | None = None,
 ) -> Path:
     """Run the formal Untargeted Alignment entry and return its output folder.
 
@@ -130,11 +131,14 @@ def publish_alignment(
             output_dir=output_dir,
             alignment_config=alignment_config
             or AlignmentConfig(anchor_min_seed_events=1),
-            peak_config=untargeted_peak_config(
-                raw_dir=raw_dir,
-                dll_dir=tmp_path,
-                output_dir=output_dir,
-                discovery_settings=settings,
+            peak_config=replace(
+                untargeted_peak_config(
+                    raw_dir=raw_dir,
+                    dll_dir=tmp_path,
+                    output_dir=output_dir,
+                    discovery_settings=settings,
+                ),
+                **(peak_config_changes or {}),
             ),
             discovery_settings=settings,
             sample_metadata=sample_metadata or sample_metadata_for(stems),
@@ -156,10 +160,13 @@ def publish_alignment(
     handles = {
         stem: opened.get(paths[stem], []) for stem in stems if opened.get(paths[stem])
     }
-    assert {
-        stem: [len(handle.chromatogram_request_counts) for handle in opens]
+    repeated = {
+        stem: windows
         for stem, opens in handles.items()
-    } == {stem: [1] for stem in handles}
+        for handle in opens
+        if len(windows := handle.chromatogram_windows) != len(set(windows))
+    }
+    assert repeated == {}, repeated
     stages = Counter((r.stage, r.sample_stem) for r in recorder.records)
     assert [stage for stage, count in stages.items() if count > 1] == []
     if opened_samples is not None:

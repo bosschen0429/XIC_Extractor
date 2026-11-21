@@ -185,6 +185,7 @@ class _FakeThermoRaw:
         )
         self.disposed = False
         self.chromatogram_request_counts: list[int] = []
+        self.chromatogram_windows: list[tuple[int, int]] = []
         self.scans = {scan.scan_number: scan for scan in source.scans}
         self.trailer_labels: list[str] = []
 
@@ -203,6 +204,7 @@ class _FakeThermoRaw:
 
     def GetChromatogramData(self, settings, start_scan: int, end_scan: int):
         self.chromatogram_request_counts.append(len(settings))
+        self.chromatogram_windows.append((start_scan, end_scan))
         rt = self.source.rt[start_scan - 1 : end_scan]
         intensity = self.source.intensity[start_scan - 1 : end_scan]
         return SimpleNamespace(
