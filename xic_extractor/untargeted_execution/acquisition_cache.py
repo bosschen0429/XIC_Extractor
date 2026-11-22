@@ -307,6 +307,7 @@ class _FactCache:
         return self._root / kind / f"{_short_name(key)}.json"
 
     def read(self, kind: _FactKind, key: bytes) -> bytes | None:
+        """Read one fact; a concurrent Windows publication can briefly deny access."""
         path = self._path(kind, key)
         for attempt in range(3):
             try:
@@ -315,7 +316,6 @@ class _FactCache:
             except FileNotFoundError:
                 return None
             except PermissionError as exc:
-                # Concurrent publication can briefly deny a Windows reader.
                 if os.name != "nt" or exc.errno != errno.EACCES or attempt == 2:
                     raise
                 sleep(0.005)

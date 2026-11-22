@@ -191,8 +191,6 @@ class _FakeThermoRaw:
         self.chromatogram_windows.append((start_scan, end_scan))
         selection = slice(start_scan - 1, end_scan)
         rt = self.source.rt[selection]
-        # Native mass-range traces have MS1 scans only. The source's native
-        # scan-number axis still includes DDA scans.
         present = np.ones(rt.shape, dtype=bool)
         if self.source.additional_ms1_ions is not None:
             for scan in self.scans:
@@ -355,7 +353,6 @@ class _FakeRaw:
 
     def xic_for_mass_ranges(self, ranges):
         if self.additional_ms1_ions is None:
-            # Older single-ion fixtures only model the requested time axis.
             return self.intensity
         return sum(
             (

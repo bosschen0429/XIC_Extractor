@@ -213,6 +213,7 @@ def _acquire_regions(
     capability: TraceAcquisitionCapability,
     requests: tuple[XICRequest, ...],
 ) -> Iterator[_Capture]:
+    """Record a failed vendor chunk without zero traces or per-query retries."""
     for start in range(0, len(requests), PHYSICAL_CAPTURE_BATCH_MAX_REQUESTS):
         chunk = requests[start : start + PHYSICAL_CAPTURE_BATCH_MAX_REQUESTS]
         try:
@@ -220,8 +221,6 @@ def _acquire_regions(
         except InterruptedError:
             raise
         except Exception as exc:
-            # This boundary owns vendor failures. Do not turn a failed chunk
-            # into zero-intensity traces or re-run its requests one at a time.
             reason = f"{type(exc).__name__}: {exc}"
             yield from ((request, None, None, reason) for request in chunk)
         else:
@@ -241,6 +240,7 @@ def _measure_region(
     settings: DiscoverySettings,
     profile: SignalProcessingProfile,
 ) -> CidNlSampleRegion:
+    """Resolve aliases from acquired signal before attaching any CID-NL events."""
     coverage = []
     measured: list[RegionSegment] = []
     unavailable: list[RegionSegment] = []
@@ -290,8 +290,6 @@ def _measure_region(
             item = RegionSegment(trace, evaluation)
             (measured if evaluation.state == "available" else unavailable).append(item)
 
-    # Collapse mass-window aliases on acquired scans before making any method
-    # relation. The elected measurement cannot depend on which events hit it.
     traces: dict[XICRequest, Trace] = {}
     peaks: list[PeakObservation] = []
     unlocalized_mass = []

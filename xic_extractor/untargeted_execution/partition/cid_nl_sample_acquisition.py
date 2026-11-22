@@ -87,7 +87,11 @@ def assess_sample_regions(
     raw: CidNlRawSource | None,
     rt_reference_only: bool,
 ) -> dict[str, CidNlAcquisitionResult]:
-    """Bind a sample's measured peaks and separate scan relations to subjects."""
+    """Bind a sample's measured peaks and separate scan relations to subjects.
+
+    A Discovery row supplies lineage only if its recorded representative
+    scan resolves to an independently measured physical peak.
+    """
     evidence = tuple(ref for region in regions for ref in region.evidence)
     supports = tuple(ref for region in regions for ref in region.individual_relations)
     ambiguities = tuple(ref for region in regions for ref in region.ambiguous_relations)
@@ -99,8 +103,6 @@ def assess_sample_regions(
         for relation in supports
     }
 
-    # A Discovery row is lineage, not another measurement. Its own recorded
-    # representative scan must attach to the retained population.
     bindings: dict[str, list[tuple[str, PeakObservation]]] = {}
     lineage_subject_by_peak: dict[PeakObservation, str] = {}
     for subject, candidates in scopes:

@@ -681,7 +681,6 @@ def test_reused_hold_peak_needs_its_own_group_window(
     fixture = build_sample_adapter_fixture(tmp_path)
     settings = _settings()
     source = _FakeRaw(centers)
-    # This scan seeds the region, but it was taken before either physical peak.
     event_rt = 7.55
     source.scans = (replace(source.scans[0], rt=event_rt, scan_number=61),)
     (scan,) = source.scans

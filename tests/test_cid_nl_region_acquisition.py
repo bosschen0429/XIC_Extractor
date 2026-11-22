@@ -155,8 +155,6 @@ def test_batch_seed_search_retains_local_competition_without_local_cid(monkeypat
         for item in a.unavailable_segments
     )
 
-    # The batch region stays planned. Removing this sample's remote MS2 cannot
-    # change the mass or area of either physical peak.
     (without_remote,) = _capture("A", a_raw, regions, early)
     assert without_remote.peaks == a.peaks
     assert [item.dda_scan_number for item in without_remote.individual_relations] == [

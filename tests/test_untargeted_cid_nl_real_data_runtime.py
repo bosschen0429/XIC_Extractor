@@ -705,7 +705,6 @@ def test_runtime_delivers_one_real_subject_cohort_with_cache_replay(
         ),
         signal_processing_profile=TEST_PROFILE,
     )
-    # S2 has an acquired MS1 peak, but no declared local Discovery event.
     source_without_cid = _FakeRaw((8.1,))
     source_without_cid.scans = ()
     opened = install_runtime_raws(
@@ -987,8 +986,6 @@ def test_runtime_recovers_from_single_scan_cid_nl_support_owners(
     assert no_peak.backfill_input is None
     assert not no_peak.backfill_attempt.assessment.candidate_peaks
     assert by_stem["Blank"].backfill_attempt is None
-    # Every sample reached full-LC acquisition. Only the genuinely empty,
-    # eligible sample required a second, bounded Backfill read.
     assert {path.stem: len(handles) for path, handles in opened.items()} == {
         "S1": 1,
         "S2": 1,

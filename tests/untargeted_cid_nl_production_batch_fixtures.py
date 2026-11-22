@@ -702,8 +702,6 @@ def profile_replay(tmp_path, monkeypatch, request):
                     if family_precursor_delta:
                         assert measured.answer.selected_segment is not None
                         assert expected.answer.selected_segment is not None
-                        # The native XIC omits the coincident DDA scan at the
-                        # model apex, so it resolves to a neighboring MS1 scan.
                         assert (
                             measured.answer.selected_segment.apex_rt_min
                             == pytest.approx(

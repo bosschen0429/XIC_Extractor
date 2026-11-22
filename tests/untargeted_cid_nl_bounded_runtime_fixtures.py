@@ -105,11 +105,8 @@ def scenario_acquisitions(paths, *, settings, scenario="positive"):
             candidates[path.stem] = sample_candidates
         if scenario == "partial_recovery" and path == paths[-1]:
             candidates[path.stem] = sample_candidates[:1]
-            # Only the middle ion is genuinely missing; the last has MS1
-            # without a declared event and should not dispatch Backfill.
             raw.additional_ms1_ions[500.004][:] = 0.0
         if scenario == "cross_subject_recovery":
-            # Two slightly different DDA seeds cover one measured MS1 ion.
             raw.ms1_mz = 500.002
             raw.additional_ms1_ions = {}
             precursor = 500.0 if path == paths[0] else 500.004

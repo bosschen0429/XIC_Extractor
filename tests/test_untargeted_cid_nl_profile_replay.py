@@ -311,8 +311,6 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             (candidate,) = batch.context.peaks_by_sample[stem]
             assert candidate.peak_mz == representative_event(candidate).precursor_mz
             ((_, observation),) = result.adapter_result.candidate_observations
-            # The seed XIC may use the other injection's planned mass window;
-            # the reported apex m/z is the centroid in this sample's RAW.
             assert observation.mz == pytest.approx(candidate.peak_mz, abs=1e-10)
             assert within_ppm(
                 observation.mz,
