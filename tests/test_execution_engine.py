@@ -168,8 +168,8 @@ def test_streamed_result_store_shared_objects_identity(
     assert restored.ref is shared_config
     assert restored.child_outputs[0][0] is shared_config
     assert restored.child_outputs[0][1] is shared_ref
-    checkpoint = store.preserve_failed_results()
-    assert checkpoint is not None
+    store.seal()
+    checkpoint = store.preserve_results()
     retained = open_preserved_results(checkpoint)
     replay = retained.read(0)
     assert replay.ref == shared_config
@@ -234,7 +234,6 @@ class MockAdapter:
         num_partitions: int = 2,
         fail_acquisition_index: int | None = None,
         fail_composition_index: int | None = None,
-        fail_finalize: bool = False,
         acquisition_delay: float = 0.0,
         composition_delay: float = 0.0,
         on_acquisition: Any = None,
@@ -251,7 +250,6 @@ class MockAdapter:
         )
         self.fail_acquisition_index = fail_acquisition_index
         self.fail_composition_index = fail_composition_index
-        self.fail_finalize = fail_finalize
         self.acquisition_delay = acquisition_delay
         self.composition_delay = composition_delay
         self.on_acquisition = on_acquisition
@@ -317,8 +315,6 @@ class MockAdapter:
         store: StreamedResultStore,
         composition_outputs: tuple[PartitionCompositionOutput[dict[str, Any]], ...],
     ) -> dict[str, Any]:
-        if self.fail_finalize:
-            raise RuntimeError("simulated finalize application exception")
         return {"total_children": len(store.sequence("child_outputs"))}
 
     def build_workflow_result(
@@ -523,57 +519,6 @@ def test_scheduler_execute_acquisition_failure_cleans_up(tmp_path: Path) -> None
     spool_dirs = list(output_dir.glob(".partition_spool-*"))
     assert len(spool_dirs) == 0
     assert cleanup_calls == 1
-
-
-def test_scheduler_composition_failure_retains_completed_results(
-    tmp_path: Path,
-) -> None:
-    fixture = build_processing_identity_no_raw_fixture(
-        tmp_path, sample_stems=("sample-1", "sample-2")
-    )
-    adapter = MockAdapter(fixture.samples, num_partitions=2, fail_composition_index=1)
-    output_dir = tmp_path / "output"
-
-    with pytest.raises(
-        RuntimeError,
-        match="Partition pipeline execution failed before batch publication",
-    ):
-        PartitionPipelineScheduler.execute(
-            adapter,
-            output_dir=output_dir,
-        )
-
-    spool_dirs = list(output_dir.glob(".partition_spool-*"))
-    assert len(spool_dirs) == 1
-    retained = open_preserved_results(spool_dirs[0] / "failed-results.pickle")
-    assert tuple(retained.sequence("child_outputs")) == ("child-0",)
-    assert tuple(retained.sequence("method_assessments")) == ("assess-0",)
-    assert not list(spool_dirs[0].glob("*.tmp"))
-    with pytest.raises(ValueError, match="sealed"):
-        retained.append("new-partition", MockPayload(child_outputs=("invented",)))
-
-
-def test_scheduler_finalize_failure_retains_completed_results(tmp_path: Path) -> None:
-    fixture = build_processing_identity_no_raw_fixture(
-        tmp_path, sample_stems=("sample-1", "sample-2")
-    )
-    adapter = MockAdapter(fixture.samples, num_partitions=2, fail_finalize=True)
-    output_dir = tmp_path / "output"
-
-    with pytest.raises(
-        RuntimeError,
-        match="Partition pipeline execution failed before batch publication",
-    ):
-        PartitionPipelineScheduler.execute(
-            adapter,
-            output_dir=output_dir,
-        )
-
-    spool_dirs = list(output_dir.glob(".partition_spool-*"))
-    assert len(spool_dirs) == 1
-    retained = open_preserved_results(spool_dirs[0] / "failed-results.pickle")
-    assert tuple(retained.sequence("child_outputs")) == ("child-0", "child-1")
-    assert tuple(retained.sequence("method_assessments")) == ("assess-0", "assess-1")
 
 
 def test_pipeline_overlap_temporal_intersection(tmp_path: Path) -> None:
@@ -1443,5 +1388,4 @@ def test_scheduler_phase_preparation_abort_prevents_admission(
     if not cancel:
         assert isinstance(raised.value.__cause__, ValueError)
         assert str(raised.value.__cause__) == "invalid handoff"
-    preserved = list(output_dir.glob(".partition_spool-*/failed-results.pickle"))
-    assert len(preserved) == 1
+    assert not list(output_dir.glob(".partition_spool-*"))

@@ -607,12 +607,6 @@ class PartitionPipelineScheduler:
                 ) from failure
             progress("batch_completed", len(partitions))
             return adapter.build_workflow_result(application_result, store)
-        except Exception as exc:
-            try:
-                checkpoint = store.preserve_failed_results()
-            except Exception as preservation_error:
-                exc.add_note(f"Could not retain replay metadata: {preservation_error}")
-                raise exc from preservation_error
-            if checkpoint is not None:
-                exc.add_note(f"Completed partition results retained at {checkpoint}")
+        except Exception:
+            store.cleanup()
             raise

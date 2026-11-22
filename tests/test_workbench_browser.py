@@ -1686,6 +1686,62 @@ def test_untargeted_browser_executes_application_owners_and_downloads(
         ).to_have_count(3)
 
 
+def test_stopping_untargeted_backfill_cleans_run_scratch(
+    workbench, tmp_path, monkeypatch
+):
+    from tests.untargeted_full_flow_fixtures import install_full_flow_raws
+    from xic_extractor.untargeted_execution.execution import (
+        UntargetedPartitionPipelineAdapter,
+    )
+
+    raw_dir = tmp_path / "raw"
+    output_root = tmp_path / "results"
+    install_full_flow_raws(monkeypatch, raw_dir)
+    backfill_written = threading.Event()
+    resume = threading.Event()
+    original = UntargetedPartitionPipelineAdapter.execute_composition
+
+    def pause_after_backfill(adapter, partition, *args, **kwargs):
+        result = original(adapter, partition, *args, **kwargs)
+        if partition.partition_key.endswith("-backfill"):
+            backfill_written.set()
+            assert resume.wait(HANDSHAKE_TIMEOUT_S)
+        return result
+
+    monkeypatch.setattr(
+        UntargetedPartitionPipelineAdapter, "execute_composition", pause_after_backfill
+    )
+    page = workbench
+    _view(page, "untargeted")
+    _set_reader_path(page, str(raw_dir))
+    page.locator("#u-raw_dir").fill(str(raw_dir))
+    page.locator("#u-raw_dir").press("Tab")
+    expect(page.locator("#role-summary")).to_contain_text("2")
+    page.locator("#u-preset").select_option("dna_dr")
+    page.locator("#u-output_dir").fill(str(output_root))
+    page.locator("#u-targets_csv").fill("")
+    _start(page, "untargeted")
+    try:
+        assert backfill_written.wait(HANDSHAKE_TIMEOUT_S)
+        assert list(output_root.rglob(".partition_spool-*"))
+        assert list(output_root.rglob(".cid_nl_acquisition_cache"))
+        page.locator("#analysis-stop").click()
+        with page.expect_response("**/api/analysis/cancel") as stopping:
+            page.locator("#confirm-accept").click()
+        assert stopping.value.json()["job"]["status"] == "cancelling"
+    finally:
+        resume.set()
+
+    _wait_for_analysis_status(page, "已停止")
+    expect(page.locator("#analysis-job-message")).to_have_text(
+        "工作已停止；已發布的結果保留。"
+    )
+    assert not list(output_root.rglob(".partition_spool-*"))
+    assert not list(output_root.rglob(".cid_nl_acquisition_cache"))
+    assert list(output_root.rglob("discovery_peaks.csv"))
+    assert not list(output_root.rglob("alignment_matrix.tsv"))
+
+
 def test_analysis_feedback_retains_results_and_requires_stop_confirmation(
     analysis_feedback,
 ):
