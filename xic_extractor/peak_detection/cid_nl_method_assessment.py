@@ -13,7 +13,6 @@ from typing import Literal, TypeAlias
 from xic_extractor.configuration.models import Target
 from xic_extractor.peak_detection.cid_nl_candidate_set_relation import (
     DdaCidNlCandidateSetRelation,
-    resolve_dda_cid_nl_candidate_set_relation,
 )
 from xic_extractor.peak_detection.cid_nl_evidence import (
     CidNlEvidenceObservation,
@@ -29,7 +28,7 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
 from xic_extractor.peak_detection.cid_nl_peak_support import (
     DdaCidNlPeakSupport,
     DdaCidNlPeakSupportPolicy,
-    resolve_dda_cid_nl_peak_support,
+    bind_dda_cid_nl_peak_support,
 )
 from xic_extractor.peak_detection.observations import (
     PeakObservation,
@@ -73,13 +72,19 @@ class CidNlEventQuery:
 
 @dataclass(frozen=True, slots=True)
 class CidNlMethodRelations:
-    """One relation answer reused by selection and later provenance binding."""
+    """One relation answer reused by selection and later provenance binding.
+
+    ``set_relations`` pairs each set-level event with its candidate component:
+    the candidates containing it plus every m/z-compatible candidate whose
+    interval touches that component.
+    """
 
     candidate_intervals: tuple[CidNlCandidateInterval, ...]
     event_queries: tuple[CidNlEventQuery, ...]
     policy: DdaCidNlPeakSupportPolicy
     individual_relations: tuple[tuple[int, int], ...]
-    set_relation_event_indexes: tuple[int, ...]
+    set_relations: tuple[tuple[int, tuple[int, ...]], ...]
+    set_related_candidate_indexes: frozenset[int]
 
     def __deepcopy__(self, memo: dict[int, object]) -> CidNlMethodRelations:
         return self
@@ -89,19 +94,8 @@ class CidNlMethodRelations:
         return frozenset(candidate for _event, candidate in self.individual_relations)
 
     @property
-    def set_related_candidate_indexes(self) -> frozenset[int]:
-        """Candidates still possible under set evidence, without individual SUPPORT."""
-        return frozenset(
-            index
-            for event_index in self.set_relation_event_indexes
-            for event in (self.event_queries[event_index],)
-            for index, peak in enumerate(self.candidate_intervals)
-            if event.precursor.reference_mz is not None
-            and abs(event.precursor.reference_mz - peak.mz)
-            <= self.policy.precursor_tolerance_da
-            and peak.rt_left_min <= event.support_rt_min
-            and event.scan_rt_min <= peak.rt_right_min
-        )
+    def set_relation_event_indexes(self) -> tuple[int, ...]:
+        return tuple(event for event, _members in self.set_relations)
 
 
 def evaluate_cid_nl_method_relations(
@@ -116,7 +110,8 @@ def evaluate_cid_nl_method_relations(
     supports an individual peak. Boundary and overlap evidence stays set-level.
     """
     individual: list[tuple[int, int]] = []
-    set_events: list[int] = []
+    set_relations: list[tuple[int, tuple[int, ...]]] = []
+    set_related: set[int] = set()
     for event_index, event in enumerate(event_queries):
         precursor = event.precursor
         if not policy.accepts_precursor(precursor) or precursor.reference_mz is None:
@@ -148,14 +143,29 @@ def evaluate_cid_nl_method_relations(
         )
         if strictly_unique:
             individual.append((event_index, selected_index))
-        else:
-            set_events.append(event_index)
+            continue
+        set_related.update(containing)
+        component = set(containing)
+        changed = True
+        while changed:
+            changed = False
+            for index in compatible:
+                peak = candidate_intervals[index]
+                if index not in component and any(
+                    peak.rt_left_min <= candidate_intervals[member].rt_right_min
+                    and candidate_intervals[member].rt_left_min <= peak.rt_right_min
+                    for member in component
+                ):
+                    component.add(index)
+                    changed = True
+        set_relations.append((event_index, tuple(sorted(component))))
     return CidNlMethodRelations(
         candidate_intervals=candidate_intervals,
         event_queries=event_queries,
         policy=policy,
         individual_relations=tuple(individual),
-        set_relation_event_indexes=tuple(set_events),
+        set_relations=tuple(set_relations),
+        set_related_candidate_indexes=frozenset(set_related),
     )
 
 
@@ -236,23 +246,35 @@ def resolve_cid_nl_method_relations(
         relations = evaluate_cid_nl_method_relations(
             candidate_intervals=intervals, event_queries=queries, policy=policy
         )
+    ordered_candidates = tuple(sorted(candidate_peaks, key=_measured_order))
     individual_refs = tuple(
-        resolve_dda_cid_nl_peak_support(
+        bind_dda_cid_nl_peak_support(
             sample=sample,
-            canonical_evidence=evidence_refs[event_index],
-            candidate_peaks=candidate_peaks,
+            evidence=evidence_refs[event_index],
+            precursor=queries[event_index].precursor,
+            peak_observation=candidate_peaks[candidate_index],
+            candidate_peaks=ordered_candidates,
             policy=policy,
         )
-        for event_index, _candidate_index in relations.individual_relations
+        for event_index, candidate_index in relations.individual_relations
     )
     set_refs = tuple(
-        resolve_dda_cid_nl_candidate_set_relation(
-            sample=sample,
-            canonical_evidence=evidence_refs[event_index],
-            candidate_peaks=candidate_peaks,
+        DdaCidNlCandidateSetRelation(
+            sample_key=sample.sample_name,
+            evidence=evidence_refs[event_index],
+            candidate_peaks=ordered_candidates,
+            matched_candidates=tuple(
+                sorted(
+                    (candidate_peaks[index] for index in members),
+                    key=_measured_order,
+                )
+            ),
+            acquisition_mode=evidence_refs[event_index].acquisition_mode,
+            dda_scan_number=evidence_refs[event_index].scan_number,
+            scan_rt_min=evidence_refs[event_index].scan_rt_min,
             policy=policy,
         )
-        for event_index in relations.set_relation_event_indexes
+        for event_index, members in relations.set_relations
     )
     return individual_refs, set_refs
 
@@ -325,59 +347,6 @@ def _resolve_method_subject(
             raise CidNlMethodAssessmentContractError(str(exc)) from exc
     assert method_subject is not None
     return method_subject
-
-
-def _evidence_matches_candidate_universe(
-    *,
-    evidence: CidNlEvidenceObservation,
-    candidate_peaks: tuple[PeakObservation, ...],
-    support_policy: DdaCidNlPeakSupportPolicy,
-) -> bool:
-    observation = evidence
-    precursor = observation.assess_precursor_loss(
-        support_policy.neutral_loss_tolerance_ppm
-    )
-    if (
-        not support_policy.accepts_precursor(precursor)
-        or precursor.reference_mz is None
-    ):
-        return False
-    return any(
-        peak.integration.rt_left_min <= observation.support_rt_min
-        and observation.scan_rt_min <= peak.integration.rt_right_min
-        and abs(precursor.reference_mz - peak.mz)
-        <= support_policy.precursor_tolerance_da
-        for peak in candidate_peaks
-    )
-
-
-def _is_strict_unique_support(
-    *,
-    support: DdaCidNlPeakSupport,
-    candidate_peaks: tuple[PeakObservation, ...],
-) -> bool:
-    selected = support.peak_observation
-    selected_interval = selected.integration
-    if not (
-        selected_interval.rt_left_min
-        < support.scan_rt_min
-        < selected_interval.rt_right_min
-    ):
-        return False
-    for candidate in candidate_peaks:
-        if candidate == selected:
-            continue
-        if abs(support.precursor_mz - candidate.mz) > (
-            support.policy.precursor_tolerance_da
-        ):
-            continue
-        interval = candidate.integration
-        if (
-            selected_interval.rt_left_min < interval.rt_right_min
-            and interval.rt_left_min < selected_interval.rt_right_min
-        ):
-            return False
-    return True
 
 
 def _method_result(
@@ -481,10 +450,16 @@ def _supported_peaks(
     )
 
 
+def _measured_order(
+    peak: PeakObservation,
+) -> tuple[float, float, tuple[float, ...], tuple[float, ...]]:
+    return peak.measured_order_key
+
+
 def _canonical_candidates(
     value: tuple[PeakObservation, ...],
 ) -> tuple[PeakObservation, ...]:
-    refs = tuple(sorted(value, key=lambda item: item.measured_order_key))
+    refs = tuple(sorted(value, key=_measured_order))
     _require_unique_refs(
         tuple(item.physical_peak_key for item in refs),
         field="candidate peak content",

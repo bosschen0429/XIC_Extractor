@@ -7,14 +7,12 @@ from pathlib import Path
 from tests.cid_nl_peak_support_no_raw_fixture import (
     cid_nl_evidence,
     cid_nl_peak,
+    cid_nl_set_relation,
     cid_nl_support_policy,
     cid_nl_unique_support,
 )
 from tests.processing_identity_no_raw_fixture import (
     build_processing_identity_no_raw_fixture,
-)
-from xic_extractor.peak_detection.cid_nl_candidate_set_relation import (
-    resolve_dda_cid_nl_candidate_set_relation,
 )
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlEvaluationReceipt,
@@ -97,11 +95,11 @@ def _truth_table_fixture(tmp_path: Path):
         scan_number=44,
         scan_rt_min=8.0,
     )
-    s4_relation = resolve_dda_cid_nl_candidate_set_relation(
-        sample=fixture.sample("s4"),
-        canonical_evidence=s4_evidence,
+    s4_relation = cid_nl_set_relation(
+        fixture,
+        "s4",
+        evidence=s4_evidence,
         candidate_peaks=(s4_left, s4_right),
-        policy=cid_nl_support_policy(),
     )
     s4 = mint_cid_nl_method_assessment(
         sample=fixture.sample("s4"),

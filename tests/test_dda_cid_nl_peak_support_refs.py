@@ -14,10 +14,11 @@ from xic_extractor.peak_detection.cid_nl_evidence import (
     CidNlEvidenceObservation,
     cid_nl_evidence_observation,
 )
+from xic_extractor.peak_detection.cid_nl_method_assessment import (
+    resolve_cid_nl_method_relations,
+)
 from xic_extractor.peak_detection.cid_nl_peak_support import (
-    DdaCidNlPeakSupportContractError,
     DdaCidNlPeakSupportPolicy,
-    resolve_dda_cid_nl_peak_support,
 )
 from xic_extractor.peak_detection.hypotheses import IntegrationResult
 from xic_extractor.peak_detection.observations import (
@@ -52,12 +53,7 @@ def test_unique_dda_event_resolves_to_one_physical_peak(
     evidence = _evidence(fixture.source, fixture.sample)
     peak = _peak(fixture.source, fixture.sample)
 
-    support = resolve_dda_cid_nl_peak_support(
-        sample=fixture.sample,
-        canonical_evidence=evidence,
-        candidate_peaks=(peak,),
-        policy=_policy(),
-    )
+    support = _resolve(fixture, evidence, peak)
 
     assert support.sample_key == (fixture.sample.sample_name)
     assert support.dda_scan_number == 42
@@ -77,34 +73,10 @@ def test_candidate_reorder_is_neutral(tmp_path: Path) -> None:
         apex_intensity=300.0,
     )
 
-    forward = resolve_dda_cid_nl_peak_support(
-        sample=fixture.sample,
-        canonical_evidence=evidence,
-        candidate_peaks=(matching, nonmatching),
-        policy=_policy(),
-    )
-    reverse = resolve_dda_cid_nl_peak_support(
-        sample=fixture.sample,
-        canonical_evidence=evidence,
-        candidate_peaks=(nonmatching, matching),
-        policy=_policy(),
-    )
+    forward = _resolve(fixture, evidence, matching, others=(nonmatching,))
+    reverse = _resolve(fixture, evidence, matching, others=(nonmatching,), last=True)
 
     assert forward == reverse
-
-
-def test_missing_peak_match_fails_closed(tmp_path: Path) -> None:
-    fixture = _identity_fixture(tmp_path)
-    evidence = _evidence(fixture.source, fixture.sample, scan_rt_min=8.25)
-    peak = _peak(fixture.source, fixture.sample)
-
-    with pytest.raises(DdaCidNlPeakSupportContractError, match="missing"):
-        resolve_dda_cid_nl_peak_support(
-            sample=fixture.sample,
-            canonical_evidence=evidence,
-            candidate_peaks=(peak,),
-            policy=_policy(),
-        )
 
 
 def test_dda_matching_uses_integration_bounds_not_padded_trace_points(
@@ -124,52 +96,12 @@ def test_dda_matching_uses_integration_bounds_not_padded_trace_points(
         scan_rt_min=8.08,
     )
 
-    with pytest.raises(DdaCidNlPeakSupportContractError, match="missing"):
-        resolve_dda_cid_nl_peak_support(
-            sample=fixture.sample,
-            canonical_evidence=outside_evidence,
-            candidate_peaks=(peak,),
-            policy=_policy(),
-        )
+    assert _relations(fixture, outside_evidence, (peak,)) == ((), ())
 
     inside_evidence = _evidence(fixture.source, fixture.sample, scan_rt_min=8.0)
-    support = resolve_dda_cid_nl_peak_support(
-        sample=fixture.sample,
-        canonical_evidence=inside_evidence,
-        candidate_peaks=(peak,),
-        policy=_policy(),
-    )
+    support = _resolve(fixture, inside_evidence, peak)
     assert support.peak_rt_min == pytest.approx(7.94)
     assert support.peak_rt_max == pytest.approx(8.06)
-
-
-def test_multiple_matching_peaks_are_ambiguous(tmp_path: Path) -> None:
-    fixture = _identity_fixture(tmp_path)
-    evidence = _evidence(fixture.source, fixture.sample)
-    first = _peak(fixture.source, fixture.sample, apex_intensity=500.0)
-    second = _peak(fixture.source, fixture.sample, apex_intensity=501.0)
-
-    with pytest.raises(DdaCidNlPeakSupportContractError, match="ambiguous"):
-        resolve_dda_cid_nl_peak_support(
-            sample=fixture.sample,
-            canonical_evidence=evidence,
-            candidate_peaks=(first, second),
-            policy=_policy(),
-        )
-
-
-def test_duplicate_candidate_reference_is_ambiguous(tmp_path: Path) -> None:
-    fixture = _identity_fixture(tmp_path)
-    evidence = _evidence(fixture.source, fixture.sample)
-    peak = _peak(fixture.source, fixture.sample)
-
-    with pytest.raises(DdaCidNlPeakSupportContractError, match="ambiguous"):
-        resolve_dda_cid_nl_peak_support(
-            sample=fixture.sample,
-            canonical_evidence=evidence,
-            candidate_peaks=(peak, peak),
-            policy=_policy(),
-        )
 
 
 def test_scan_and_peak_mutation_invalidate_support_content(tmp_path: Path) -> None:
@@ -206,18 +138,8 @@ def test_nonselected_candidate_mutation_invalidates_bound_universe(
         apex_intensity=301.0,
     )
 
-    first = resolve_dda_cid_nl_peak_support(
-        sample=fixture.sample,
-        canonical_evidence=evidence,
-        candidate_peaks=(selected, first_nonmatch),
-        policy=_policy(),
-    )
-    changed = resolve_dda_cid_nl_peak_support(
-        sample=fixture.sample,
-        canonical_evidence=evidence,
-        candidate_peaks=(selected, changed_nonmatch),
-        policy=_policy(),
-    )
+    first = _resolve(fixture, evidence, selected, others=(first_nonmatch,))
+    changed = _resolve(fixture, evidence, selected, others=(changed_nonmatch,))
 
     assert first.peak_observation == (changed.peak_observation)
     assert first.candidate_peaks != (changed.candidate_peaks)
@@ -238,8 +160,8 @@ def test_non_strict_neutral_loss_cannot_mint_support(tmp_path: Path) -> None:
         observed_loss_error_ppm=observed_error_ppm,
     )
 
-    with pytest.raises(DdaCidNlPeakSupportContractError, match="strict"):
-        _resolve(fixture, evidence, _peak(fixture.source, fixture.sample))
+    peak = _peak(fixture.source, fixture.sample)
+    assert _relations(fixture, evidence, (peak,)) == ((), ())
 
 
 def test_cid_nl_support_accepts_loss_inside_ion_window(tmp_path: Path) -> None:
@@ -310,18 +232,8 @@ def test_equivalent_numeric_policy_inputs_have_equal_support(
         neutral_loss_tolerance_ppm=20.0,
     )
 
-    integer_ref = resolve_dda_cid_nl_peak_support(
-        sample=fixture.sample,
-        canonical_evidence=evidence,
-        candidate_peaks=(peak,),
-        policy=integer_policy,
-    )
-    float_ref = resolve_dda_cid_nl_peak_support(
-        sample=fixture.sample,
-        canonical_evidence=evidence,
-        candidate_peaks=(peak,),
-        policy=float_policy,
-    )
+    integer_ref = _resolve(fixture, evidence, peak, policy=integer_policy)
+    float_ref = _resolve(fixture, evidence, peak, policy=float_policy)
 
     assert type(integer_policy.precursor_tolerance_da) is float
     assert type(integer_policy.neutral_loss_tolerance_ppm) is float
@@ -419,17 +331,33 @@ def test_cid_nl_hypothesis_peak_or_event_mutation_invalidates_identity(
     assert first.hypothesis_id != changed.hypothesis_id
 
 
+def _relations(
+    fixture: _IdentityFixture,
+    evidence: CidNlEvidenceObservation,
+    candidate_peaks: tuple[PeakObservation, ...],
+    policy: DdaCidNlPeakSupportPolicy | None = None,
+):
+    return resolve_cid_nl_method_relations(
+        sample=fixture.sample,
+        evidence_refs=(evidence,),
+        candidate_peaks=candidate_peaks,
+        policy=policy or _policy(),
+    )
+
+
 def _resolve(
     fixture: _IdentityFixture,
     evidence: CidNlEvidenceObservation,
     peak: PeakObservation,
+    *,
+    others: tuple[PeakObservation, ...] = (),
+    last: bool = False,
+    policy: DdaCidNlPeakSupportPolicy | None = None,
 ):
-    return resolve_dda_cid_nl_peak_support(
-        sample=fixture.sample,
-        canonical_evidence=evidence,
-        candidate_peaks=(peak,),
-        policy=_policy(),
-    )
+    candidates = (*others, peak) if last else (peak, *others)
+    (support,), sets = _relations(fixture, evidence, candidates, policy)
+    assert support.peak_observation == peak and not sets
+    return support
 
 
 def _event(
@@ -442,15 +370,10 @@ def _event(
     return compose_cid_nl_chromatographic_support(
         sample=sample,
         scan_support_refs=tuple(
-            resolve_dda_cid_nl_peak_support(
-                sample=sample,
-                canonical_evidence=_evidence(
-                    source,
-                    sample,
-                    scan_number=scan_number,
-                ),
-                candidate_peaks=(peak,),
-                policy=_policy(),
+            _resolve(
+                _IdentityFixture(sample=sample, source=source),
+                _evidence(source, sample, scan_number=scan_number),
+                peak,
             )
             for scan_number in scan_numbers
         ),
