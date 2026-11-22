@@ -280,7 +280,10 @@ def _decide_group(
                 raise CellDecisionContractError(
                     "Group numeric decision requires exactly one integration"
                 )
-            if "ms1_only_group_observation" in states and not ms1_only_eligible:
+            if "ms1_only_group_observation" in states and (
+                not ms1_only_eligible
+                or observation.ms1_only_group_has_local_method_relation
+            ):
                 return NoWriteCellDecision("unresolved"), None
             integration = integrations[0]
             return _payload_from_integration(integration), integration

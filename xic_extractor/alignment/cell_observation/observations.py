@@ -151,6 +151,21 @@ class FinalGroupCellObservation:
         )
 
     @property
+    def ms1_only_group_has_local_method_relation(self) -> bool:
+        peaks = frozenset(self.ms1_only_group_observations)
+        return bool(peaks) and any(
+            any(
+                ref.peak_observation in peaks
+                for ref in assessment.individual_support_refs
+            )
+            or any(
+                peaks.intersection(ref.matched_candidates)
+                for ref in assessment.set_relation_refs
+            )
+            for assessment in self.method_assessments
+        )
+
+    @property
     def ms1_only_backfill_observations(self) -> tuple[PeakObservation, ...]:
         """The single MS1 peak a group-bounded Backfill found without CID-NL."""
 

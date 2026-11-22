@@ -182,19 +182,46 @@ def test_configured_composition_runs_discovery_to_owner_matrix(
             assert {"S1", "S2"}.issubset(reader.fieldnames)
             assert list(reader) == []
         return
-    assert len(written_groups(writer)) == 1
+    rows = written_groups(writer)
+    assert sum(row.destination == "matrix" for row in rows) == 1
     cells = tuple(written_cells(writer))
-    assert len(cells) == len(paths)
-    assert all(
-        (cell.value is not None)
-        == (
-            not (
-                sample_stem == "S4"
-                and scenario in {"missing", "disjoint", "recovery_missing"}
-            )
-        )
-        for _row, sample_stem, cell in cells
+    assert len(cells) == len(paths) * len(rows)
+    selected_cells = tuple(
+        (sample_stem, cell)
+        for row, sample_stem, cell in cells
+        if row.destination == "matrix"
     )
+    if scenario in {"missing", "disjoint"}:
+        assert all(
+            cell.value is None for _, sample_stem, cell in cells if sample_stem == "S4"
+        )
+        assert all(
+            cell.value is not None
+            for sample_stem, cell in selected_cells
+            if sample_stem != "S4"
+        )
+        s4_observed_apexes = {
+            peak.integration.rt_apex_min
+            for sample_stem, cell in selected_cells
+            if sample_stem == "S4"
+            for peak in cell.evidence.ms1_only_group_observations
+        }
+        if scenario == "missing":
+            assert s4_observed_apexes == {8.0}
+        else:
+            observed_apexes = sorted(
+                peak.integration.rt_apex_min
+                for _, sample_stem, cell in cells
+                if sample_stem == "S4"
+                for peak in cell.evidence.ms1_only_group_observations
+            )
+            assert observed_apexes == pytest.approx([7.8, 8.3])
+    else:
+        assert all(
+            (cell.value is not None)
+            == (sample_stem != "S4" or scenario != "recovery_missing")
+            for sample_stem, cell in selected_cells
+        )
     destination = tmp_path / "matrix.tsv"
     render("matrix", destination, writer)
     with destination.open(encoding="utf-8-sig", newline="") as handle:
