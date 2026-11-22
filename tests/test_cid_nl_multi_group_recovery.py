@@ -67,6 +67,7 @@ from xic_extractor.alignment.hypothesis_owner_adapter import (
 )
 from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.configuration.execution_profile import ExecutionProfile
+from xic_extractor.diagnostics.stage_snapshot import load_snapshot
 from xic_extractor.execution.timing import TimingRecorder
 from xic_extractor.output.alignment.tsv_writer import backfill_query_bounds
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
@@ -870,10 +871,8 @@ def _shared_peak_inputs(
     )
 
 
-def _run_cached_backfill_cli(home, directory, output):
+def _run_cached_backfill_cli(directory, output):
     """Run in a fresh interpreter: the fixture supplies RAW facts, not a DLL."""
-    from pathlib import Path
-
     from scripts.run_alignment import main
     from xic_extractor.untargeted_execution.partition import execution as phases
     from xic_extractor.untargeted_execution.partition import workers
@@ -882,7 +881,6 @@ def _run_cached_backfill_cli(home, directory, output):
         raise AssertionError("Replay opened a RAW")
 
     with pytest.MonkeyPatch.context() as patch:
-        patch.setattr(Path, "home", lambda: Path(home))
         patch.setattr(phases, "ensure_assemblies_loaded", lambda *_: None)
         patch.setattr(workers, "ensure_assemblies_loaded", lambda *_: None)
         patch.setattr(workers, "open_raw", forbidden)
@@ -933,7 +931,6 @@ def test_full_alignment_captures_competing_rows_and_single_batch_matrix(
     import subprocess
     import sys
     from collections import Counter, defaultdict
-    from pathlib import Path
 
     from scripts.run_alignment import main
     from xic_extractor.applications.untargeted import application
@@ -945,7 +942,6 @@ def test_full_alignment_captures_competing_rows_and_single_batch_matrix(
         UntargetedExecutionContext,
     )
 
-    monkeypatch.setattr(Path, "home", lambda: tmp_path / "user-state")
     options = _shared_peak_inputs(tmp_path, monkeypatch, 0.0)
     request = _backfill_request(
         tmp_path, options, AlignmentConfig(anchor_min_seed_events=1)
@@ -979,17 +975,17 @@ def test_full_alignment_captures_competing_rows_and_single_batch_matrix(
         )
     )
     replay_names = {
-        "grouping-inputs.json.gz",
+        "grouping-inputs.pickle.gz",
         "backfill-inputs",
         "pairing-inputs",
-        "matrix-cells.json",
-        "matrix-join.json",
+        "matrix-cells.pickle.gz",
+        "matrix-join.pickle.gz",
     }
     assert not replay_names.intersection(path.name for path in control_dir.iterdir())
     assert replay_names.intersection(path.name for path in capture_dir.iterdir()) == {
-        "grouping-inputs.json.gz",
+        "grouping-inputs.pickle.gz",
         "backfill-inputs",
-        "matrix-cells.json",
+        "matrix-cells.pickle.gz",
     }
 
     def replay(stage, *args):
@@ -997,7 +993,7 @@ def test_full_alignment_captures_competing_rows_and_single_batch_matrix(
         assert main([stage, *map(str, args), "--output-dir", str(out)]) == 0
         return out
 
-    matrix = replay("matrix", "--backfill", capture_dir / "matrix-cells.json")
+    matrix = replay("matrix", "--backfill", capture_dir / "matrix-cells.pickle.gz")
     filename = "alignment_matrix.tsv"
     assert list(matrix.iterdir()) == [matrix / filename]
     assert (
@@ -1010,7 +1006,7 @@ def test_full_alignment_captures_competing_rows_and_single_batch_matrix(
     assert all(float(row["S1"]) < float(row["S2"]) for row in matrix_rows)
     assert sorted(bool(row["Missing"]) for row in matrix_rows) == [False, True]
 
-    regrouped = replay("regroup", "--inputs", capture_dir / "grouping-inputs.json.gz")
+    regrouped = replay("regroup", "--inputs", capture_dir / "grouping-inputs.pickle.gz")
     groups = defaultdict(set)
     for row in read_tsv(regrouped / "members.tsv"):
         groups[row["group_id"]].add(row["owner_id"])
@@ -1024,7 +1020,6 @@ def test_full_alignment_captures_competing_rows_and_single_batch_matrix(
             "-c",
             "import sys; from tests.test_cid_nl_multi_group_recovery import "
             "_run_cached_backfill_cli as run; sys.exit(run(*sys.argv[1:]))",
-            str(Path.home()),
             str(directory),
             str(backfilled),
         ],
@@ -1052,7 +1047,7 @@ def test_full_alignment_captures_competing_rows_and_single_batch_matrix(
     assert sorted(status for status, _area in missing) == ["backfilled", "unresolved"]
     assert sum(area > 0 for _status, area in missing) == 1
 
-    (directory / "0.bin").write_bytes(b"not the captured partition")
+    (directory / "0.pickle.gz").write_bytes(b"not the captured partition")
     rejected = tmp_path / "rejected"
     assert (
         main(["backfill", "--inputs", str(directory), "--output-dir", str(rejected)])
@@ -1060,18 +1055,23 @@ def test_full_alignment_captures_competing_rows_and_single_batch_matrix(
     )
     assert not (rejected / "backfill-cells.tsv").exists()
 
+    earlier = tmp_path / "earlier-capture"
+    earlier.mkdir()
+    (earlier / "0.bin").write_bytes(b"partition from the previous capture format")
+    assert (
+        main(["backfill", "--inputs", str(earlier), "--output-dir", str(rejected)]) == 2
+    )
+    assert not (rejected / "backfill-cells.tsv").exists()
+
 
 def test_matrix_preserves_empty_batch_sample_column(tmp_path, monkeypatch):
     import csv
-    import json
     from datetime import datetime
-    from pathlib import Path
 
     from scripts.run_alignment import main
     from xic_extractor.applications.untargeted import application
     from xic_extractor.applications.untargeted.request import AlignmentReplayOptions
 
-    monkeypatch.setattr(Path, "home", lambda: tmp_path / "user-state")
     options = _shared_peak_inputs(tmp_path, monkeypatch, 0.0)
     options["peaks_by_sample"]["Missing"] = ()
     options["sample_metadata"] = tuple(
@@ -1099,17 +1099,20 @@ def test_matrix_preserves_empty_batch_sample_column(tmp_path, monkeypatch):
     backfill = replay(
         "backfill", "--inputs", captured / "backfill-inputs", "--save-matrix-inputs"
     )
-    cells = backfill / "matrix-cells.json"
-    batches = json.loads(cells.read_text())["batches"]
-    assert batches["empty"] == {"samples": {"Missing": 3}, "groups": []}
+    cells = backfill / "matrix-cells.pickle.gz"
+    empty = {source.batch_id: source for source in load_snapshot(cells)}["empty"]
+    assert [
+        (sample.raw_stem, sample.injection_order) for sample in empty.canonical_samples
+    ] == [("Missing", 3)]
+    assert [group for child in empty.child_outputs for group in child.groups] == []
 
     pair = replay(
         "pair-batches",
         "--inputs",
-        *sorted((captured / "pairing-inputs").glob("*.json")),
+        *sorted((captured / "pairing-inputs").glob("*.pickle.gz")),
     )
     matrix = replay(
-        "matrix", "--backfill", cells, "--pairing", pair / "matrix-join.json"
+        "matrix", "--backfill", cells, "--pairing", pair / "matrix-join.pickle.gz"
     )
     with (matrix / "alignment_matrix.tsv").open(newline="") as stream:
         rows = list(csv.DictReader(stream, delimiter="\t"))
@@ -1120,7 +1123,7 @@ def test_matrix_preserves_empty_batch_sample_column(tmp_path, monkeypatch):
     )
     assert not any(
         (formal / name).exists()
-        for name in ("grouping-inputs.json.gz", "backfill-inputs", "pairing-inputs")
+        for name in ("grouping-inputs.pickle.gz", "backfill-inputs", "pairing-inputs")
     )
     direct = tmp_path / "matrix-direct"
     assert (
@@ -1128,9 +1131,9 @@ def test_matrix_preserves_empty_batch_sample_column(tmp_path, monkeypatch):
             [
                 "matrix",
                 "--backfill",
-                str(formal / "matrix-cells.json"),
+                str(formal / "matrix-cells.pickle.gz"),
                 "--pairing",
-                str(formal / "matrix-join.json"),
+                str(formal / "matrix-join.pickle.gz"),
                 "--output-dir",
                 str(direct),
             ]
@@ -1146,7 +1149,6 @@ def test_matrix_preserves_empty_batch_sample_column(tmp_path, monkeypatch):
 
 def test_matrix_joins_independently_captured_named_batches(tmp_path, monkeypatch):
     import csv
-    import json
     from datetime import datetime
 
     from scripts.run_alignment import main
@@ -1210,21 +1212,25 @@ def test_matrix_joins_independently_captured_named_batches(tmp_path, monkeypatch
                 replay=AlignmentReplayOptions(matrix=True, pairing=True),
             )
         )
-        assert not (out / "matrix-join.json").exists()
+        assert not (out / "matrix-join.pickle.gz").exists()
         captures.append(out)
 
-    pair_inputs = [out / "pairing-inputs" / "batch-1.json" for out in captures]
-    cells = [out / "matrix-cells.json" for out in captures]
+    pair_inputs = [out / "pairing-inputs" / "batch-1.pickle.gz" for out in captures]
+    cells = [out / "matrix-cells.pickle.gz" for out in captures]
     paired = replay("pair-batches", "--inputs", *pair_inputs)
     matrix = replay(
-        "matrix", "--backfill", *cells, "--pairing", paired / "matrix-join.json"
+        "matrix", "--backfill", *cells, "--pairing", paired / "matrix-join.pickle.gz"
     )
 
     for pair_input, cell_input in zip(pair_inputs, cells, strict=True):
-        pair_doc = json.loads(pair_input.read_text(encoding="utf-8"))
-        cell_doc = json.loads(cell_input.read_text(encoding="utf-8"))
-        groups = cell_doc["batches"][pair_doc["batch_id"]]["groups"]
-        assert {g["key"] for g in groups} == {f["key"] for f in pair_doc["features"]}
+        batch, _, _ = load_snapshot(pair_input)
+        (source,) = load_snapshot(cell_input)
+        assert source.batch_id == batch.batch_id
+        assert {
+            source.feature_key(group)
+            for child in source.child_outputs
+            for group in child.groups
+        } == {feature.key for feature in batch.features}
 
     formal = tmp_path / "formal"
     application.run_untargeted_application(replace(request, output_dir=formal))

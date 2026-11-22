@@ -42,10 +42,10 @@ from xic_extractor.configuration.mass_recalibration import (
 from xic_extractor.diagnostics.backfill_replay import BackfillCheckpoint
 from xic_extractor.diagnostics.batch_pairing import save_pairing_input
 from xic_extractor.diagnostics.grouping_experiment_io import (
-    write_grouping_inputs,
     write_grouping_result,
     write_json,
 )
+from xic_extractor.diagnostics.stage_snapshot import write_grouping_inputs
 from xic_extractor.discovery.batch_contract import DiscoveryPeakUniverseReceipt
 from xic_extractor.discovery.csv_reader import (
     DiscoveryBatchIndex,
@@ -88,7 +88,7 @@ from xic_extractor.untargeted_execution.grouping_experiment import (
     PreparedGroupingExperiment,
 )
 
-GROUPING_SNAPSHOT_NAME = "grouping-inputs.json.gz"
+GROUPING_SNAPSHOT_NAME = "grouping-inputs.pickle.gz"
 
 
 class AlignmentProcessExecutionError(RuntimeError):
@@ -561,7 +561,7 @@ def _save_pairing_inputs(
     directory.mkdir(parents=True, exist_ok=False)
     for index, batch in enumerate(batches, start=1):
         save_pairing_input(
-            directory / f"batch-{index}.json",
+            directory / f"batch-{index}.pickle.gz",
             batch,
             latest_acquisition=latest(batch.batch_id),
             precursor_tolerance_ppm=ppm,
@@ -645,8 +645,8 @@ _CONDITIONAL_ALIGNMENT_ARTIFACT_NAMES = (
     GROUPING_SNAPSHOT_NAME,
     "backfill-inputs",
     "pairing-inputs",
-    "matrix-cells.json",
-    "matrix-join.json",
+    "matrix-cells.pickle.gz",
+    "matrix-join.pickle.gz",
 )
 
 

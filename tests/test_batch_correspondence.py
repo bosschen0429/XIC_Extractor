@@ -233,7 +233,7 @@ def test_pair_finished_batches_from_independent_four_sample_files(tmp_path):
     ]
     inputs = []
     for batch, year in (("new", 2026), ("old", 2024)):
-        path = tmp_path / f"{batch}.json"
+        path = tmp_path / f"{batch}.pickle.gz"
         save_pairing_input(
             path,
             GroupedBatch(
@@ -276,7 +276,7 @@ def test_pairing_rejects_incompatible_captures(tmp_path, other_id, other_ppm, re
         save_pairing_input,
     )
 
-    inputs = [tmp_path / "first.json", tmp_path / "second.json"]
+    inputs = [tmp_path / "first.pickle.gz", tmp_path / "second.pickle.gz"]
     for path, batch, ppm in zip(inputs, ("A", other_id), (10, other_ppm), strict=True):
         save_pairing_input(
             path,
@@ -299,7 +299,7 @@ def test_pairing_without_map_publishes_all_artifacts_together(tmp_path, monkeypa
     inputs = []
     for name, year in (("old", 2024), ("new", 2026)):
         feature = BatchFeature(name, "one", "dR", 300, 10, 2)
-        path = tmp_path / f"{name}.json"
+        path = tmp_path / f"{name}.pickle.gz"
         batch_pairing.save_pairing_input(
             path,
             GroupedBatch(name, 4, (feature,), ()),
@@ -325,4 +325,4 @@ def test_pairing_without_map_publishes_all_artifacts_together(tmp_path, monkeypa
         assert [row["state"] for row in csv.DictReader(stream, delimiter="\t")] == [
             "unpaired_no_map"
         ] * 2
-    assert (out / "matrix-join.json").is_file()
+    assert (out / "matrix-join.pickle.gz").is_file()

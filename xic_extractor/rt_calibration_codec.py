@@ -6,11 +6,6 @@ import math
 from dataclasses import asdict, fields
 from typing import Any
 
-from xic_extractor.alignment.rt_drift import (
-    DriftAnchor,
-    DriftCoefficients,
-    RtDriftModel,
-)
 from xic_extractor.alignment.sample_rt_calibration import (
     BatchRtCalibration,
     CalibrationKnot,
@@ -188,52 +183,3 @@ def rt_calibration_payload(calibration: BatchRtCalibration) -> dict[str, Any]:
         "front_shift_mad_min": calibration.front_shift_mad_min,
         "perturbation_tolerance_min": calibration.perturbation_tolerance_min,
     }
-
-
-def rt_drift_payload(model: RtDriftModel) -> dict[str, Any]:
-    """The frozen drift model, including the owners each anchor observed.
-
-    Owner IDs are this run's keys; replay needs them to give a group its own
-    anchor's shape.
-    """
-    return {
-        "schema": "rt_drift_model",
-        "batch_state_basis": model.batch_state_basis,
-        "sample_shift_min": dict(sorted(model.sample_shift_min.items())),
-        "anchors": [
-            {
-                "channel": anchor.channel,
-                "reference_rt_min": anchor.reference_rt_min,
-                "family": anchor.family,
-                "sample_shift_member": anchor.sample_shift_member,
-                "shape": dict(sorted(anchor.shape.items())),
-                "coefficients": asdict(anchor.coefficients),
-                "owner_ids": sorted(anchor.owner_ids),
-            }
-            for anchor in model.anchors
-        ],
-    }
-
-
-def rt_drift_from_payload(value: dict[str, Any]) -> RtDriftModel:
-    _require_calibration_fields(
-        value, {"schema", "batch_state_basis", "sample_shift_min", "anchors"}
-    )
-    if value["schema"] != "rt_drift_model":
-        raise ValueError("Expected an rt_drift_model payload; rerun the analysis")
-    return RtDriftModel(
-        tuple(
-            DriftAnchor(
-                anchor["channel"],
-                float(anchor["reference_rt_min"]),
-                int(anchor["family"]),
-                bool(anchor["sample_shift_member"]),
-                {k: float(v) for k, v in anchor["shape"].items()},
-                DriftCoefficients(**anchor["coefficients"]),
-                frozenset(anchor["owner_ids"]),
-            )
-            for anchor in value["anchors"]
-        ),
-        {k: float(v) for k, v in value["sample_shift_min"].items()},
-        value["batch_state_basis"],
-    )

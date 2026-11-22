@@ -384,7 +384,7 @@ def _run_stage_replay(argv: Sequence[str]) -> int:
         required=True,
         nargs="+",
         type=Path,
-        help="One captured pairing-input JSON per batch (at least two).",
+        help="One captured pairing input per batch (at least two).",
     )
     matrix = stages.add_parser(
         "matrix",
@@ -395,12 +395,12 @@ def _run_stage_replay(argv: Sequence[str]) -> int:
         required=True,
         nargs="+",
         type=Path,
-        help="Completed matrix-cells.json file(s)",
+        help="Completed matrix-cells.pickle.gz file(s)",
     )
     matrix.add_argument(
         "--pairing",
         type=Path,
-        help="Completed matrix-join.json (required for multiple batches)",
+        help="Completed matrix-join.pickle.gz (required for multiple batches)",
     )
     for stage in (backfill, pairing, matrix):
         stage.add_argument("--output-dir", required=True, type=Path)
@@ -641,7 +641,7 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument(
         "--save-grouping-inputs",
         action="store_true",
-        help="Save grouping-inputs.json.gz for regroup.",
+        help="Save grouping-inputs.pickle.gz for regroup.",
     )
     parser.add_argument(
         "--save-backfill-inputs",
