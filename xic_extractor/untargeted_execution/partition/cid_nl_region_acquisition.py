@@ -322,7 +322,7 @@ def _measure_region(
             )
         )
     observations = tuple(sorted(peaks, key=lambda peak: peak.measured_order_key))
-    evidence, individual, ambiguous = _attach_events(
+    evidence, individual, ambiguous = attach_cid_nl_events(
         sample=sample,
         acquisition_source=acquisition_source,
         peaks=observations,
@@ -344,7 +344,7 @@ def _measure_region(
     )
 
 
-def _attach_events(
+def attach_cid_nl_events(
     *,
     sample: SampleMetadata,
     acquisition_source: AcquisitionSourceIdentity,

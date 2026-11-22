@@ -8,27 +8,48 @@ from tests.alignment_pipeline_helpers import (
     render,
     written_cells,
     written_groups,
-    written_rows,
 )
 from tests.cid_nl_raw_fixture import (
     TEST_PROFILE,
     _current_candidates,
     _FakeRaw,
+    _multi_tag_settings,
 )
 from tests.cid_nl_runtime_fixtures import install_runtime_raws
+from tests.untargeted_alignment_entry_fixtures import (
+    raw_paths,
+    read_tsv,
+    sample_metadata_for,
+)
 from tests.untargeted_partition_fixtures import (
     build_dense_partition,
-    children_of,
     complete_dense_partition,
     execute_dense_partition,
     fixture_assessment,
 )
+from xic_extractor import raw_reader
 from xic_extractor.alignment.cid_nl_grouping import CID_NL_GROUPING_RULES
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.edge_scoring import (
     evaluate_owner_edge as _evaluate_owner_edge,
 )
 from xic_extractor.alignment.rt_frame import SampleRtFrame
+from xic_extractor.applications.untargeted.application import run_untargeted_application
+from xic_extractor.applications.untargeted.publication import (
+    UntargetedPublicationPolicy,
+)
+from xic_extractor.applications.untargeted.request import UntargetedRequest
+from xic_extractor.configuration.execution_profile import (
+    ExecutionProfile,
+    UntargetedExecutionPolicy,
+)
+from xic_extractor.configuration.mass_recalibration import MassRecalibration
+from xic_extractor.discovery.csv_reader import read_discovery_batch_index
+from xic_extractor.discovery.input_source import DiscoveryInputSource
+from xic_extractor.discovery.pipeline import run_discovery_batch
+from xic_extractor.discovery.processing_run_spec_adapter import (
+    compile_discovery_processing_run_spec,
+)
 from xic_extractor.presets.apply import apply_to_discovery
 from xic_extractor.presets.loader import load_preset
 from xic_extractor.sample_metadata import SampleMetadata
@@ -53,8 +74,6 @@ def evaluate_owner_edge(left, right, *, config, **kwargs):
         ("intersection", "missing"),
         ("intersection", "disjoint"),
         ("intersection", "pooled"),
-        ("intersection", "recovery_complete"),
-        ("intersection", "recovery_missing"),
     ),
 )
 def test_configured_composition_runs_discovery_to_owner_matrix(
@@ -71,12 +90,9 @@ def test_configured_composition_runs_discovery_to_owner_matrix(
         encoding="utf-8",
     )
     settings = apply_to_discovery(load_preset(str(preset_file)))
-    recovery = scenario.startswith("recovery_")
     paths = tuple(
         tmp_path / f"S{i}.synthetic"
-        for i in (
-            (1, 2, 3, 4) if recovery or scenario in {"missing", "disjoint"} else (1, 2)
-        )
+        for i in ((1, 2, 3, 4) if scenario in {"missing", "disjoint"} else (1, 2))
     )
     sources = {}
     candidates = {}
@@ -90,8 +106,6 @@ def test_configured_composition_runs_discovery_to_owner_matrix(
         if scenario == "pooled":
             losses = (116.0474,) if index == 0 else (132.0423,)
         if scenario == "missing" and index == 3:
-            losses = (116.0474,)
-        if scenario == "recovery_missing" and index == 3:
             losses = (116.0474,)
         rts = (7.98, 8.02) if len(losses) == 2 else (8.0,)
         if scenario == "disjoint" and index == 3:
@@ -112,8 +126,6 @@ def test_configured_composition_runs_discovery_to_owner_matrix(
             raw_file=path,
             settings=settings,
         )
-        if recovery and index == 3:
-            candidates[path.stem] = ()
     batch = build_dense_partition(
         raw_paths=paths,
         sample_metadata=tuple(
@@ -141,23 +153,6 @@ def test_configured_composition_runs_discovery_to_owner_matrix(
         result.job.sample.raw_stem: fixture_assessment(result)
         for result in runtime.sample_results
     }
-    if recovery:
-        recovered = next(
-            result
-            for result in runtime.sample_results
-            if result.job.sample.raw_stem == "S4"
-        )
-        assert recovered.backfill_attempt is not None
-        assert (
-            fixture_assessment(recovered).method_subject
-            == batch.subject_batch.subjects[0]
-        )
-        assert fixture_assessment(recovered).method_result == (
-            "SUPPORT" if scenario == "recovery_complete" else "HOLD"
-        )
-        assert len(fixture_assessment(recovered).evidence_observations) == (
-            2 if scenario == "recovery_complete" else 1
-        )
     if scenario in {"missing", "disjoint"}:
         assert by_sample["S4"].method_result == "HOLD"
         assert "incomplete_composite_requirement" in by_sample["S4"].reason_codes
@@ -217,11 +212,7 @@ def test_configured_composition_runs_discovery_to_owner_matrix(
             )
             assert observed_apexes == pytest.approx([7.8, 8.3])
     else:
-        assert all(
-            (cell.value is not None)
-            == (sample_stem != "S4" or scenario != "recovery_missing")
-            for sample_stem, cell in selected_cells
-        )
+        assert all(cell.value is not None for _, cell in selected_cells)
     destination = tmp_path / "matrix.tsv"
     render("matrix", destination, writer)
     with destination.open(encoding="utf-8-sig", newline="") as handle:
@@ -230,45 +221,6 @@ def test_configured_composition_runs_discovery_to_owner_matrix(
     assert float(rows[0]["S1"]) > 0
     if scenario in {"missing", "disjoint"}:
         assert rows[0]["S4"] == ""
-    if scenario == "recovery_missing":
-        assert rows[0]["S4"] == ""
-    if scenario == "recovery_complete":
-        assert float(rows[0]["S4"]) > 0
-        (child,) = children_of(completed.application_result)
-        core = child.scientific_core
-        (before,) = core.grouping_result.initial_population
-        (after,) = core.final_population
-        assert len(before.member_subjects) == 3
-        assert len(after.member_subjects) == 4
-        assert set(before.member_subjects).issubset(after.member_subjects)
-        assert len(core.partition_transition.admitted_members) == 1
-        assert len(core.lineage) == 1
-        recovered_cell = next(
-            cell
-            for cell in core.cell_observations
-            if cell.canonical_sample.raw_stem == "S4"
-        )
-        assert recovered_cell.backfill_cell is not None
-        assert recovered_cell.backfill_cell.method_assessment is fixture_assessment(
-            recovered
-        )
-        assert recovered_cell.integrations == (
-            fixture_assessment(recovered).candidate_peaks[0].integration,
-        )
-        assert recovered_cell.predecessor_cells == ()
-        assert [
-            association.position.group.group_hypothesis_id
-            for association in recovered_cell.position_associations
-        ] == [before.group_hypothesis_id]
-        assert all(
-            cell["source_candidate_id"] == ""
-            for cell in written_rows(tmp_path / "written", writer)["cells"]
-            if cell["sample_stem"] == "S4"
-        )
-    if scenario == "different_tags":
-        _assert_composite_labels_cannot_grant_membership(batch, runtime)
-    if scenario == "one_scan":
-        _assert_duplicate_loss_evidence_rejected(batch, runtime)
 
 
 def _assert_unsupported_exclusion_closes_exact_coverage(completed):
@@ -408,3 +360,104 @@ def test_composite_requirement_identity_distinguishes_each_composition():
     assert len({subject.method_subject_id for subject in subjects}) == len(subjects)
     for subject in subjects:
         assert subject.neutral_loss_da is None
+
+
+@pytest.mark.parametrize(
+    "local_losses",
+    [(116.0474, 132.0423), (116.0474,), ()],
+    ids=["a-and-b", "a-only", "no-cid"],
+)
+def test_intersection_rechecks_an_observed_peak_outside_the_discovery_window(
+    tmp_path, monkeypatch, local_losses
+):
+    stems = ("S1", "S2", "S3", "Late")
+    paths = raw_paths(tmp_path, stems)
+    settings = replace(
+        _multi_tag_settings(),
+        tag_combine_mode="intersection",
+        rt_min=7.5,
+        rt_max=8.49,
+        mass_recalibration=MassRecalibration.NONE,
+    )
+    late = _FakeRaw(
+        (8.52, 8.56) if len(local_losses) == 2 else (8.54,),
+        neutral_loss_das=local_losses or (116.0474,),
+    )
+    if not local_losses:
+        late.scans = ()
+    data = {
+        paths[stem]: _FakeRaw((8.40, 8.44), neutral_loss_das=(116.0474, 132.0423))
+        for stem in stems[:-1]
+    }
+    data[paths["Late"]] = late
+    install_runtime_raws(monkeypatch, sources_by_path=data, tmp_path=tmp_path)
+    profile = ExecutionProfile(alignment_workers=1, backend="thread")
+    spec = compile_discovery_processing_run_spec(
+        tuple(paths.values()),
+        discovery_settings=settings,
+        signal_processing_profile=TEST_PROFILE,
+    )
+    sources = {
+        item.raw_path: item.acquisition_source for item in spec.acquisition_inputs
+    }
+    outputs = run_discovery_batch(
+        spec,
+        output_dir=tmp_path / "discovery",
+        dll_dir=tmp_path,
+        raw_opener=lambda path, dll: raw_reader.open_raw(
+            path, dll, expected_acquisition_source=sources[path]
+        ),
+        execution=profile,
+    )
+    batch = read_discovery_batch_index(outputs.batch_index_csv)
+    source = DiscoveryInputSource(batch)
+    assert all(len(source.feature_candidate_ids(stem)) == 1 for stem in stems[:-1])
+    assert source.candidate_ids("Late") == ()
+    with batch.event_csvs["Late"].open(encoding="utf-8", newline="") as stream:
+        assert not list(csv.DictReader(stream))
+    assert local_losses == tuple(
+        round(scan.precursor_mz - float(scan.masses[0]), 4) for scan in late.scans
+    )
+    from xic_extractor.untargeted_execution.acquisition_cache import CachedUntargetedRaw
+
+    method_windows = []
+    acquire_ms2 = CachedUntargetedRaw.iter_ms2_scans
+
+    def trace_method_window(raw, rt_min, rt_max):
+        method_windows.append((raw.acquisition_source, rt_min, rt_max))
+        yield from acquire_ms2(raw, rt_min, rt_max)
+
+    monkeypatch.setattr(CachedUntargetedRaw, "iter_ms2_scans", trace_method_window)
+    out = tmp_path / "alignment"
+    run_untargeted_application(
+        UntargetedRequest(
+            discovery_batch_index=batch,
+            discovery_settings=settings,
+            sample_metadata=sample_metadata_for(stems),
+            output_dir=out,
+            raw_dir=tmp_path / "raw",
+            dll_dir=tmp_path,
+            execution=UntargetedExecutionPolicy(profile=profile),
+            alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+            publication=UntargetedPublicationPolicy(emit_alignment_cells=True),
+        )
+    )
+
+    (matrix,) = read_tsv(out / "alignment_matrix.tsv")
+    (cell,) = [
+        item
+        for item in read_tsv(out / "alignment_cells.tsv")
+        if item["sample_stem"] == "Late"
+    ]
+    assert cell["source_candidate_id"] == ""
+    assert bool(matrix["Late"]) is (len(local_losses) != 1)
+    assert (
+        cell["status"]
+        == {0: "ms1_only", 1: "unresolved", 2: "detected"}[len(local_losses)]
+    )
+    if matrix["Late"]:
+        assert float(cell["apex_rt"]) == pytest.approx(8.54)
+    ((local_source, lower_rt, upper_rt),) = method_windows
+    assert local_source == sources[paths["Late"]]
+    assert lower_rt == pytest.approx(8.46, abs=0.011)
+    assert upper_rt == pytest.approx(8.62, abs=0.011)

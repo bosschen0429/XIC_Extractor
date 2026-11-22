@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from dataclasses import field as dataclass_field
+from pathlib import Path
 
 from xic_extractor.acquisition_contract import (
     TraceAcquisitionBatch,
@@ -12,6 +14,7 @@ from xic_extractor.acquisition_contract import (
 from xic_extractor.alignment.cid_nl_inputs import (
     UntargetedCidNlAssessmentInput,
 )
+from xic_extractor.discovery.ion_grouping import event_ion_mz
 from xic_extractor.discovery.models import (
     DiscoveryPeak,
 )
@@ -49,9 +52,11 @@ from xic_extractor.untargeted_execution.partition.cid_nl_raw_source import (
     CidNlAcquisitionError,
     CidNlRawSource,
     _within_ppm,
+    read_direct_cid_nl_seeds,
 )
 from xic_extractor.untargeted_execution.partition.cid_nl_region_acquisition import (
     CidNlSampleRegion,
+    attach_cid_nl_events,
 )
 
 _WRITER_ROUNDING_REL_TOL = 5e-6
@@ -135,6 +140,27 @@ def assess_sample_regions(
                 selected_key = subject.method_subject_id
             peaks_by_subject.setdefault(selected_key, []).append(peak)
 
+    additional_refs: frozenset[CidNlEvidenceObservation] = frozenset()
+    if raw is not None and settings.tag_combine_mode == "intersection":
+        pending = _unresolved_intersection_peaks(scopes, peaks_by_subject, supports)
+        if pending:
+            declared = frozenset(
+                (ref.scan_number, ref.configured_neutral_loss_da) for ref in evidence
+            )
+            new_refs, new_support, new_sets = _acquire_intersection_relations(
+                raw,
+                sample=sample,
+                acquisition_source=acquisition_source,
+                settings=settings,
+                pending=pending,
+                regions=regions,
+                declared=declared,
+            )
+            additional_refs = frozenset(new_refs)
+            evidence += new_refs
+            supports += new_support
+            ambiguities += new_sets
+
     by_subject = {}
     for subject, candidates in scopes:
         key = subject.method_subject_id
@@ -191,6 +217,7 @@ def assess_sample_regions(
             individual_support_refs=individual,
             set_relation_refs=ambiguous,
             technical_state="evaluated" if refs else "not_evaluated",
+            includes_acquired_scans=any(ref in additional_refs for ref in refs),
             technical_reason_code=None
             if refs
             else "no_search_eligible_discovery_input",
@@ -237,6 +264,100 @@ def assess_sample_regions(
     return by_subject
 
 
+def _unresolved_intersection_peaks(
+    scopes: tuple[tuple[CidNlMethodSubject, tuple[DiscoveryPeak, ...]], ...],
+    peaks_by_subject: Mapping[str, list[PeakObservation]],
+    supports: tuple[DdaCidNlPeakSupport, ...],
+) -> frozenset[PeakObservation]:
+    support_losses: dict[PeakObservation, set[float]] = {}
+    for support in supports:
+        support_losses.setdefault(support.peak_observation, set()).add(
+            support.configured_neutral_loss_da
+        )
+    return frozenset(
+        peak
+        for subject, _ in scopes
+        if subject.composition is not None
+        and subject.composition.combine_mode == "intersection"
+        for peak in peaks_by_subject.get(subject.method_subject_id, ())
+        if not set(subject.configured_losses).issubset(support_losses.get(peak, ()))
+    )
+
+
+def _merged_peak_windows(
+    peaks: frozenset[PeakObservation],
+) -> Iterator[tuple[float, float]]:
+    start, end = 0.0, -1.0
+    for low, high in sorted(
+        (peak.integration.rt_left_min, peak.integration.rt_right_min) for peak in peaks
+    ):
+        if low > end:
+            if end >= start:
+                yield start, end
+            start, end = low, high
+        else:
+            end = max(end, high)
+    if end >= start:
+        yield start, end
+
+
+def _acquire_intersection_relations(
+    raw: CidNlRawSource,
+    *,
+    sample: SampleMetadata,
+    acquisition_source: AcquisitionSourceIdentity,
+    settings: DiscoverySettings,
+    pending: frozenset[PeakObservation],
+    regions: tuple[CidNlSampleRegion, ...],
+    declared: frozenset[tuple[int, float]],
+) -> tuple[
+    tuple[CidNlEvidenceObservation, ...],
+    tuple[DdaCidNlPeakSupport, ...],
+    tuple[DdaCidNlCandidateSetRelation, ...],
+]:
+    """Resolve unreported local ranks without searching beyond measured lobes."""
+    seeds = tuple(
+        seed
+        for rt_min, rt_max in _merged_peak_windows(pending)
+        for seed in read_direct_cid_nl_seeds(
+            raw,
+            raw_file=Path(sample.raw_stem),
+            settings=settings,
+            rt_min=rt_min,
+            rt_max=rt_max,
+        )
+        if (seed.scan_number, seed.configured_neutral_loss_da) not in declared
+    )
+    evidence: list[CidNlEvidenceObservation] = []
+    supports: list[DdaCidNlPeakSupport] = []
+    ambiguities: list[DdaCidNlCandidateSetRelation] = []
+    for region in regions:
+        if pending.isdisjoint(region.peaks):
+            continue
+        low, high = region.region.mz_bounds
+        events = tuple(seed for seed in seeds if low <= event_ion_mz(seed) <= high)
+        local_evidence, local_support, local_sets = attach_cid_nl_events(
+            sample=sample,
+            acquisition_source=acquisition_source,
+            peaks=region.peaks,
+            events=events,
+            settings=settings,
+        )
+        kept_support = tuple(
+            ref for ref in local_support if ref.peak_observation in pending
+        )
+        kept_sets = tuple(
+            ref for ref in local_sets if not pending.isdisjoint(ref.matched_candidates)
+        )
+        supports.extend(kept_support)
+        ambiguities.extend(kept_sets)
+        related = {ref.evidence for ref in kept_support} | {
+            ref.evidence for ref in kept_sets
+        }
+        evidence.extend(ref for ref in local_evidence if ref in related)
+    return tuple(evidence), tuple(supports), tuple(ambiguities)
+
+
 def _mint_assessment(
     *,
     sample: SampleMetadata,
@@ -250,6 +371,7 @@ def _mint_assessment(
     individual_support_refs: tuple[DdaCidNlPeakSupport, ...] = (),
     set_relation_refs: tuple[DdaCidNlCandidateSetRelation, ...] = (),
     technical_state: CidNlTechnicalState = "evaluated",
+    includes_acquired_scans: bool = False,
     technical_reason_code: str | None = None,
 ):
     search_completed = technical_state == "evaluated"
@@ -293,7 +415,9 @@ def _mint_assessment(
                 acquisition_supported=technical_state != "unsupported",
                 search_completed=search_completed,
                 reason_code=technical_reason_code,
-                evidence_scope="declared_scans",
+                evidence_scope="subject_window"
+                if includes_acquired_scans
+                else "declared_scans",
             ),
             candidate_peaks=candidate_peaks,
             evidence_refs=evidence_refs,

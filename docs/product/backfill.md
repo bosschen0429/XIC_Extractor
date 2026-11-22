@@ -126,9 +126,12 @@ an MS1-only group member found during initial acquisition. The peak can still
 be compared and assigned before this check. A member that fails the value
 gate remains observed but has an `unresolved` cell with no numeric value.
 An exact local partial or set-level CID-NL relation also stays unresolved;
-a relation to a different peak does not veto an MS1-only value.
-This does not change direct CID-NL observations or the separate Backfill
-execution switch.
+a relation to a different peak does not veto an MS1-only value. Initial
+intersection acquisition checks unresolved measured peaks for local CID-NL
+within their MS1 bounds. The Discovery scan range can be narrower than those
+peaks, so a missing Discovery event is not proof of missing local CID-NL.
+A window without qualifying local scans does not supply method support. This
+does not change the separate Backfill execution switch.
 
 ### Query RT versus group RT
 

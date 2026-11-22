@@ -20,8 +20,6 @@ from xic_extractor.alignment.cid_nl_inputs import UntargetedCidNlBackfillInput
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
-from xic_extractor.discovery.models import DiscoveryEvent
-from xic_extractor.discovery.ms2_events import discovery_events_from_scan
 from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.discovery.strict_event_receipts import resolve_discovery_scan_events
 from xic_extractor.mass_accuracy import within_ppm
@@ -76,6 +74,7 @@ from xic_extractor.untargeted_execution.partition.cid_nl_raw_source import (
     CidNlRawSource,
     _freeze_acquisition,
     _within_ppm,
+    read_direct_cid_nl_seeds,
 )
 from xic_extractor.xic_models import XICRequest
 
@@ -725,33 +724,23 @@ def _composite_backfill_evidence(
     evidence_refs: list[CidNlEvidenceObservation] = []
     individual_refs: list[DdaCidNlPeakSupport] = []
     set_refs: list[DdaCidNlCandidateSetRelation] = []
-    scan_numbers: set[int] = set()
-    subject_seeds: list[DiscoveryEvent] = []
-    for event in raw.iter_ms2_scans(query_rt_min, query_rt_max):
-        if event.parse_error is not None or event.scan is None:
-            raise CidNlAcquisitionError(
-                "composite backfill MS2 acquisition did not complete"
-            )
-        scan = event.scan
-        if scan.scan_number in scan_numbers:
-            raise CidNlAcquisitionError(
-                "duplicate acquisition scan during composite backfill"
-            )
-        scan_numbers.add(scan.scan_number)
-        subject_seeds.extend(
-            seed
-            for seed in discovery_events_from_scan(
-                scan, raw_file=Path(sample.raw_stem), settings=settings
-            )
-            if seed.supports_direct_nl
-            and _within_ppm(
-                seed.precursor_mz,
-                method_subject.precursor_mz,
-                method_subject.precursor_tolerance_ppm,
-            )
+    subject_seeds = tuple(
+        seed
+        for seed in read_direct_cid_nl_seeds(
+            raw,
+            raw_file=Path(sample.raw_stem),
+            settings=settings,
+            rt_min=query_rt_min,
+            rt_max=query_rt_max,
         )
+        if _within_ppm(
+            seed.precursor_mz,
+            method_subject.precursor_mz,
+            method_subject.precursor_tolerance_ppm,
+        )
+    )
     for seed in resolve_discovery_scan_events(
-        tuple(subject_seeds),
+        subject_seeds,
         settings=settings,
         preserve_configured_losses=method_subject.composition is not None,
     ):
