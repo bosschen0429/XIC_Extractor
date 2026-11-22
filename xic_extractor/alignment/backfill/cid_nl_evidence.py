@@ -20,13 +20,17 @@ def decide_cid_nl_backfill_revisit(
     """Reuse HOLD evidence unless an observed pattern locates a different peak.
 
     SUPPORT outside this group belongs to another peak and requires a search.
+    An unevaluated sample can have peaks in other groups but cannot supply a
+    reusable method answer for this group's empty cell.
     A forecast alone does not establish a different observed peak.
     """
-    if assessment.method_result == "SUPPORT":
+    if (
+        assessment.method_result == "SUPPORT"
+        or is_unsearched_cid_nl_discovery_assessment(assessment)
+    ):
         return "search"
     if not (
         assessment.method_result == "HOLD"
-        or is_unsearched_cid_nl_discovery_assessment(assessment)
         or is_cid_nl_missing_ms1_rejection(assessment)
     ):
         return "skip"

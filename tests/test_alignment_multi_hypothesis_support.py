@@ -17,6 +17,10 @@ from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.grouping_bootstrap import (
     bootstrap_cid_nl_initial_population,
 )
+from xic_extractor.alignment.grouping_workflow import (
+    build_initial_cid_nl_cross_sample_groups,
+    regroup_cid_nl_cross_sample_groups,
+)
 from xic_extractor.alignment.hypothesis_owner_adapter import (
     compose_cid_nl_peak_hypotheses_from_assessment,
     owner_from_cid_nl_assessment_support,
@@ -158,9 +162,12 @@ def test_identity_membership_is_geometry_not_group_center_reclassification(
         )
     )
 
-    grouping_scope, candidates, _drift = bootstrap_cid_nl_initial_population(
+    config = AlignmentConfig(anchor_min_seed_events=1)
+    samples = tuple(sample for sample, _ in sample_assessments)
+    grouping_scope, initial, candidates = build_initial_cid_nl_cross_sample_groups(
+        samples=samples,
         sample_assessments=sample_assessments,
-        alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+        alignment_config=config,
         rt_frame=SampleRtFrame(),
     )
 
@@ -175,10 +182,60 @@ def test_identity_membership_is_geometry_not_group_center_reclassification(
         if candidate.direct_support_assessment is None
     )
     assert len(direct_ids) == len(observation_ids) == 2
-    assert {frozenset(group.owner_ids) for group in grouping_scope.groups} == {
-        direct_ids,
-        observation_ids,
+    assert any(
+        frozenset(group.owner_ids) == direct_ids for group in grouping_scope.groups
+    )
+    assert all(
+        group.destination == "archive"
+        for group in grouping_scope.groups
+        if observation_ids.intersection(group.owner_ids)
+    )
+    assert any(
+        d.owner_id in observation_ids
+        and observation_ids.intersection(d.witness_owner_ids)
+        for group in grouping_scope.groups
+        for d in group.inference_decisions
+    )
+    _, final = regroup_cid_nl_cross_sample_groups(
+        samples=samples,
+        grouping_scope=grouping_scope,
+        grouping_result=initial,
+        alignment_config=config,
+        rt_frame=initial.rt_frame,
+    )
+    expected = {
+        direct_ids: ("established", "matrix"),
+        observation_ids: ("provisional", "archive"),
     }
+    assert {
+        frozenset(group.owner_ids): (group.disposition, group.destination)
+        for group in final.final_population
+    } == expected
+    assert {
+        owner.owner_id
+        for group in final.final_population
+        for owner in group.owners
+        if owner.primary_identity_event is not None
+    } == direct_ids
+
+    reversed_scope, reversed_initial, _ = build_initial_cid_nl_cross_sample_groups(
+        samples=samples[::-1],
+        sample_assessments=sample_assessments[::-1],
+        alignment_config=config,
+        rt_frame=SampleRtFrame(),
+    )
+    _, reversed_final = regroup_cid_nl_cross_sample_groups(
+        samples=samples[::-1],
+        grouping_scope=reversed_scope,
+        grouping_result=reversed_initial,
+        alignment_config=config,
+        rt_frame=reversed_initial.rt_frame,
+    )
+    assert {
+        frozenset(group.owner_ids): (group.disposition, group.destination)
+        for group in reversed_final.final_population
+    } == expected
+
     assert {
         observation.owner_id
         for observation in rt_anchor_observations(grouping_scope, candidates)

@@ -10,27 +10,17 @@ from tests.cid_nl_raw_fixture import (
     _FakeRaw,
     _settings,
 )
-from tests.cid_nl_runtime_fixtures import (
-    build_discovery_receipts,
-    install_runtime_raws,
-)
-from tests.discovery_csv_fixtures import representative_event
+from tests.cid_nl_runtime_fixtures import install_runtime_raws
 from tests.untargeted_cid_nl_batch_runtime_fixtures import (
     _nearby_subject_candidates,
 )
 from tests.untargeted_partition_fixtures import (
-    execute_partition_inline,
-    partition_context,
+    build_dense_partition,
+    execute_dense_partition,
 )
 from xic_extractor.alignment.cid_nl_inputs import CID_NL_ALIGNMENT_CONFIG
 from xic_extractor.discovery.models import DiscoveryPeak
-from xic_extractor.peak_detection.cid_nl_method_subject import (
-    CidNlMethodSubject,
-    mint_untargeted_cid_nl_method_subject,
-    mint_untargeted_cid_nl_method_subject_batch,
-)
 from xic_extractor.sample_metadata import SampleMetadata
-from xic_extractor.untargeted_execution.partition.models import UntargetedPartitionJob
 
 
 @pytest.mark.parametrize("missing_second_ion", [False, True])
@@ -61,28 +51,12 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
         missing_raw.additional_ms1_ions = {}
     source_raws[raw_paths[2]] = missing_raw
     peaks_by_sample["Missing"] = ()
-    subjects = _subjects(
-        peaks_by_sample["S1"],
-        settings.precursor_mz_tolerance_ppm,
-    )
-    subject_by_precursor = {subject.precursor_mz: subject for subject in subjects}
-    subject_batch = mint_untargeted_cid_nl_method_subject_batch(
-        subjects=subjects,
-        candidate_memberships=tuple(
-            sorted(
-                (
-                    candidate.peak_id,
-                    subject_by_precursor[
-                        representative_event(candidate).precursor_mz
-                    ].method_subject_id,
-                )
-                for candidates in peaks_by_sample.values()
-                for candidate in candidates
-            )
-        ),
-    )
-    context = partition_context(
+    batch = build_dense_partition(
         raw_paths=raw_paths,
+        settings=settings,
+        dll_dir=tmp_path,
+        signal_processing_profile=TEST_PROFILE,
+        peaks_by_sample=peaks_by_sample,
         sample_metadata=tuple(
             SampleMetadata(
                 sample_name=stem,
@@ -92,47 +66,16 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
             )
             for index, stem in enumerate(stems, start=1)
         ),
-        method_subject=subject_batch,
-        settings=settings,
-        peaks_by_sample=peaks_by_sample,
-        discovery_receipts_by_sample=build_discovery_receipts(
-            tmp_path,
-            raw_paths,
-            peaks_by_sample,
-        ),
-        signal_processing_profile=TEST_PROFILE,
     )
+    assert len(batch.subject_batch.subjects) == 2
     opened = install_runtime_raws(
         monkeypatch,
         sources_by_path=source_raws,
         tmp_path=tmp_path,
     )
-    jobs = tuple(
-        UntargetedPartitionJob(
-            processing_attempt_id=context.processing_attempt_id,
-            method_subjects=context.method_subject,
-            sample=sample,
-            acquisition_source_expectation=context.acquisition_sources_by_sample[
-                sample.raw_stem
-            ],
-            method_subject=subject,
-            candidates=context.peaks_by_sample[sample.raw_stem],
-            discovery_receipt=context.discovery_receipts_by_sample[sample.raw_stem],
-            settings=context.settings,
-            raw_path=context.raw_paths_by_sample[sample.raw_stem],
-            dll_dir=tmp_path,
-            work_unit_key=(
-                f"untargeted-cid-nl:{sample.raw_stem}:{subject.method_subject_id}"
-            ),
-            signal_processing_profile=context.signal_processing_profile,
-        )
-        for subject in subjects
-        for sample in context.samples
-    )
     events = []
-    result = execute_partition_inline(
-        jobs,
-        partition_key="runtime-fixture",
+    result = execute_dense_partition(
+        batch,
         alignment_config=CID_NL_ALIGNMENT_CONFIG,
         progress_callback=events.append,
     )
@@ -141,6 +84,15 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
         assert progress[-1]["completed"] == progress[-1]["total"]
 
     assert result.succeeded is True, result.failure
+    assert result.prepared_grouping is not None
+    selected = {
+        owner.peak.physical_peak_key
+        for workset in result.prepared_grouping.worksets
+        for group in workset.grouping_scope.groups
+        if group.disposition == "established"
+        for owner in group.owners
+        if owner.sample_stem == "Missing"
+    }
     missing_results = tuple(
         item for item in result.sample_results if item.job.sample.raw_stem == "Missing"
     )
@@ -159,6 +111,7 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
             (peak,) = assessment.candidate_peaks
             assert peak.mz == pytest.approx(item.job.method_subject.precursor_mz)
             assert peak.integration.rt_apex_min == pytest.approx(7.98)
+            assert peak.physical_peak_key in selected
             assert item.backfill_attempt is None
     for path in raw_paths[:2]:
         (initial,) = opened[path]
@@ -166,24 +119,3 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
     initial, *revisits = opened[raw_paths[2]]
     assert initial.chromatogram_request_counts == [2]
     assert len(revisits) == int(missing_second_ion)
-
-
-def _subjects(
-    candidates: tuple[DiscoveryPeak, ...],
-    precursor_tolerance_ppm: float,
-) -> tuple[CidNlMethodSubject, ...]:
-    return tuple(
-        sorted(
-            (
-                mint_untargeted_cid_nl_method_subject(
-                    precursor_mz=representative_event(candidate).precursor_mz,
-                    precursor_tolerance_ppm=precursor_tolerance_ppm,
-                    neutral_loss_da=representative_event(
-                        candidate
-                    ).configured_neutral_loss_da,
-                )
-                for candidate in candidates
-            ),
-            key=lambda item: item.method_subject_id,
-        )
-    )

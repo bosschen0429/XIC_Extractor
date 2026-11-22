@@ -157,7 +157,7 @@ def review_cell(decision: ProductionCellDecision) -> dict[str, Any]:
         "backfill_support"
         if "backfill_observation" in stages or "method_backfill" in stages
         else "discovery_support"
-        if "initial_capture" in stages
+        if "initial_capture" in stages and not evidence.ms1_only_group_observations
         else "unavailable"
     )
     qualities = {}
