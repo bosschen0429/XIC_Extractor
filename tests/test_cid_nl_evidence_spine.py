@@ -12,6 +12,7 @@ from tests.cid_nl_evidence_spine_fixtures import (
 from tests.cid_nl_peak_support_no_raw_fixture import (
     cid_nl_evidence,
     cid_nl_peak,
+    cid_nl_set_relation,
     cid_nl_support_policy,
     cid_nl_unique_support,
 )
@@ -29,10 +30,6 @@ from xic_extractor.alignment.cid_nl_evidence_spine import (
 )
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.peak_detection import cid_nl_method_assessment as assessment_module
-from xic_extractor.peak_detection.cid_nl_candidate_set_relation import (
-    DdaCidNlCandidateSetRelationContractError,
-    resolve_dda_cid_nl_candidate_set_relation,
-)
 from xic_extractor.peak_detection.cid_nl_evidence import (
     CidNlEvidenceContractError,
     cid_nl_evidence_observation,
@@ -40,9 +37,6 @@ from xic_extractor.peak_detection.cid_nl_evidence import (
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlEvaluationReceipt,
     mint_cid_nl_method_assessment,
-)
-from xic_extractor.peak_detection.cid_nl_peak_support import (
-    DdaCidNlPeakSupportContractError,
 )
 from xic_extractor.precursor_evidence import precursor_isolation_membership
 
@@ -336,17 +330,11 @@ def test_set_relation_is_order_neutral_and_never_votes_twice(tmp_path: Path) -> 
         scan_rt_min=8.0,
     )
 
-    forward = resolve_dda_cid_nl_candidate_set_relation(
-        sample=fixture.sample("split"),
-        canonical_evidence=evidence,
-        candidate_peaks=(left, right),
-        policy=cid_nl_support_policy(),
+    forward = cid_nl_set_relation(
+        fixture, "split", evidence=evidence, candidate_peaks=(left, right)
     )
-    reverse = resolve_dda_cid_nl_candidate_set_relation(
-        sample=fixture.sample("split"),
-        canonical_evidence=evidence,
-        candidate_peaks=(right, left),
-        policy=cid_nl_support_policy(),
+    reverse = cid_nl_set_relation(
+        fixture, "split", evidence=evidence, candidate_peaks=(right, left)
     )
 
     assert forward == reverse
@@ -364,11 +352,8 @@ def test_zero_buffer_boundary_is_set_level_hold(tmp_path: Path) -> None:
         scan_number=45,
         scan_rt_min=peak.integration.rt_left_min,
     )
-    relation = resolve_dda_cid_nl_candidate_set_relation(
-        sample=fixture.sample("edge"),
-        canonical_evidence=evidence,
-        candidate_peaks=(peak,),
-        policy=cid_nl_support_policy(),
+    relation = cid_nl_set_relation(
+        fixture, "edge", evidence=evidence, candidate_peaks=(peak,)
     )
     assessment = mint_cid_nl_method_assessment(
         sample=fixture.sample("edge"),
@@ -384,6 +369,62 @@ def test_zero_buffer_boundary_is_set_level_hold(tmp_path: Path) -> None:
     assert relation.matched_candidates == (peak,)
     assert assessment.method_result == "HOLD"
     assert assessment.individual_support_refs == ()
+
+
+def test_set_relation_reaches_touching_candidates_beyond_the_containing_pair(
+    tmp_path: Path,
+) -> None:
+    fixture = build_processing_identity_no_raw_fixture(
+        tmp_path, sample_stems=("chain",)
+    )
+    left = cid_nl_peak(fixture, "chain", apex_rt=7.9, rt_left_min=7.8, rt_right_min=8.0)
+    middle = cid_nl_peak(
+        fixture, "chain", apex_rt=8.1, rt_left_min=8.0, rt_right_min=8.2
+    )
+    touching = cid_nl_peak(
+        fixture, "chain", apex_rt=8.3, rt_left_min=8.2, rt_right_min=8.4
+    )
+    apart = cid_nl_peak(
+        fixture, "chain", apex_rt=8.7, rt_left_min=8.6, rt_right_min=8.8
+    )
+    other_mass = cid_nl_peak(
+        fixture,
+        "chain",
+        mz=PRECURSOR_MZ + 0.02,
+        apex_rt=8.1,
+        rt_left_min=8.0,
+        rt_right_min=8.2,
+    )
+    peaks = (apart, touching, other_mass, middle, left)
+    evidence = cid_nl_evidence(fixture, "chain", scan_number=48, scan_rt_min=8.0)
+
+    relation = cid_nl_set_relation(
+        fixture, "chain", evidence=evidence, candidate_peaks=peaks
+    )
+    relations = assessment_module.evaluate_cid_nl_method_relations(
+        candidate_intervals=tuple(
+            assessment_module.CidNlCandidateInterval(
+                peak.mz, peak.integration.rt_left_min, peak.integration.rt_right_min
+            )
+            for peak in peaks
+        ),
+        event_queries=(
+            assessment_module.CidNlEventQuery(
+                evidence.assess_precursor_loss(
+                    cid_nl_support_policy().neutral_loss_tolerance_ppm
+                ),
+                evidence.scan_rt_min,
+                evidence.support_rt_min,
+            ),
+        ),
+        policy=cid_nl_support_policy(),
+    )
+
+    assert relation.matched_candidates == (left, middle, touching)
+    assert relations.set_related_candidate_indexes == {
+        peaks.index(left),
+        peaks.index(middle),
+    }
 
 
 @pytest.mark.parametrize(
@@ -433,11 +474,8 @@ def test_assessment_distinguishes_adjacent_interior_from_boundary_and_overlap(
             )
         else:
             set_refs = (
-                resolve_dda_cid_nl_candidate_set_relation(
-                    sample=sample,
-                    canonical_evidence=evidence,
-                    candidate_peaks=peaks,
-                    policy=cid_nl_support_policy(),
+                cid_nl_set_relation(
+                    fixture, "adjacent", evidence=evidence, candidate_peaks=peaks
                 ),
             )
         assessment = mint_cid_nl_method_assessment(
@@ -508,15 +546,6 @@ def test_assessment_distinguishes_adjacent_interior_from_boundary_and_overlap(
         assert assessment.method_result == expected_result
         if expected_result == "SUPPORT":
             assert individual_refs[0].peak_observation == left
-            with pytest.raises(
-                DdaCidNlCandidateSetRelationContractError, match="individual support"
-            ):
-                resolve_dda_cid_nl_candidate_set_relation(
-                    sample=sample,
-                    canonical_evidence=evidence,
-                    candidate_peaks=peaks,
-                    policy=cid_nl_support_policy(),
-                )
         else:
             assert assessment.individual_support_refs == ()
             assert set(set_refs[0].matched_candidates) == {peak for peak in peaks}
@@ -630,11 +659,8 @@ def test_assessment_preserves_mixed_individual_and_set_scan_relations(
         evidence=interior,
         candidate_peaks=peaks,
     )
-    set_relation = resolve_dda_cid_nl_candidate_set_relation(
-        sample=sample,
-        canonical_evidence=boundary,
-        candidate_peaks=peaks,
-        policy=cid_nl_support_policy(),
+    set_relation = cid_nl_set_relation(
+        fixture, "mixed", evidence=boundary, candidate_peaks=peaks
     )
 
     assessment = mint_cid_nl_method_assessment(
@@ -851,35 +877,6 @@ def test_multi_scan_owner_projection_is_order_neutral_across_samples(
     assert aggregate_losses[0] == pytest.approx(NEUTRAL_LOSS_DA)
 
 
-def test_duplicate_candidates_fail_closed(tmp_path: Path) -> None:
-    fixture = build_processing_identity_no_raw_fixture(
-        tmp_path, sample_stems=("sample",)
-    )
-    left = cid_nl_peak(
-        fixture,
-        "sample",
-        apex_rt=7.9,
-        rt_left_min=7.8,
-        rt_right_min=8.0,
-    )
-    evidence = cid_nl_evidence(
-        fixture,
-        "sample",
-        scan_number=52,
-        scan_rt_min=8.0,
-    )
-    with pytest.raises(
-        DdaCidNlCandidateSetRelationContractError,
-        match="unique",
-    ):
-        resolve_dda_cid_nl_candidate_set_relation(
-            sample=fixture.sample("sample"),
-            canonical_evidence=evidence,
-            candidate_peaks=(left, left),
-            policy=cid_nl_support_policy(),
-        )
-
-
 def test_failed_attempt_cannot_become_reject_or_human_unassessable(
     tmp_path: Path,
 ) -> None:
@@ -905,47 +902,6 @@ def test_failed_attempt_cannot_become_reject_or_human_unassessable(
     assert assessment.method_result is None
     assert assessment.reason_codes == ("detector_worker_failed",)
     assert "unassessable" not in repr(assessment).lower()
-
-
-def test_unique_case_rejects_set_relation_and_split_case_rejects_individual_vote(
-    tmp_path: Path,
-) -> None:
-    fixture = build_processing_identity_no_raw_fixture(
-        tmp_path, sample_stems=("sample",)
-    )
-    peak = cid_nl_peak(fixture, "sample")
-    evidence = cid_nl_evidence(
-        fixture,
-        "sample",
-        scan_number=49,
-        scan_rt_min=8.0,
-    )
-    with pytest.raises(
-        DdaCidNlCandidateSetRelationContractError,
-        match="individual support",
-    ):
-        resolve_dda_cid_nl_candidate_set_relation(
-            sample=fixture.sample("sample"),
-            canonical_evidence=evidence,
-            candidate_peaks=(peak,),
-            policy=cid_nl_support_policy(),
-        )
-
-    right = cid_nl_peak(
-        fixture,
-        "sample",
-        apex_rt=8.1,
-        rt_left_min=8.0,
-        rt_right_min=8.2,
-    )
-    with pytest.raises(DdaCidNlPeakSupportContractError, match="ambiguous"):
-        cid_nl_unique_support(
-            fixture,
-            "sample",
-            peak=peak,
-            evidence=evidence,
-            candidate_peaks=(peak, right),
-        )
 
 
 def _measured_evidence(

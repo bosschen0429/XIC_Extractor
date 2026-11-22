@@ -7,14 +7,19 @@ from tests.processing_identity_no_raw_fixture import (
     PRODUCT_MZ,
     ProcessingIdentityNoRawFixture,
 )
+from xic_extractor.peak_detection.cid_nl_candidate_set_relation import (
+    DdaCidNlCandidateSetRelation,
+)
 from xic_extractor.peak_detection.cid_nl_evidence import (
     CidNlEvidenceObservation,
     cid_nl_evidence_observation,
 )
+from xic_extractor.peak_detection.cid_nl_method_assessment import (
+    resolve_cid_nl_method_relations,
+)
 from xic_extractor.peak_detection.cid_nl_peak_support import (
     DdaCidNlPeakSupport,
     DdaCidNlPeakSupportPolicy,
-    resolve_dda_cid_nl_peak_support,
 )
 from xic_extractor.peak_detection.hypotheses import IntegrationResult
 from xic_extractor.peak_detection.observations import (
@@ -103,12 +108,31 @@ def cid_nl_unique_support(
     evidence: CidNlEvidenceObservation,
     candidate_peaks: tuple[PeakObservation, ...] | None = None,
 ) -> DdaCidNlPeakSupport:
-    return resolve_dda_cid_nl_peak_support(
+    (support,), sets = resolve_cid_nl_method_relations(
         sample=fixture.sample(sample_stem),
-        canonical_evidence=evidence,
+        evidence_refs=(evidence,),
         candidate_peaks=candidate_peaks or (peak,),
         policy=cid_nl_support_policy(),
     )
+    assert support.peak_observation == peak and not sets
+    return support
+
+
+def cid_nl_set_relation(
+    fixture: ProcessingIdentityNoRawFixture,
+    sample_stem: str,
+    *,
+    evidence: CidNlEvidenceObservation,
+    candidate_peaks: tuple[PeakObservation, ...],
+) -> DdaCidNlCandidateSetRelation:
+    individual, (relation,) = resolve_cid_nl_method_relations(
+        sample=fixture.sample(sample_stem),
+        evidence_refs=(evidence,),
+        candidate_peaks=candidate_peaks,
+        policy=cid_nl_support_policy(),
+    )
+    assert not individual
+    return relation
 
 
 def cid_nl_support_policy() -> DdaCidNlPeakSupportPolicy:
