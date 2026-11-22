@@ -154,6 +154,7 @@ def mint_physical_peak_observations(
     capture_stage: str = "initial_capture",
     trace_observation: PeakObservation | None = None,
     acquired_trace_provenance: PeakObservationGenerationProvenance | None = None,
+    measured_mz: tuple[float, ...] | None = None,
 ) -> tuple[PeakObservation, ...]:
     """Project retained physical-owner answers for one trace without re-solving it.
 
@@ -170,11 +171,13 @@ def mint_physical_peak_observations(
             proposal_sources=("canonical_physical_segment",),
         )
     observations: list[PeakObservation] = []
-    for evaluation in evaluations:
+    masses = (trace.mz,) * len(evaluations) if measured_mz is None else measured_mz
+    for evaluation, mz in zip(evaluations, masses, strict=True):
         integration = physical_peak_observation_integration(evaluation)
         observation = _project_peak_observation(
             sample_key=sample.sample_name,
             trace=trace,
+            mz=mz,
             integration=integration,
             selected_indices=integration.raw_scan_indices,
             resolver_mode=resolver_mode,
@@ -193,6 +196,7 @@ def _project_peak_observation(
     *,
     sample_key: str,
     trace: Trace,
+    mz: float,
     integration: IntegrationResult,
     selected_indices: tuple[int, ...],
     resolver_mode: str,
@@ -232,7 +236,7 @@ def _project_peak_observation(
     )
     return _owner_minted_peak_observation(
         sample_key=sample_key,
-        mz=float(trace.mz),
+        mz=float(mz),
         rt=selected_rt,
         intensity=selected_intensity,
         integration=normalized_integration,

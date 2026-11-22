@@ -33,7 +33,6 @@ from xic_extractor.peak_detection.cid_nl_candidate_set_relation import (
 )
 from xic_extractor.peak_detection.cid_nl_evidence import (
     CidNlEvidenceObservation,
-    cid_nl_evidence_observation,
 )
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlEvaluationReceipt,
@@ -71,6 +70,9 @@ from xic_extractor.processing_identity import AcquisitionSourceIdentity
 from xic_extractor.sample_metadata import SampleMetadata
 from xic_extractor.untargeted_execution.acquisition_cache import (
     acquire_untargeted_trace_batch,
+)
+from xic_extractor.untargeted_execution.partition.cid_nl_discovery_evidence import (
+    discovery_scan_evidence,
 )
 from xic_extractor.untargeted_execution.partition.cid_nl_raw_source import (
     _ADAPTER_NAMESPACE,
@@ -381,26 +383,8 @@ def adapt_current_discovery_sample_subject(
         preserve_configured_losses=method_subject.composition is not None,
     ):
         seed = replace(raw_seed, acquisition_source_id=source.acquisition_source_id)
-        evidence = cid_nl_evidence_observation(
-            sample=sample,
-            acquisition_source=source,
-            scan_number=seed.scan_number,
-            precursor_mz=seed.precursor_mz,
-            product_mz=seed.product_mz,
-            configured_neutral_loss_da=seed.configured_neutral_loss_da,
-            observed_neutral_loss_da=seed.observed_neutral_loss_da,
-            observed_loss_error_ppm=seed.observed_loss_error_ppm,
-            scan_rt_min=seed.rt,
-            product_intensity=seed.product_intensity,
-            precursor_mz_basis=seed.precursor_mz_basis,
-            scan_precursor_mz=seed.scan_precursor_mz,
-            precursor_metadata=seed.precursor_metadata,
-            ms1_precursor_observation=seed.ms1_precursor_observation,
-            precursor_inference_tolerance_da=(
-                settings.ms2_precursor_tol_da
-                if seed.precursor_mz_basis == "product_plus_neutral_loss"
-                else None
-            ),
+        evidence = discovery_scan_evidence(
+            seed, sample=sample, acquisition_source=source, settings=settings
         )
         evidence_refs.append(evidence)
         resolved_support, resolved_sets = resolve_cid_nl_method_relations(

@@ -3,8 +3,11 @@ from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol
 
-import numpy as np
-
+from xic_extractor.acquisition.peak_apex_ion import (
+    APEX_ION_SPREAD_PPM,
+    MS1Centroid,
+    read_peak_apex_ion,
+)
 from xic_extractor.acquisition.physical_capture import (
     PHYSICAL_CAPTURE_BATCH_MAX_REQUESTS,
     PHYSICAL_CONTEXT_HALF_WINDOW_MIN,
@@ -41,7 +44,6 @@ from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.mass_accuracy import (
     CARBON_ISOTOPE_SPACING_DA,
     mz_tolerance_da,
-    weighted_ion_mz,
     within_ppm,
 )
 from xic_extractor.peak_detection.physical_peak_models import (
@@ -52,14 +54,8 @@ from xic_extractor.precursor_evidence import MS1MassWindowSource
 from xic_extractor.processing_identity import AcquisitionSourceIdentity
 from xic_extractor.xic_models import XICRequest
 
-MS1Centroid = Callable[[float, float, float], tuple[float, float] | None]
-"""(apex RT, m/z min, m/z max) -> (m/z, intensity) of the most intense MS1
-centroid at that scan."""
-
 DISCOVERY_TRACE_ADAPTER_NAMESPACE = "xic_extractor.discovery.ms1_capture"
 _DISCOVERY_MS1_PREDICTION_MAX_REQUESTS = 256
-_APEX_ION_SCAN_RADIUS = 1
-_APEX_ION_SPREAD_PPM = 5.0
 _DOUBLY_CHARGED_ISOTOPE_SPACING_MZ = CARBON_ISOTOPE_SPACING_DA / 2
 _DOUBLY_CHARGED_ISOTOPE_MIN_RATIO = 0.10
 _NL_PEAK_ATTACHMENT_TOLERANCE_MIN = 0.1
@@ -258,8 +254,7 @@ def _one_measurement_per_ion_peak(
     """
     centred = dict(capture_by_work)
     readings = {
-        ordinal: _apex_ion_mz(
-            captured.search.request,
+        ordinal: read_peak_apex_ion(
             captured.acquired_trace,
             captured.evaluation,
             ms1_centroid=ms1_centroid,
@@ -308,7 +303,8 @@ def _one_measurement_per_ion_peak(
 
     measured = []
     for group in group_same_ion_peaks(
-        tuple(by_measurement.values()), recorded_ordinals=recorded
+        tuple(by_measurement.values()),
+        recorded=lambda item: item.work_ordinal in recorded,
     ):
         kept = group[0]
         group_located = sorted(
@@ -322,7 +318,6 @@ def _one_measurement_per_ion_peak(
         ion_reading: tuple[float | None, bool] = (None, False)
         if _inferred_only(event for _, event in group_located):
             _, doubly_charged = _apex_ion_reading(
-                kept.search.request,
                 kept.acquired_trace,
                 kept.evaluation,
                 ms1_centroid=ms1_centroid,
@@ -584,7 +579,6 @@ def _measurements(
 
 
 def _apex_ion_reading(
-    request: XICRequest,
     acquired: AcquiredTrace,
     evaluation: PhysicalPeakEvaluation,
     *,
@@ -599,52 +593,14 @@ def _apex_ion_reading(
     own values. The flag is true when the ion's doubly charged isotope is read
     strongly enough in most of the scans where the ion is read.
     """
-    measured, ion_reads = _apex_ion_mz(
-        request, acquired, evaluation, ms1_centroid=ms1_centroid
+    measured, ion_reads = read_peak_apex_ion(
+        acquired, evaluation, ms1_centroid=ms1_centroid
     )
     if measured is None:
         return None, False
     return measured, _reads_doubly_charged_isotope(
         measured, ion_reads, ms1_centroid=ms1_centroid
     )
-
-
-def _apex_ion_mz(
-    request: XICRequest,
-    acquired: AcquiredTrace,
-    evaluation: PhysicalPeakEvaluation,
-    *,
-    ms1_centroid: MS1Centroid,
-) -> tuple[float | None, list[tuple[float, float]]]:
-    """The ion read inside the request at the apex scans, and its readings.
-
-    Each reading is the scan RT and the ion centroid's intensity there.
-
-    Readings spread wider than a few ppm come from two ions and report none.
-    """
-    selected = evaluation.answer.selected_segment
-    if evaluation.state != "available" or selected is None:
-        return None, []
-    rt = acquired.trace.rt
-    intensity = acquired.trace.intensity
-    if len(rt) == 0:
-        return None, []
-    apex = int(np.argmin(np.abs(rt - selected.apex_rt_min)))
-    half_width = mz_tolerance_da(request.mz, request.ppm_tol)
-    readings = []
-    ion_reads = []
-    for index in range(
-        max(0, apex - _APEX_ION_SCAN_RADIUS),
-        min(len(rt), apex + _APEX_ION_SCAN_RADIUS + 1),
-    ):
-        centroid = ms1_centroid(
-            float(rt[index]), request.mz - half_width, request.mz + half_width
-        )
-        if centroid is not None:
-            mz, centroid_intensity = centroid
-            readings.append((mz, float(intensity[index])))
-            ion_reads.append((float(rt[index]), centroid_intensity))
-    return weighted_ion_mz(readings, max_spread_ppm=_APEX_ION_SPREAD_PPM), ion_reads
 
 
 def _reads_doubly_charged_isotope(
@@ -654,7 +610,7 @@ def _reads_doubly_charged_isotope(
     ms1_centroid: MS1Centroid,
 ) -> bool:
     isotope_mz = apex_mz + _DOUBLY_CHARGED_ISOTOPE_SPACING_MZ
-    half_width = mz_tolerance_da(isotope_mz, _APEX_ION_SPREAD_PPM)
+    half_width = mz_tolerance_da(isotope_mz, APEX_ION_SPREAD_PPM)
     isotope_reads = 0
     for rt, ion_intensity in ion_reads:
         isotope = ms1_centroid(rt, isotope_mz - half_width, isotope_mz + half_width)

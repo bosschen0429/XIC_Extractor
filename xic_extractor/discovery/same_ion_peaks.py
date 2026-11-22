@@ -27,25 +27,35 @@ clipped), then the lower XIC m/z and earlier context start.
 
 from __future__ import annotations
 
-from collections.abc import Collection, Sequence
+from collections.abc import Callable, Sequence
+from typing import Protocol, TypeVar
 
 import numpy as np
 
-from xic_extractor.acquisition.physical_capture import CapturedPhysicalPeak
+from xic_extractor.acquisition_contract import AcquiredTrace
 from xic_extractor.mass_accuracy import mz_window
+from xic_extractor.peak_detection.physical_peak_models import PhysicalPeakEvaluation
 
 SAME_ION_MIN_EQUAL_POINTS = 3
 
 
-def group_same_ion_peaks(
-    measurements: Sequence[CapturedPhysicalPeak],
-    *,
-    recorded_ordinals: Collection[int] = (),
-) -> tuple[tuple[CapturedPhysicalPeak, ...], ...]:
-    """Groups of one sample's measured peaks, each led by its kept measurement.
+class _MeasuredSegment(Protocol):
+    @property
+    def acquired_trace(self) -> AcquiredTrace: ...
 
-    ``recorded_ordinals`` names the measurements a recorded precursor located.
-    """
+    @property
+    def evaluation(self) -> PhysicalPeakEvaluation: ...
+
+
+_M = TypeVar("_M", bound=_MeasuredSegment)
+
+
+def group_same_ion_peaks(
+    measurements: Sequence[_M],
+    *,
+    recorded: Callable[[_M], bool] | None = None,
+) -> tuple[tuple[_M, ...], ...]:
+    """Groups of one sample's measured peaks, each led by its kept measurement."""
     items = tuple(measurements)
     if any(item.evaluation.answer.selected_segment is None for item in items):
         raise ValueError("same-ion grouping requires measured peaks")
@@ -66,17 +76,14 @@ def group_same_ion_peaks(
             if _same_ion_peak(items[left], items[right]):
                 parent[root(left)] = root(right)
 
-    groups: dict[int, list[CapturedPhysicalPeak]] = {}
+    groups: dict[int, list[_M]] = {}
     for index, item in enumerate(items):
         groups.setdefault(root(index), []).append(item)
-    recorded = frozenset(recorded_ordinals)
-    ranked = tuple(
-        _ranked(members, recorded_ordinals=recorded) for members in groups.values()
-    )
+    ranked = tuple(_ranked(members, recorded=recorded) for members in groups.values())
     return tuple(sorted(ranked, key=lambda group: _identity_key(group[0])))
 
 
-def _same_ion_peak(left: CapturedPhysicalPeak, right: CapturedPhysicalPeak) -> bool:
+def _same_ion_peak(left: _MeasuredSegment, right: _MeasuredSegment) -> bool:
     left_low, left_high = _window(left)
     right_low, right_high = _window(right)
     if max(left_low, right_low) > min(left_high, right_high):
@@ -111,10 +118,10 @@ def _same_ion_peak(left: CapturedPhysicalPeak, right: CapturedPhysicalPeak) -> b
 
 
 def _ranked(
-    members: Sequence[CapturedPhysicalPeak],
+    members: Sequence[_M],
     *,
-    recorded_ordinals: frozenset[int],
-) -> tuple[CapturedPhysicalPeak, ...]:
+    recorded: Callable[[_M], bool] | None,
+) -> tuple[_M, ...]:
     peaks = [member.evaluation.answer.selected_segment for member in members]
     traces = [member.acquired_trace.trace for member in members]
     low = max(
@@ -126,7 +133,7 @@ def _ranked(
         min(float(np.max(trace.rt)) for trace in traces),
     )
 
-    def observed(member: CapturedPhysicalPeak) -> int:
+    def observed(member: _MeasuredSegment) -> int:
         trace = member.acquired_trace.trace
         rt = np.asarray(trace.rt, dtype=float)
         intensity = np.asarray(trace.intensity, dtype=float)
@@ -136,22 +143,25 @@ def _ranked(
         sorted(
             members,
             key=lambda member: (
-                member.work_ordinal not in recorded_ordinals,
+                not recorded(member) if recorded is not None else False,
                 -observed(member),
-                -(member.search.request.rt_max - member.search.request.rt_min),
+                -(
+                    member.acquired_trace.coordinate.request.rt_max
+                    - member.acquired_trace.coordinate.request.rt_min
+                ),
                 *_identity_key(member),
             ),
         )
     )
 
 
-def _identity_key(member: CapturedPhysicalPeak) -> tuple[float, float, float, float]:
-    request = member.search.request
+def _identity_key(member: _MeasuredSegment) -> tuple[float, float, float, float]:
+    request = member.acquired_trace.coordinate.request
     peak = member.evaluation.answer.selected_segment
     assert peak is not None
     return request.mz, request.rt_min, request.rt_max, peak.apex_rt_min
 
 
-def _window(member: CapturedPhysicalPeak) -> tuple[float, float]:
-    request = member.search.request
+def _window(member: _MeasuredSegment) -> tuple[float, float]:
+    request = member.acquired_trace.coordinate.request
     return mz_window(request.mz, request.ppm_tol)
