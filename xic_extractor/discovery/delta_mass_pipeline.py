@@ -122,12 +122,13 @@ def run_delta_mass_discovery(
                 else 0.0
             )
             detector = detector_settings_for_interval(strategy, interval)
-            features, summary, _ = build_local_ms1_feature_table(
+            detector_started = time.perf_counter()
+            features = build_local_ms1_feature_table(
                 index,
                 sample_stem=raw_path.stem,
-                raw_path=str(raw_path),
                 settings=detector,
             )
+            detector_seconds = time.perf_counter() - detector_started
             sample_dir = output_dir / raw_path.stem
             sample_dir.mkdir(parents=True, exist_ok=True)
             write_detected_features_csv(sample_dir / "detected_features.csv", features)
@@ -168,7 +169,7 @@ def run_delta_mass_discovery(
                 "median_ms1_scan_interval_sec": interval,
                 "mass_recalibration": serialize_mass_recalibration_result(mass_result),
                 "gaussian_window_points": detector.gaussian_window_points,
-                "detector_seconds": summary.wall_time_sec,
+                "detector_seconds": detector_seconds,
                 "total_seconds": time.perf_counter() - started,
             }
         )
