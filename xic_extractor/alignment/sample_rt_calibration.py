@@ -237,7 +237,7 @@ class BatchRtCalibration:
 
     def corrected_rt_min(self, owner: SampleLocalMS1Owner) -> float:
         """Use a bounded sample calibration, retaining raw RT outside its span."""
-        return self.common_rt_min(owner.sample_stem, owner.peak.integration.rt_apex_min)
+        return self.common_rt_min(owner.sample_stem, owner.peak.rt_apex_min)
 
     def has_support(self, sample_stem: str) -> bool:
         sample = self.samples.get(sample_stem)

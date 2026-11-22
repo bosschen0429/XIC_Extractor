@@ -471,9 +471,7 @@ class PeakTrajectories:
                     for sample, rt in self.tracks[index].sample_apices
                 )
             )
-        points.update(
-            (owner.sample_stem, owner.peak.integration.rt_apex_min) for owner in owners
-        )
+        points.update((owner.sample_stem, owner.peak.rt_apex_min) for owner in owners)
         return PeakTrajectory(tuple(sorted(requested)), tuple(sorted(points.items())))
 
     def owner_track_indices(self) -> dict[str, int]:
@@ -605,8 +603,8 @@ class _LocalizationLinks:
             bound = self.owner_nodes.get(owner.owner_id)
             if bound is None:
                 continue
-            left = owner.peak.integration.rt_left_min
-            right = owner.peak.integration.rt_right_min
+            left = owner.peak.rt_left_min
+            right = owner.peak.rt_right_min
             if not left <= self.nodes[bound].landmark.apex_rt <= right:
                 continue
             contradicted.update(
@@ -1095,7 +1093,7 @@ def _local_patterns(
         owners,
         key=lambda item: (
             item.sample_stem,
-            item.peak.integration.rt_apex_min,
+            item.peak.rt_apex_min,
             item.owner_id,
         ),
     ):
@@ -1110,7 +1108,7 @@ def _local_patterns(
             context
             for context in candidate_contexts
             if within_ppm(owner.peak.mz, context.mz, config.preferred_ppm)
-            and context.rt_start <= owner.peak.integration.rt_apex_min <= context.rt_end
+            and context.rt_start <= owner.peak.rt_apex_min <= context.rt_end
         ]
         if not available:
             continue
@@ -1126,11 +1124,9 @@ def _local_patterns(
         retained.add(context)
         selected = min(
             range(len(peaks)),
-            key=lambda index: abs(
-                peaks[index].apex_rt - owner.peak.integration.rt_apex_min
-            ),
+            key=lambda index: abs(peaks[index].apex_rt - owner.peak.rt_apex_min),
         )
-        if abs(peaks[selected].apex_rt - owner.peak.integration.rt_apex_min) > max(
+        if abs(peaks[selected].apex_rt - owner.peak.rt_apex_min) > max(
             config.owner_apex_close_sec / 60.0, peaks[selected].width / 2.0
         ):
             continue

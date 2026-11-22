@@ -64,11 +64,7 @@ def _window_inference(
     common_rt = {
         owner.owner_id: rt
         for owner in owners
-        if (
-            rt := rt_frame.calibrated_rt_min(
-                owner.sample_stem, owner.peak.integration.rt_apex_min
-            )
-        )
+        if (rt := rt_frame.calibrated_rt_min(owner.sample_stem, owner.peak.rt_apex_min))
         is not None
     }
     trajectories = trajectories.common_frame_membership(common_rt)
@@ -301,11 +297,7 @@ def _window_membership_result(
                     else None,
                     rt_basis=rt_basis,
                     rt_raw_delta_sec=(
-                        abs(
-                            owner.peak.integration.rt_apex_min
-                            - witness.peak.integration.rt_apex_min
-                        )
-                        * 60.0
+                        abs(owner.peak.rt_apex_min - witness.peak.rt_apex_min) * 60.0
                         if witness is not None
                         else None
                     ),

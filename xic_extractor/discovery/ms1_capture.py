@@ -256,7 +256,7 @@ def _one_measurement_per_ion_peak(
     readings = {
         ordinal: read_peak_apex_ion(
             captured.acquired_trace,
-            captured.evaluation,
+            captured.evaluation.apex_rt_min,
             ms1_centroid=ms1_centroid,
         )[0]
         for ordinal, captured in capture_by_work.items()
@@ -594,7 +594,7 @@ def _apex_ion_reading(
     strongly enough in most of the scans where the ion is read.
     """
     measured, ion_reads = read_peak_apex_ion(
-        acquired, evaluation, ms1_centroid=ms1_centroid
+        acquired, evaluation.apex_rt_min, ms1_centroid=ms1_centroid
     )
     if measured is None:
         return None, False

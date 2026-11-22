@@ -127,7 +127,6 @@ def owner_from_cid_nl_assessment_support(
     aggregate_observed_loss = math.fsum(
         relation.precursor_mz - relation.observed_product_mz for relation in measured
     ) / len(measured)
-    integration = observation.integration
     neutral_loss_tag = (
         assessment.method_subject.method_subject_id
         if assessment.method_subject.composition
@@ -141,9 +140,17 @@ def owner_from_cid_nl_assessment_support(
         precursor_mz=aggregate_precursor_mz,
         product_mz=aggregate_product_mz,
         observed_neutral_loss_da=aggregate_observed_loss,
-        seed_rt=integration.rt_apex_min,
+        seed_rt=observation.rt_apex_min,
         evidence_score=100,
         seed_event_count=support.strict_nl_scan_count,
+        source_scans=tuple(
+            sorted(
+                {
+                    (relation.dda_scan_number, relation.scan_rt_min)
+                    for relation in measured
+                }
+            )
+        ),
     )
     return SampleLocalMS1Owner(
         owner_id=hypothesis.hypothesis_id,
@@ -159,7 +166,7 @@ def owner_from_cid_nl_assessment_support(
         peak_shape=prepare_local_peak_shape(
             observation.rt,
             observation.intensity,
-            apex_rt_min=integration.rt_apex_min,
+            apex_rt_min=observation.rt_apex_min,
         ),
         cross_sample_member_subject=group_member_subject_from_peak_hypothesis(
             sample=sample,
@@ -181,7 +188,6 @@ def owner_from_cid_nl_assessment_observation(
             "observation projection requires an MS1-only MeasuredPeakHypothesis"
         )
     observation = hypothesis.peak
-    integration = observation.integration
     neutral_loss = assessment.method_subject.neutral_loss_da
     event = (
         None
@@ -194,7 +200,7 @@ def owner_from_cid_nl_assessment_observation(
             precursor_mz=observation.mz,
             product_mz=observation.mz - neutral_loss,
             observed_neutral_loss_da=neutral_loss,
-            seed_rt=integration.rt_apex_min,
+            seed_rt=observation.rt_apex_min,
             evidence_score=100,
             seed_event_count=1,
         )
@@ -210,7 +216,7 @@ def owner_from_cid_nl_assessment_observation(
         peak_shape=prepare_local_peak_shape(
             observation.rt,
             observation.intensity,
-            apex_rt_min=integration.rt_apex_min,
+            apex_rt_min=observation.rt_apex_min,
         ),
         cross_sample_member_subject=group_member_subject_from_peak_hypothesis(
             sample=sample,
@@ -231,7 +237,6 @@ def owner_from_ms1_observation_hypothesis(
             "MS1 owner projection requires an MS1 observation MeasuredPeakHypothesis"
         )
     observation = hypothesis.peak
-    integration = observation.integration
     return SampleLocalMS1Owner(
         owner_id=hypothesis.hypothesis_id,
         sample_stem=sample.raw_stem,
@@ -243,7 +248,7 @@ def owner_from_ms1_observation_hypothesis(
         peak_shape=prepare_local_peak_shape(
             observation.rt,
             observation.intensity,
-            apex_rt_min=integration.rt_apex_min,
+            apex_rt_min=observation.rt_apex_min,
         ),
         cross_sample_member_subject=group_member_subject_from_peak_hypothesis(
             sample=sample,

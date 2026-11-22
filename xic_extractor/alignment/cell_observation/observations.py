@@ -138,7 +138,11 @@ class FinalGroupCellObservation:
 
     @property
     def integrations(self) -> tuple[IntegrationResult, ...]:
-        return tuple(peak.integration for peak in self.value_peaks)
+        return tuple(
+            result
+            for peak in self.value_peaks
+            if (result := peak.integration) is not None
+        )
 
     @property
     def ms1_only_group_observations(self) -> tuple[PeakObservation, ...]:

@@ -73,13 +73,7 @@ def _feature_rt_may_support(
 ) -> bool:
     """Exclude only tracks whose seed AND last cannot support either RT basis."""
     for witness in track.witness_owners:
-        raw_delta = (
-            abs(
-                owner.peak.integration.rt_apex_min
-                - witness.peak.integration.rt_apex_min
-            )
-            * 60.0
-        )
+        raw_delta = abs(owner.peak.rt_apex_min - witness.peak.rt_apex_min) * 60.0
         if not math.isfinite(raw_delta) or raw_delta <= config.preferred_rt_sec:
             return True
         if rt_frame.has_drift:

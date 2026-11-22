@@ -258,9 +258,9 @@ def _candidate(
         mz=mz,
         rt=(apex - 0.2, apex - 0.1, apex, apex + 0.1, apex + 0.2),
         intensity=(1.0, 100.0, 1000.0, 100.0, 1.0),
-        integration=SimpleNamespace(
-            rt_apex_min=apex, rt_left_min=apex - 0.6, rt_right_min=apex + 0.6
-        ),
+        rt_apex_min=apex,
+        rt_left_min=apex - 0.6,
+        rt_right_min=apex + 0.6,
         signal_processing_profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
         generation_provenance=SimpleNamespace(
             query_ppm_tol=query_ppm, acquisition_source_id="source"

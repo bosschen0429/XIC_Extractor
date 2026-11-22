@@ -191,7 +191,7 @@ def _hypothesis_from_owner_group(
     if center is None:
         center = (
             sum(owner.peak.mz for owner in group) / len(group),
-            sum(owner.peak.integration.rt_apex_min for owner in group) / len(group),
+            sum(owner.peak.rt_apex_min for owner in group) / len(group),
         )
     events = tuple(
         owner.primary_identity_event

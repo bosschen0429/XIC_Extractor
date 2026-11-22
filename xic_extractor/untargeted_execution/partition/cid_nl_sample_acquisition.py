@@ -301,9 +301,7 @@ def _merged_peak_windows(
     peaks: frozenset[PeakObservation],
 ) -> Iterator[tuple[float, float]]:
     start, end = 0.0, -1.0
-    for low, high in sorted(
-        (peak.integration.rt_left_min, peak.integration.rt_right_min) for peak in peaks
-    ):
+    for low, high in sorted((peak.rt_left_min, peak.rt_right_min) for peak in peaks):
         if low > end:
             if end >= start:
                 yield start, end

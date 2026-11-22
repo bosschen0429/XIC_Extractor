@@ -38,6 +38,7 @@ if TYPE_CHECKING:
     from xic_extractor.peak_detection.cid_nl_method_assessment import (
         CidNlMethodAssessment,
     )
+    from xic_extractor.peak_detection.observations import PeakObservation
     from xic_extractor.untargeted_execution.execution_result import (
         CompletedUntargetBatchWorkflowResult,
     )
@@ -207,10 +208,10 @@ def _signal_digest(content: Any) -> str:
     ).hexdigest()
 
 
-def _peak_coordinates(content: Any) -> tuple[float, float, float]:
+def _peak_coordinates(content: PeakObservation) -> tuple[float, float, float]:
     return (
         content.mz,
-        content.integration.rt_apex_min,
+        content.rt_apex_min,
         content.generation_provenance.query_ppm_tol,
     )
 
@@ -284,7 +285,7 @@ def project_alignment_explanation_child(
     sink = _RecordedWrites(review_only=not full_audit, curve_mz_ranges=curve_mz_ranges)
     core = child.scientific_core
 
-    def locate(content: Any) -> str:
+    def locate(content: PeakObservation) -> str:
         key: str = content.physical_peak_key
         sink.writes.append(
             (
@@ -342,14 +343,14 @@ def project_alignment_explanation_child(
         peaks = [
             peak for member in group.member_subjects for peak in member.physical_peaks
         ]
-        raw_positions = [peak.integration.rt_apex_min for peak in peaks]
+        raw_positions = [peak.rt_apex_min for peak in peaks]
         common_positions = [
             estimate.rt_min
             for peak in peaks
             if frame is not None
             and (
                 estimate := frame.estimate_rt(
-                    sample_stems[peak.sample_key], peak.integration.rt_apex_min
+                    sample_stems[peak.sample_key], peak.rt_apex_min
                 )
             )
             is not None

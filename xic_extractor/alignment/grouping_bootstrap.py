@@ -260,13 +260,13 @@ def bootstrap_cid_nl_initial_population(
             max(interval[1] for interval in method_subject_intervals),
         ),
         rt_interval=(
-            min(hypothesis.peak.integration.rt_left_min for hypothesis in hypotheses)
+            min(hypothesis.peak.rt_left_min for hypothesis in hypotheses)
             if hypotheses
             else min(
                 cast(float, assessment.evaluation_receipt.query_rt_min)
                 for _, assessment in sample_assessments
             ),
-            max(hypothesis.peak.integration.rt_right_min for hypothesis in hypotheses)
+            max(hypothesis.peak.rt_right_min for hypothesis in hypotheses)
             if hypotheses
             else max(
                 cast(float, assessment.evaluation_receipt.query_rt_max)

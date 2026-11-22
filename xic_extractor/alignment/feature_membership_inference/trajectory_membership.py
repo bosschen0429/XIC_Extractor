@@ -117,8 +117,7 @@ def _membership_trajectories(
 
 
 def _selected_peak_bounds(owner: SampleLocalMS1Owner) -> tuple[float, float]:
-    integration = owner.peak.integration
-    return integration.rt_left_min, integration.rt_right_min
+    return owner.peak.rt_left_min, owner.peak.rt_right_min
 
 
 def _trajectory_seeds(

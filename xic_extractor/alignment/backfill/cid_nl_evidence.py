@@ -37,7 +37,7 @@ def decide_cid_nl_backfill_revisit(
     if not assessment.candidate_peaks:
         return "search"
     if observed_rt is not None and not any(
-        abs(peak.integration.rt_apex_min - observed_rt) * 60.0 <= apex_tolerance_sec
+        abs(peak.rt_apex_min - observed_rt) * 60.0 <= apex_tolerance_sec
         for peak in assessment.candidate_peaks
     ):
         return "search"

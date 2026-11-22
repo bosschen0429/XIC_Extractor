@@ -191,8 +191,12 @@ class WriterPeak:
         return self.physical_peak_key
 
     @property
+    def rt_apex_min(self) -> float:
+        return self.rt
+
+    @property
     def integration(self) -> SimpleNamespace:
-        return SimpleNamespace(rt_apex_min=self.rt)
+        return SimpleNamespace(rt_apex_min=self.rt_apex_min)
 
 
 @dataclass(frozen=True)

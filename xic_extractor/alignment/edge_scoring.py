@@ -63,10 +63,7 @@ def evaluate_owner_edge(
     rt_frame: RtFrame,
     method_evidence: MethodPairEvidence,
 ) -> OwnerEdgeEvidence:
-    rt_raw_delta_sec = (
-        abs(left.peak.integration.rt_apex_min - right.peak.integration.rt_apex_min)
-        * 60.0
-    )
+    rt_raw_delta_sec = abs(left.peak.rt_apex_min - right.peak.rt_apex_min) * 60.0
     drift_source = rt_frame.drift_source
     injection_order_gap = rt_frame.drift_injection_order_gap(
         left.sample_stem, right.sample_stem
@@ -171,9 +168,12 @@ def _owner_quality(
 ) -> OwnerQuality:
     if "ambiguous" in left.assignment_reason or "ambiguous" in right.assignment_reason:
         return "ambiguous_nearby"
-    if (
-        left.peak.integration.area_raw_counts_seconds <= 0
-        or right.peak.integration.area_raw_counts_seconds <= 0
+    if any(
+        area is not None and area <= 0.0
+        for area in (
+            left.peak.area_raw_counts_seconds,
+            right.peak.area_raw_counts_seconds,
+        )
     ):
         return "weak"
     if duplicate_context == "tail_assignment":
@@ -416,8 +416,8 @@ def _evidence(
         neutral_loss_tag=left.neutral_loss_tag,
         left_precursor_mz=left.peak.mz,
         right_precursor_mz=right.peak.mz,
-        left_rt_min=left.peak.integration.rt_apex_min,
-        right_rt_min=right.peak.integration.rt_apex_min,
+        left_rt_min=left.peak.rt_apex_min,
+        right_rt_min=right.peak.rt_apex_min,
         decision=decision,
         failure_reason=failure_reason,
         rt_raw_delta_sec=rt_raw_delta_sec,

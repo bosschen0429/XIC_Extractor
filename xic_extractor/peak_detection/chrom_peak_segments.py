@@ -795,6 +795,14 @@ def local_apex_prominence(signal: np.ndarray, apex_index: int) -> float:
     return float(signal[apex_index]) - max(float(signal[0]), float(signal[-1]))
 
 
+def supported_contour_apices(
+    contour: np.ndarray, minimum_prominence_fraction: float
+) -> np.ndarray:
+    return find_peaks(
+        contour, prominence=minimum_prominence_fraction * float(np.max(contour))
+    )[0]
+
+
 def _segment_from_seed(
     rt: np.ndarray,
     intensity: np.ndarray,
@@ -844,12 +852,10 @@ def _segment_from_seed(
     relation_labels = _relation_labels(left_relation, right_relation)
     if policy.morphology_trace_method == "rt_envelope":
         contour = boundary_signal[left:right]
-        peaks = find_peaks(contour)[0]
-        prominences = peak_prominences(contour, peaks)[0]
-        review_lobes = sum(
-            prominences >= policy.min_prominence_fraction_of_envelope * np.max(contour)
+        review_lobes = supported_contour_apices(
+            contour, policy.min_prominence_fraction_of_envelope
         )
-        if len(envelope_seeds) > 1 or review_lobes > 1:
+        if len(envelope_seeds) > 1 or len(review_lobes) > 1:
             relation_labels = (*relation_labels, "shoulder_overlap")
     interval = _trace_interval(rt, left, right)
     segment_class = _segment_class(interval, relation_labels, policy)

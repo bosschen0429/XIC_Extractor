@@ -187,3 +187,8 @@ class PhysicalPeakEvaluation:
     def requires_overlap_review(self) -> bool:
         segment = self.answer.selected_segment
         return segment is not None and segment.requires_overlap_review
+
+    @property
+    def apex_rt_min(self) -> float | None:
+        segment = self.answer.selected_segment
+        return segment.apex_rt_min if segment is not None else None

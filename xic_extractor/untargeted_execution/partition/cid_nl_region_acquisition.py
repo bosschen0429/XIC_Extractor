@@ -44,7 +44,11 @@ from xic_extractor.peak_detection.elution_context import (
 )
 from xic_extractor.peak_detection.observations import (
     PeakObservation,
+    mint_localized_peak_observation,
     mint_physical_peak_observations,
+)
+from xic_extractor.peak_detection.physical_peak_evaluation import (
+    localize_overlap_peak_lobes,
 )
 from xic_extractor.peak_detection.physical_peak_models import (
     PhysicalPeakEvaluation,
@@ -301,27 +305,44 @@ def _measure_region(
         kept = same_ion[0]
         trace = kept.acquired_trace
         request = trace.coordinate.request
-        mz, _ = read_peak_apex_ion(trace, kept.evaluation, ms1_centroid=ms1_centroid)
-        if mz is None:
-            unlocalized_mass.append(kept)
-            continue
-        if request not in traces:
-            traces[request] = trace_from_xic_request(
-                sample_name=sample.sample_name,
-                request=request,
-                xic_trace=trace.trace,
-                source=__name__,
-                acquisition_source_id=acquisition_source.acquisition_source_id,
-            )
-        (peak,) = mint_physical_peak_observations(
-            sample=sample,
-            trace=traces[request],
-            evaluations=(kept.evaluation,),
-            measured_mz=(mz,),
-            signal_processing_profile=profile,
-            resolver_mode=settings.resolver_mode,
+        lobes = localize_overlap_peak_lobes(kept.evaluation)
+        sites = (
+            tuple((float(trace.trace.rt[lobe.apex_index]), lobe) for lobe in lobes)
+            if lobes
+            else ((kept.evaluation.apex_rt_min, None),)
         )
-        peaks.setdefault((peak.physical_peak_key, peak.rt, peak.intensity), peak)
+        for apex, lobe in sites:
+            mz, _ = read_peak_apex_ion(trace, apex, ms1_centroid=ms1_centroid)
+            if mz is None:
+                unlocalized_mass.append(kept)
+                continue
+            if request not in traces:
+                traces[request] = trace_from_xic_request(
+                    sample_name=sample.sample_name,
+                    request=request,
+                    xic_trace=trace.trace,
+                    source=__name__,
+                    acquisition_source_id=acquisition_source.acquisition_source_id,
+                )
+            if lobe is not None:
+                peak = mint_localized_peak_observation(
+                    sample=sample,
+                    trace=traces[request],
+                    component=lobe,
+                    measured_mz=mz,
+                    signal_processing_profile=profile,
+                    resolver_mode=settings.resolver_mode,
+                )
+            else:
+                (peak,) = mint_physical_peak_observations(
+                    sample=sample,
+                    trace=traces[request],
+                    evaluations=(kept.evaluation,),
+                    measured_mz=(mz,),
+                    signal_processing_profile=profile,
+                    resolver_mode=settings.resolver_mode,
+                )
+            peaks.setdefault((peak.physical_peak_key, peak.rt, peak.intensity), peak)
     observations = tuple(
         sorted(peaks.values(), key=lambda peak: peak.measured_order_key)
     )

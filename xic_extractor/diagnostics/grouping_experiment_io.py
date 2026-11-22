@@ -298,11 +298,11 @@ def write_grouping_result(
             comparison_rt = (
                 coordinates.corrected_rt_min(owner)
                 if coordinates
-                else owner.peak.integration.rt_apex_min
+                else owner.peak.rt_apex_min
             )
             if risk is not None:
                 if risk.rt_basis == "raw":
-                    comparison_rt = owner.peak.integration.rt_apex_min
+                    comparison_rt = owner.peak.rt_apex_min
                 elif risk.rt_estimate is not None:
                     comparison_rt = risk.rt_estimate.rt_min
             members.append(
@@ -314,12 +314,12 @@ def write_grouping_result(
                     ),
                     "sample_stem": owner.sample_stem,
                     "mz": repr(float(owner.peak.mz)),
-                    "observed_rt": repr(float(owner.peak.integration.rt_apex_min)),
+                    "observed_rt": repr(float(owner.peak.rt_apex_min)),
                     "comparison_rt": comparison_rt,
                     "comparison_rt_basis": risk.rt_basis
                     if risk is not None
                     else "not_recorded",
-                    "area": owner.peak.integration.area_raw_counts_seconds,
+                    "area": owner.peak.area_raw_counts_seconds,
                     "disposition": group.disposition,
                     "reason": basis.reason if basis else "",
                 }
@@ -332,7 +332,7 @@ def write_grouping_result(
                         "owner_id": owner.owner_id,
                         "sample_stem": owner.sample_stem,
                         "mz": owner.peak.mz,
-                        "observed_rt": owner.peak.integration.rt_apex_min,
+                        "observed_rt": owner.peak.rt_apex_min,
                         "before_group": old_group,
                         "after_group": group.group_hypothesis_id,
                         "before_members": len(old_owners),

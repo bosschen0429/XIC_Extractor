@@ -25,6 +25,7 @@ from tests.alignment_pipeline_helpers import (
 from tests.cid_nl_raw_fixture import (
     _FakeRaw,
     _FakeThermoRaw,
+    unresolved_overlap_trace,
 )
 from tests.discovery_csv_fixtures import representative_event
 from tests.untargeted_alignment_entry_fixtures import (
@@ -1588,6 +1589,52 @@ def test_process_outcome_must_cover_the_exact_work_units(
 
     assert not result.succeeded
     assert result.sample_results == ()
+
+
+def test_published_matrix_leaves_localized_members_without_an_area_blank(
+    tmp_path, monkeypatch
+):
+    import numpy as np
+
+    early, late = 7.895, 8.214
+    overlap = _FakeRaw((early, late))
+    rt, intensity = unresolved_overlap_trace()
+    shifted = rt - 7.3
+    valid = shifted >= 0.0
+    overlap.rt, overlap.intensity = shifted[valid], intensity[valid]
+    overlap.scans = tuple(
+        replace(scan, scan_number=int(np.searchsorted(overlap.rt, scan.rt)) + 1)
+        for scan in overlap.scans
+    )
+    raws = {
+        "Overlap": overlap,
+        "EarlyA": _FakeRaw((7.91,)),
+        "EarlyB": _FakeRaw((7.93,)),
+        "Late": _FakeRaw((8.28,)),
+    }
+    paths = raw_paths(tmp_path, tuple(raws))
+    peaks = {stem: discover(raw, paths[stem]) for stem, raw in raws.items()}
+    assert {event.rt for p in peaks["Overlap"] for event in p.located_events} == {
+        early,
+        late,
+    }
+
+    output = publish_alignment(
+        tmp_path, monkeypatch, paths=paths, raws=raws, peaks=peaks
+    )
+
+    (row,) = read_tsv(output / "alignment_matrix.tsv")
+    assert float(row["RT"]) == pytest.approx(7.92, abs=0.04)
+    assert float(row["EarlyA"]) > 0 and float(row["EarlyB"]) > 0
+    assert row["Overlap"] == ""
+    assert row["Late"] == ""
+    detected = [
+        cell
+        for (_feature, sample), cell in published_cells(output).items()
+        if sample == "Overlap" and cell["status"] == "detected"
+    ]
+    assert len(detected) == 2
+    assert all(not cell["area"] for cell in detected)
 
 
 def test_formal_partition_reuses_prepared_group_ids_with_ms1_only_members(

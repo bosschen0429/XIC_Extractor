@@ -551,14 +551,15 @@ def _is_shoulder_of(
     *,
     config: AlignmentConfig,
 ) -> bool:
+    owner_area = owner.peak.area_raw_counts_seconds
+    neighbour_area = neighbour.peak.area_raw_counts_seconds
     return (
-        owner.peak.integration.area_raw_counts_seconds
-        < neighbour.peak.integration.area_raw_counts_seconds
+        owner_area is not None
+        and neighbour_area is not None
+        and owner_area < neighbour_area
         and (
-            owner.peak.integration.rt_right_min
-            == neighbour.peak.integration.rt_left_min
-            or owner.peak.integration.rt_left_min
-            == neighbour.peak.integration.rt_right_min
+            owner.peak.rt_right_min == neighbour.peak.rt_left_min
+            or owner.peak.rt_left_min == neighbour.peak.rt_right_min
         )
         and within_ppm(owner.peak.mz, neighbour.peak.mz, config.preferred_ppm)
     )

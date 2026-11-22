@@ -125,6 +125,13 @@ maxima reaching the same 4% prominence floor remain review evidence even when
 they do not qualify as independent seeds. The complete envelope does not
 establish one chemical component or individual component areas.
 
+Untargeted can also localize separate acquired crests inside an unresolved
+envelope. Each crest needs continuous original top support, and observed
+(nonzero) scans between the crests must confirm a clear valley, using the same
+relative depth criterion as the physical owner. These are separate
+positions for correspondence and local event attachment, not separate
+integrations. See [Quant Matrix](quant-matrix.md#matrix-publication).
+
 An unresolved shoulder remains a review condition (`physical_shoulder_overlap`).
 Targeted carries it into the product review reasons; Untargeted quantifies the
 envelope when the peak otherwise qualifies and carries the same reason on that

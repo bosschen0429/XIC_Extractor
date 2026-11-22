@@ -4,7 +4,11 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from tests.cid_nl_raw_fixture import NEUTRAL_LOSS_DA, fake_acquisition_source
+from tests.cid_nl_raw_fixture import (
+    NEUTRAL_LOSS_DA,
+    fake_acquisition_source,
+    unresolved_overlap_trace,
+)
 from xic_extractor.configuration.cid_nl_profile import NeutralLossProfile
 from xic_extractor.configuration.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
@@ -113,6 +117,30 @@ def _measurements(result):
         (peak.integration.rt_apex_min, peak.mz, peak.integration.height_raw)
         for peak in result.peaks
     ]
+
+
+def test_localized_overlap_lobes_keep_separate_events_without_areas():
+    raw = _Raw()
+    raw.rt, y = unresolved_overlap_trace()
+    raw.ions = [(500.0, y)]
+    early = _scan_events("A", 100, 15.195, 500.0)
+    late = _scan_events("A", 200, 15.514, 500.0)
+    valley = _scan_events("A", 150, 15.4268, 500.0)
+    events = (*early, *late, *valley)
+    regions = plan_cid_nl_mass_regions(events, settings=SETTINGS)
+
+    (result,) = _capture("A", raw, regions, events)
+
+    a, b = result.peaks
+    assert (a.rt_apex_min, b.rt_apex_min) == pytest.approx((15.2193, 15.5835))
+    assert a.integration is b.integration is None
+    assert [
+        (ref.dda_scan_number, ref.peak_observation)
+        for ref in result.individual_relations
+    ] == [(100, a), (200, b)]
+    (unassigned,) = result.ambiguous_relations
+    assert unassigned.dda_scan_number == 150
+    assert unassigned.matched_candidates == (a, b)
 
 
 def test_exact_two_scan_alias_from_overlapping_windows_is_one_observation():

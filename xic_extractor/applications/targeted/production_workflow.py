@@ -499,7 +499,8 @@ def _finalized_extraction_result(
         if (
             value is None
             or type(evidence) is not ObservedSearchSubject
-            or evidence.hypothesis.peak.integration.area_ms1_morphology != value
+            or (integral := evidence.hypothesis.peak.integration) is None
+            or integral.area_ms1_morphology != value
         ):
             raise TargetedOutputBoundaryError(
                 "finalized Targeted value does not match its public result model"
@@ -630,7 +631,7 @@ def _finalized_product_projection(
             istd_pair=target.istd_pair,
             neutral_loss_required=target.neutral_loss_da is not None,
         ),
-        rt=evidence.hypothesis.peak.integration.rt_apex_min,
+        rt=evidence.hypothesis.peak.rt_apex_min,
         area=value,
         cid_nl_supported=(evidence.hypothesis.method == HYPOTHESIS_METHOD_DDA_CID_NL),
         backfill_supported=backfill_supported,

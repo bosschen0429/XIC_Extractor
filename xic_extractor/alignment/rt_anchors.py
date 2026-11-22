@@ -78,7 +78,7 @@ def rt_anchor_observations(
             subject.neutral_loss_da,
             owner.sample_stem,
             owner.owner_id,
-            owner.peak.integration.rt_apex_min,
+            owner.peak.rt_apex_min,
             group.group_hypothesis_id
             if group.inference_basis is not None
             and group.inference_basis.basis in _CALIBRATION_GROUP_BASES

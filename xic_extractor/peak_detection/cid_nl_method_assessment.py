@@ -230,8 +230,8 @@ def resolve_cid_nl_method_relations(
     intervals = tuple(
         CidNlCandidateInterval(
             peak.mz,
-            peak.integration.rt_left_min,
-            peak.integration.rt_right_min,
+            peak.rt_left_min,
+            peak.rt_right_min,
         )
         for peak in candidate_peaks
     )

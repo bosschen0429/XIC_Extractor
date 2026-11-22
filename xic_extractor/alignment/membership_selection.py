@@ -200,11 +200,11 @@ def measured_owner_key(owner: SampleLocalMS1Owner) -> tuple[object, ...]:
     """Physical measurements decide non-equivalent ties, never display IDs."""
     return (
         owner.peak.mz,
-        owner.peak.integration.rt_apex_min,
-        owner.peak.integration.rt_left_min,
-        owner.peak.integration.rt_right_min,
-        owner.peak.integration.height_raw,
-        owner.peak.integration.area_raw_counts_seconds,
+        owner.peak.rt_apex_min,
+        owner.peak.rt_left_min,
+        owner.peak.rt_right_min,
+        owner.peak.height_raw,
+        () if (area := owner.peak.area_raw_counts_seconds) is None else (area,),
         tuple(
             sorted(
                 (
@@ -232,7 +232,7 @@ def owner_facts(
         owner = owners[owner_id]
         member = owner.cross_sample_member_subject
         sample = owner.sample_stem if member is None else member.sample_key
-        facts.append((sample, owner.peak.mz, owner.peak.integration.rt_apex_min))
+        facts.append((sample, owner.peak.mz, owner.peak.rt_apex_min))
     if len(set(facts)) != len(facts):
         raise ValueError("distinct recorded owners share sample, m/z and apex RT")
     return tuple(sorted(facts))
@@ -292,7 +292,7 @@ class MembershipComparison:
                 if coordinate is not None
             }
             if common
-            else {o.owner_id: o.peak.integration.rt_apex_min for o in owners}
+            else {o.owner_id: o.peak.rt_apex_min for o in owners}
         )
         self.rt_estimates = coordinates if common else dict.fromkeys(coordinates)
         self.rt_weights = {
@@ -308,9 +308,9 @@ class MembershipComparison:
             )
             if common
             else (
-                o.peak.integration.rt_left_min,
-                o.peak.integration.rt_apex_min,
-                o.peak.integration.rt_right_min,
+                o.peak.rt_left_min,
+                o.peak.rt_apex_min,
+                o.peak.rt_right_min,
             )
             for o in owners
         }
@@ -318,7 +318,8 @@ class MembershipComparison:
         self.quality = {}
         self.weak = set()
         for owner in owners:
-            quality = owner.peak.integration.signal_quality
+            integration = owner.peak.integration
+            quality = integration.signal_quality if integration is not None else None
             self.quality[owner.owner_id] = (
                 0.75
                 if quality is None

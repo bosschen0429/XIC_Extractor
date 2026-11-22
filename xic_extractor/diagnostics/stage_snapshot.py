@@ -56,8 +56,9 @@ from xic_extractor.rt_calibration_codec import (
     rt_drift_from_payload,
     rt_drift_payload,
 )
-from xic_extractor.validation_primitives import require_boolean
+from xic_extractor.validation_primitives import require_boolean, require_finite_real
 
+_GROUPING_SCHEMA = "grouping_experiment_inputs"
 _RtModel = tuple[
     BatchRtWarp | None,
     BatchRtCalibration | None,
@@ -144,7 +145,7 @@ def write_grouping_inputs(
             }
         )
     payload = {
-        "schema": "grouping_experiment_inputs",
+        "schema": _GROUPING_SCHEMA,
         "provenance": dict(provenance),
         "sample_stems": inputs.sample_stems,
         "injection_order": dict(inputs.injection_order),
@@ -171,7 +172,7 @@ def read_grouping_inputs(path: Path) -> tuple[GroupingInputs, dict[str, Any]]:
     try:
         with gzip.open(path, "rt", encoding="utf-8") as stream:
             payload = json.load(stream)
-        if payload.get("schema") != "grouping_experiment_inputs":
+        if payload.get("schema") != _GROUPING_SCHEMA:
             raise _recapture(path)
         inputs = _grouping_inputs(payload)
     except (
@@ -322,11 +323,11 @@ def _owner_payload(owner: SampleLocalMS1Owner) -> dict[str, Any]:
         "sample_stem": owner.sample_stem,
         "raw_file": owner.raw_file,
         "precursor_mz": owner.peak.mz,
-        "owner_apex_rt": integration.rt_apex_min,
-        "owner_peak_start_rt": integration.rt_left_min,
-        "owner_peak_end_rt": integration.rt_right_min,
-        "owner_area": integration.area_raw_counts_seconds,
-        "owner_height": integration.height_raw,
+        "owner_apex_rt": owner.peak.rt_apex_min,
+        "owner_peak_start_rt": owner.peak.rt_left_min,
+        "owner_peak_end_rt": owner.peak.rt_right_min,
+        "owner_area": owner.peak.area_raw_counts_seconds,
+        "owner_height": owner.peak.height_raw,
         "requires_overlap_review": owner.peak.requires_overlap_review,
         "primary_identity_event": (
             asdict(owner.primary_identity_event)
@@ -335,7 +336,11 @@ def _owner_payload(owner: SampleLocalMS1Owner) -> dict[str, Any]:
         ),
         "supporting_events": [asdict(item) for item in owner.supporting_events],
         "assignment_reason": owner.assignment_reason,
-        "selected_integration": asdict(replace(integration, raw_scan_indices=())),
+        "selected_integration": (
+            asdict(replace(integration, raw_scan_indices=()))
+            if integration is not None
+            else None
+        ),
         "quantification_eligible": owner.quantification_eligible,
         "quantification_exclusion_reason": owner.quantification_exclusion_reason,
         "cross_sample_member_subject": {
@@ -357,19 +362,43 @@ def _peak_payload(peak: PeakObservation) -> dict[str, Any]:
         "mz": peak.mz,
         "rt": peak.rt,
         "intensity": peak.intensity,
-        "integration": asdict(peak.integration),
+        "integration": asdict(peak.integration)
+        if peak.integration is not None
+        else None,
+        "localized_apex_rt_min": peak.localized_apex_rt_min,
     }
 
 
 def _read_peak(value: dict[str, Any]) -> PeakObservation:
+    rt = tuple(value["rt"])
+    integration = value["integration"]
+    apex = value["localized_apex_rt_min"]
+    if integration is None:
+        apex = require_finite_real(apex, field="localized_apex_rt_min")
+        if apex not in rt[1:-1]:
+            raise ValueError("localized apex must be an interior acquired scan")
+    elif apex is not None:
+        raise ValueError("an integrated peak already records its apex")
     return PeakObservation(
         sample_key=value["sample_key"],
         mz=value["mz"],
-        rt=tuple(value["rt"]),
+        rt=rt,
         intensity=tuple(value["intensity"]),
-        integration=_read_integration(value["integration"]),
+        integration=(
+            _read_integration(integration) if integration is not None else None
+        ),
+        localized_apex_rt_min=apex,
         generation_provenance=None,  # type: ignore[arg-type]
         source_trace=None,  # type: ignore[arg-type]
+    )
+
+
+def _read_identity_event(value: dict[str, Any]) -> IdentityEvent:
+    return IdentityEvent(
+        **{
+            **value,
+            "source_scans": tuple(tuple(pair) for pair in value["source_scans"]),
+        }
     )
 
 
@@ -388,12 +417,12 @@ def _read_owner(value: dict[str, Any]) -> SampleLocalMS1Owner:
             ),
         )
     value["primary_identity_event"] = (
-        IdentityEvent(**value["primary_identity_event"])
+        _read_identity_event(value["primary_identity_event"])
         if value["primary_identity_event"]
         else None
     )
     value["supporting_events"] = tuple(
-        IdentityEvent(**item) for item in value["supporting_events"]
+        _read_identity_event(item) for item in value["supporting_events"]
     )
     member = value["cross_sample_member_subject"]
     member["physical_peaks"] = tuple(
@@ -409,15 +438,13 @@ def _read_owner(value: dict[str, Any]) -> SampleLocalMS1Owner:
         or owner.owner_id != owner.cross_sample_member_subject.subject_id
     ):
         raise ValueError("Grouping observation does not match its member subject")
-    integration = owner.peak.integration
     if not all(
         math.isfinite(number)
         for number in (
-            integration.rt_apex_min,
-            integration.rt_left_min,
-            integration.rt_right_min,
-            integration.area_raw_counts_seconds,
-            integration.height_raw,
+            owner.peak.rt_apex_min,
+            owner.peak.rt_left_min,
+            owner.peak.rt_right_min,
+            owner.peak.height_raw,
         )
     ):
         raise ValueError("Grouping observations require finite measured values")
@@ -437,11 +464,14 @@ def _read_owner_peak(
     ):
         value.pop(key)
     (member_peak,) = physical_peaks
-    integration = _read_integration(value.pop("selected_integration"))
+    selected = value.pop("selected_integration")
+    integration = _read_integration(selected) if selected is not None else None
     return replace(
         member_peak,
-        integration=replace(
-            integration, raw_scan_indices=tuple(range(len(member_peak.rt)))
+        integration=(
+            replace(integration, raw_scan_indices=tuple(range(len(member_peak.rt))))
+            if integration is not None
+            else None
         ),
         retained_overlap_review=require_boolean(
             value.pop("requires_overlap_review"), field="requires_overlap_review"

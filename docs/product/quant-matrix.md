@@ -45,11 +45,15 @@ delivery seam as if they were already final.
   or count as direct CID-NL support.
 - Inclusion and counting consume those completed answers, not raw cells.
 
-An owner whose apex is not strictly inside its left/right bounds (the selected
-integration's when present) has `quantification_eligible` set to false. That
-flag only keeps the owner out of the RT-calibration anchors. Cell decision and
-Backfill do not read it: a group member's cell takes its value from its peak
-integration, and Backfill counts direct support by sample.
+An acquired lobe of an unresolved overlap may have its own peak position and
+local CID-NL events without a separately measured area. It may compete for a
+group, but has no integration, cannot count toward row or Backfill activation,
+and gives its selected cell the no-write reason `not_quantifiable`. It already
+occupies that sample's cell; Backfill cannot remeasure the overlap into a value.
+
+Owners without an integration or with an apex on an integration boundary do
+not train the RT calibration. Cell decisions take values from peak
+integrations, not the anchor-eligibility flag.
 
 ### Matrix publication
 

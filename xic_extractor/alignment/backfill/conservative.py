@@ -233,7 +233,8 @@ def assess_conservative_backfill_group(
     activation_supports = tuple(
         support
         for support in group_context.direct_supports
-        if not cid_nl_support_requires_supplement(
+        if support.hypothesis.peak.integration is not None
+        and not cid_nl_support_requires_supplement(
             support.assessment, support.hypothesis.peak
         )
     )
@@ -396,14 +397,14 @@ def map_conservative_backfill_candidates(
         ordered_candidates = tuple(
             sorted(
                 target_candidates,
-                key=lambda item: item.peak_observation.integration.rt_apex_min,
+                key=lambda item: item.peak_observation.rt_apex_min,
             )
         )
         group_rts = tuple(
             _group_center_rt(group_facts[index]) for index in ordered_indexes
         )
         candidate_rts = tuple(
-            item.peak_observation.integration.rt_apex_min for item in ordered_candidates
+            item.peak_observation.rt_apex_min for item in ordered_candidates
         )
         if len(set(group_rts)) != len(group_rts) or len(set(candidate_rts)) != len(
             candidate_rts

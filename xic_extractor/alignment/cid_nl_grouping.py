@@ -85,11 +85,15 @@ def cid_nl_pair_failures(
 
 
 def has_cid_nl_activation_support(owner: SampleLocalMS1Owner) -> bool:
-    """A direct peak can activate a group without local confirmation."""
+    """Row activation needs independently measured area and direct CID-NL."""
     assessment = owner.cid_nl_composite_assessment
-    return owner.primary_identity_event is not None and (
-        assessment is None
-        or not cid_nl_support_requires_supplement(assessment, owner.peak)
+    return (
+        owner.peak.integration is not None
+        and owner.primary_identity_event is not None
+        and (
+            assessment is None
+            or not cid_nl_support_requires_supplement(assessment, owner.peak)
+        )
     )
 
 
@@ -326,7 +330,7 @@ def _duplicate_context(
     if any(
         owner.assignment_reason == "owner_tail_assignment"
         or any(
-            abs(event.seed_rt - owner.peak.integration.rt_apex_min) * 60.0
+            abs(event.seed_rt - owner.peak.rt_apex_min) * 60.0
             > config.owner_apex_close_sec
             for event in owner.supporting_events
         )

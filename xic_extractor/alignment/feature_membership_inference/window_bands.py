@@ -99,7 +99,7 @@ class _NearestInjectionMedians:
         return statistics.median(
             self.corrected_rt[owner.owner_id]
             if self.corrected_rt is not None
-            else owner.peak.integration.rt_apex_min
+            else owner.peak.rt_apex_min
             for owner in nearest
         )
 

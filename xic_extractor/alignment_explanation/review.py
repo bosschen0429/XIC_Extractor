@@ -166,7 +166,8 @@ def review_cell(decision: ProductionCellDecision) -> dict[str, Any]:
         observation = cell.peak_observation
         if observation is None:
             continue
-        quality = observation.integration.signal_quality
+        integration = observation.integration
+        quality = integration.signal_quality if integration is not None else None
         qualities[observation.physical_peak_key] = {
             "observation_id": observation.physical_peak_key,
             **(asdict(quality) if quality is not None else {"status": "not_recorded"}),

@@ -29,7 +29,6 @@ def bind_dda_cid_nl_peak_support(
 ) -> DdaCidNlPeakSupport:
     """Record a relation answer over the measured-order candidate universe."""
 
-    integration = peak_observation.integration
     assert precursor.reference_mz is not None
     assert precursor.observed_loss_error_ppm is not None
     return DdaCidNlPeakSupport(
@@ -40,8 +39,8 @@ def bind_dda_cid_nl_peak_support(
         acquisition_mode=evidence.acquisition_mode,
         dda_scan_number=evidence.scan_number,
         scan_rt_min=evidence.scan_rt_min,
-        peak_rt_min=integration.rt_left_min,
-        peak_rt_max=integration.rt_right_min,
+        peak_rt_min=peak_observation.rt_left_min,
+        peak_rt_max=peak_observation.rt_right_min,
         precursor_mz=precursor.reference_mz,
         peak_mz=peak_observation.mz,
         precursor_delta_da=precursor.reference_mz - peak_observation.mz,

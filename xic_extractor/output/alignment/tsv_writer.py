@@ -505,9 +505,9 @@ def _member_mean_rt(peaks: tuple[PeakObservation, ...]) -> float:
     """The written RT of a group: the mean apex of its member peaks."""
 
     for peak in peaks:
-        if not math.isfinite(peak.integration.rt_apex_min):
+        if not math.isfinite(peak.rt_apex_min):
             raise ValueError("Matrix row lacks finite owner-backed RT observations")
-    return sum(float(peak.integration.rt_apex_min) for peak in peaks) / len(peaks)
+    return sum(float(peak.rt_apex_min) for peak in peaks) / len(peaks)
 
 
 def _cell_context_facts(

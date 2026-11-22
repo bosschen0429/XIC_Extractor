@@ -106,7 +106,7 @@ class KnownIstdReference:
 
     def _corrected_rt_min(self, owner: SampleLocalMS1Owner) -> float | None:
         return interpolate_calibrated_rt_min(
-            owner.peak.integration.rt_apex_min,
+            owner.peak.rt_apex_min,
             self._knots_by_sample.get(owner.sample_stem, ()),
         )
 
@@ -136,9 +136,7 @@ class KnownIstdReference:
             matches = tuple(
                 owner
                 for owner in owners_by_sample.get(sample, ())
-                if owner.peak.integration.rt_left_min
-                <= rt
-                <= owner.peak.integration.rt_right_min
+                if owner.peak.rt_left_min <= rt <= owner.peak.rt_right_min
                 and owner.primary_identity_event is not None
                 and target.neutral_loss_da is not None
                 and target.nl_ppm_max is not None
@@ -198,11 +196,7 @@ class KnownIstdOwnerLookup:
         if a is None or b is None or a[0] != b[0]:
             return None
         return (
-            abs(
-                (left.peak.integration.rt_apex_min - a[1])
-                - (right.peak.integration.rt_apex_min - b[1])
-            )
-            * 60.0
+            abs((left.peak.rt_apex_min - a[1]) - (right.peak.rt_apex_min - b[1])) * 60.0
         )
 
     def has_direct_reference_pair(

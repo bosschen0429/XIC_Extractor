@@ -6,7 +6,6 @@ import numpy as np
 
 from xic_extractor.acquisition_contract import AcquiredTrace
 from xic_extractor.mass_accuracy import mz_window, weighted_ion_mz
-from xic_extractor.peak_detection.physical_peak_models import PhysicalPeakEvaluation
 
 MS1Centroid = Callable[[float, float, float], tuple[float, float] | None]
 """(apex RT, m/z min, m/z max) -> (m/z, intensity) of the most intense MS1
@@ -18,7 +17,7 @@ _APEX_ION_SCAN_RADIUS = 1
 
 def read_peak_apex_ion(
     acquired: AcquiredTrace,
-    evaluation: PhysicalPeakEvaluation,
+    apex_rt_min: float | None,
     *,
     ms1_centroid: MS1Centroid,
 ) -> tuple[float | None, list[tuple[float, float]]]:
@@ -29,14 +28,13 @@ def read_peak_apex_ion(
     Readings spread wider than a few ppm come from two ions and report none.
     """
     request = acquired.coordinate.request
-    selected = evaluation.answer.selected_segment
-    if evaluation.state != "available" or selected is None:
+    if apex_rt_min is None:
         return None, []
     rt = acquired.trace.rt
     intensity = acquired.trace.intensity
     if len(rt) == 0:
         return None, []
-    apex = int(np.argmin(np.abs(rt - selected.apex_rt_min)))
+    apex = int(np.argmin(np.abs(rt - apex_rt_min)))
     low, high = mz_window(request.mz, request.ppm_tol)
     readings = []
     ion_reads = []
