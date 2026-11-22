@@ -39,6 +39,9 @@ XIC Inspector is the human-facing chromatogram viewer. A new review need adds
 Inspector rendering over existing evidence, or a producer that writes curves,
 peak bounds, and quality flags for Inspector to read offline; it does not add a
 Matplotlib or other static-image review script under `tools/diagnostics/`.
+User-guide mechanism figures are not review views: their generator sits in
+`tools/` and its redraw rule in
+[`docs/user/assets/README.md`](../user/assets/README.md).
 Inspector does not read RAW; RAW acquisition stays with the producing
 diagnostic.
 

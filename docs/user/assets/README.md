@@ -13,6 +13,22 @@ Files used by the [user guides](../README.md) and the developer maps.
   names the label and the legend. A label added to
   `xic_extractor/output/result_labels.py` needs a row and a figure there
   (`tests/test_result_labels.py`).
+- `rt-drift/` holds the figures of the [RT 漂移模型](../rt-drift.md) page.
+  `anchor-selection.svg`, `coefficient-choice.svg` and `shape-borrowing.svg`
+  are hand-edited schematics.
+  The other four are drawn from one Alignment run's grouping snapshot (an
+  Alignment run with `--save-grouping-inputs`) by
+  `tools/rt_drift_guide_figures.py`; the page names that run's injection
+  count. Redraw them when `docs/product/rt-calibration.md#drift-beyond-the-map`
+  changes, then update the numbers the page quotes from them:
+
+  ```powershell
+  .venv\Scripts\python.exe -m tools.rt_drift_guide_figures output/<run>/grouping-inputs.json.gz
+  ```
+
+  To show the same figures for another single-batch run, pass its snapshot
+  and `--output-dir`; `--mz` picks the drift anchor to decompose (only drift
+  anchors can be decomposed).
 
 The SVG maps below are implementation responsibility maps linked from the
 [developer reading path](../../development/README.md). They are not embedded

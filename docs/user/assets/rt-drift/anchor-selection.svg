@@ -1,0 +1,112 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 420" width="900" height="420" font-family="'Microsoft JhengHei','Noto Sans TC',sans-serif">
+<rect x="0.5" y="0.5" width="899" height="419" rx="8" fill="#fbfaf7" stroke="#d9d4c7"/>
+<text x="16" y="102" font-size="12" fill="#374151">一般校正後的</text>
+<text x="16" y="118" font-size="12" fill="#374151">RT 偏移</text>
+<text x="16" y="136" font-size="11" fill="#6b7280">（橫軸：進樣順序；</text>
+<text x="16" y="151" font-size="11" fill="#6b7280">灰帶：±12 秒）</text>
+<path d="M12,206 H888" stroke="#e5e1d8"/>
+<text x="16" y="230" font-size="12.5" font-weight="700" fill="#374151">① 漂得夠多？</text>
+<text x="16" y="247" font-size="11" fill="#6b7280">散布 ≥ 12 秒</text>
+<path d="M12,266 H888" stroke="#e5e1d8"/>
+<text x="16" y="290" font-size="12.5" font-weight="700" fill="#374151">② 有別的化合物</text>
+<text x="16" y="307" font-size="11" fill="#6b7280">跟著一樣漂？</text>
+<path d="M12,326 H888" stroke="#e5e1d8"/>
+<text x="16" y="350" font-size="12.5" font-weight="700" fill="#374151">結果</text>
+<text x="223.0" y="30" font-size="14" font-weight="700" fill="#374151" text-anchor="middle">通道 X</text>
+<text x="223.0" y="48" font-size="10.5" fill="#6b7280" text-anchor="middle">11.6 min</text>
+<rect x="160" y="99.4" width="126" height="35.2" fill="#9ca3af" fill-opacity="0.22"/>
+<rect x="160" y="62" width="126" height="110" fill="none" stroke="#e5e1d8"/>
+<circle cx="166.0" cy="158.2" r="3" fill="#2563a8"/>
+<circle cx="176.4" cy="147.8" r="3" fill="#2563a8"/>
+<circle cx="186.7" cy="148.9" r="3" fill="#2563a8"/>
+<circle cx="197.1" cy="141.8" r="3" fill="#2563a8"/>
+<circle cx="207.5" cy="132.9" r="3" fill="#2563a8"/>
+<circle cx="217.8" cy="125.2" r="3" fill="#2563a8"/>
+<circle cx="228.2" cy="119.2" r="3" fill="#2563a8"/>
+<circle cx="238.5" cy="112.6" r="3" fill="#2563a8"/>
+<circle cx="248.9" cy="105.5" r="3" fill="#2563a8"/>
+<circle cx="259.3" cy="97.2" r="3" fill="#2563a8"/>
+<circle cx="269.6" cy="89.5" r="3" fill="#2563a8"/>
+<circle cx="280.0" cy="83.5" r="3" fill="#2563a8"/>
+<text x="223.0" y="234" font-size="14" font-weight="700" fill="#15803d" text-anchor="middle">✓</text>
+<text x="223.0" y="294" font-size="11.5" fill="#15803d" text-anchor="middle">✓ 與 Y 同步</text>
+<text x="223.0" y="354" font-size="13" font-weight="700" fill="#15803d" text-anchor="middle">漂移錨點</text>
+<text x="369.0" y="30" font-size="14" font-weight="700" fill="#374151" text-anchor="middle">通道 Z</text>
+<text x="369.0" y="48" font-size="10.5" fill="#6b7280" text-anchor="middle">11.6 min，X 的同位素</text>
+<rect x="306" y="99.4" width="126" height="35.2" fill="#9ca3af" fill-opacity="0.22"/>
+<rect x="306" y="62" width="126" height="110" fill="none" stroke="#e5e1d8"/>
+<circle cx="312.0" cy="160.1" r="3" fill="#2563a8"/>
+<circle cx="322.4" cy="150.4" r="3" fill="#2563a8"/>
+<circle cx="332.7" cy="150.9" r="3" fill="#2563a8"/>
+<circle cx="343.1" cy="143.4" r="3" fill="#2563a8"/>
+<circle cx="353.5" cy="135.5" r="3" fill="#2563a8"/>
+<circle cx="363.8" cy="127.3" r="3" fill="#2563a8"/>
+<circle cx="374.2" cy="121.6" r="3" fill="#2563a8"/>
+<circle cx="384.5" cy="114.4" r="3" fill="#2563a8"/>
+<circle cx="394.9" cy="107.8" r="3" fill="#2563a8"/>
+<circle cx="405.3" cy="99.2" r="3" fill="#2563a8"/>
+<circle cx="415.6" cy="92.1" r="3" fill="#2563a8"/>
+<circle cx="426.0" cy="85.3" r="3" fill="#2563a8"/>
+<text x="369.0" y="234" font-size="14" font-weight="700" fill="#15803d" text-anchor="middle">✓</text>
+<text x="369.0" y="294" font-size="11.5" fill="#15803d" text-anchor="middle">✓ 與 Y 同步</text>
+<text x="369.0" y="354" font-size="13" font-weight="700" fill="#15803d" text-anchor="middle">漂移錨點</text>
+<text x="515.0" y="30" font-size="14" font-weight="700" fill="#374151" text-anchor="middle">通道 Y</text>
+<text x="515.0" y="48" font-size="10.5" fill="#6b7280" text-anchor="middle">13.4 min，另一個化合物</text>
+<rect x="452" y="99.4" width="126" height="35.2" fill="#9ca3af" fill-opacity="0.22"/>
+<rect x="452" y="62" width="126" height="110" fill="none" stroke="#e5e1d8"/>
+<circle cx="458.0" cy="154.6" r="3" fill="#2563a8"/>
+<circle cx="468.4" cy="152.6" r="3" fill="#2563a8"/>
+<circle cx="478.7" cy="146.5" r="3" fill="#2563a8"/>
+<circle cx="489.1" cy="135.7" r="3" fill="#2563a8"/>
+<circle cx="499.5" cy="136.6" r="3" fill="#2563a8"/>
+<circle cx="509.8" cy="124.0" r="3" fill="#2563a8"/>
+<circle cx="520.2" cy="121.6" r="3" fill="#2563a8"/>
+<circle cx="530.5" cy="107.8" r="3" fill="#2563a8"/>
+<circle cx="540.9" cy="106.7" r="3" fill="#2563a8"/>
+<circle cx="551.3" cy="94.8" r="3" fill="#2563a8"/>
+<circle cx="561.6" cy="94.3" r="3" fill="#2563a8"/>
+<circle cx="572.0" cy="79.8" r="3" fill="#2563a8"/>
+<text x="515.0" y="234" font-size="14" font-weight="700" fill="#15803d" text-anchor="middle">✓</text>
+<text x="515.0" y="294" font-size="11.5" fill="#15803d" text-anchor="middle">✓ 與 X、Z 同步</text>
+<text x="515.0" y="354" font-size="13" font-weight="700" fill="#15803d" text-anchor="middle">漂移錨點</text>
+<text x="661.0" y="30" font-size="14" font-weight="700" fill="#374151" text-anchor="middle">通道 V</text>
+<text x="661.0" y="48" font-size="10.5" fill="#6b7280" text-anchor="middle">17.0 min</text>
+<rect x="598" y="99.4" width="126" height="35.2" fill="#9ca3af" fill-opacity="0.22"/>
+<rect x="598" y="62" width="126" height="110" fill="none" stroke="#e5e1d8"/>
+<circle cx="604.0" cy="95.0" r="3" fill="#2563a8"/>
+<circle cx="614.4" cy="147.8" r="3" fill="#2563a8"/>
+<circle cx="624.7" cy="111.5" r="3" fill="#2563a8"/>
+<circle cx="635.1" cy="84.0" r="3" fill="#2563a8"/>
+<circle cx="645.5" cy="139.0" r="3" fill="#2563a8"/>
+<circle cx="655.8" cy="155.5" r="3" fill="#2563a8"/>
+<circle cx="666.2" cy="100.5" r="3" fill="#2563a8"/>
+<circle cx="676.5" cy="130.2" r="3" fill="#2563a8"/>
+<circle cx="686.9" cy="78.5" r="3" fill="#2563a8"/>
+<circle cx="697.3" cy="122.5" r="3" fill="#2563a8"/>
+<circle cx="707.6" cy="150.0" r="3" fill="#2563a8"/>
+<circle cx="718.0" cy="106.0" r="3" fill="#2563a8"/>
+<text x="661.0" y="234" font-size="14" font-weight="700" fill="#15803d" text-anchor="middle">✓</text>
+<text x="661.0" y="294" font-size="11.5" fill="#b91c1c" text-anchor="middle">✗ 沒有誰跟它同步</text>
+<text x="661.0" y="354" font-size="13" font-weight="700" fill="#b91c1c" text-anchor="middle">不是</text>
+<text x="807.0" y="30" font-size="14" font-weight="700" fill="#374151" text-anchor="middle">通道 W</text>
+<text x="807.0" y="48" font-size="10.5" fill="#6b7280" text-anchor="middle">20.1 min</text>
+<rect x="744" y="99.4" width="126" height="35.2" fill="#9ca3af" fill-opacity="0.22"/>
+<rect x="744" y="62" width="126" height="110" fill="none" stroke="#e5e1d8"/>
+<circle cx="750.0" cy="120.3" r="3" fill="#9ca3af"/>
+<circle cx="760.4" cy="112.6" r="3" fill="#9ca3af"/>
+<circle cx="770.7" cy="119.2" r="3" fill="#9ca3af"/>
+<circle cx="781.1" cy="122.5" r="3" fill="#9ca3af"/>
+<circle cx="791.5" cy="113.7" r="3" fill="#9ca3af"/>
+<circle cx="801.8" cy="118.1" r="3" fill="#9ca3af"/>
+<circle cx="812.2" cy="114.8" r="3" fill="#9ca3af"/>
+<circle cx="822.5" cy="121.4" r="3" fill="#9ca3af"/>
+<circle cx="832.9" cy="115.9" r="3" fill="#9ca3af"/>
+<circle cx="843.3" cy="119.2" r="3" fill="#9ca3af"/>
+<circle cx="853.6" cy="112.6" r="3" fill="#9ca3af"/>
+<circle cx="864.0" cy="120.3" r="3" fill="#9ca3af"/>
+<text x="807.0" y="234" font-size="14" font-weight="700" fill="#b91c1c" text-anchor="middle">✗</text>
+<text x="807.0" y="294" font-size="11.5" fill="#6b7280" text-anchor="middle">—</text>
+<text x="807.0" y="354" font-size="13" font-weight="700" fill="#b91c1c" text-anchor="middle">不是</text>
+<text x="16" y="390" font-size="11.5" fill="#374151">X 與 Z 峰頂幾乎同時（相差 ≤ 0.05 min），是同一家族，本來就會一起動，所以彼此不算佐證；</text>
+<text x="16" y="407" font-size="11.5" fill="#374151">它們能當漂移錨點，是因為另一個家族的 Y 也一樣漂。算 M 時，同一家族也只算一票。</text>
+</svg>
