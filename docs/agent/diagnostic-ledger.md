@@ -93,43 +93,6 @@ the adjacent collection logs. Recheck parity and cost when
 marker discovery, collection, sharding or CI scheduling changes. Keep local
 collection timings separate from runner startup, browser execution and billing.
 
-## Stored Review Evidence
-
-### Lossless storage and indexed curve reads
-
-`diagnostic_only`, `exact_safe` (#1120, 2026-11-12); compared with
-`e00c8d17`. Re-encoding the same completed 45-sample CSMU evidence reduced
-SQLite from 529,510,400 to 230,318,080 bytes (56.5%); the 8RAW file went from
-15,376,384 to 11,022,336 bytes (28.3%). This was persisted-data replay, not a
-new Discovery/Alignment run. A real 8RAW Alignment run with the final writer
-wrote 11,223,040 bytes; its Matrix and Review were byte-identical to `bae07217`,
-and all 3,243 saved curves and recomputed processed signals matched full audit.
-
-The largest waste was repeated membership comparison context, not the curves:
-member and cell risk BLOBs occupied 224.6 MB before layout overhead. Store
-recorded OwnerFacts and ordered peer groups once, preserving every alternative,
-score and reason. Rowid layouts avoid the large overflow/slack cost of wide
-WITHOUT ROWID records. Byte-shuffled float64 curves keep the original bits.
-Every decoded evidence-table row and all 61,058 curves across the two datasets
-matched; Matrix, Review and run metadata were unchanged.
-
-Seven interleaved warm reader measurements on CSMU gave medians of
-16.35 to 6.60 ms for F000016's 45 curves, and 1,456.62 to 6.14 ms for
-`QC_sample_8@mz778.579751_rt48.8223`. The latter used to scan all saved curves;
-sample/apex lookup now uses a partial index. These are reader timings, not
-whole-analysis speedups. Actual Workbench click-to-paint was 223–284 ms for
-8RAW F000051 (7 curves) and 570–595 ms for CSMU F000016 (45 curves), without
-RAW/DLL inputs.
-
-The owner accepted that new files require the updated reader. There is no
-migration command, automatic rewrite or compatibility reader: results without
-the curve and membership tables are rejected with a request to rerun Alignment.
-
-Rerun when curve precision, membership evidence, lookup keys, serialization or
-the interactive delivery path changes. Evidence is under
-`output/curve-optimization/` in the task worktree: `accepted/*/parity.json`,
-`accepted-reader-benchmark.json`, and `browser-*.json`.
-
 ## Untargeted Method Evidence
 
 ### Bootstrap, RT, height and shape substitutions are not adopted
@@ -292,16 +255,6 @@ The 2% baseline-return rule does not materially truncate these peaks; compare
 boundaries by containment and area retention, not coordinate equality.
 
 Rerun when boundary selection, the baseline-return rule or the area integrator
-changes.
-
-### Targeted NL support stays inside its Gaussian15 peak group
-
-`production_ready` (2026-06-05). A selected chromatographic segment may not
-borrow strict NL support from another Gaussian15 MS1 peak group; outside-group
-NL is context only. Gates: 8RAW promoted 80 selected rows, 85RAW 811, both with
-zero borrowed-support rows.
-
-Rerun when NL evidence ownership, segment selection or candidate projection
 changes.
 
 ### Standard mixture manual 2RAW: identity check, not an area reference
