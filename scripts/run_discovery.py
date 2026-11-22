@@ -128,6 +128,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     except (OSError, TypeError, ValueError) as exc:
         print(_bounded_run_spec_error(exc), file=sys.stderr)
         return 2
+    if timing_recorder is not None:
+        timing_recorder.start_process_memory()
     try:
         if raw_path is not None:
             single_outputs = run_discovery(
@@ -150,6 +152,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     except (RawReaderError, DiscoveryProcessExecutionError) as exc:
         print(str(exc), file=sys.stderr)
         return 2
+    finally:
+        if timing_recorder is not None:
+            timing_recorder.stop_process_memory(scope="foreground")
 
     if timing_recorder is not None:
         timing_path = args.timing_output.resolve()

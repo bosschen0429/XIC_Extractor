@@ -10,6 +10,11 @@ from xic_extractor.discovery.blank_qualification import (
     get_default_background_library_path,
 )
 from xic_extractor.discovery.models import DiscoveryBatchOutputs, DiscoveryRunOutputs
+from xic_extractor.execution.process_memory import (
+    ProcessMemorySample,
+    ProcessTreeMemorySampler,
+)
+from xic_extractor.execution.timing import TimingRecorder
 from xic_extractor.raw_reader_errors import RawReaderError
 
 
@@ -257,6 +262,10 @@ def test_run_discovery_cli_writes_live_and_final_timing_json_for_batch(
     timing_path = tmp_path / "diagnostics" / "discovery_timing.json"
     from xic_extractor.discovery import processing_run_spec_adapter as adapter
 
+    sampler = ProcessTreeMemorySampler(
+        sample_reader=lambda: ProcessMemorySample(123_456, 65_432, "measured"),
+    )
+
     fingerprinted_paths: list[Path] = []
     owner = adapter.build_local_acquisition_source_identity
 
@@ -295,6 +304,13 @@ def test_run_discovery_cli_writes_live_and_final_timing_json_for_batch(
         return DiscoveryBatchOutputs(batch_index_csv=output_path, per_sample=())
 
     monkeypatch.setattr(run_discovery, "run_discovery_batch", _fake_run_discovery_batch)
+    monkeypatch.setattr(
+        run_discovery,
+        "TimingRecorder",
+        lambda *args, **kwargs: TimingRecorder(
+            *args, **kwargs, process_memory_sampler=sampler
+        ),
+    )
 
     code = run_discovery.main(
         [
@@ -318,6 +334,14 @@ def test_run_discovery_cli_writes_live_and_final_timing_json_for_batch(
     ]
     assert payload["records"][0]["metrics"] == {"raw_count": 1}
     assert payload["records"][1]["metrics"] == {"raw_count": 1, "row_count": 1}
+    assert {
+        (row["metric"], row["availability"]): row["value"]
+        for row in payload["measurement_observations"]
+        if row["scope"] == "foreground"
+    } == {
+        ("process_tree_sampled_peak_rss_bytes", "measured"): 123_456,
+        ("process_tree_sampled_peak_private_bytes", "measured"): 65_432,
+    }
     assert fingerprinted_paths == [raw_path.resolve()]
     assert "Timing JSON:" in capsys.readouterr().out
 
