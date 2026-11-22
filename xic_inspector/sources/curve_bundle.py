@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from xic_extractor.alignment_explanation.errors import ExplanationError
+from xic_extractor.alignment_explanation.reader import SameMzPeak
 from xic_inspector.selection.canonical import (
     CanonicalItem,
     Witness,
@@ -27,7 +28,7 @@ from xic_inspector.sources.rt_replay import align_curve, read_calibration
 BUNDLE_SCHEMA_VERSION = "xic_curve_bundle"
 MAX_BUNDLE_SIZE_BYTES = 50 * 1024 * 1024
 SAME_MZ_ROLE = "同 m/z 全段曲線"
-FAR_FROM_NEIGHBOURS_MIN = 3.0
+FAR_FROM_NEIGHBOURS_MIN = 3.5
 NEIGHBOUR_COUNT = 8
 EXPANDED_FAR_COUNT = 5
 
@@ -88,16 +89,6 @@ class CurveBundleTrace:
     quality_flags: dict[str, Any] = field(default_factory=dict)
     positive_signal: ChromatogramCurve | None = None
     integration: CurveIntegration | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class SameMzPeak:
-    """The apex of one Matrix value of a row sharing the transition's m/z."""
-
-    sample_id: str
-    sample_label: str
-    feature_id: str
-    apex_rt_min: float
 
 
 @dataclass(frozen=True, slots=True)
@@ -262,12 +253,12 @@ def _same_mz_peaks(value: object, where: str) -> tuple[SameMzPeak, ...]:
     for index, entry in enumerate(value):
         loc = f"{where}[{index}]"
         obj = _mapping(
-            entry, loc, {"sample_id", "sample_label", "feature_id", "apex_rt_min"}
+            entry, loc, {"sample_key", "sample_stem", "feature_id", "apex_rt_min"}
         )
         peaks.append(
             SameMzPeak(
-                _text(obj["sample_id"], f"{loc}.sample_id"),
-                _text(obj["sample_label"], f"{loc}.sample_label"),
+                _text(obj["sample_key"], f"{loc}.sample_key"),
+                _text(obj["sample_stem"], f"{loc}.sample_stem"),
                 _text(obj["feature_id"], f"{loc}.feature_id"),
                 _number(obj["apex_rt_min"], f"{loc}.apex_rt_min"),
             )
@@ -862,7 +853,8 @@ class CurveBundleSource:
         from the median apex of this row's ``NEIGHBOUR_COUNT`` nearest injections,
         on the run's calibrated time: a row whose apex drifts with injection
         order stays close to its neighbours. The rule only chooses which samples
-        open first; it decides nothing.
+        open first; it decides nothing. The typical sample shown beside them is
+        the one whose apex lies nearest this row's median.
         """
         if not transition.same_mz_peaks:
             return None
@@ -871,12 +863,12 @@ class CurveBundleSource:
             {
                 **asdict(peak),
                 "aligned_apex_rt_min": self._aligned(peak),
-                "injection_order": order.get(peak.sample_label),
+                "injection_order": order.get(peak.sample_stem),
             }
             for peak in transition.same_mz_peaks
         ]
         own = sorted(
-            (p["injection_order"], p["aligned_apex_rt_min"], p["sample_id"])
+            (p["injection_order"], p["aligned_apex_rt_min"], p["sample_key"])
             for p in points
             if p["feature_id"] == transition.key and p["injection_order"] is not None
         )
@@ -897,13 +889,19 @@ class CurveBundleSource:
         )
         rows_by_sample: dict[str, set[str]] = {}
         for point in points:
-            rows_by_sample.setdefault(point["sample_id"], set()).add(
+            rows_by_sample.setdefault(point["sample_key"], set()).add(
                 point["feature_id"]
             )
         far_ids = {entry["sample_id"] for entry in far}
+        apexes = {sid: apex for _, apex, sid in own}
+        center = statistics.median(apexes.values()) if apexes else 0.0
         typical = min(
             (sid for sid in deviations if sid not in far_ids),
-            key=lambda sid: (-len(rows_by_sample[sid]), abs(deviations[sid]), sid),
+            key=lambda sid: (
+                abs(apexes[sid] - center),
+                -len(rows_by_sample[sid]),
+                sid,
+            ),
             default=None,
         )
         curves = {}
@@ -930,7 +928,7 @@ class CurveBundleSource:
 
     def _aligned(self, peak: SameMzPeak) -> float:
         sample = (
-            self.rt_calibration.samples.get(peak.sample_label)
+            self.rt_calibration.samples.get(peak.sample_stem)
             if self.rt_calibration is not None
             else None
         )

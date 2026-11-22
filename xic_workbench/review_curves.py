@@ -40,7 +40,6 @@ from xic_inspector.sources.curve_bundle import (
     CurveBundle,
     CurveBundleTrace,
     CurveIntegration,
-    SameMzPeak,
     SampleQuantification,
     TransitionCurves,
 )
@@ -306,15 +305,7 @@ def _curve_bundle(
                 else {},
                 traces=tuple(sorted(traces, key=lambda trace: trace.trace_id)),
                 quantifications=quantities,
-                same_mz_peaks=tuple(
-                    SameMzPeak(
-                        peak.sample_key,
-                        peak.sample_stem,
-                        peak.feature_id,
-                        peak.apex_rt_min,
-                    )
-                    for peak in curves.same_mz_peaks
-                ),
+                same_mz_peaks=curves.same_mz_peaks,
             ),
         ),
         sample_rt_calibration=curves.sample_rt_calibration,

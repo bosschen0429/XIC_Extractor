@@ -558,11 +558,8 @@ def test_generic_bundle_without_alignment_context_remains_readable(tmp_path):
 
 def test_far_samples_leave_a_rows_drift_and_stay_out_of_its_curves(tmp_path):
     """A row drifting 8 min over the run circles only the sample that jumped."""
-    from xic_inspector.sources.curve_bundle import (
-        SAME_MZ_ROLE,
-        CurveBundleSource,
-        SameMzPeak,
-    )
+    from xic_extractor.alignment_explanation.reader import SameMzPeak
+    from xic_inspector.sources.curve_bundle import SAME_MZ_ROLE, CurveBundleSource
 
     base = _fixture_bundle()
     reviewed = replace(base.transitions[0].traces[0], sample_id="s1", role="saved")

@@ -1151,9 +1151,9 @@
   function sameMzSamples(item){
     const m=item.same_mz;if(!sameMzOpen.has(item.id))sameMzOpen.set(item.id,[...m.expanded]);return sameMzOpen.get(item.id);
   }
-  function sameMzLabel(m,sid){return sampleById.has(sid)?sampleName(sid):(m.points.find(p=>p.sample_id===sid)?.sample_label||sid);}
+  function sameMzLabel(m,sid){return sampleById.has(sid)?sampleName(sid):(m.points.find(p=>p.sample_key===sid)?.sample_stem||sid);}
   function sameMzOverview(item){
-    const m=item.same_mz,open=new Set(sameMzSamples(item)),far=new Set(m.far.map(f=>f.sample_id));
+    const m=item.same_mz,clickable=Object.keys(m.curves).length>0,open=new Set(sameMzSamples(item)),far=new Set(m.far.map(f=>f.sample_id));
     const pts=m.points.filter(p=>finite(p.injection_order)&&finite(p.aligned_apex_rt_min));
     if(!pts.length)return '<p class="plot-limit">沒有注射順序，無法畫總覽。</p>';
     const W=760,H=280,L=56,T=14,IW=W-76,IH=H-58;
@@ -1166,15 +1166,14 @@
     svg+=`<path d="M${L},${T}V${T+IH}H${L+IW}" class="plot-axis"/>`;
     const own=p=>p.feature_id===m.row;
     [...pts.filter(p=>!own(p)),...pts.filter(own)].forEach(p=>{
-      const cx=x(p.injection_order),cy=y(p.aligned_apex_rt_min),name=esc(sameMzLabel(m,p.sample_id));
-      const ring=own(p)&&far.has(p.sample_id)?`<circle cx="${cx}" cy="${cy}" r="7" fill="none" stroke="var(--warn)" stroke-width="${open.has(p.sample_id)?2.4:1.4}"/>`:'';
-      svg+=`<g data-same-mz-sample="${esc(p.sample_id)}" data-same-mz-row="${esc(p.feature_id)}" data-same-mz-far="${own(p)&&far.has(p.sample_id)}" style="cursor:pointer">${ring}<circle cx="${cx}" cy="${cy}" r="${own(p)?3.6:3}" fill="${own(p)?'var(--accent)':'none'}" stroke="${own(p)?'var(--accent)':'var(--subtle)'}" stroke-width="1.2"/><circle cx="${cx}" cy="${cy}" r="8" fill="transparent"/><title>${name} · ${esc(p.feature_id)} · 順序 ${p.injection_order} · 校正峰頂 ${rt(p.aligned_apex_rt_min)} min${open.has(p.sample_id)?' · 點選收起 XIC':' · 點選展開 XIC'}</title></g>`;
+      const cx=x(p.injection_order),cy=y(p.aligned_apex_rt_min),name=esc(sameMzLabel(m,p.sample_key));
+      const ring=own(p)&&far.has(p.sample_key)?`<circle cx="${cx}" cy="${cy}" r="7" fill="none" stroke="var(--warn)" stroke-width="${open.has(p.sample_key)?2.4:1.4}"/>`:'';
+      svg+=`<g ${clickable?`data-same-mz-sample="${esc(p.sample_key)}" style="cursor:pointer"`:''} data-same-mz-row="${esc(p.feature_id)}" data-same-mz-far="${own(p)&&far.has(p.sample_key)}">${ring}<circle cx="${cx}" cy="${cy}" r="${own(p)?3.6:3}" fill="${own(p)?'var(--accent)':'none'}" stroke="${own(p)?'var(--accent)':'var(--subtle)'}" stroke-width="1.2"/><circle cx="${cx}" cy="${cy}" r="8" fill="transparent"/><title>${name} · ${esc(p.feature_id)} · 順序 ${p.injection_order} · 校正峰頂 ${rt(p.aligned_apex_rt_min)} min${!clickable?'':open.has(p.sample_key)?' · 點選收起 XIC':' · 點選展開 XIC'}</title></g>`;
     });
     return `<svg role="img" aria-label="注射順序對校正峰頂 RT" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">${svg}<text x="${L+IW/2}" y="${H-6}" text-anchor="middle" font-size="12" class="plot-label">注射順序</text><text transform="translate(14 ${T+IH/2}) rotate(-90)" text-anchor="middle" font-size="12" class="plot-label">校正峰頂 RT（min）</text></svg>`;
   }
   function sameMzXic(item,sid,lo,hi){
     const m=item.same_mz,c=m.curves[sid];
-    if(!Object.keys(m.curves).length)return '';
     if(!c)return '<p class="plot-limit">這一針沒有可用訊號。</p>';
     const ys=display.signal==='raw'?c.raw:c.smoothed,W=760,H=190,L=56,T=46,IW=W-76,IH=H-86;
     let top=0;c.rts.forEach((v,i)=>{if(v>=lo&&v<=hi&&finite(ys[i]))top=Math.max(top,ys[i]);});if(top<=0)top=1;
@@ -1184,7 +1183,7 @@
     const points=c.rts.map((v,i)=>v>=lo&&v<=hi&&finite(ys[i])?`${x(v).toFixed(1)},${y(ys[i]).toFixed(1)}`:'').filter(Boolean).join(' ');
     svg+=`<polyline fill="none" stroke="var(--ink)" stroke-width="1.3" opacity=".8" points="${points}"/>`;
     const lanes=[];
-    m.points.filter(p=>p.sample_id===sid).sort((a,b)=>a.apex_rt_min-b.apex_rt_min).forEach(p=>{
+    m.points.filter(p=>p.sample_key===sid).sort((a,b)=>a.apex_rt_min-b.apex_rt_min).forEach(p=>{
       const own=p.feature_id===m.row,stroke=own?'var(--accent)':'var(--subtle)',px=x(p.apex_rt_min);
       let lane=lanes.findIndex(end=>px-end>64);if(lane<0||lane>2)lane=Math.min(lanes.length,2);lanes[lane]=px;
       svg+=`<g data-same-mz-peak="${esc(p.feature_id)}"><line x1="${px}" x2="${px}" y1="${T-4-lane*12}" y2="${T+IH}" stroke="${stroke}" stroke-width="${own?2:1}" stroke-dasharray="${own?'':'3 3'}"/><text x="${px}" y="${T-7-lane*12}" text-anchor="middle" font-size="12" fill="${stroke}" font-weight="${own?600:400}">${esc(p.feature_id)}</text><title>${esc(p.feature_id)} 峰頂 ${rt(p.apex_rt_min)} min</title></g>`;
@@ -1192,15 +1191,15 @@
     return `<svg role="img" aria-label="${esc(sameMzLabel(m,sid))} 同 m/z 全段 XIC" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">${svg}<text x="${L+IW/2}" y="${H-4}" text-anchor="middle" font-size="12" class="plot-label">原始 RT（min）</text></svg>`;
   }
   function sameMzInner(item){
-    const m=item.same_mz,open=sameMzSamples(item),dev=new Map(m.far.map(f=>[f.sample_id,f.deviation_min])),order=new Map(m.points.map(p=>[p.sample_id,p.injection_order]));
+    const m=item.same_mz,withCurves=Object.keys(m.curves).length>0,open=withCurves?sameMzSamples(item):m.far.map(f=>f.sample_id),dev=new Map(m.far.map(f=>[f.sample_id,f.deviation_min])),order=new Map(m.points.map(p=>[p.sample_key,p.injection_order]));
     const others=m.rows.filter(r=>r!==m.row);
     const rts=Object.values(m.curves).flatMap(c=>[c.rts[0],c.rts[c.rts.length-1]]).filter(finite),apexes=m.points.map(p=>p.apex_rt_min);
     const lo=rts.length?Math.min(...rts):Math.min(...apexes)-.5,hi=rts.length?Math.max(...rts):Math.max(...apexes)+.5;
     const panels=open.map(sid=>{
-      const own=m.points.find(p=>p.sample_id===sid&&p.feature_id===m.row),note=dev.has(sid)?`離前後針 ${dev.get(sid)>0?'+':'−'}${fixed(Math.abs(dev.get(sid)),1)} min`:sid===m.typical_sample_id?'典型':'';
-      return `<div class="same-mz-panel" data-same-mz-panel="${esc(sid)}"><div class="same-mz-panel-head"><strong>${esc(sameMzLabel(m,sid))}</strong><span>${finite(order.get(sid))?`順序 ${order.get(sid)}`:''}${own?` · ${esc(m.row)} 在 ${rt(own.apex_rt_min)} min`:` · 這一針沒有 ${esc(m.row)}`}${note?` · ${note}`:''}</span><button type="button" class="text-action" data-same-mz-sample="${esc(sid)}" aria-label="收起 ${esc(sameMzLabel(m,sid))}">收起</button></div>${sameMzXic(item,sid,lo,hi)}</div>`;
+      const own=m.points.find(p=>p.sample_key===sid&&p.feature_id===m.row),note=dev.has(sid)?`離前後針 ${dev.get(sid)>0?'+':'−'}${fixed(Math.abs(dev.get(sid)),1)} min`:sid===m.typical_sample_id?'典型':'';
+      return `<div class="same-mz-panel" data-same-mz-panel="${esc(sid)}"><div class="same-mz-panel-head"><strong>${esc(sameMzLabel(m,sid))}</strong><span>${finite(order.get(sid))?`順序 ${order.get(sid)}`:''}${own?` · ${esc(m.row)} 在 ${rt(own.apex_rt_min)} min`:` · 這一針沒有 ${esc(m.row)}`}${note?` · ${note}`:''}</span>${withCurves?`<button type="button" class="text-action" data-same-mz-sample="${esc(sid)}" aria-label="收起 ${esc(sameMzLabel(m,sid))}">收起</button>`:''}</div>${withCurves?sameMzXic(item,sid,lo,hi):''}</div>`;
     }).join('');
-    return `<h3>同 m/z 的 ${m.rows.length} 列：${m.far.length} 針的峰離前後針超過 ${fixed(m.threshold_min,0)} 分鐘</h3><div class="same-mz-legend"><span><i class="same-mz-dot own"></i>${esc(m.row)}</span>${others.length?`<span><i class="same-mz-dot"></i>其他列 ${others.map(esc).join('、')}</span>`:''}<span><i class="same-mz-dot far"></i>圈出</span><span class="plot-limit">點一下點，展開或收起那一針的 XIC</span></div><div class="svg-container">${sameMzOverview(item)}</div>${Object.keys(m.curves).length?'':'<p class="plot-limit">全段 XIC 需以 explain_cid_nl_run --group-id 加 --raw-dir 產生曲線檔。</p>'}${panels||'<p class="plot-limit">沒有展開的針。</p>'}`;
+    return `<h3>同 m/z 的 ${m.rows.length} 列：${m.far.length} 針的峰離前後針超過 ${num(m.threshold_min)} 分鐘</h3><div class="same-mz-legend"><span><i class="same-mz-dot own"></i>${esc(m.row)}</span>${others.length?`<span><i class="same-mz-dot"></i>其他列 ${others.map(esc).join('、')}</span>`:''}<span><i class="same-mz-dot far"></i>圈出</span>${withCurves?'<span class="plot-limit">點一下點，展開或收起那一針的 XIC</span>':''}</div><div class="svg-container">${sameMzOverview(item)}</div>${withCurves?'':'<p class="plot-limit">全段 XIC 只在 explain_cid_nl_run 產生的曲線檔。</p>'}${panels||'<p class="plot-limit">沒有展開的針。</p>'}`;
   }
   function sameMzSection(item){
     return item.same_mz?.far?.length?`<section class="same-mz" id="same-mz" aria-label="同 m/z 各列">${sameMzInner(item)}</section>`:'';
