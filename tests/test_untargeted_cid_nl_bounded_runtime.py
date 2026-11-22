@@ -1433,6 +1433,9 @@ def test_process_recovery_dispatches_only_missing_subjects(tmp_path, monkeypatch
     from xic_extractor.execution.workers import WorkerAdmissionPool
     from xic_extractor.untargeted_execution.partition import execution as runtime
     from xic_extractor.untargeted_execution.partition import workers as worker
+    from xic_extractor.untargeted_execution.partition_composition import (
+        group_acquired_partition,
+    )
 
     class LocalProcessMessages(WorkerAdmissionPool):
         @property
@@ -1459,12 +1462,16 @@ def test_process_recovery_dispatches_only_missing_subjects(tmp_path, monkeypatch
         return execute_recovery(request)
 
     monkeypatch.setattr(runtime, "_execute_sample_backfill_worker", observe_request)
+    config = AlignmentConfig(anchor_min_seed_events=1)
     with LocalProcessMessages(max_workers=1, backend="thread") as pool:
         result = runtime.execute_partition(
             batch.jobs,
             partition_key="sparse-recovery",
-            alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+            alignment_config=config,
             pool=pool,
+            prepare_grouping=lambda initial: group_acquired_partition(
+                batch, initial, alignment_config=config
+            ),
         )
     assert result.succeeded
     assert len(requests) == 1

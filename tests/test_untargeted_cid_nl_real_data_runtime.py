@@ -28,6 +28,7 @@ from tests.processing_identity_no_raw_fixture import (
     build_targeted_processing_identity_raw_fixture,
 )
 from tests.untargeted_partition_fixtures import (
+    build_dense_partition,
     execute_partition_inline,
     partition_context,
 )
@@ -827,6 +828,9 @@ def test_runtime_recovers_from_single_scan_cid_nl_support_owners(
     cancel_accepted,
 ) -> None:
     from xic_extractor.alignment.cell_observation.records import CellObservation
+    from xic_extractor.untargeted_execution.partition_composition import (
+        group_acquired_partition,
+    )
 
     construct_cell = CellObservation.__init__
 
@@ -861,13 +865,9 @@ def test_runtime_recovers_from_single_scan_cid_nl_support_owners(
         "NoPeak": (),
         "Blank": (),
     }
-    subject = mint_untargeted_cid_nl_method_subject(
-        precursor_mz=500.0,
-        precursor_tolerance_ppm=settings.precursor_mz_tolerance_ppm,
-        neutral_loss_da=116.0474,
-    )
-    context = partition_context(
+    batch = build_dense_partition(
         raw_paths=raw_paths,
+        dll_dir=tmp_path,
         sample_metadata=(
             SampleMetadata(
                 sample_name="S1",
@@ -900,14 +900,8 @@ def test_runtime_recovers_from_single_scan_cid_nl_support_owners(
                 sample_role="blank",
             ),
         ),
-        method_subject=subject,
         settings=settings,
         peaks_by_sample=peaks_by_sample,
-        discovery_receipts_by_sample=build_discovery_receipts(
-            tmp_path,
-            raw_paths,
-            peaks_by_sample,
-        ),
         signal_processing_profile=TEST_PROFILE,
     )
     opened = install_runtime_raws(
@@ -915,26 +909,6 @@ def test_runtime_recovers_from_single_scan_cid_nl_support_owners(
         sources_by_path=source_raws,
         tmp_path=tmp_path,
     )
-    jobs = tuple(
-        UntargetedPartitionJob(
-            processing_attempt_id=context.processing_attempt_id,
-            method_subjects=context.method_subject,
-            sample=sample,
-            acquisition_source_expectation=context.acquisition_sources_by_sample[
-                sample.raw_stem
-            ],
-            method_subject=context.method_subject,
-            candidates=context.peaks_by_sample[sample.raw_stem],
-            discovery_receipt=context.discovery_receipts_by_sample[sample.raw_stem],
-            settings=context.settings,
-            raw_path=context.raw_paths_by_sample[sample.raw_stem],
-            dll_dir=tmp_path,
-            work_unit_key=f"untargeted-cid-nl:{sample.raw_stem}",
-            signal_processing_profile=context.signal_processing_profile,
-        )
-        for sample in context.samples
-    )
-
     cancelled = threading.Event()
     if backfill_stop is not None:
         acquire = _FakeThermoRaw.GetChromatogramData
@@ -950,10 +924,13 @@ def test_runtime_recovers_from_single_scan_cid_nl_support_owners(
         monkeypatch.setattr(_FakeThermoRaw, "GetChromatogramData", stop_backfill)
 
     result = execute_partition_inline(
-        jobs,
+        batch.jobs,
         partition_key="runtime-fixture",
         alignment_config=CID_NL_ALIGNMENT_CONFIG,
         should_cancel=cancelled.is_set,
+        prepare_grouping=lambda initial: group_acquired_partition(
+            batch, initial, alignment_config=CID_NL_ALIGNMENT_CONFIG
+        ),
     )
 
     if backfill_stop is not None:
