@@ -12,6 +12,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from xic_extractor.alignment.cid_nl_grouping import has_cid_nl_activation_support
 from xic_extractor.alignment.rt_drift import BatchRtModelAccumulator, RtDriftModel
 from xic_extractor.alignment.sample_rt_calibration import (
     BatchRtCalibration,
@@ -86,7 +87,7 @@ def rt_anchor_observations(
         for group in scope.groups
         for owner in group.owners
         if (subject := subject_by_owner.get(owner.owner_id)) is not None
-        and owner.primary_identity_event is not None
+        and has_cid_nl_activation_support(owner)
         and owner.quantification_eligible
     )
 

@@ -130,8 +130,10 @@ a relation to a different peak does not veto an MS1-only value. Initial
 intersection acquisition checks unresolved measured peaks for local CID-NL
 within their MS1 bounds. The Discovery scan range can be narrower than those
 peaks, so a missing Discovery event is not proof of missing local CID-NL.
-A window without qualifying local scans does not supply method support. This
-does not change the separate Backfill execution switch.
+A window without qualifying local scans does not supply method support.
+Supplemental scans can confirm that member, but cannot help establish the
+row, train its RT anchors, or vote toward its own S/K requirement. They do
+not change the separate Backfill execution switch.
 
 ### Query RT versus group RT
 

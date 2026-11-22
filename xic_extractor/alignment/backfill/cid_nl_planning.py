@@ -16,7 +16,10 @@ from xic_extractor.alignment.backfill.conservative import (
 from xic_extractor.alignment.cell_observation.group_context import (
     select_cid_nl_group_backfill_subject,
 )
-from xic_extractor.alignment.cid_nl_grouping import CID_NL_GROUPING_RULES
+from xic_extractor.alignment.cid_nl_grouping import (
+    CID_NL_GROUPING_RULES,
+    has_cid_nl_activation_support,
+)
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSamplePeakGroupHypothesis,
@@ -111,9 +114,10 @@ def plan_grouped_cid_nl_backfills(
                 group,
                 tuple(
                     {
-                        direct[owner_id].method_subject
-                        for owner_id in group.owner_ids
-                        if owner_id in direct
+                        direct[owner.owner_id].method_subject
+                        for owner in group.owners
+                        if owner.owner_id in direct
+                        and has_cid_nl_activation_support(owner)
                     }
                 ),
             )
@@ -125,7 +129,7 @@ def plan_grouped_cid_nl_backfills(
                 reference_samples=frozenset(
                     owner.sample_stem
                     for owner in group.owners
-                    if owner.owner_id in direct
+                    if has_cid_nl_activation_support(owner)
                 ),
                 rt_frame=rt_frame,
                 backfill_half_window_min=backfill_half_window_min,

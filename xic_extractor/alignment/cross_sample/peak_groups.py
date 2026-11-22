@@ -146,8 +146,8 @@ def construct_cross_sample_peak_group_hypotheses(
                 "known identity has conflicting sample observations; "
                 "selection is unresolved and identity cannot be split"
             )
-        observed_method = tuple(
-            owner for owner in group if not rules.method_unobserved(owner)
+        activation_support = tuple(
+            owner for owner in group if rules.establishes_group(owner)
         )
         hypotheses.append(
             _hypothesis_from_owner_group(
@@ -156,7 +156,7 @@ def construct_cross_sample_peak_group_hypotheses(
                     "unresolved"
                     if basis.disposition == "undecided"
                     else "provisional"
-                    if not _settled_members(observed_method)
+                    if not _settled_members(activation_support)
                     else None
                 ),
                 evidence=f"owner_feature_inference;{basis.disposition};{basis.reason}",

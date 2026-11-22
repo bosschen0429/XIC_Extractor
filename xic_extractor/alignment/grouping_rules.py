@@ -67,6 +67,7 @@ class GroupingRules:
     mass_center: Callable[[Sequence[SampleLocalMS1Owner]], float | None]
     mass_fraction: Callable[[float | None, float | None, AlignmentConfig], float]
     method_unobserved: Callable[[SampleLocalMS1Owner], bool]
+    establishes_group: Callable[[SampleLocalMS1Owner], bool]
     pair_mass_fraction: Callable[
         [SampleLocalMS1Owner, SampleLocalMS1Owner, AlignmentConfig], float
     ]

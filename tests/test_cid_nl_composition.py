@@ -363,14 +363,20 @@ def test_composite_requirement_identity_distinguishes_each_composition():
 
 
 @pytest.mark.parametrize(
-    "local_losses",
-    [(116.0474, 132.0423), (116.0474,), ()],
-    ids=["a-and-b", "a-only", "no-cid"],
+    ("local_losses", "role", "excluded", "seed_count"),
+    [
+        pytest.param((116.0474, 132.0423), "sample", False, 3, id="a-and-b"),
+        pytest.param((116.0474,), "sample", False, 3, id="a-only"),
+        pytest.param((), "sample", False, 3, id="no-cid"),
+        pytest.param((116.0474, 132.0423), "blank", False, 3, id="blank"),
+        pytest.param((116.0474, 132.0423), "sample", True, 3, id="excluded"),
+        pytest.param((116.0474, 132.0423), "sample", False, 1, id="one-anchor"),
+    ],
 )
 def test_intersection_rechecks_an_observed_peak_outside_the_discovery_window(
-    tmp_path, monkeypatch, local_losses
+    tmp_path, monkeypatch, local_losses, role, excluded, seed_count
 ):
-    stems = ("S1", "S2", "S3", "Late")
+    stems = (*("S1", "S2", "S3")[:seed_count], "Late")
     paths = raw_paths(tmp_path, stems)
     settings = replace(
         _multi_tag_settings(),
@@ -433,7 +439,17 @@ def test_intersection_rechecks_an_observed_peak_outside_the_discovery_window(
         UntargetedRequest(
             discovery_batch_index=batch,
             discovery_settings=settings,
-            sample_metadata=sample_metadata_for(stems),
+            sample_metadata=sample_metadata_for(
+                stems,
+                Late=SampleMetadata(
+                    sample_name="Late",
+                    raw_stem="Late",
+                    injection_order=seed_count + 1,
+                    sample_role=role,
+                    excluded=excluded,
+                    exclusion_reason="operator exclusion" if excluded else "",
+                ),
+            ),
             output_dir=out,
             raw_dir=tmp_path / "raw",
             dll_dir=tmp_path,
@@ -443,20 +459,33 @@ def test_intersection_rechecks_an_observed_peak_outside_the_discovery_window(
         )
     )
 
-    (matrix,) = read_tsv(out / "alignment_matrix.tsv")
+    matrix_rows = read_tsv(out / "alignment_matrix.tsv")
     (cell,) = [
         item
         for item in read_tsv(out / "alignment_cells.tsv")
         if item["sample_stem"] == "Late"
     ]
     assert cell["source_candidate_id"] == ""
-    assert bool(matrix["Late"]) is (len(local_losses) != 1)
-    assert (
-        cell["status"]
-        == {0: "ms1_only", 1: "unresolved", 2: "detected"}[len(local_losses)]
-    )
-    if matrix["Late"]:
-        assert float(cell["apex_rt"]) == pytest.approx(8.54)
+    if role == "blank" or excluded:
+        (matrix,) = matrix_rows
+        assert not method_windows
+        assert matrix["Late"] == cell["area"] == ""
+        assert cell["status"] == "unresolved"
+        return
+
+    if seed_count == 1:
+        assert matrix_rows == []
+        assert cell["area"] == ""
+        assert cell["status"] == "unresolved"
+    else:
+        (matrix,) = matrix_rows
+        assert bool(matrix["Late"]) is (len(local_losses) != 1)
+        assert (
+            cell["status"]
+            == {0: "ms1_only", 1: "unresolved", 2: "detected"}[len(local_losses)]
+        )
+        if matrix["Late"]:
+            assert float(cell["apex_rt"]) == pytest.approx(8.54)
     ((local_source, lower_rt, upper_rt),) = method_windows
     assert local_source == sources[paths["Late"]]
     assert lower_rt == pytest.approx(8.46, abs=0.011)

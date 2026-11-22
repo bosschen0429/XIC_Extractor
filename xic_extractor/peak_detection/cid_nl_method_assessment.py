@@ -181,6 +181,7 @@ class CidNlEvaluationReceipt:
     reason_code: str | None
     evidence_scope: Literal["subject_window", "declared_scans"] = "subject_window"
     physical_query_mz: float | None = None
+    supplemental_scan_keys: tuple[tuple[int, float], ...] = ()
 
     def __post_init__(self) -> None:
         for name in ("query_rt_min", "query_rt_max", "physical_query_mz"):
@@ -428,6 +429,26 @@ def supported_cid_nl_peaks(
     return _supported_peaks(
         assessment.method_subject,
         assessment.individual_support_refs,
+    )
+
+
+def cid_nl_support_requires_supplement(
+    assessment: CidNlMethodAssessment, peak: PeakObservation
+) -> bool:
+    """Whether the direct hypothesis needs local confirmation to meet its method."""
+    supplemental = assessment.evaluation_receipt.supplemental_scan_keys
+    return bool(supplemental) and peak not in _supported_peaks(
+        assessment.method_subject,
+        tuple(
+            ref
+            for ref in assessment.individual_support_refs
+            if ref.peak_observation == peak
+            and (
+                ref.dda_scan_number,
+                ref.configured_neutral_loss_da,
+            )
+            not in supplemental
+        ),
     )
 
 

@@ -33,6 +33,7 @@ from xic_extractor.alignment.cross_sample.peak_groups import (
 )
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessment,
+    cid_nl_support_requires_supplement,
 )
 from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_extractor.peak_detection.observations import PeakObservation
@@ -163,6 +164,18 @@ class FinalGroupCellObservation:
                 for ref in assessment.set_relation_refs
             )
             for assessment in self.method_assessments
+        )
+
+    @property
+    def direct_observation_requires_supplement(self) -> bool:
+        return any(
+            cell.peak_observation is not None
+            and cell.peak_hypothesis is not None
+            and cell.peak_hypothesis.method != HYPOTHESIS_METHOD_MS1_OBSERVATION
+            and cid_nl_support_requires_supplement(
+                cell.method_assessment, cell.peak_observation
+            )
+            for cell in self.effective_cells
         )
 
     @property

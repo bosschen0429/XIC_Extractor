@@ -7,7 +7,7 @@ from dataclasses import dataclass, fields
 from typing import Literal, TypeAlias, cast
 
 from xic_extractor.alignment.backfill.conservative import (
-    samples_eligible_for_ms1_only_group_values,
+    samples_eligible_for_group_extension,
 )
 from xic_extractor.alignment.cell_observation.observations import (
     FinalGroupCellObservation,
@@ -164,7 +164,7 @@ def decide_group_cell_population(
         }
         for group in finalized_alignment.final_population
     }
-    ms1_only_eligible = samples_eligible_for_ms1_only_group_values(
+    group_extension_eligible = samples_eligible_for_group_extension(
         finalized_alignment.final_population,
         sample_population=finalized_alignment.canonical_samples,
     )
@@ -173,8 +173,8 @@ def decide_group_cell_population(
             observation,
             is_member=observation.sample_key
             in member_samples[observation.group_hypothesis_id],
-            ms1_only_eligible=observation.sample_key
-            in ms1_only_eligible.get(observation.group, ()),
+            group_extension_eligible=observation.sample_key
+            in group_extension_eligible.get(observation.group, ()),
         )
         for observation in finalized_alignment.cell_observations
     }
@@ -267,7 +267,7 @@ def _decide_group(
     observation: FinalGroupCellObservation,
     *,
     is_member: bool,
-    ms1_only_eligible: bool = False,
+    group_extension_eligible: bool = False,
 ) -> tuple[CellDecisionPayload, IntegrationResult | None]:
     state = observation.evidence_state
     states = observation.evidence_states
@@ -281,8 +281,13 @@ def _decide_group(
                     "Group numeric decision requires exactly one integration"
                 )
             if "ms1_only_group_observation" in states and (
-                not ms1_only_eligible
+                not group_extension_eligible
                 or observation.ms1_only_group_has_local_method_relation
+            ):
+                return NoWriteCellDecision("unresolved"), None
+            if (
+                not group_extension_eligible
+                and observation.direct_observation_requires_supplement
             ):
                 return NoWriteCellDecision("unresolved"), None
             integration = integrations[0]

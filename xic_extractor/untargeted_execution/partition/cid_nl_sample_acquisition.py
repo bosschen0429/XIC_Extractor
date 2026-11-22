@@ -11,6 +11,7 @@ from pathlib import Path
 from xic_extractor.acquisition_contract import (
     TraceAcquisitionBatch,
 )
+from xic_extractor.alignment.backfill.conservative import is_backfill_eligible_sample
 from xic_extractor.alignment.cid_nl_inputs import (
     UntargetedCidNlAssessmentInput,
 )
@@ -143,7 +144,11 @@ def assess_sample_regions(
             peaks_by_subject.setdefault(selected_key, []).append(peak)
 
     additional_refs: frozenset[CidNlEvidenceObservation] = frozenset()
-    if raw is not None and settings.tag_combine_mode == "intersection":
+    if (
+        raw is not None
+        and settings.tag_combine_mode == "intersection"
+        and is_backfill_eligible_sample(sample)
+    ):
         pending = _unresolved_intersection_peaks(scopes, peaks_by_subject, supports)
         if pending:
             declared = frozenset(
@@ -219,7 +224,13 @@ def assess_sample_regions(
             individual_support_refs=individual,
             set_relation_refs=ambiguous,
             technical_state="evaluated" if refs else "not_evaluated",
-            includes_acquired_scans=any(ref in additional_refs for ref in refs),
+            supplemental_scan_keys=tuple(
+                sorted(
+                    (ref.scan_number, ref.configured_neutral_loss_da)
+                    for ref in refs
+                    if ref in additional_refs
+                )
+            ),
             technical_reason_code=None
             if refs
             else "no_search_eligible_discovery_input",
@@ -373,7 +384,7 @@ def _mint_assessment(
     individual_support_refs: tuple[DdaCidNlPeakSupport, ...] = (),
     set_relation_refs: tuple[DdaCidNlCandidateSetRelation, ...] = (),
     technical_state: CidNlTechnicalState = "evaluated",
-    includes_acquired_scans: bool = False,
+    supplemental_scan_keys: tuple[tuple[int, float], ...] = (),
     technical_reason_code: str | None = None,
 ):
     search_completed = technical_state == "evaluated"
@@ -418,8 +429,9 @@ def _mint_assessment(
                 search_completed=search_completed,
                 reason_code=technical_reason_code,
                 evidence_scope="subject_window"
-                if includes_acquired_scans
+                if supplemental_scan_keys
                 else "declared_scans",
+                supplemental_scan_keys=supplemental_scan_keys,
             ),
             candidate_peaks=candidate_peaks,
             evidence_refs=evidence_refs,

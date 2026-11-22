@@ -25,6 +25,7 @@ from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 from xic_extractor.mass_accuracy import absolute_ppm_error, mz_window
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessment,
+    cid_nl_support_requires_supplement,
     supported_cid_nl_peaks,
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import (
@@ -81,6 +82,15 @@ def cid_nl_pair_failures(
     ):
         return None, "product_mz_out_of_tolerance"
     return None, None
+
+
+def has_cid_nl_activation_support(owner: SampleLocalMS1Owner) -> bool:
+    """A direct peak can activate a group without local confirmation."""
+    assessment = owner.cid_nl_composite_assessment
+    return owner.primary_identity_event is not None and (
+        assessment is None
+        or not cid_nl_support_requires_supplement(assessment, owner.peak)
+    )
 
 
 def has_cid_nl_composition(owner: SampleLocalMS1Owner) -> bool:
@@ -356,6 +366,7 @@ CID_NL_GROUPING_RULES = GroupingRules(
     trajectory_witness_eligible=has_scalar_cid_nl_identity,
     chemistry_key=grouping_chemistry_key,
     method_unobserved=lambda owner: owner.primary_identity_event is None,
+    establishes_group=has_cid_nl_activation_support,
     mass_center=cid_nl_mass_center,
     mass_fraction=cid_nl_mass_fraction,
     pair_mass_fraction=cid_nl_pair_mass_fraction,

@@ -22,6 +22,7 @@ from xic_extractor.alignment.cell_observation.observations import (
     CellObservation,
     CidNlCellGroupContext,
 )
+from xic_extractor.alignment.cid_nl_grouping import has_cid_nl_activation_support
 from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSamplePeakGroupHypothesis,
 )
@@ -29,6 +30,7 @@ from xic_extractor.alignment.peak_trajectories import BackfillPeakLocation
 from xic_extractor.mass_accuracy import absolute_ppm_error
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessment,
+    cid_nl_support_requires_supplement,
 )
 from xic_extractor.peak_detection.observations import PeakObservation
 from xic_extractor.peak_detection.physical_peak_evaluation import (
@@ -158,7 +160,7 @@ def mint_conservative_backfill_candidate_universe(
     )
 
 
-def samples_eligible_for_ms1_only_group_values(
+def samples_eligible_for_group_extension(
     groups: tuple[CrossSamplePeakGroupHypothesis, ...],
     *,
     sample_population: tuple[SampleMetadata, ...],
@@ -167,7 +169,7 @@ def samples_eligible_for_ms1_only_group_values(
     eligible_ids = frozenset(
         sample.sample_name
         for sample in sample_population
-        if _sample_is_activation_eligible(sample)
+        if is_backfill_eligible_sample(sample)
     )
     minimum_support = minimum_direct_support_count(len(eligible_ids))
     validated = {}
@@ -179,7 +181,7 @@ def samples_eligible_for_ms1_only_group_values(
             for owner, member in (
                 (owner, owner.cross_sample_member_subject) for owner in group.owners
             )
-            if owner.primary_identity_event is not None and member is not None
+            if has_cid_nl_activation_support(owner) and member is not None
         }
         if len(support_ids & eligible_ids) >= minimum_support:
             validated[group] = eligible_ids
@@ -193,7 +195,7 @@ def plan_conservative_backfill_targets(
 ) -> tuple[tuple[CrossSamplePeakGroupHypothesis, frozenset[str]], ...]:
     """Plan missing-sample work from frozen direct-SUPPORT membership."""
     planned = []
-    for group, eligible_ids in samples_eligible_for_ms1_only_group_values(
+    for group, eligible_ids in samples_eligible_for_group_extension(
         groups, sample_population=sample_population
     ).items():
         occupied = {member.sample_key for member in group.member_subjects}
@@ -226,19 +228,22 @@ def assess_conservative_backfill_group(
     cells = _canonical_cells(ordered_cells)
     samples = _canonical_samples(ordered_samples)
     eligible_ids = tuple(
-        sample.sample_name
-        for sample in samples
-        if _sample_is_activation_eligible(sample)
+        sample.sample_name for sample in samples if is_backfill_eligible_sample(sample)
+    )
+    activation_supports = tuple(
+        support
+        for support in group_context.direct_supports
+        if not cid_nl_support_requires_supplement(
+            support.assessment, support.hypothesis.peak
+        )
     )
     direct_support_ids = tuple(
-        support.sample.sample_name for support in group_context.direct_supports
+        support.sample.sample_name for support in activation_supports
     )
     eligible_support_ids = tuple(
         sample_id for sample_id in direct_support_ids if sample_id in eligible_ids
     )
-    support_traces = tuple(
-        support.hypothesis.peak for support in group_context.direct_supports
-    )
+    support_traces = tuple(support.hypothesis.peak for support in activation_supports)
     cell_sample_ids = tuple(cell.sample_key for cell in cells)
     sample_ids = tuple(sample.sample_name for sample in samples)
     sample_count = len(eligible_ids)
@@ -569,7 +574,8 @@ def _canonical_samples(
     return samples
 
 
-def _sample_is_activation_eligible(sample: SampleMetadata) -> bool:
+def is_backfill_eligible_sample(sample: SampleMetadata) -> bool:
+    """Only non-excluded sample/QC injections can request a revisit."""
     return (
         not sample.excluded and sample.sample_role in ACTIVATION_ELIGIBLE_SAMPLE_ROLES
     )
