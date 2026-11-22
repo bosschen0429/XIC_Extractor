@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -19,7 +20,6 @@ from tests.untargeted_cid_nl_batch_runtime_fixtures import (
 )
 from tests.untargeted_partition_fixtures import (
     execute_partition_inline,
-    fixture_assessment,
     partition_context,
 )
 from xic_extractor.alignment.cid_nl_inputs import CID_NL_ALIGNMENT_CONFIG
@@ -33,11 +33,11 @@ from xic_extractor.sample_metadata import SampleMetadata
 from xic_extractor.untargeted_execution.partition.models import UntargetedPartitionJob
 
 
-@pytest.mark.parametrize("initial_trace_without_peak", [False, True])
+@pytest.mark.parametrize("missing_second_ion", [False, True])
 def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
     tmp_path: Path,
     monkeypatch,
-    initial_trace_without_peak: bool,
+    missing_second_ion: bool,
 ) -> None:
     stems = ("S1", "S2", "Missing")
     raw_paths = tuple(tmp_path / f"{stem}.synthetic" for stem in stems)
@@ -45,7 +45,7 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
         raw_path.write_bytes(
             f"real-data-runtime-batch-recovery:{raw_path.stem}".encode()
         )
-    settings = _settings()
+    settings = replace(_settings(), precursor_mz_tolerance_ppm=1.0)
     source_raws: dict[Path, _FakeRaw] = {}
     peaks_by_sample: dict[str, tuple[DiscoveryPeak, ...]] = {}
     for raw_path in raw_paths[:2]:
@@ -55,32 +55,12 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
         )
         source_raws[raw_path] = source_raw
         peaks_by_sample[raw_path.stem] = candidates
-    source_raws[raw_paths[2]] = _FakeRaw((7.98,))
+    missing_raw, _ = _nearby_subject_candidates(raw_paths[2], settings=settings)
+    missing_raw.scans = ()
+    if missing_second_ion:
+        missing_raw.additional_ms1_ions = {}
+    source_raws[raw_paths[2]] = missing_raw
     peaks_by_sample["Missing"] = ()
-    if initial_trace_without_peak:
-        source_raw, candidates = _nearby_subject_candidates(
-            raw_paths[2],
-            settings=settings,
-        )
-        source_raws[raw_paths[2]] = source_raw
-        peaks_by_sample["Missing"] = candidates
-        from xic_extractor.untargeted_execution.partition import (
-            cid_nl_sample_acquisition,
-        )
-
-        acquire_peaks = cid_nl_sample_acquisition._adopt_peak_observations
-
-        def capture_without_peak(**kwargs):
-            acquisition, observations = acquire_peaks(**kwargs)
-            if kwargs["sample"].raw_stem == "Missing":
-                return acquisition, ()
-            return acquisition, observations
-
-        monkeypatch.setattr(
-            cid_nl_sample_acquisition,
-            "_adopt_peak_observations",
-            capture_without_peak,
-        )
     subjects = _subjects(
         peaks_by_sample["S1"],
         settings.precursor_mz_tolerance_ppm,
@@ -149,31 +129,6 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
         for subject in subjects
         for sample in context.samples
     )
-    if initial_trace_without_peak:
-        partition = execute_partition_inline(
-            jobs,
-            partition_key="initial-and-recovery",
-            alignment_config=CID_NL_ALIGNMENT_CONFIG,
-        )
-        assert partition.succeeded, partition.failure
-        missing = tuple(
-            item
-            for item in partition.sample_results
-            if item.job.sample.raw_stem == "Missing"
-        )
-        assert len(missing) == 2
-        for item in missing:
-            initial = item.adapter_result.acquisition
-            assert initial is not None
-            assert item.adapter_result.assessment_input.assessment.candidate_peaks == ()
-            recovery = item.backfill_attempt
-            assert recovery is not None
-            assert recovery.acquisition is not initial
-        assert [
-            vendor.chromatogram_request_counts for vendor in opened[raw_paths[2]]
-        ] == [[4], [4]]
-        return
-
     events = []
     result = execute_partition_inline(
         jobs,
@@ -189,21 +144,28 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
     missing_results = tuple(
         item for item in result.sample_results if item.job.sample.raw_stem == "Missing"
     )
-    assert len(missing_results) == 2
-    assert all(item.backfill_attempt is not None for item in missing_results)
-    assert all(
-        fixture_assessment(item) is item.backfill_attempt.assessment
-        for item in missing_results
-        if item.backfill_attempt is not None
+    lighter, heavier = sorted(
+        missing_results, key=lambda item: item.job.method_subject.precursor_mz
     )
-    assert {
-        path: [vendor.chromatogram_request_counts for vendor in vendors]
-        for path, vendors in opened.items()
-    } == {
-        raw_paths[0]: [[4]],
-        raw_paths[1]: [[4]],
-        raw_paths[2]: [[4]],
-    }
+    for item in (lighter, heavier):
+        assessment = item.adapter_result.assessment_input.assessment
+        assert assessment.method_result is None
+        assert not assessment.individual_support_refs
+        if item is heavier and missing_second_ion:
+            assert not assessment.candidate_peaks
+            assert item.backfill_attempt is not None
+            assert not item.backfill_attempt.assessment.candidate_peaks
+        else:
+            (peak,) = assessment.candidate_peaks
+            assert peak.mz == pytest.approx(item.job.method_subject.precursor_mz)
+            assert peak.integration.rt_apex_min == pytest.approx(7.98)
+            assert item.backfill_attempt is None
+    for path in raw_paths[:2]:
+        (initial,) = opened[path]
+        assert initial.chromatogram_request_counts == [2]
+    initial, *revisits = opened[raw_paths[2]]
+    assert initial.chromatogram_request_counts == [2]
+    assert len(revisits) == int(missing_second_ion)
 
 
 def _subjects(

@@ -210,11 +210,8 @@ def _complete_cell_observations(
         CidNlMethodAssessment, list[MeasuredPeakHypothesis]
     ] = {}
     for candidate in grouping.retained_candidates:
-        assessment = candidate.direct_support_assessment
-        if assessment is None:
-            continue
         retained_cell_hypotheses.setdefault(
-            assessment,
+            candidate.assessment,
             [],
         ).append(candidate.peak_hypothesis)
     retained_hypotheses = {

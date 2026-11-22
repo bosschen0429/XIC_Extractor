@@ -128,9 +128,8 @@ def test_one_raw_serves_two_nearby_subjects_as_separate_rows(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """One RAW and one sample's settings serve two 8 ppm-apart subjects: each group
-    keeps its own precursor and candidate and is integrated from that shared trace. A
-    one-sample group is reviewed, not published to the Matrix.
+    """The two 8 ppm-apart ions have separate XICs and a known 0.7 area ratio;
+    each keeps its own mass and CID, and singletons stay out of the Matrix.
     """
     settings, paths, source_raw, candidates = _nearby_subjects(tmp_path)
     assert len(candidates) == 2
@@ -167,10 +166,14 @@ def test_one_raw_serves_two_nearby_subjects_as_separate_rows(
         feature: candidate_by_mz[round(float(row["group_center_mz"]), 4)]
         for feature, row in review.items()
     }
-    areas = [float(cell["area"]) for cell in cells.values()]
-    assert len(areas) == 2
-    assert areas[0] > 0
-    assert areas == pytest.approx([areas[0]] * 2, rel=1e-6)
+    lower, higher = (
+        float(cells[(feature, "S1")]["area"])
+        for feature in sorted(
+            review, key=lambda key: float(review[key]["group_center_mz"])
+        )
+    )
+    assert lower > 0
+    assert higher == pytest.approx(0.7 * lower, rel=1e-5)
 
 
 def test_sample_metadata_sets_matrix_order_and_backfill_eligibility(

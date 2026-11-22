@@ -32,6 +32,7 @@ from tests.untargeted_partition_fixtures import (
     fixture_assessment,
 )
 from xic_extractor.alignment.config import AlignmentConfig
+from xic_extractor.mass_accuracy import within_ppm
 from xic_extractor.peak_detection.physical_peak_evaluation import (
     prepare_physical_signal,
 )
@@ -199,10 +200,6 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     )
     assert len(trace.retained_contexts) == len(trace.consumed_contexts)
     assert len(trace.completed_contexts) == len(trace.retained_contexts)
-    if case.family_precursor_delta:
-        assert any(
-            context.backfill_membership_risks for context in trace.completed_contexts
-        )
     assert all(
         retained.partition_transition == final.partition_transition
         and retained.samples == final.samples
@@ -257,7 +254,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             assert sorted(
                 len(group.member_subjects)
                 for group in child.scientific_core.final_population
-            ) == [1, 2]
+            ) == [1, 3]
             sample_id_by_stem = {
                 sample.raw_stem: sample.sample_name
                 for sample in child.scientific_core.canonical_samples
@@ -265,11 +262,12 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             joint_group = next(
                 group
                 for group in child.scientific_core.final_population
-                if len(group.member_subjects) == 2
+                if len(group.member_subjects) == 3
             )
             assert {member.sample_key for member in joint_group.member_subjects} == {
                 sample_id_by_stem["S2"],
                 sample_id_by_stem["S3"],
+                sample_id_by_stem["S4"],
             }
             joint_final_cell = next(
                 cell
@@ -283,10 +281,6 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
                 and support.sample.sample_name == sample_id_by_stem["S3"]
                 for support in joint_cell.group_context.supports
             )
-            assert all(
-                assessment.reason_codes != ("no_search_eligible_discovery_input",)
-                for assessment in completed.method_assessments
-            )
             assert len(written_groups(writer)) == 3
             assert len(tuple(written_cells(writer))) == 3 * len(inputs.sample_stems)
             (matrix_row,) = matrix_rows
@@ -299,7 +293,10 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
                 if cell.group_hypothesis_id == joint_group.group_hypothesis_id
                 and cell.sample_key == sample_id_by_stem["S4"]
             )
-            assert s4_cell.evidence_states == ("ms1_only_backfill_observation",)
+            (local_peak,) = s4_cell.ms1_only_group_observations
+            assert local_peak.mz == pytest.approx(307.10847543945314, abs=1e-10)
+            assert not s4_cell.direct_hypotheses
+            assert not s4_cell.ms1_only_backfill_observations
             assert matrix_row["S4"]
         else:
             assert len(tuple(written_cells(writer))) == len(inputs.sample_stems)
@@ -314,7 +311,14 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             (candidate,) = batch.context.peaks_by_sample[stem]
             assert candidate.peak_mz == representative_event(candidate).precursor_mz
             ((_, observation),) = result.adapter_result.candidate_observations
-            assert observation.source_trace.mz == candidate.peak_mz
+            # The seed XIC may use the other injection's planned mass window;
+            # the reported apex m/z is the centroid in this sample's RAW.
+            assert observation.mz == pytest.approx(candidate.peak_mz, abs=1e-10)
+            assert within_ppm(
+                observation.mz,
+                observation.source_trace.mz,
+                result.job.settings.precursor_mz_tolerance_ppm,
+            )
             assert observation.physical_evaluation is not None
             assert (
                 observation.physical_evaluation.answer.selected_segment

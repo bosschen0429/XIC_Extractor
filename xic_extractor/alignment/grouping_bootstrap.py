@@ -79,7 +79,13 @@ class RetainedGroupingCandidate:
 
     sample: SampleMetadata
     peak_hypothesis: MeasuredPeakHypothesis
-    direct_support_assessment: CidNlMethodAssessment | None
+    assessment: CidNlMethodAssessment
+
+    @property
+    def direct_support_assessment(self) -> CidNlMethodAssessment | None:
+        if self.peak_hypothesis.method == HYPOTHESIS_METHOD_DDA_CID_NL:
+            return self.assessment
+        return None
 
     @property
     def sample_key(self) -> str:
@@ -273,11 +279,7 @@ def bootstrap_cid_nl_initial_population(
         RetainedGroupingCandidate(
             sample=sample_by_id[sample_id],
             peak_hypothesis=hypothesis,
-            direct_support_assessment=(
-                assessment_by_hypothesis[hypothesis.hypothesis_id]
-                if hypothesis.method == HYPOTHESIS_METHOD_DDA_CID_NL
-                else None
-            ),
+            assessment=assessment_by_hypothesis[hypothesis.hypothesis_id],
         )
         for sample_id in sorted(hypotheses_by_sample)
         for hypothesis in hypotheses_by_sample[sample_id]
