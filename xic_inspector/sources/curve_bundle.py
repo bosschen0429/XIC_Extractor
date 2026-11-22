@@ -30,7 +30,7 @@ MAX_BUNDLE_SIZE_BYTES = 50 * 1024 * 1024
 SAME_MZ_ROLE = "同 m/z 全段曲線"
 FAR_FROM_NEIGHBOURS_MIN = 3.5
 NEIGHBOUR_COUNT = 8
-EXPANDED_FAR_COUNT = 5
+EXPANDED_FAR_COUNT = 3
 
 
 class CurveBundleError(ExplanationError):
@@ -698,23 +698,24 @@ class CurveBundleSource:
                         projected_curves[-1], trace.sample_label, self.rt_calibration
                     )
             flag_ref = f"flags:{transition.key}"
-            fields = [
-                {
-                    "label": key,
-                    "value": value
-                    if isinstance(value, str)
-                    else json.dumps(value, ensure_ascii=False),
-                }
-                for key, value in sorted(transition.quality_flags.items())
-            ]
-            records: list[dict[str, Any]] = [
-                {
-                    "ref": flag_ref,
-                    "title": "轉換品質旗標",
-                    "summary": transition.key,
-                    "fields": fields,
-                }
-            ]
+            records: list[dict[str, Any]] = []
+            if set(transition.quality_flags) - {"new_diagnostic_extraction"}:
+                records.append(
+                    {
+                        "ref": flag_ref,
+                        "title": "轉換品質旗標",
+                        "summary": transition.key,
+                        "fields": [
+                            {
+                                "label": key,
+                                "value": value
+                                if isinstance(value, str)
+                                else json.dumps(value, ensure_ascii=False),
+                            }
+                            for key, value in sorted(transition.quality_flags.items())
+                        ],
+                    }
+                )
             for trace in traces:
                 records.append(
                     {
@@ -764,21 +765,6 @@ class CurveBundleSource:
                         ],
                     }
                 )
-            for sid, quantification in quantifications.items():
-                if sid in item.sample_ids:
-                    records.append(
-                        {
-                            "ref": f"quantity:{transition.key}:{sid}",
-                            "title": "已保存正式結果",
-                            "summary": next(
-                                t.sample_label for t in traces if t.sample_id == sid
-                            ),
-                            "fields": [
-                                {"label": "Value", "value": quantification.value},
-                                {"label": "Unit", "value": quantification.unit},
-                            ],
-                        }
-                    )
             samples = [
                 {
                     "sample_id": sid,
@@ -790,12 +776,9 @@ class CurveBundleSource:
                         if sid in quantifications
                         else "unavailable"
                     },
-                    "decision_refs": [flag_ref]
-                    + (
-                        [f"quantity:{transition.key}:{sid}"]
-                        if sid in quantifications
-                        else []
-                    ),
+                    "decision_refs": [record["ref"] for record in records[:1]]
+                    if records and records[0]["ref"] == flag_ref
+                    else [],
                     **(
                         {"quantitative_value": quantifications[sid].value}
                         if sid in quantifications
@@ -810,7 +793,9 @@ class CurveBundleSource:
                     "kind": item.kind,
                     "stratum": item.stratum,
                     "title": (
-                        f"診斷 XIC · m/z {item.witnesses[0].precursor_mz:.4f}"
+                        f"{transition.key} · m/z {item.witnesses[0].precursor_mz:.4f}"
+                        if transition.same_mz_peaks
+                        else f"診斷 XIC · m/z {item.witnesses[0].precursor_mz:.4f}"
                         if transition.quality_flags.get("new_diagnostic_extraction")
                         else transition.key
                     ),
@@ -821,8 +806,7 @@ class CurveBundleSource:
                         "不重新積分、不改寫結果。"
                         if transition.quality_flags.get("source_binding_basis")
                         == "workbook_sample_name_unverified"
-                        else f"{len(item.sample_ids)} 個樣本的已保存診斷曲線 · "
-                        f"{len(transition.quality_flags)} 項轉換品質旗標"
+                        else f"{len(item.sample_ids)} 個樣本的已保存診斷曲線"
                     ),
                     "precursor_mz": item.witnesses[0].precursor_mz,
                     "rt_apex_min": item.witnesses[0].rt_apex_min,

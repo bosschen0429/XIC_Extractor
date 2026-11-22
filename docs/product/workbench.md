@@ -212,7 +212,7 @@ the published Matrix hash. It cannot authorize a writer or prove readiness.
   that row, the view states their count and plots injection order against
   calibrated apex for every row, this row coloured and the others grey. Those
   samples are circled. The median follows a row that drifts with injection order,
-  so drift alone is not circled. Below the plot, the farthest five and the
+  so drift alone is not circled. Below the plot, the farthest three and the
   sample nearest the row's median apex show one XIC each across all rows'
   apexes, labelled by row; clicking a point adds or removes its sample. The
   circle chooses what opens first and decides nothing. A row without such
