@@ -116,16 +116,18 @@ first three flags below.
 
 | Stage | Input to retain | What to compare |
 | --- | --- | --- |
-| `regroup` | `--save-grouping-inputs` → `grouping-inputs.pickle.gz` | Initial groups, members and reassignments, after refitting batch RT calibration and drift from the retained anchors; `--compare-to <capture output dir>` keeps a variant to one replay when that capture ran the current grouping code |
+| `regroup` | `--save-grouping-inputs` → `grouping-inputs.json.gz` | Initial groups, members and reassignments, after refitting batch RT calibration and drift from the retained anchors; `--compare-to <capture output dir>` keeps a variant to one replay when that capture ran the current grouping code |
 | `backfill` | `--save-backfill-inputs` → `backfill-inputs/` | `backfill-cells.tsv`: competing rows, sample, area, decision and status |
 | `pair-batches` | `--save-pairing-inputs` → one file per declared batch | `batch_correspondence.tsv`: partners, competitors and unpaired reasons; `summary.json`: reference and RT map diagnostics |
 | `matrix` | `--save-matrix-inputs` → `matrix-cells.pickle.gz` and, for multiple batches, `matrix-join.pickle.gz` | Only `alignment_matrix.tsv`, from the formal writer |
 
-Each retained input is the compressed pickle of the formal objects that stage
-consumes, so replay sees exactly what the full run handed it. It matches only
-the code that captured it and runs code when loaded: replay captures you made
-yourself, and capture again after upstream code changes. A capture in an earlier
-format is rejected with a request to capture it again.
+The Backfill, pairing and Matrix inputs are the compressed pickle of the formal
+objects that stage consumes, so replay sees exactly what the full run handed it.
+The grouping input is JSON without chromatograms, because parallel regroup loads
+it in every worker. Each matches only the code that captured it, and a pickle
+runs code when loaded: replay captures you made yourself, and capture again
+after upstream code changes. A capture in an earlier format is rejected with a
+request to capture it again.
 
 **Regroup without RAW, a preset or a DLL.** `--set` changes an `AlignmentConfig`
 value; `members.tsv` shows the new membership and `changes.tsv` the
@@ -133,7 +135,7 @@ reassignments. See the
 [grouping diagnostic](../../tools/diagnostics/grouping_experiment.py) for
 baseline comparisons and which RT model changes replay covers.
 
-    .venv\Scripts\python.exe -m scripts.run_alignment regroup --inputs output/baseline/grouping-inputs.pickle.gz --set max_ppm=20 --output-dir output/regroup-trial
+    .venv\Scripts\python.exe -m scripts.run_alignment regroup --inputs output/baseline/grouping-inputs.json.gz --set max_ppm=20 --output-dir output/regroup-trial
 
 **Replay Backfill or pairing independently.** These examples use captures in
 `output/baseline`. Only Backfill may read RAW: it reuses initial assessments

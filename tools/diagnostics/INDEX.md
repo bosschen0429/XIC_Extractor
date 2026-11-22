@@ -23,7 +23,7 @@ workflow owner rather than chaining similarly named commands.
 | Regenerate only the Matrix from completed Backfill and cross-batch pairing | `scripts.run_alignment matrix` from finalized cells and the saved batch join; [capture and replay](../../docs/agent/local-execution.md#alignment-and-handoff) |
 | Match finished batches without RAW, within-batch grouping or Backfill | `scripts.run_alignment pair-batches` from per-batch `--save-pairing-inputs` files; [capture and replay](../../docs/agent/local-execution.md#alignment-and-handoff) |
 | Rerun Backfill after a completed grouping, keeping competing rows together | `scripts.run_alignment backfill` from `--save-backfill-inputs`; [capture and replay](../../docs/agent/local-execution.md#alignment-and-handoff) |
-| Regroup from a saved `grouping-inputs.pickle.gz` snapshot | `scripts.run_alignment regroup` — no RAW or Backfill; [details](grouping_experiment.py) |
+| Regroup from a saved `grouping-inputs.json.gz` snapshot | `scripts.run_alignment regroup` — no RAW or Backfill; [details](grouping_experiment.py) |
 | Produce initial groups from a Discovery batch index and matching RAW files | `scripts.run_alignment --stop-after grouping`; add `--save-grouping-inputs` only to retain a replay snapshot; [details](grouping_experiment.py) |
 | Query measured candidates in a saved Discovery batch | `tools.diagnostics.grouping_experiment query` — no RAW or grouping; [details](grouping_experiment.py) |
 | Build the QC sample metadata table from a method DOCX and RAW filenames | `tools.diagnostics.instrument_qc_sequence_manifest` — no RAW reader or trend extraction; [details](instrument_qc_sequence_manifest.py) |

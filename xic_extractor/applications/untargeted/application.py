@@ -88,7 +88,7 @@ from xic_extractor.untargeted_execution.grouping_experiment import (
     PreparedGroupingExperiment,
 )
 
-GROUPING_SNAPSHOT_NAME = "grouping-inputs.pickle.gz"
+GROUPING_SNAPSHOT_NAME = "grouping-inputs.json.gz"
 
 
 class AlignmentProcessExecutionError(RuntimeError):

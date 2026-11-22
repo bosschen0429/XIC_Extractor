@@ -185,7 +185,7 @@ def test_regroup_preserves_overlap_disposition(tmp_path, all_overlap, expected):
         (GroupingWorkset("channel", tuple(owners), (), None),),
         {},
     )
-    path = tmp_path / "grouping-inputs.pickle.gz"
+    path = tmp_path / "grouping-inputs.json.gz"
     write_grouping_inputs(path, inputs, provenance={})
     restored, _ = read_grouping_inputs(path)
     (group,) = replay_grouping(restored)

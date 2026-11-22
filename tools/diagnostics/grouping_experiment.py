@@ -81,7 +81,7 @@ def _parser() -> argparse.ArgumentParser:
         "query", help="Query measured candidates across every sample; no RAW"
     )
     replay = commands.add_parser(
-        "replay", help="Regroup a captured snapshot without RAW or Backfill"
+        "replay", help="Regroup compact observations without RAW or Backfill"
     )
     compare = commands.add_parser(
         "compare",

@@ -101,3 +101,21 @@ def test_matrix_only_joins_batch_qualified_groups_and_keeps_missing_cells(tmp_pa
     stale = replace(pairing, features=features[:2])
     assert run("--pairing", save("stale-join", stale)) == 2
     assert not (out / "alignment_matrix.tsv").exists()
+
+
+def test_matrix_and_pairing_captures_from_the_previous_format_ask_for_a_new_capture(
+    tmp_path, capsys
+):
+    """Earlier Matrix and pairing captures were plain JSON documents."""
+    previous = tmp_path / "matrix-cells.json"
+    previous.write_text('{"schema": "matrix_cells", "batches": []}', encoding="utf-8")
+    other = tmp_path / "batch-2.json"
+    other.write_text('{"schema": "pairing_input"}', encoding="utf-8")
+    for argv in (
+        ["matrix", "--backfill", str(previous)],
+        ["pair-batches", "--inputs", str(previous), str(other)],
+    ):
+        output = tmp_path / argv[0]
+        assert main([*argv, "--output-dir", str(output)]) == 2
+        assert "capture it again" in capsys.readouterr().err
+        assert not output.exists() or list(output.iterdir()) == []

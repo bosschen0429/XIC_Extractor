@@ -1,4 +1,4 @@
-"""Replay the formal grouping decisions over retained observations."""
+"""Replay the formal grouping decisions over retained, curve-free observations."""
 
 from __future__ import annotations
 

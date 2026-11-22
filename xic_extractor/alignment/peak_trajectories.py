@@ -1007,9 +1007,11 @@ def resolve_peak_trajectories(
 def ordered_pattern_contexts(
     contexts: Sequence[SampleElutionContext],
 ) -> tuple[SampleElutionContext, ...]:
-    """Order contexts by their curves to break equal-range/equal-mass ties.
+    """Retain curve-based tie priority as order, including curve-free replays.
 
-    Contexts without curves keep the supplied priority (stable sort).
+    A saved replay keeps this order instead of carrying entire curves solely
+    to break equal-range/equal-mass ties. With no curves, stable sorting keeps
+    the supplied priority.
     """
     return tuple(sorted(contexts, key=lambda context: (context.rt, context.raw)))
 

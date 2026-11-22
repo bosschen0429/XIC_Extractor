@@ -641,7 +641,7 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument(
         "--save-grouping-inputs",
         action="store_true",
-        help="Save grouping-inputs.pickle.gz for regroup.",
+        help="Save grouping-inputs.json.gz for regroup.",
     )
     parser.add_argument(
         "--save-backfill-inputs",

@@ -21,6 +21,7 @@ from xic_extractor.alignment.grouping_experiment import (
     GroupingWorkset,
     replay_grouping,
 )
+from xic_extractor.alignment.peak_trajectories import ordered_pattern_contexts
 from xic_extractor.alignment.sample_rt_calibration import BatchRtCalibrationAccumulator
 from xic_extractor.configuration.execution_profile import (
     ExecutionProfile,
@@ -32,6 +33,7 @@ from xic_extractor.diagnostics.stage_snapshot import (
     read_grouping_inputs,
     write_grouping_inputs,
 )
+from xic_extractor.peak_detection.ms1_shape_identity import prepare_local_peak_shape
 from xic_extractor.untargeted_execution.alignment import execute_prepared_alignment
 
 
@@ -62,12 +64,38 @@ def _two_sample_snapshot(path: Path) -> Path:
     return path
 
 
-@pytest.mark.parametrize("compressed", (True, False))
-def test_snapshot_from_the_previous_format_asks_for_a_new_capture(tmp_path, compressed):
-    """Earlier captures were JSON, gzip-compressed for grouping only."""
-    snapshot = tmp_path / "grouping-inputs.json.gz"
-    text = json.dumps({"schema": "grouping_experiment_inputs"}).encode()
-    snapshot.write_bytes(gzip.compress(text) if compressed else text)
+def _rewrite(path: Path, edit) -> None:
+    with gzip.open(path, "rt", encoding="utf-8") as stream:
+        payload = json.load(stream)
+    edit(payload)
+    with gzip.open(path, "wt", encoding="utf-8") as stream:
+        json.dump(payload, stream)
+
+
+def _inline_rt_model(payload):
+    """The layout before batch RT models were shared by index."""
+    for workset in payload["worksets"]:
+        workset.update(payload["rt_models"][workset.pop("rt_model_index")])
+    payload.pop("rt_models")
+
+
+@pytest.mark.parametrize(
+    "previous_format",
+    (
+        lambda path: path.write_bytes(json.dumps({"schema": "x"}).encode()),
+        lambda path: _rewrite(
+            path,
+            lambda payload: payload["alignment_config"].update(anchor_priorities=[]),
+        ),
+        lambda path: _rewrite(path, _inline_rt_model),
+    ),
+    ids=("uncompressed", "retired_config_key", "inline_rt_model"),
+)
+def test_snapshot_from_a_previous_format_asks_for_a_new_capture(
+    tmp_path, previous_format
+):
+    snapshot = _two_sample_snapshot(tmp_path / "grouping-inputs.json.gz")
+    previous_format(snapshot)
     output = tmp_path / "replay"
     output.mkdir()
     with pytest.raises(SystemExit) as error:
@@ -79,14 +107,20 @@ def test_snapshot_from_the_previous_format_asks_for_a_new_capture(tmp_path, comp
 
 
 @pytest.mark.parametrize("repeat_equal_priority", (False, True))
-def test_equal_contexts_choose_the_landmark_by_curve(repeat_equal_priority):
+def test_compact_snapshot_keeps_curve_tie_priority_and_distinct_anchor_bindings(
+    tmp_path,
+    repeat_equal_priority,
+):
     from xic_extractor.alignment.peak_trajectories import _local_patterns
+    from xic_extractor.alignment.rt_drift import DriftAnchor, RtDriftModel
     from xic_extractor.peak_detection.elution_context import (
         ElutionLandmark,
         SampleElutionContext,
     )
 
     owner = _owner("A", "one", apex_rt=9.0, precursor_mz=500.0)
+    assert owner.cross_sample_member_subject is not None
+    owner = replace(owner, owner_id=owner.cross_sample_member_subject.subject_id)
     first = SampleElutionContext(
         "A",
         500.0,
@@ -104,19 +138,44 @@ def test_equal_contexts_choose_the_landmark_by_curve(repeat_equal_priority):
         if repeat_equal_priority
         else (first, preferred)
     )
-    nodes, _, owner_nodes, _ = _local_patterns(
-        (owner,), contexts, AlignmentConfig(), None
+    anchor = DriftAnchor(
+        "channel", 9.0, 0, False, {"A": 0.0}, owner_ids=frozenset({owner.owner_id})
     )
-    assert nodes[owner_nodes[owner.owner_id]].landmark.height == (
-        100.0 if repeat_equal_priority else 500.0
+    drift = RtDriftModel((anchor,))
+    other_drift = RtDriftModel((replace(anchor, owner_ids=frozenset({"other-owner"})),))
+    workset = GroupingWorkset("first", (owner,), (), None, contexts, rt_drift=drift)
+    inputs = GroupingInputs(
+        ("A",),
+        {"A": 1},
+        AlignmentConfig(),
+        (
+            workset,
+            replace(workset, key="same"),
+            replace(workset, key="other", rt_drift=other_drift),
+        ),
+        {},
     )
+    path = tmp_path / "compact.json.gz"
+    write_grouping_inputs(path, inputs, provenance={})
+    with gzip.open(path, "rt", encoding="utf-8") as stream:
+        payload = json.load(stream)
+    assert len(payload["elution_contexts"]) == 2
+    assert len(payload["rt_models"]) == 2
+    restored, _ = read_grouping_inputs(path)
+    assert restored.worksets[0].rt_drift.anchors[0].owner_ids == anchor.owner_ids
+    assert restored.worksets[2].rt_drift.anchors[0].owner_ids == frozenset(
+        {"other-owner"}
+    )
+    for contexts in (workset.elution_contexts, restored.worksets[0].elution_contexts):
+        nodes, _, owner_nodes, _ = _local_patterns(
+            (owner,), contexts, AlignmentConfig(), None
+        )
+        assert nodes[owner_nodes[owner.owner_id]].landmark.height == (
+            100.0 if repeat_equal_priority else 500.0
+        )
 
 
-def test_elution_landmarks_separate_rows_in_a_crowded_workset():
-    from xic_extractor.peak_detection.ms1_shape_identity import (
-        prepare_local_peak_shape,
-    )
-
+def test_snapshot_retains_elution_inputs_and_replays_separated_rows(tmp_path):
     owners = []
     contexts = []
     for sample, shift, selected in (
@@ -157,10 +216,30 @@ def test_elution_landmarks_separate_rows_in_a_crowded_workset():
         ),
         candidate_ids_by_owner={},
     )
-    assert {frozenset(group.owner_ids) for group in replay_grouping(inputs)} == {
+    expected = {
         frozenset((owners[0].owner_id, owners[2].owner_id)),
         frozenset((owners[1].owner_id, owners[3].owner_id)),
     }
+    path = tmp_path / "context.json.gz"
+    write_grouping_inputs(path, inputs, provenance={"evidence": "synthetic"})
+    with gzip.open(path, "rt", encoding="utf-8") as stream:
+        payload = json.load(stream)
+    restored, _ = read_grouping_inputs(path)
+    compact_contexts = tuple(
+        replace(context, rt=(), raw=())
+        for context in ordered_pattern_contexts(contexts)
+    )
+    assert restored == replace(
+        inputs,
+        worksets=(replace(inputs.worksets[0], elution_contexts=compact_contexts),),
+    )
+    assert all(
+        "rt" not in context and "raw" not in context
+        for context in payload["elution_contexts"]
+    )
+    assert {
+        frozenset(group.owner_ids) for group in replay_grouping(restored)
+    } == expected
 
 
 def _snapshot_grouping(
@@ -242,7 +321,7 @@ def test_application_outputs_formal_groups_with_an_optional_snapshot(
     assert summary["source"]["initial_job_count"] == 2
     assert summary["group_count"] == 1
     assert not (output / "alignment_matrix.tsv").exists()
-    snapshot = output / "grouping-inputs.pickle.gz"
+    snapshot = output / "grouping-inputs.json.gz"
     assert snapshot.exists() is save_snapshot
     if not save_snapshot:
         return
@@ -355,7 +434,7 @@ def test_istd_experiment_and_saved_replay_use_formal_batch_coordinates(
     expected = replay_grouping(prepared.inputs, rt_coordinates=formal_frame)
     assert len(expected) == 2
     assert group_signature(prepared.groups) == group_signature(expected)
-    snapshot = tmp_path / "istd.pickle.gz"
+    snapshot = tmp_path / "istd.json.gz"
     write_grouping_inputs(snapshot, prepared.inputs, provenance={})
     restored, _ = read_grouping_inputs(snapshot)
     assert group_signature(replay_grouping(restored)) == group_signature(expected)
@@ -514,6 +593,8 @@ def test_replay_refits_batch_rt_models_from_retained_anchors(
     )
     snapshot, output = tmp_path / "inputs.gz", tmp_path / "replay"
     write_grouping_inputs(snapshot, inputs, provenance={"evidence": "synthetic"})
+    with gzip.open(snapshot, "rt", encoding="utf-8") as stream:
+        assert len(json.load(stream)["rt_models"]) == 1
     restored, _ = read_grouping_inputs(snapshot)
     first, second = restored.worksets
     assert first.rt_model_inputs == kept
@@ -835,7 +916,7 @@ def test_calibrated_patterns_reject_shifted_decoys_without_merging_real_peaks(
 
 
 def test_replay_only_recomputes_when_grouping_inputs_change(tmp_path, monkeypatch):
-    snapshot = _two_sample_snapshot(tmp_path / "two-sample.pickle.gz")
+    snapshot = _two_sample_snapshot(tmp_path / "two-sample.json.gz")
     a, b = "a|hypothesis|peak", "b|hypothesis|peak"
     counted_replay = Mock(wraps=_replay_without_execution)
     monkeypatch.setattr(
@@ -1084,7 +1165,7 @@ def test_grouping_anchor_table_lists_istd_knots_without_any_workset(
 def test_regroup_cannot_overwrite_previous_results(tmp_path):
     from scripts.run_alignment import main
 
-    snapshot = _two_sample_snapshot(tmp_path / "two-sample.pickle.gz")
+    snapshot = _two_sample_snapshot(tmp_path / "two-sample.json.gz")
     output = tmp_path / "replay"
     args = ["regroup", "--inputs", str(snapshot), "--output-dir", str(output)]
     assert main(args) == 0

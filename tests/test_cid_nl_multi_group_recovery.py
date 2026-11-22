@@ -975,7 +975,7 @@ def test_full_alignment_captures_competing_rows_and_single_batch_matrix(
         )
     )
     replay_names = {
-        "grouping-inputs.pickle.gz",
+        "grouping-inputs.json.gz",
         "backfill-inputs",
         "pairing-inputs",
         "matrix-cells.pickle.gz",
@@ -983,7 +983,7 @@ def test_full_alignment_captures_competing_rows_and_single_batch_matrix(
     }
     assert not replay_names.intersection(path.name for path in control_dir.iterdir())
     assert replay_names.intersection(path.name for path in capture_dir.iterdir()) == {
-        "grouping-inputs.pickle.gz",
+        "grouping-inputs.json.gz",
         "backfill-inputs",
         "matrix-cells.pickle.gz",
     }
@@ -1006,7 +1006,7 @@ def test_full_alignment_captures_competing_rows_and_single_batch_matrix(
     assert all(float(row["S1"]) < float(row["S2"]) for row in matrix_rows)
     assert sorted(bool(row["Missing"]) for row in matrix_rows) == [False, True]
 
-    regrouped = replay("regroup", "--inputs", capture_dir / "grouping-inputs.pickle.gz")
+    regrouped = replay("regroup", "--inputs", capture_dir / "grouping-inputs.json.gz")
     groups = defaultdict(set)
     for row in read_tsv(regrouped / "members.tsv"):
         groups[row["group_id"]].add(row["owner_id"])
@@ -1123,7 +1123,7 @@ def test_matrix_preserves_empty_batch_sample_column(tmp_path, monkeypatch):
     )
     assert not any(
         (formal / name).exists()
-        for name in ("grouping-inputs.pickle.gz", "backfill-inputs", "pairing-inputs")
+        for name in ("grouping-inputs.json.gz", "backfill-inputs", "pairing-inputs")
     )
     direct = tmp_path / "matrix-direct"
     assert (
