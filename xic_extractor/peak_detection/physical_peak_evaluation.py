@@ -73,8 +73,6 @@ def prepare_physical_signal(
     *,
     profile: SignalProcessingProfile = DEFAULT_SIGNAL_PROCESSING_PROFILE,
 ) -> PreparedSignalResult:
-    if not isinstance(profile, SignalProcessingProfile):
-        raise TypeError("profile must be a SignalProcessingProfile")
     rt = _physical_vector(rt_values, field="rt_values")
     raw = _physical_vector(intensity_values, field="intensity_values")
 
@@ -207,8 +205,6 @@ def enumerate_physical_segment_universe(
     selection_policy_version: str = PHYSICAL_PEAK_POINT_POLICY,
     discovery_components: tuple[RawPeakComponent, ...] | None = None,
 ) -> PhysicalSegmentUniverse:
-    if not isinstance(prepared_result, PreparedSignalResult):
-        raise TypeError("prepared_result must be a PreparedSignalResult")
     if selection_policy_version not in _PHYSICAL_PEAK_SELECTION_POLICIES:
         raise ValueError("unsupported physical peak selection policy")
     universe_schema = PHYSICAL_SEGMENT_UNIVERSE_SCHEMA
@@ -595,10 +591,6 @@ def mint_physical_peak_question(
     selection_policy_version: str = PHYSICAL_PEAK_POINT_POLICY,
     search_rt_window: tuple[float, float] | None = None,
 ) -> PhysicalPeakQuestion:
-    if not isinstance(prepared, PreparedSignalProjection):
-        raise TypeError("prepared must be a PreparedSignalProjection")
-    if not isinstance(universe, PhysicalSegmentUniverse):
-        raise TypeError("universe must be a PhysicalSegmentUniverse")
     query_rt = _finite_physical_float(query_rt_min, field="query_rt_min")
     search_rt_window = _validated_search_window(
         search_rt_window, query_rt, selection_policy_version
@@ -635,8 +627,6 @@ def _validated_search_window(
         PHYSICAL_PEAK_UNLOCATED_BACKFILL_POLICY,
     }:
         raise ValueError("search window requires a window selection policy")
-    if not isinstance(window, tuple) or len(window) != 2:
-        raise ValueError("search window must contain two RT bounds")
     start, end = (
         _finite_physical_float(value, field="search_rt_window") for value in window
     )
@@ -887,8 +877,6 @@ def answer_physical_peak_question(
     universe: PhysicalSegmentUniverse,
     question: PhysicalPeakQuestion,
 ) -> PhysicalPeakEvaluation:
-    if not isinstance(prepared_result, PreparedSignalResult):
-        raise TypeError("prepared_result must be a PreparedSignalResult")
     state = universe.state
     reason = universe.reason
     selected: PhysicalSegment | None = None
@@ -977,8 +965,6 @@ def evaluate_physical_peak(
 ) -> PhysicalPeakEvaluation:
     """Answer one workflow-neutral physical question from owner-derived context."""
 
-    if not isinstance(prepared_result, PreparedSignalResult):
-        raise TypeError("prepared_result must be a PreparedSignalResult")
     universe = enumerate_physical_segment_universe(
         prepared_result,
         request_context_rt_start_min=request_context_rt_start_min,
@@ -1051,8 +1037,6 @@ def _physical_raw_descriptor_projection(
 
 
 def _physical_vector(values: object, *, field: str) -> tuple[float, ...]:
-    if isinstance(values, (str, bytes)):
-        raise TypeError(f"{field} must be a one-dimensional numeric sequence")
     try:
         array = np.asarray(values, dtype=float)
     except (TypeError, ValueError) as exc:
@@ -1069,79 +1053,6 @@ def _finite_physical_float(value: object, *, field: str) -> float:
     if not math.isfinite(result):
         raise ValueError(f"{field} must be a finite number")
     return result
-
-
-def validate_prepared_signal(projection: PreparedSignalProjection) -> None:
-    if projection.schema_version != "prepared_signal_projection":
-        raise ValueError("unsupported prepared signal projection schema")
-    if projection.state not in {"available", "unavailable", "failed"}:
-        raise ValueError("unsupported prepared signal state")
-    if (projection.state == "available") != (projection.reason == ""):
-        raise ValueError("prepared signal state/reason is not canonical")
-
-
-def validate_physical_segment_universe(universe: PhysicalSegmentUniverse) -> None:
-    if universe.schema_version != PHYSICAL_SEGMENT_UNIVERSE_SCHEMA:
-        raise ValueError("unsupported physical segment universe schema")
-    if universe.state not in {"available", "unavailable", "failed"}:
-        raise ValueError("unsupported physical segment universe state")
-    if (universe.state == "available") != (universe.reason == ""):
-        raise ValueError("physical segment universe state/reason is not canonical")
-    if universe.state == "available" and not universe.segments:
-        raise ValueError("available physical segment universe must not be empty")
-    start = _finite_physical_float(
-        universe.context_rt_start_min, field="context_rt_start_min"
-    )
-    end = _finite_physical_float(
-        universe.context_rt_end_min, field="context_rt_end_min"
-    )
-    if start > end:
-        raise ValueError("physical segment universe context is reversed")
-
-
-def validate_physical_peak_question(question: PhysicalPeakQuestion) -> None:
-    expected_schema = (
-        "bounded_physical_peak_question"
-        if question.search_rt_window is not None
-        else "physical_peak_question"
-    )
-    if question.schema_version != expected_schema:
-        raise ValueError("unsupported physical peak question schema")
-    _validated_search_window(
-        question.search_rt_window,
-        question.query_rt_min,
-        question.selection_policy_version,
-    )
-    query_rt = _finite_physical_float(question.query_rt_min, field="query_rt_min")
-    if question.selection_policy_version == DISCOVERY_PHYSICAL_PEAK_POINT_POLICY:
-        if any(
-            segment not in question.universe.segments
-            for segment in question.admissible_segments
-        ):
-            raise ValueError("physical question references a foreign segment")
-    elif question.admissible_segments != _admissible_physical_segments(
-        question.universe,
-        query_rt,
-        question.selection_policy_version,
-        question.search_rt_window,
-    ):
-        raise ValueError("physical question omits owner-admissible segments")
-
-
-def validate_physical_peak_answer(answer: PhysicalPeakAnswer) -> None:
-    if answer.schema_version != "physical_peak_answer":
-        raise ValueError("unsupported physical peak answer schema")
-    if answer.state not in {"available", "unavailable", "failed"}:
-        raise ValueError("unsupported physical peak answer state")
-    if (answer.state == "available") != (answer.reason == ""):
-        raise ValueError("physical peak answer state/reason is not canonical")
-    if (answer.state == "available") != (answer.selected_segment is not None):
-        raise ValueError("physical peak answer selection is not canonical")
-    if (
-        answer.selected_segment is not None
-        and answer.selected_segment not in answer.question.admissible_segments
-    ):
-        raise ValueError("physical peak answer selects outside admissible segments")
 
 
 def _physical_segment_from_chrom(segment: Any) -> PhysicalSegment:

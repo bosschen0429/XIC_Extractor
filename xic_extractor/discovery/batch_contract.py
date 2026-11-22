@@ -70,33 +70,6 @@ class DiscoveryPeakUniverseReceipt:
     peak_csv_byte_size: int
     mass_recalibration_result: MassRecalibrationResult = MassRecalibrationResult("none")
 
-    def __post_init__(self) -> None:
-        _required_text(self.sample_stem, field="sample_stem")
-        if not isinstance(self.acquisition_source, AcquisitionSourceIdentity):
-            raise IdentityContractError(
-                "acquisition_source must be an AcquisitionSourceIdentity"
-            )
-        if (
-            isinstance(self.peak_count, bool)
-            or not isinstance(self.peak_count, int)
-            or self.peak_count < 0
-        ):
-            raise IdentityContractError("peak_count must be a non-negative integer")
-        if self.peak_csv_schema_version != DISCOVERY_PEAK_CSV_SCHEMA_VERSION:
-            raise IdentityContractError("peak artifact schema version is unsupported")
-        _validate_digest(
-            self.peak_csv_sha256,
-            field="peak_csv_sha256",
-        )
-        if (
-            isinstance(self.peak_csv_byte_size, bool)
-            or not isinstance(self.peak_csv_byte_size, int)
-            or self.peak_csv_byte_size < 0
-        ):
-            raise IdentityContractError(
-                "peak_csv_byte_size must be a non-negative integer"
-            )
-
 
 def mint_discovery_peak_universe_receipt(
     *,
@@ -110,17 +83,11 @@ def mint_discovery_peak_universe_receipt(
 ) -> DiscoveryPeakUniverseReceipt:
     """Mint a receipt after the Discovery writers have committed bytes."""
 
-    stem = _required_text(sample_stem, field="sample_stem")
-    if not isinstance(acquisition_source, AcquisitionSourceIdentity):
-        raise IdentityContractError(
-            "acquisition_source must be an AcquisitionSourceIdentity"
-        )
-    ordered = _canonical_peaks(peaks, sample_stem=stem)
     artifact = fingerprint_file_content(peak_csv)
     return DiscoveryPeakUniverseReceipt(
-        sample_stem=stem,
+        sample_stem=sample_stem,
         acquisition_source=acquisition_source,
-        peak_count=len(ordered),
+        peak_count=len(peaks),
         peak_csv_schema_version=(DISCOVERY_PEAK_CSV_SCHEMA_VERSION),
         peak_csv_sha256=artifact.content_sha256,
         peak_csv_byte_size=artifact.byte_size,
@@ -134,7 +101,6 @@ def validate_discovery_peak_artifact(
 ) -> None:
     """Reject peak bytes that do not match the Discovery-owned artifact."""
 
-    _require_receipt(receipt)
     fingerprint = fingerprint_file_content(peak_csv)
     if (
         fingerprint.content_sha256 != receipt.peak_csv_sha256
@@ -146,16 +112,10 @@ def validate_discovery_peak_artifact(
 def validate_discovery_peak_universe(
     receipt: DiscoveryPeakUniverseReceipt,
     *,
-    acquisition_source: AcquisitionSourceIdentity,
     peaks: Sequence[DiscoveryPeak],
 ) -> tuple[DiscoveryPeak, ...]:
-    """Check the parsed population and acquisition against its file receipt."""
+    """Check the parsed population against its file receipt."""
 
-    _require_receipt(receipt)
-    if acquisition_source != receipt.acquisition_source:
-        raise IdentityContractError(
-            "current acquisition source does not match the Discovery receipt"
-        )
     ordered = _canonical_peaks(peaks, sample_stem=receipt.sample_stem)
     if len(ordered) != receipt.peak_count:
         raise IdentityContractError("peak count does not match the Discovery receipt")
@@ -167,7 +127,6 @@ def discovery_receipt_index_fields(
 ) -> dict[str, str]:
     """Project one typed receipt into the batch-index CSV vocabulary."""
 
-    _require_receipt(receipt)
     source = receipt.acquisition_source
     if source.local_file_revision is None:
         raise ValueError(
@@ -202,9 +161,11 @@ def discovery_receipt_from_index_fields(
     sample_stem: str,
     peak_count: int,
 ) -> DiscoveryPeakUniverseReceipt:
-    """Reconstruct and self-validate one batch-index receipt."""
+    """Reconstruct and validate one batch-index receipt."""
 
     try:
+        if row["peak_csv_schema_version"] != DISCOVERY_PEAK_CSV_SCHEMA_VERSION:
+            raise IdentityContractError("peak artifact schema version is unsupported")
         revision = json.loads(row["acquisition_local_file_revision"])
         if not isinstance(revision, list):
             raise IdentityContractError(
@@ -221,11 +182,19 @@ def discovery_receipt_from_index_fields(
             observation_namespace=row["observation_namespace"],
         )
         return DiscoveryPeakUniverseReceipt(
-            sample_stem=sample_stem,
+            sample_stem=require_owner_normalized_text(
+                sample_stem,
+                field="sample_stem",
+                error_factory=lambda _msg: IdentityContractError(
+                    "sample_stem must be non-empty normalized text"
+                ),
+            ),
             acquisition_source=source,
             peak_count=peak_count,
             peak_csv_schema_version=(row["peak_csv_schema_version"]),
-            peak_csv_sha256=row["peak_csv_sha256"],
+            peak_csv_sha256=_validate_digest(
+                row["peak_csv_sha256"], field="peak_csv_sha256"
+            ),
             peak_csv_byte_size=_nonnegative_int(
                 row["peak_csv_byte_size"],
                 field="peak_csv_byte_size",
@@ -245,34 +214,13 @@ def _canonical_peaks(
     *,
     sample_stem: str,
 ) -> tuple[DiscoveryPeak, ...]:
-    if isinstance(peaks, (str, bytes)):
-        raise IdentityContractError("peak universe must contain DiscoveryPeak values")
-    supplied = tuple(peaks)
-    if any(not isinstance(item, DiscoveryPeak) for item in supplied):
-        raise IdentityContractError("peak universe must contain DiscoveryPeak values")
-    ordered = tuple(sorted(supplied, key=lambda item: item.peak_id))
+    ordered = tuple(sorted(peaks, key=lambda item: item.peak_id))
     peak_ids = tuple(item.peak_id for item in ordered)
     if len(peak_ids) != len(set(peak_ids)):
         raise IdentityContractError("peak universe IDs must be unique")
     if any(item.sample_stem != sample_stem for item in ordered):
         raise IdentityContractError("peak universe contains a different sample")
     return ordered
-
-
-def _require_receipt(value: object) -> DiscoveryPeakUniverseReceipt:
-    if not isinstance(value, DiscoveryPeakUniverseReceipt):
-        raise IdentityContractError("receipt must be a DiscoveryPeakUniverseReceipt")
-    return value
-
-
-def _required_text(value: object, *, field: str) -> str:
-    return require_owner_normalized_text(
-        value,
-        field=field,
-        error_factory=lambda msg: IdentityContractError(
-            f"{field} must be non-empty normalized text"
-        ),
-    )
 
 
 def _validate_digest(value: object, *, field: str) -> str:
@@ -302,19 +250,6 @@ def _nonnegative_int(value: object, *, field: str) -> int:
     )
 
 
-def canonical_sample_stems(values: Sequence[str]) -> tuple[str, ...]:
-    if isinstance(values, (str, bytes)):
-        raise IdentityContractError("sample stems must be a sequence")
-    stems = tuple(values)
-    if (
-        not stems
-        or len(stems) != len(set(stems))
-        or any(not isinstance(item, str) or not item.strip() for item in stems)
-    ):
-        raise IdentityContractError("sample stems must be unique non-empty text")
-    return stems
-
-
 __all__ = (
     "DISCOVERY_BATCH_INDEX_COLUMNS",
     "DISCOVERY_BATCH_INDEX_SCHEMA_VERSION",
@@ -325,6 +260,5 @@ __all__ = (
     "discovery_receipt_index_fields",
     "mint_discovery_peak_universe_receipt",
     "validate_discovery_peak_artifact",
-    "canonical_sample_stems",
     "validate_discovery_peak_universe",
 )

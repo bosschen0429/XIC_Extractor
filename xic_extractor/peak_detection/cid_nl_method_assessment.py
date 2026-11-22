@@ -277,12 +277,7 @@ def mint_cid_nl_method_assessment(
         target=target,
         method_subject=method_subject,
     )
-    if not isinstance(evaluation_receipt, CidNlEvaluationReceipt):
-        raise CidNlMethodAssessmentContractError(
-            "evaluation_receipt must be owner-normalized"
-        )
-    _required_text(detector_invocation_id, field="detector_invocation_id")
-    candidates = _canonical_candidates(candidate_peaks, allow_empty=True)
+    candidates = _canonical_candidates(candidate_peaks)
     evidence = _canonical_evidence_refs(evidence_refs)
     individual = _canonical_individual_refs(individual_support_refs)
     set_relations = _canonical_set_refs(set_relation_refs)
@@ -487,18 +482,8 @@ def _supported_peaks(
 
 
 def _canonical_candidates(
-    value: object,
-    *,
-    allow_empty: bool,
+    value: tuple[PeakObservation, ...],
 ) -> tuple[PeakObservation, ...]:
-    if not isinstance(value, tuple) or (not value and not allow_empty):
-        raise CidNlMethodAssessmentContractError(
-            "candidate_peaks must be an immutable tuple"
-        )
-    if any(not isinstance(item, PeakObservation) for item in value):
-        raise CidNlMethodAssessmentContractError(
-            "candidate_peaks must contain owner-backed observations"
-        )
     refs = tuple(sorted(value, key=lambda item: item.measured_order_key))
     _require_unique_refs(
         tuple(item.physical_peak_key for item in refs),
@@ -507,39 +492,25 @@ def _canonical_candidates(
     return refs
 
 
-def _canonical_evidence_refs(value: object) -> tuple[CidNlEvidenceObservation, ...]:
-    return _canonical_refs(
-        value,
-        expected_type=CidNlEvidenceObservation,
-        field="evidence_refs",
-    )
+def _canonical_evidence_refs(
+    value: tuple[CidNlEvidenceObservation, ...],
+) -> tuple[CidNlEvidenceObservation, ...]:
+    return _canonical_refs(value, field="evidence_refs")
 
 
-def _canonical_individual_refs(value: object) -> tuple[DdaCidNlPeakSupport, ...]:
-    return _canonical_refs(
-        value,
-        expected_type=DdaCidNlPeakSupport,
-        field="individual_support_refs",
-    )
+def _canonical_individual_refs(
+    value: tuple[DdaCidNlPeakSupport, ...],
+) -> tuple[DdaCidNlPeakSupport, ...]:
+    return _canonical_refs(value, field="individual_support_refs")
 
 
 def _canonical_set_refs(
-    value: object,
+    value: tuple[DdaCidNlCandidateSetRelation, ...],
 ) -> tuple[DdaCidNlCandidateSetRelation, ...]:
-    return _canonical_refs(
-        value,
-        expected_type=DdaCidNlCandidateSetRelation,
-        field="set_relation_refs",
-    )
+    return _canonical_refs(value, field="set_relation_refs")
 
 
-def _canonical_refs(value: object, *, expected_type: type, field: str) -> tuple:
-    if not isinstance(value, tuple):
-        raise CidNlMethodAssessmentContractError(f"{field} must be a tuple")
-    if any(not isinstance(item, expected_type) for item in value):
-        raise CidNlMethodAssessmentContractError(
-            f"{field} contains a non-owner reference"
-        )
+def _canonical_refs(value: tuple, *, field: str) -> tuple:
 
     def event_key(
         item: CidNlEvidenceObservation
@@ -570,16 +541,6 @@ def _canonical_refs(value: object, *, expected_type: type, field: str) -> tuple:
 def _require_unique_refs(values: tuple[str, ...], *, field: str) -> None:
     if len(set(values)) != len(values):
         raise CidNlMethodAssessmentContractError(f"duplicate {field} refs")
-
-
-def _required_text(value: object, *, field: str) -> str:
-    if not isinstance(value, str) or not value.strip():
-        raise CidNlMethodAssessmentContractError(f"{field} must be non-empty")
-    if value != value.strip():
-        raise CidNlMethodAssessmentContractError(
-            f"{field} must not contain surrounding whitespace"
-        )
-    return value
 
 
 __all__ = [

@@ -592,46 +592,6 @@ def test_recovery_evidence_cannot_create_first_group_or_become_support(
     assert candidate.peak_observation not in facts.support_trace_refs
 
 
-def test_recovery_receipt_prevents_independent_near_isobaric_target_pairing(
-    tmp_path: Path,
-) -> None:
-    fixture = _study_fixture(tmp_path, ("s1", "s2", "missing"))
-    facts = assess_conservative_backfill_group(
-        _spine(
-            fixture,
-            support_apex_by_sample={"s1": 8.0, "s2": 8.0},
-            invocation="target-owner",
-        ).cells,
-        sample_population=fixture.samples,
-    )
-    other_facts = assess_conservative_backfill_group(
-        _spine(
-            fixture,
-            support_apex_by_sample={"s1": 8.0, "s2": 8.0},
-            invocation="near-isobaric-owner",
-            target=fixture.other_target,
-        ).cells,
-        sample_population=fixture.samples,
-    )
-    universe = _recovery_universe(
-        fixture,
-        (facts,),
-        "missing",
-        (_peak(fixture, "missing", apex_rt=8.0),),
-    )
-
-    assert fixture.target.mz == fixture.other_target.mz
-    with pytest.raises(
-        ConservativeBackfillContractError,
-        match="exact sample and target",
-    ):
-        mint_conservative_backfill_candidate_universe(
-            sample=fixture.sample("missing"),
-            group_facts=(other_facts,),
-            candidate_assessment=universe.candidate_assessment,
-        )
-
-
 def test_rt_mismatch_remains_nonnumeric_without_drift_or_split_logic(
     tmp_path: Path,
 ) -> None:

@@ -1,13 +1,9 @@
 from __future__ import annotations
 
-import hashlib
-import json
 import math
-import time
 from bisect import bisect_left, bisect_right
-from collections.abc import Mapping, Sequence
-from dataclasses import asdict, dataclass, field
-from pathlib import Path
+from collections.abc import Sequence
+from dataclasses import dataclass, field
 
 import numpy as np
 
@@ -22,27 +18,8 @@ from xic_extractor.ms1_scan_index import MS1Scan, validate_ms1_scan_index
 from xic_extractor.peak_detection.ms1_morphology import (
     DEFAULT_GAUSSIAN15_WINDOW_POINTS,
     gaussian15_morphology_trace,
-    morphology_trace_effective_points,
 )
 from xic_extractor.validation_primitives import require_finite_real, require_integer
-
-SUMMARY_SCHEMA_VERSION = "local_ms1_feature_summary"
-DIAGNOSTICS_COLUMNS = (
-    "trace_id",
-    "mz_apex",
-    "rt_apex_min",
-    "rt_start_min",
-    "rt_end_min",
-    "observed_scan_count",
-    "missing_scan_count",
-    "gap_fraction",
-    "mz_ppm_std",
-    "prominence",
-    "boundary_quality",
-    "split_peak",
-    "overlap_suspected",
-    "reason",
-)
 
 
 @dataclass(frozen=True)
@@ -111,60 +88,8 @@ class LocalMs1FeatureSettings:
             raise ValueError("max_ok_mz_ppm_std must be <= max_weak_mz_ppm_std")
 
 
-@dataclass(frozen=True)
-class LocalMs1FeatureSummary:
-    schema_version: str
-    raw_path: str
-    raw_file_name: str
-    raw_file_size_bytes: int | None
-    raw_file_mtime_ns: int | None
-    sample_stem: str
-    extraction_backend: str
-    ms1_scan_selection_rule: str
-    generator_version: str
-    parameters: Mapping[str, object]
-    parameter_hash: str
-    wall_time_sec: float
-    smoothing_kernel_name: str
-    smoothing_kernel_scans: int
-    median_ms1_scan_interval_sec: float | None
-    effective_smoothing_seconds: float | None
-    ms1_scan_count: int
-    centroid_peak_count: int
-    total_traces: int
-    total_peak_regions: int
-    ok_feature_count: int
-    weak_support_feature_count: int
-    fail_count: int
-    detected_features_rows: int
-    diagnostics_row_count: int
-    height_semantics: str
-    area_semantics: str
-    area_contract: str
-    quant_ready: bool
-
-
-@dataclass(frozen=True)
-class LocalMs1FeatureDiagnosticRow:
-    trace_id: str
-    mz_apex: float | None
-    rt_apex_min: float | None
-    rt_start_min: float | None
-    rt_end_min: float | None
-    observed_scan_count: int
-    missing_scan_count: int
-    gap_fraction: float
-    mz_ppm_std: float | None
-    prominence: float | None
-    boundary_quality: float | None
-    split_peak: bool
-    overlap_suspected: bool
-    reason: str
-
-
 @dataclass
 class _TraceBuilder:
-    trace_id: int
     points: list[tuple[int, float, float, float]]
     scan_positions: list[int] = field(default_factory=list)
     internal_missing_scan_count: int = 0
@@ -181,7 +106,6 @@ class _SeededMzRange:
 
 @dataclass(frozen=True)
 class _PeakRegion:
-    trace_id: str
     scan_numbers: tuple[int, ...]
     rts: np.ndarray
     mzs: np.ndarray
@@ -191,76 +115,27 @@ class _PeakRegion:
     left_index: int
     right_index: int
     missing_scan_count: int
-    split_peak: bool
-    overlap_suspected: bool
-
-
-def normalize_local_ms1_sample_stem(value: object) -> str:
-    """Return the canonical sample identity used by every local-MS1 artifact."""
-
-    if not isinstance(value, str):
-        raise ValueError("sample_stem must be text")
-    normalized = value.strip()
-    if not normalized:
-        raise ValueError("sample_stem must contain non-whitespace text")
-    return normalized
 
 
 def build_local_ms1_feature_table(
     index: tuple[MS1Scan, ...],
     *,
     sample_stem: str,
-    raw_path: str,
-    raw_file_size_bytes: int | None = None,
-    raw_file_mtime_ns: int | None = None,
     settings: LocalMs1FeatureSettings | None = None,
-) -> tuple[
-    tuple[DetectedFeature, ...],
-    LocalMs1FeatureSummary,
-    tuple[LocalMs1FeatureDiagnosticRow, ...],
-]:
+) -> tuple[DetectedFeature, ...]:
     """Build chromatographic features from centroid ions, not profile samples."""
-    sample_stem = normalize_local_ms1_sample_stem(sample_stem)
-    if not isinstance(raw_path, str) or not raw_path.strip():
-        raise ValueError("raw_path must be a non-empty string")
-    raw_path = raw_path.strip()
-    raw_file_size_bytes = _optional_nonnegative_integer(
-        raw_file_size_bytes,
-        name="raw_file_size_bytes",
-    )
-    raw_file_mtime_ns = _optional_nonnegative_integer(
-        raw_file_mtime_ns,
-        name="raw_file_mtime_ns",
-    )
+    sample_stem = sample_stem.strip()
+    if not sample_stem:
+        raise ValueError("sample_stem must contain non-whitespace text")
     resolved = settings or LocalMs1FeatureSettings()
     validate_ms1_scan_index(index, require_nonempty=True)
-    start = time.perf_counter()
     traces = _build_seeded_traces(index, resolved)
     features: list[DetectedFeature] = []
-    diagnostics: list[LocalMs1FeatureDiagnosticRow] = []
-    peak_region_count = 0
 
     for trace in traces:
-        trace_id = f"{sample_stem}|trace|{trace.trace_id:06d}"
         if len(trace.points) < resolved.min_observed_scans:
-            diagnostics.append(
-                _diagnostic_from_trace(
-                    trace_id,
-                    trace,
-                    "too_few_observed_scans",
-                )
-            )
-            peak_region_count += 1
             continue
         if not _trace_has_min_consecutive_intensity(trace, resolved):
-            diagnostics.append(
-                _diagnostic_from_trace(
-                    trace_id,
-                    trace,
-                    "too_few_consecutive_intense_scans",
-                )
-            )
-            peak_region_count += 1
             continue
         scan_numbers = tuple(point[0] for point in trace.points)
         rts = np.asarray([point[1] for point in trace.points], dtype=float)
@@ -271,7 +146,6 @@ def build_local_ms1_feature_table(
             window_points=resolved.gaussian_window_points,
         )
         regions = _peak_regions_from_smoothed_trace(
-            trace_id=trace_id,
             scan_numbers=scan_numbers,
             rts=rts,
             mzs=mzs,
@@ -281,21 +155,9 @@ def build_local_ms1_feature_table(
             internal_missing_gaps=tuple(trace.internal_missing_gaps),
             settings=resolved,
         )
-        if not regions:
-            diagnostics.append(
-                _diagnostic_from_trace(
-                    trace_id,
-                    trace,
-                    "no_bounded_peak_region",
-                )
-            )
-            peak_region_count += 1
-            continue
         for region in regions:
-            peak_region_count += 1
-            quality, reason = _classify_region(region, resolved)
+            quality = _classify_region(region, resolved)
             if quality == "FAIL":
-                diagnostics.append(_diagnostic_from_region(region, reason))
                 continue
             feature_index = len(features) + 1
             feature_id = f"{sample_stem}|local_ms1_feature|{feature_index:06d}"
@@ -349,83 +211,7 @@ def build_local_ms1_feature_table(
             )
         )
 
-    ok_count = sum(
-        1
-        for feature in sorted_features
-        if feature.trace_quality == LOCAL_MS1_FEATURE_TRACE_QUALITY_OK
-    )
-    weak_count = sum(
-        1
-        for feature in sorted_features
-        if feature.trace_quality == LOCAL_MS1_FEATURE_TRACE_QUALITY_WEAK_SUPPORT
-    )
-    fail_count = len(diagnostics)
-    interval = _median_scan_interval_sec(index)
-    summary = LocalMs1FeatureSummary(
-        schema_version=SUMMARY_SCHEMA_VERSION,
-        raw_path=raw_path,
-        raw_file_name=Path(raw_path).name,
-        raw_file_size_bytes=raw_file_size_bytes,
-        raw_file_mtime_ns=raw_file_mtime_ns,
-        sample_stem=sample_stem,
-        extraction_backend="local_ms1_scan_index",
-        ms1_scan_selection_rule="MSOrder == Ms",
-        generator_version="local_ms1_feature_generator",
-        parameters=asdict(resolved),
-        parameter_hash=_parameter_hash(resolved),
-        wall_time_sec=time.perf_counter() - start,
-        smoothing_kernel_name="gaussian_15",
-        smoothing_kernel_scans=resolved.gaussian_window_points,
-        median_ms1_scan_interval_sec=interval,
-        effective_smoothing_seconds=(
-            interval
-            * morphology_trace_effective_points(
-                len(index),
-                method="gaussian_15",
-                window_points=resolved.gaussian_window_points,
-            )
-            if interval is not None
-            else None
-        ),
-        ms1_scan_count=len(index),
-        centroid_peak_count=sum(len(scan.masses) for scan in index),
-        total_traces=len(traces),
-        total_peak_regions=peak_region_count,
-        ok_feature_count=ok_count,
-        weak_support_feature_count=weak_count,
-        fail_count=fail_count,
-        detected_features_rows=len(sorted_features),
-        diagnostics_row_count=len(diagnostics),
-        height_semantics="screening_smoothed_height",
-        area_semantics="screening_smoothed_baseline_corrected_area",
-        area_contract="screening_only",
-        quant_ready=False,
-    )
-    _validate_summary(summary)
-    return tuple(sorted_features), summary, tuple(diagnostics)
-
-
-def _parameter_hash(settings: LocalMs1FeatureSettings) -> str:
-    payload = json.dumps(asdict(settings), sort_keys=True, separators=(",", ":"))
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
-
-
-def _optional_nonnegative_integer(value: object, *, name: str) -> int | None:
-    if value is None:
-        return None
-    parsed = require_integer(value, name=name)
-    if parsed < 0:
-        raise ValueError(f"{name} must be an integer >= 0")
-    return parsed
-
-
-def _median_scan_interval_sec(index: tuple[MS1Scan, ...]) -> float | None:
-    if len(index) < 2:
-        return None
-    diffs = np.diff(np.asarray([scan.rt for scan in index], dtype=float)) * 60.0
-    if len(diffs) == 0:
-        return None
-    return float(np.median(diffs))
+    return tuple(sorted_features)
 
 
 def _local_linear_baseline_area(
@@ -467,7 +253,6 @@ def _prominence(smoothed: np.ndarray, apex_index: int, left: int, right: int) ->
 
 def _peak_regions_from_smoothed_trace(
     *,
-    trace_id: str,
     scan_numbers: tuple[int, ...],
     rts: np.ndarray,
     mzs: np.ndarray,
@@ -484,13 +269,11 @@ def _peak_regions_from_smoothed_trace(
         apices = (int(np.argmax(smoothed)),)
     boundaries = _split_boundaries(smoothed, apices, settings)
     regions: list[_PeakRegion] = []
-    split_peak = len(boundaries) > 1
     for left, apex_index, right in boundaries:
         if right - left + 1 < settings.min_observed_scans:
             continue
         regions.append(
             _PeakRegion(
-                trace_id=trace_id,
                 scan_numbers=scan_numbers[left : right + 1],
                 rts=rts[left : right + 1],
                 mzs=mzs[left : right + 1],
@@ -506,8 +289,6 @@ def _peak_regions_from_smoothed_trace(
                     right=right,
                     trace_length=len(smoothed),
                 ),
-                split_peak=split_peak,
-                overlap_suspected=not split_peak and len(apices) > 1,
             )
         )
     return tuple(regions)
@@ -677,13 +458,8 @@ def _build_seeded_traces(
         ranges[range_index].points.append((scan_index, scan_number, rt, mz, intensity))
 
     traces: list[_TraceBuilder] = []
-    next_trace_id = 1
     for seed_range in ranges:
-        next_trace_id = _build_seed_range_traces(
-            seed_range,
-            next_trace_id=next_trace_id,
-            settings=settings,
-        )
+        _build_seed_range_traces(seed_range, settings=settings)
         traces.extend(seed_range.traces)
 
     for trace in traces:
@@ -695,9 +471,8 @@ def _build_seeded_traces(
 def _build_seed_range_traces(
     seed_range: _SeededMzRange,
     *,
-    next_trace_id: int,
     settings: LocalMs1FeatureSettings,
-) -> int:
+) -> None:
     point_by_scan: dict[int, tuple[int, float, float, float]] = {}
     for scan_index, scan_number, rt, mz, intensity in seed_range.points:
         current = point_by_scan.get(scan_index)
@@ -713,9 +488,8 @@ def _build_seed_range_traces(
             previous_scan_index is not None
             and scan_index - previous_scan_index - 1 > settings.max_missing_scans
         ):
-            next_trace_id = _append_seeded_trace_segment(
+            _append_seeded_trace_segment(
                 seed_range,
-                next_trace_id=next_trace_id,
                 scan_positions=segment_positions,
                 points=segment_points,
                 settings=settings,
@@ -726,9 +500,8 @@ def _build_seed_range_traces(
         segment_points.append(point_by_scan[scan_index])
         previous_scan_index = scan_index
 
-    return _append_seeded_trace_segment(
+    _append_seeded_trace_segment(
         seed_range,
-        next_trace_id=next_trace_id,
         scan_positions=segment_positions,
         points=segment_points,
         settings=settings,
@@ -738,22 +511,17 @@ def _build_seed_range_traces(
 def _append_seeded_trace_segment(
     seed_range: _SeededMzRange,
     *,
-    next_trace_id: int,
     scan_positions: Sequence[int],
     points: Sequence[tuple[int, float, float, float]],
     settings: LocalMs1FeatureSettings,
-) -> int:
+) -> None:
     if not scan_positions:
-        return next_trace_id
+        return
     if not any(point[3] >= settings.min_trace_seed_intensity for point in points):
-        return next_trace_id
-    trace = _TraceBuilder(
-        trace_id=next_trace_id,
-        points=list(points),
-        scan_positions=list(scan_positions),
+        return
+    seed_range.traces.append(
+        _TraceBuilder(points=list(points), scan_positions=list(scan_positions))
     )
-    seed_range.traces.append(trace)
-    return next_trace_id + 1
 
 
 def _mass_detected_scan_peaks(
@@ -841,13 +609,13 @@ def _trace_has_min_consecutive_intensity(
 def _classify_region(
     region: _PeakRegion,
     settings: LocalMs1FeatureSettings,
-) -> tuple[str, str]:
+) -> str:
     smoothed = region.smoothed
     apex = float(smoothed[region.apex_index])
     if apex <= 0:
-        return "FAIL", "non_positive_height"
+        return "FAIL"
     if region.apex_index in {region.left_index, region.right_index}:
-        return "FAIL", "apex_at_region_edge"
+        return "FAIL"
     area = _local_linear_baseline_area(
         region.rts,
         smoothed,
@@ -855,12 +623,12 @@ def _classify_region(
         region.right_index,
     )
     if area <= 0:
-        return "FAIL", "non_positive_area"
+        return "FAIL"
     duration = float(region.rts[region.right_index] - region.rts[region.left_index])
     if duration < settings.min_duration_min:
-        return "FAIL", "duration_below_min"
+        return "FAIL"
     if duration > settings.max_duration_min:
-        return "FAIL", "duration_above_max"
+        return "FAIL"
     gap_fraction = region.missing_scan_count / max(
         1,
         len(region.scan_numbers) + region.missing_scan_count,
@@ -884,14 +652,14 @@ def _classify_region(
         and ppm_std <= settings.max_ok_mz_ppm_std
         and boundary > 0
     ):
-        return LOCAL_MS1_FEATURE_TRACE_QUALITY_OK, "ok"
+        return LOCAL_MS1_FEATURE_TRACE_QUALITY_OK
     if (
         prominence >= settings.weak_support_prominence
         and gap_fraction <= settings.max_weak_gap_fraction
         and ppm_std <= settings.max_weak_mz_ppm_std
     ):
-        return LOCAL_MS1_FEATURE_TRACE_QUALITY_WEAK_SUPPORT, "weak_support"
-    return "FAIL", "quality_below_weak_support"
+        return LOCAL_MS1_FEATURE_TRACE_QUALITY_WEAK_SUPPORT
+    return "FAIL"
 
 
 def _mz_ppm_std(mzs: np.ndarray) -> float:
@@ -899,76 +667,3 @@ def _mz_ppm_std(mzs: np.ndarray) -> float:
     if mean_mz <= 0:
         return math.inf
     return float(np.std(signed_ppm_errors(mzs, mean_mz)))
-
-
-def _diagnostic_from_trace(
-    trace_id: str,
-    trace: _TraceBuilder,
-    reason: str,
-) -> LocalMs1FeatureDiagnosticRow:
-    mzs = np.asarray([point[2] for point in trace.points], dtype=float)
-    rts = np.asarray([point[1] for point in trace.points], dtype=float)
-    return LocalMs1FeatureDiagnosticRow(
-        trace_id=trace_id,
-        mz_apex=float(mzs[0]) if len(mzs) else None,
-        rt_apex_min=float(rts[0]) if len(rts) else None,
-        rt_start_min=float(rts[0]) if len(rts) else None,
-        rt_end_min=float(rts[-1]) if len(rts) else None,
-        observed_scan_count=len(trace.points),
-        missing_scan_count=trace.internal_missing_scan_count,
-        gap_fraction=trace.internal_missing_scan_count
-        / max(1, len(trace.points) + trace.internal_missing_scan_count),
-        mz_ppm_std=_mz_ppm_std(mzs) if len(mzs) else None,
-        prominence=None,
-        boundary_quality=None,
-        split_peak=False,
-        overlap_suspected=False,
-        reason=reason,
-    )
-
-
-def _diagnostic_from_region(
-    region: _PeakRegion,
-    reason: str,
-) -> LocalMs1FeatureDiagnosticRow:
-    return LocalMs1FeatureDiagnosticRow(
-        trace_id=region.trace_id,
-        mz_apex=float(region.mzs[region.apex_index]),
-        rt_apex_min=float(region.rts[region.apex_index]),
-        rt_start_min=float(region.rts[region.left_index]),
-        rt_end_min=float(region.rts[region.right_index]),
-        observed_scan_count=len(region.scan_numbers),
-        missing_scan_count=region.missing_scan_count,
-        gap_fraction=region.missing_scan_count
-        / max(1, len(region.scan_numbers) + region.missing_scan_count),
-        mz_ppm_std=_mz_ppm_std(region.mzs),
-        prominence=_prominence(
-            region.smoothed,
-            region.apex_index,
-            region.left_index,
-            region.right_index,
-        ),
-        boundary_quality=_boundary_quality(
-            region.smoothed,
-            region.apex_index,
-            region.left_index,
-            region.right_index,
-        ),
-        split_peak=region.split_peak,
-        overlap_suspected=region.overlap_suspected,
-        reason=reason,
-    )
-
-
-def _validate_summary(summary: LocalMs1FeatureSummary) -> None:
-    feature_count = summary.ok_feature_count + summary.weak_support_feature_count
-    if summary.detected_features_rows != feature_count:
-        raise ValueError("local MS1 feature summary count invariant failed")
-    if summary.diagnostics_row_count != summary.fail_count:
-        raise ValueError("local MS1 feature diagnostics count invariant failed")
-    if summary.total_peak_regions != (
-        summary.ok_feature_count
-        + summary.weak_support_feature_count
-        + summary.fail_count
-    ):
-        raise ValueError("local MS1 feature peak-region count invariant failed")

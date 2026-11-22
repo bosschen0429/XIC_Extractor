@@ -44,9 +44,6 @@ from xic_extractor.untargeted_execution.partition.cid_nl_sample_acquisition impo
     CidNlAcquisitionResult,
     _bounded_subject_candidates,
 )
-from xic_extractor.validation_primitives import (
-    require_owner_normalized_text,
-)
 from xic_extractor.xic_models import XICRequest
 
 
@@ -74,14 +71,6 @@ BACKFILL_HALF_WINDOW_MIN = 1.0
 
 class UntargetedPartitionError(ValueError):
     """Raised when real-data runtime work cannot close atomically."""
-
-
-def _required_text(value: object, *, field: str) -> str:
-    return require_owner_normalized_text(
-        value,
-        field=field,
-        error_factory=UntargetedPartitionError,
-    )
 
 
 @dataclass(frozen=True, slots=True)

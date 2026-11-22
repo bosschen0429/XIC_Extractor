@@ -36,8 +36,6 @@ class Trace:
             raise ValueError("rt_min must be <= rt_max")
         if self.ppm_tol <= 0:
             raise ValueError("ppm_tol must be > 0")
-        if not isinstance(self.acquisition_source_id, str):
-            raise ValueError("acquisition_source_id must be text")
         object.__setattr__(self, "rt", rt_array)
         object.__setattr__(self, "intensity", intensity_array)
 
@@ -90,8 +88,6 @@ class TraceGroup:
     def __post_init__(self) -> None:
         if not self.traces:
             raise ValueError("TraceGroup requires at least one trace")
-        if any(trace.sample_name != self.sample_name for trace in self.traces):
-            raise ValueError("TraceGroup traces must belong to the same sample")
 
     @property
     def primary_trace(self) -> Trace:

@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     import numpy.typing as npt
 
 PPM_BOUNDARY_EPSILON = 1e-9
+CARBON_ISOTOPE_SPACING_DA = 1.0033548
 
 
 def signed_ppm_error(observed_mz: float, reference_mz: float) -> float:

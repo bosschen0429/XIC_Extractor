@@ -81,10 +81,6 @@ class PeakObservation:
             raise PeakObservationContractError(
                 "selected rt values must be strictly increasing"
             )
-        if not isinstance(self.integration, IntegrationResult):
-            raise PeakObservationContractError(
-                "integration must be an owner-produced IntegrationResult"
-            )
         if self.integration.raw_scan_indices != tuple(range(len(rt))):
             raise PeakObservationContractError(
                 "content integration indices must address the selected subtrace"
@@ -263,15 +259,8 @@ def prepare_peak_observation_provenance(
         query_ppm_tol=float(trace.ppm_tol),
         trace_source=trace.source,
         selected_trace_indices=selected_indices,
-        resolver_mode=_required_text(resolver_mode, field="resolver_mode"),
-        proposal_sources=tuple(
-            sorted(
-                {
-                    _required_text(value, field="proposal_source")
-                    for value in proposal_sources
-                }
-            )
-        ),
+        resolver_mode=resolver_mode,
+        proposal_sources=tuple(sorted(set(proposal_sources))),
     )
 
 
@@ -352,9 +341,7 @@ def physical_peak_observation_integration(
     )
 
 
-def _finite_float_tuple(value: object, *, field: str) -> tuple[float, ...]:
-    if not isinstance(value, tuple):
-        raise PeakObservationContractError(f"{field} must be a tuple")
+def _finite_float_tuple(value: tuple[float, ...], *, field: str) -> tuple[float, ...]:
     return tuple(_finite_float(item, field=field) for item in value)
 
 
@@ -365,14 +352,6 @@ def _finite_float(value: object, *, field: str) -> float:
     if not math.isfinite(normalized):
         raise PeakObservationContractError(f"{field} must be a finite number")
     return 0.0 if normalized == 0.0 else normalized
-
-
-def _required_text(value: object, *, field: str) -> str:
-    if not isinstance(value, str) or not value or value != value.strip():
-        raise PeakObservationContractError(
-            f"{field} must be non-empty owner-normalized text"
-        )
-    return value
 
 
 def index_physical_peaks(

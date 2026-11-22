@@ -385,7 +385,6 @@ def test_cid_nl_event_composes_the_existing_peak_hypothesis_owner(
     event = _event(fixture.source, fixture.sample, peak, scan_numbers=(42, 43))
 
     hypothesis = compose_cid_nl_peak_hypothesis(
-        sample=fixture.sample,
         peak_observation=peak,
         chromatographic_support=event,
     )
@@ -409,12 +408,10 @@ def test_cid_nl_hypothesis_peak_or_event_mutation_invalidates_identity(
     changed_event = _event(fixture.source, fixture.sample, changed_peak)
 
     first = compose_cid_nl_peak_hypothesis(
-        sample=fixture.sample,
         peak_observation=first_peak,
         chromatographic_support=first_event,
     )
     changed = compose_cid_nl_peak_hypothesis(
-        sample=fixture.sample,
         peak_observation=changed_peak,
         chromatographic_support=changed_event,
     )
@@ -562,7 +559,6 @@ def test_cid_nl_hypothesis_producer_keeps_event_and_sample_binding(
     second_event = _event(fixture.source, fixture.sample, peak, scan_numbers=(42, 44))
     hypotheses = tuple(
         compose_cid_nl_peak_hypothesis(
-            sample=fixture.sample,
             peak_observation=peak,
             chromatographic_support=event,
         )

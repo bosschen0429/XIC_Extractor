@@ -16,14 +16,9 @@ from xic_extractor.peak_detection.cid_nl_chromatographic_support_models import (
 from xic_extractor.peak_detection.observations import (
     PeakObservation,
 )
-from xic_extractor.sample_metadata import SampleMetadata
 
 HYPOTHESIS_METHOD_DDA_CID_NL = "dda_cid_nl"
 HYPOTHESIS_METHOD_MS1_OBSERVATION = "ms1_physical_observation"
-
-
-class PeakHypothesisContractError(ValueError):
-    """Raised when owner-backed hypothesis references do not close."""
 
 
 @dataclass(frozen=True)
@@ -38,17 +33,11 @@ class MeasuredPeakHypothesis:
 
 def compose_cid_nl_peak_hypothesis(
     *,
-    sample: SampleMetadata,
     peak_observation: PeakObservation,
     chromatographic_support: CidNlChromatographicSupport,
 ) -> MeasuredPeakHypothesis:
     """Compose one DDA CID-NL event on its captured physical peak."""
 
-    _validate_reference_pair(
-        sample=sample,
-        peak_observation=peak_observation,
-        chromatographic_support=chromatographic_support,
-    )
     hypothesis_id = "|".join(
         (
             measured_hypothesis_key(HYPOTHESIS_METHOD_DDA_CID_NL, peak_observation),
@@ -73,7 +62,6 @@ def compose_ms1_observation_peak_hypothesis(
 ) -> MeasuredPeakHypothesis:
     """Compose one physical MS1 observation without training evidence."""
 
-    _validate_observation_reference(peak_observation=peak_observation)
     hypothesis_id = measured_hypothesis_key(
         HYPOTHESIS_METHOD_MS1_OBSERVATION, peak_observation
     )
@@ -82,16 +70,6 @@ def compose_ms1_observation_peak_hypothesis(
         method=HYPOTHESIS_METHOD_MS1_OBSERVATION,
         peak=peak_observation,
     )
-
-
-def _validate_observation_reference(
-    *,
-    peak_observation: object,
-) -> None:
-    if not isinstance(peak_observation, PeakObservation):
-        raise PeakHypothesisContractError(
-            "peak observation must be an owner-minted PeakObservation"
-        )
 
 
 def measured_hypothesis_key(method: str, peak_observation: PeakObservation) -> str:
@@ -116,49 +94,10 @@ def measured_hypothesis_key(method: str, peak_observation: PeakObservation) -> s
     )
 
 
-def _validate_reference_pair(
-    *,
-    sample: SampleMetadata,
-    peak_observation: object,
-    chromatographic_support: object,
-) -> None:
-    if not isinstance(peak_observation, PeakObservation):
-        raise PeakHypothesisContractError(
-            "peak observation must be an owner-minted PeakObservation"
-        )
-    if not isinstance(
-        chromatographic_support,
-        CidNlChromatographicSupport,
-    ):
-        raise PeakHypothesisContractError(
-            "chromatographic support must be an owner-minted reference"
-        )
-    _validate_reference_content_pair(peak_observation, chromatographic_support)
-    if chromatographic_support.sample_key != sample.sample_name:
-        raise PeakHypothesisContractError(
-            "chromatographic support references a different sample"
-        )
-
-
-def _validate_reference_content_pair(
-    peak_observation: PeakObservation,
-    chromatographic_support: CidNlChromatographicSupport,
-) -> None:
-    if peak_observation.sample_key != chromatographic_support.sample_key:
-        raise PeakHypothesisContractError(
-            "peak observation and chromatographic support reference different samples"
-        )
-    if chromatographic_support.peak_observation != peak_observation:
-        raise PeakHypothesisContractError(
-            "chromatographic support references a different physical MS1 peak"
-        )
-
-
 __all__ = [
     "HYPOTHESIS_METHOD_DDA_CID_NL",
     "HYPOTHESIS_METHOD_MS1_OBSERVATION",
     "MeasuredPeakHypothesis",
-    "PeakHypothesisContractError",
     "compose_cid_nl_peak_hypothesis",
     "compose_ms1_observation_peak_hypothesis",
     "measured_hypothesis_key",

@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from typing import Literal, TypeAlias, cast
 
 from xic_extractor.alignment.cross_sample.peak_groups import (
-    CrossSampleGroupMemberSubject,
     CrossSamplePeakGroupHypothesis,
     group_member_subject_from_peak_hypothesis,
 )
@@ -154,9 +153,12 @@ def _eligible_groups(
 ) -> tuple[CrossSamplePeakGroupHypothesis, ...]:
     groups = finalized_alignment.final_population
     members_by_sample = {
-        sample_id: _member_from_terminal(terminal=terminals[sample_id], sample=sample)
+        sample_id: group_member_subject_from_peak_hypothesis(
+            sample=sample,
+            hypothesis=terminal.hypothesis,
+        )
         for sample_id, sample in sample_by_id.items()
-        if type(terminals[sample_id]) is ObservedSearchSubject
+        if type(terminal := terminals[sample_id]) is ObservedSearchSubject
     }
     eligible: list[CrossSamplePeakGroupHypothesis] = []
     for group in groups:
@@ -175,26 +177,6 @@ def _eligible_groups(
         ):
             eligible.append(group)
     return tuple(eligible)
-
-
-def _member_from_terminal(
-    *,
-    terminal: TerminalSearchObservation,
-    sample: SampleMetadata,
-) -> CrossSampleGroupMemberSubject:
-    if type(terminal) is not ObservedSearchSubject:
-        raise TargetProjectionContractError(
-            "only observed terminals can mint owner group members"
-        )
-    try:
-        return group_member_subject_from_peak_hypothesis(
-            sample=sample,
-            hypothesis=terminal.hypothesis,
-        )
-    except Exception as exc:
-        raise TargetProjectionContractError(
-            "finalized observed terminal cannot mint its owner group member"
-        ) from exc
 
 
 def _mint_row_binding(

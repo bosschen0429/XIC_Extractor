@@ -175,10 +175,6 @@ def _require_terminal_population(
 
 
 def _terminal_sort_key(subject: TerminalSearchObservation) -> tuple[str, str, str]:
-    if not isinstance(subject, (ObservedSearchSubject, SearchedNoObservationSubject)):
-        raise FinalizedScientificAlignmentContractError(
-            "terminal subject has an unsupported variant"
-        )
     return (
         subject.sample_key,
         subject.candidate_id,

@@ -26,10 +26,6 @@ def resolve_dda_cid_nl_peak_support(
 ) -> DdaCidNlPeakSupport:
     """Resolve one DDA event to exactly one supplied physical MS1 observation."""
 
-    if not isinstance(policy, DdaCidNlPeakSupportPolicy):
-        raise DdaCidNlPeakSupportContractError(
-            "policy must be owner-normalized DdaCidNlPeakSupportPolicy"
-        )
     _validate_candidate_peaks(candidate_peaks)
 
     observation = canonical_evidence
@@ -129,27 +125,17 @@ def _matches_observation(
 
 
 def _validate_candidate_peaks(
-    candidate_peaks: object,
-) -> tuple[PeakObservation, ...]:
-    if not isinstance(candidate_peaks, tuple):
-        raise DdaCidNlPeakSupportContractError(
-            "candidate_peaks must be a tuple of owner-backed observations"
-        )
+    candidate_peaks: tuple[PeakObservation, ...],
+) -> None:
     if not candidate_peaks:
         raise DdaCidNlPeakSupportContractError(
             "missing candidate physical MS1 peak observations"
         )
-    if any(not isinstance(peak, PeakObservation) for peak in candidate_peaks):
-        raise DdaCidNlPeakSupportContractError(
-            "candidate_peaks must contain owner-backed PeakObservation values"
-        )
-    typed_peaks = candidate_peaks
-    keys = tuple(peak.physical_peak_key for peak in typed_peaks)
+    keys = tuple(peak.physical_peak_key for peak in candidate_peaks)
     if len(set(keys)) != len(keys):
         raise DdaCidNlPeakSupportContractError(
             "candidate physical MS1 peak observations are ambiguous"
         )
-    return typed_peaks
 
 
 __all__ = [

@@ -123,9 +123,6 @@ class ConservativeBackfillCellDecision:
     reason_codes: tuple[str, ...]
     policy_version: str = POLICY_VERSION
 
-    def __init_subclass__(cls, **kwargs: object) -> None:
-        raise TypeError("ConservativeBackfillCellDecision is final")
-
 
 def minimum_direct_support_count(sample_count_n: int) -> int:
     """Return K = max(2, floor(0.05 × N)) for an eligible run population."""
@@ -152,15 +149,6 @@ def mint_conservative_backfill_candidate_universe(
     """Mint the sole target↔peak pairing authority for one Backfill revisit."""
 
     facts = _canonical_backfill_group_facts(group_facts)
-    if (
-        candidate_assessment.sample_key != sample.sample_name
-        or candidate_assessment.method_subject.method_subject_id
-        != _group_method_subject_id(facts[0])
-    ):
-        raise ConservativeBackfillContractError(
-            "backfill assessment does not bind the exact sample and target-compatible "
-            "method subject"
-        )
     return ConservativeBackfillCandidateUniverse(
         sample=sample,
         group_facts=facts,
@@ -222,7 +210,7 @@ def assess_conservative_backfill_group(
         )
     )
     group_context = ordered_cells[0].group_context
-    cells = _canonical_cells(ordered_cells, group_context=group_context)
+    cells = _canonical_cells(ordered_cells)
     samples = _canonical_samples(ordered_samples)
     eligible_ids = tuple(
         sample.sample_name
@@ -277,39 +265,14 @@ def map_conservative_backfill_candidates(
 ) -> tuple[ConservativeBackfillCellDecision, ...]:
     """Map like-to-like candidates jointly by strict cardinality and RT order."""
 
-    if (
-        not isinstance(group_facts, tuple)
-        or not group_facts
-        or any(
-            not isinstance(item, ConservativeBackfillGroupFacts) for item in group_facts
-        )
-    ):
+    if not group_facts:
         raise ConservativeBackfillContractError(
             "mapping requires one or more conservative group facts"
-        )
-    if not isinstance(sample, SampleMetadata):
-        raise ConservativeBackfillContractError(
-            "mapping requires an owner-resolved target sample"
         )
     if len({id(item.group_context) for item in group_facts}) != len(group_facts):
         raise ConservativeBackfillContractError(
             "mapping contains the same exact group context more than once"
         )
-    if any(
-        not any(sample is member for member in facts.sample_population)
-        for facts in group_facts
-    ):
-        raise ConservativeBackfillContractError(
-            "mapping sample is not the exact declared run sample"
-        )
-    if not isinstance(candidate_universes, tuple) or any(
-        not isinstance(item, ConservativeBackfillCandidateUniverse)
-        for item in candidate_universes
-    ):
-        raise ConservativeBackfillContractError(
-            "mapping requires typed immutable backfill universe receipts"
-        )
-    sample_id = sample.sample_name
     method_subject_ids = tuple(
         universe.method_subject_id for universe in candidate_universes
     )
@@ -318,39 +281,10 @@ def map_conservative_backfill_candidates(
             "one sample×method-subject mapping allows at most one backfill universe "
             "receipt"
         )
-    for universe in candidate_universes:
-        if universe.sample is not sample:
-            raise ConservativeBackfillContractError(
-                "backfill universe does not bind the exact mapping sample"
-            )
-        matching_facts = tuple(
-            fact
-            for fact in group_facts
-            if _group_method_subject_id(fact) == universe.method_subject_id
-        )
-        expected_facts = (
-            _canonical_backfill_group_facts(matching_facts) if matching_facts else ()
-        )
-        if len(expected_facts) != len(universe.group_facts) or any(
-            expected is not bound
-            for expected, bound in zip(
-                expected_facts,
-                universe.group_facts,
-                strict=True,
-            )
-        ):
-            raise ConservativeBackfillContractError(
-                "backfill universe does not bind the exact mapped group set"
-            )
+    sample_id = sample.sample_name
     universes_by_subject = {
         universe.method_subject_id: universe for universe in candidate_universes
     }
-    known_subject_ids = {_group_method_subject_id(facts) for facts in group_facts}
-    unknown_subject_ids = set(universes_by_subject).difference(known_subject_ids)
-    if unknown_subject_ids:
-        raise ConservativeBackfillContractError(
-            "backfill evidence cannot create a first group or method subject"
-        )
 
     target_cells = tuple(
         _target_cell(facts, sample_id=sample_id) for facts in group_facts
@@ -555,15 +489,9 @@ def _localized_backfill_candidates(
 
 
 def _canonical_cells(
-    cells: object,
-    *,
-    group_context: CidNlCellGroupContext,
+    cells: tuple[CellObservation, ...],
 ) -> tuple[CellObservation, ...]:
-    if (
-        not isinstance(cells, tuple)
-        or not cells
-        or any(not isinstance(item, CellObservation) for item in cells)
-    ):
+    if not cells:
         raise ConservativeBackfillContractError(
             "Backfill facts require immutable canonical CellObservation references"
         )
@@ -572,21 +500,13 @@ def _canonical_cells(
         raise ConservativeBackfillContractError(
             "CellObservation references must be unique and canonical-sorted by sample"
         )
-    if any(cell.group_context is not group_context for cell in cells):
-        raise ConservativeBackfillContractError(
-            "Backfill facts must reuse one exact frozen group context"
-        )
     return cells
 
 
 def _canonical_backfill_group_facts(
-    facts: object,
+    facts: tuple[ConservativeBackfillGroupFacts, ...],
 ) -> tuple[ConservativeBackfillGroupFacts, ...]:
-    if (
-        not isinstance(facts, tuple)
-        or not facts
-        or any(not isinstance(item, ConservativeBackfillGroupFacts) for item in facts)
-    ):
+    if not facts:
         raise ConservativeBackfillContractError(
             "backfill universe requires one or more conservative group facts"
         )
@@ -622,9 +542,9 @@ def _backfill_evidence_from_universe(
 
 
 def _canonical_samples(
-    samples: object,
+    samples: tuple[SampleMetadata, ...],
 ) -> tuple[SampleMetadata, ...]:
-    if not isinstance(samples, tuple) or not samples:
+    if not samples:
         raise ConservativeBackfillContractError(
             "sample_population must contain owner-resolved run samples"
         )

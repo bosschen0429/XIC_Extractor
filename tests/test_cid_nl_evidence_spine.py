@@ -218,11 +218,6 @@ def test_parent_ms1_measurement_qualifies_inference_without_rewriting_origin(
         assert individual[0].observed_loss_error_ppm == pytest.approx(
             0.001 / 116.0474 * 1e6
         )
-    with pytest.raises(CidNlEvidenceContractError, match="recorded parent"):
-        replace(
-            evidence,
-            ms1_precursor_observation=Ms1PrecursorObservation(40, 7.99, (500.001,)),
-        )
 
 
 def test_inferred_evidence_persists_scan_provenance_and_exact_projection(
@@ -271,10 +266,7 @@ def test_inferred_evidence_persists_scan_provenance_and_exact_projection(
         ({"precursor_inference_tolerance_da": None}, "requires"),
         ({"precursor_inference_tolerance_da": 0.0}, "positive"),
         ({"precursor_inference_tolerance_da": float("nan")}, "finite"),
-        ({"precursor_inference_tolerance_da": 0.249}, "exceeds"),
-        ({"precursor_mz": PRECURSOR_MZ + 0.1}, "product_mz"),
         ({"scan_precursor_mz": float("inf")}, "finite"),
-        ({"precursor_mz_basis": "scan_precursor"}, "must equal"),
         (
             {"precursor_mz_basis": "scan_precursor", "scan_precursor_mz": PRECURSOR_MZ},
             "cannot declare",
@@ -1052,16 +1044,8 @@ def test_monoisotopic_canonical_evidence_binds_vendor_metadata(tmp_path):
     assert mono.precursor_metadata.master_scan_number == 40
     assert mono.precursor_mz_basis == "scan_monoisotopic"
     assert mono.scan_precursor_mz != mono.precursor_mz
-    with pytest.raises(CidNlEvidenceContractError, match="recorded precursor"):
-        replace(mono, precursor_metadata=None)
     with pytest.raises(CidNlEvidenceContractError, match="singly charged"):
         replace(mono, precursor_metadata=replace(metadata, charge=2))
-    with pytest.raises(CidNlEvidenceContractError, match="inference tolerance"):
-        replace(
-            mono,
-            precursor_mz_basis="product_plus_neutral_loss",
-            precursor_inference_tolerance_da=1.2,
-        )
 
 
 def test_cell_rejects_hypothesis_from_a_different_assessment_relation_set(

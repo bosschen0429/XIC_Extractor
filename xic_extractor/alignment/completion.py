@@ -219,16 +219,11 @@ def _untarget_scope_memberships(scope: UntargetedSearchScope) -> dict[str, str]:
     memberships: dict[str, str] = {}
     for binding in scope.capture_bindings:
         candidate_id = binding.candidate_id
-        subject_id = binding.method_subject_id
-        if not isinstance(candidate_id, str) or not isinstance(subject_id, str):
-            raise AlignmentWorkflowContractError(
-                "Untarget batch capture membership is incomplete"
-            )
         if candidate_id in memberships:
             raise AlignmentWorkflowContractError(
                 "Untarget batch capture membership contains duplicate candidates"
             )
-        memberships[candidate_id] = subject_id
+        memberships[candidate_id] = binding.method_subject_id
     return memberships
 
 

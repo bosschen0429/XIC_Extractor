@@ -11,6 +11,7 @@ from xic_extractor.configuration.cid_nl_profile import (
     PrecursorReferenceRequirement,
 )
 from xic_extractor.mass_accuracy import (
+    CARBON_ISOTOPE_SPACING_DA,
     absolute_ppm_error,
     mz_tolerance_da,
     neutral_loss_match,
@@ -23,7 +24,6 @@ PrecursorMzBasis = Literal[
 ]
 RECORDED_PRECURSOR_BASES = frozenset({"scan_precursor", "scan_monoisotopic"})
 IsolationMembership = Literal["inside_nominal", "outside_nominal", "unknown"]
-_CARBON_ISOTOPE_SPACING_DA = 1.0033548
 
 
 @dataclass(frozen=True, slots=True)
@@ -231,10 +231,10 @@ def _isolated_vendor_isotope(
         != "inside_nominal"
     ):
         return False
-    isotope_number = round((selected_mz - precursor_mz) / _CARBON_ISOTOPE_SPACING_DA)
+    isotope_number = round((selected_mz - precursor_mz) / CARBON_ISOTOPE_SPACING_DA)
     if isotope_number < 1:
         return False
-    expected_mz = precursor_mz + isotope_number * _CARBON_ISOTOPE_SPACING_DA
+    expected_mz = precursor_mz + isotope_number * CARBON_ISOTOPE_SPACING_DA
     return abs(selected_mz - expected_mz) <= mz_tolerance_da(
         expected_mz, DEFAULT_CID_NL_MASS_POLICY.precursor_mz_tolerance_ppm
     )

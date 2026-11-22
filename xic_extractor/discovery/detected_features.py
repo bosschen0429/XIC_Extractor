@@ -177,10 +177,12 @@ def _parse_detected_feature(
     row: Mapping[str, str | None], *, path: Path, row_index: int
 ) -> DetectedFeature:
     row_label = _row_label(path, row_index)
-    sample_stem = _required_text(row.get("sample_stem"), "sample_stem", row_label)
-    feature_id = _required_text(row.get("feature_id"), "feature_id", row_label)
-    trace_quality = _required_text(row.get("trace_quality"), "trace_quality", row_label)
-    source = _required_text(row.get("source"), "source", row_label)
+    sample_stem = required_row_text(row.get("sample_stem"), "sample_stem", row_label)
+    feature_id = required_row_text(row.get("feature_id"), "feature_id", row_label)
+    trace_quality = required_row_text(
+        row.get("trace_quality"), "trace_quality", row_label
+    )
+    source = required_row_text(row.get("source"), "source", row_label)
 
     return DetectedFeature(
         sample_stem=sample_stem,
@@ -190,20 +192,20 @@ def _parse_detected_feature(
         rt_apex_min=_required_finite_float(
             row.get("rt_apex_min"), "rt_apex_min", row_label
         ),
-        rt_start_min=_optional_finite_float(
+        rt_start_min=optional_row_finite_float(
             row.get("rt_start_min"), "rt_start_min", row_label
         ),
-        rt_end_min=_optional_finite_float(
+        rt_end_min=optional_row_finite_float(
             row.get("rt_end_min"), "rt_end_min", row_label
         ),
         height=_positive_height(row.get("height"), row_label),
-        area=_optional_finite_float(row.get("area"), "area", row_label),
+        area=optional_row_finite_float(row.get("area"), "area", row_label),
         trace_quality=_validate_trace_quality_for_source(
             trace_quality,
             source=source,
             row_label=row_label,
         ),
-        shape_score=_optional_finite_float(
+        shape_score=optional_row_finite_float(
             row.get("shape_score"), "shape_score", row_label
         ),
         source=source,
@@ -333,7 +335,7 @@ def _row_label(path: Path, row_index: int) -> str:
     return f"{path} row {row_index}"
 
 
-def _required_text(value: str | None, field: str, row_label: str) -> str:
+def required_row_text(value: str | None, field: str, row_label: str) -> str:
     text = (value or "").strip()
     if not text:
         raise ValueError(f"{row_label} is missing required field {field!r}")
@@ -362,7 +364,7 @@ def _required_finite_float(value: str | None, field: str, row_label: str) -> flo
     return parsed
 
 
-def _optional_finite_float(
+def optional_row_finite_float(
     value: str | None, field: str, row_label: str
 ) -> float | None:
     text = (value or "").strip()

@@ -17,7 +17,6 @@ from xic_extractor.alignment.feature_membership_inference import (
     FeatureInferenceOperationCounts,
 )
 from xic_extractor.alignment.hypothesis_owner_adapter import (
-    bind_retained_peak_hypotheses_to_assessment_universe,
     compose_peak_hypotheses_from_assessment_universe,
     owner_from_cid_nl_assessment_observation,
     owner_from_cid_nl_assessment_support,
@@ -113,12 +112,6 @@ def bootstrap_cid_nl_initial_population(
 
     if not sample_assessments:
         raise GroupingBootstrapError("sample_assessments must not be empty")
-    if not isinstance(alignment_config, AlignmentConfig):
-        raise GroupingBootstrapError("alignment_config must be explicit and typed")
-    if not isinstance(retain_observation_only_candidates, bool):
-        raise GroupingBootstrapError(
-            "retain_observation_only_candidates must be boolean"
-        )
 
     method_subjects_by_id = {
         assessment.method_subject.method_subject_id: (assessment.method_subject)
@@ -144,11 +137,7 @@ def bootstrap_cid_nl_initial_population(
         if assessment in retained_by_assessment:
             consumed_retained_assessments.add(assessment)
         hypotheses = (
-            bind_retained_peak_hypotheses_to_assessment_universe(
-                sample=sample,
-                assessment=assessment,
-                retained_hypotheses=retained_hypotheses,
-            )
+            tuple(sorted(retained_hypotheses, key=lambda item: item.hypothesis_id))
             if retained_hypotheses
             else compose_peak_hypotheses_from_assessment_universe(
                 sample=sample,
@@ -308,14 +297,7 @@ def bootstrap_cid_nl_initial_population(
 def _canonical_groups(
     groups: tuple[CrossSamplePeakGroupHypothesis, ...],
 ) -> tuple[CrossSamplePeakGroupHypothesis, ...]:
-    if not isinstance(groups, tuple):
-        raise ValueError("groups must be an immutable tuple")
-    if any(not isinstance(group, CrossSamplePeakGroupHypothesis) for group in groups):
-        raise ValueError("groups must contain existing group hypotheses")
-    group_ids = tuple(
-        _required_text(group.group_hypothesis_id, field="group_hypothesis_id")
-        for group in groups
-    )
+    group_ids = tuple(group.group_hypothesis_id for group in groups)
     if len(group_ids) != len(set(group_ids)):
         raise ValueError("groups contain duplicate group_hypothesis_id")
     return tuple(sorted(groups, key=lambda group: group.group_hypothesis_id))
@@ -326,10 +308,7 @@ def _validate_group_owners(
 ) -> None:
     owner_ids: list[str] = []
     for group in groups:
-        group_owner_ids = tuple(
-            _required_text(owner_id, field="group owner_ids")
-            for owner_id in group.owner_ids
-        )
+        group_owner_ids = tuple(group.owner_ids)
         if len(group_owner_ids) != len(set(group_owner_ids)):
             raise ValueError("group owner_ids must be unique")
         owner_ids.extend(group_owner_ids)
@@ -363,8 +342,6 @@ def _validated_interval(
     *,
     field: str,
 ) -> tuple[float, float]:
-    if not isinstance(value, tuple) or len(value) != 2:
-        raise ValueError(f"{field} must contain exactly two bounds")
     lower = _finite_float(value[0], field=f"{field}[0]")
     upper = _finite_float(value[1], field=f"{field}[1]")
     if lower >= upper:
@@ -379,11 +356,3 @@ def _finite_float(value: object, *, field: str) -> float:
     if not math.isfinite(normalized):
         raise ValueError(f"{field} must be finite")
     return 0.0 if normalized == 0.0 else normalized
-
-
-def _required_text(value: object, *, field: str) -> str:
-    if not isinstance(value, str) or not value.strip():
-        raise ValueError(f"{field} must be non-empty text")
-    if value != value.strip():
-        raise ValueError(f"{field} must not contain surrounding whitespace")
-    return value

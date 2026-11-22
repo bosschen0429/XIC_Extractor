@@ -10,14 +10,12 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-from xic_extractor.mass_accuracy import absolute_ppm_error
 from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
 from xic_extractor.precursor_evidence import (
     Ms1PrecursorObservation,
     PrecursorLossAssessment,
     PrecursorMzBasis,
     assess_precursor_loss,
-    precursor_inference_bounds,
     supports_direct_nl,
 )
 from xic_extractor.processing_identity import AcquisitionSourceIdentity
@@ -85,10 +83,6 @@ class CidNlEvidenceObservation:
         )
 
     def __post_init__(self) -> None:
-        if self.acquisition_mode != ACQUISITION_MODE:
-            raise CidNlEvidenceContractError(
-                f"acquisition_mode must be {ACQUISITION_MODE!r}"
-            )
         if (
             isinstance(self.scan_number, bool)
             or not isinstance(self.scan_number, int)
@@ -115,37 +109,14 @@ class CidNlEvidenceObservation:
             )
         if self.scan_precursor_mz <= 0.0:
             raise CidNlEvidenceContractError("scan_precursor_mz must be positive")
-        if self.precursor_metadata is not None:
-            if not isinstance(self.precursor_metadata, Ms2PrecursorMetadata):
-                raise CidNlEvidenceContractError(
-                    "precursor_metadata must be typed vendor facts"
-                )
-            if self.precursor_metadata.charge not in (None, 1):
-                raise CidNlEvidenceContractError(
-                    "CID-NL evidence requires singly charged or unknown charge"
-                )
-        if self.precursor_mz_basis == "scan_precursor":
-            if self.scan_precursor_mz != self.precursor_mz:
-                raise CidNlEvidenceContractError(
-                    "direct scan_precursor_mz must equal precursor_mz"
-                )
-            if self.precursor_inference_tolerance_da is not None:
-                raise CidNlEvidenceContractError(
-                    "direct evidence cannot declare precursor inference tolerance"
-                )
-        elif self.precursor_mz_basis == "scan_monoisotopic":
-            if (
-                self.precursor_metadata is None
-                or self.precursor_metadata.monoisotopic_mz != self.precursor_mz
-            ):
-                raise CidNlEvidenceContractError(
-                    "monoisotopic evidence requires its recorded precursor"
-                )
-            if self.precursor_inference_tolerance_da is not None:
-                raise CidNlEvidenceContractError(
-                    "direct evidence cannot declare precursor inference tolerance"
-                )
-        elif self.precursor_mz_basis == "product_plus_neutral_loss":
+        if (
+            self.precursor_metadata is not None
+            and self.precursor_metadata.charge not in (None, 1)
+        ):
+            raise CidNlEvidenceContractError(
+                "CID-NL evidence requires singly charged or unknown charge"
+            )
+        if self.precursor_mz_basis == "product_plus_neutral_loss":
             tolerance = self.precursor_inference_tolerance_da
             if tolerance is None:
                 raise CidNlEvidenceContractError(
@@ -159,36 +130,27 @@ class CidNlEvidenceObservation:
                     "precursor_inference_tolerance_da must be positive"
                 )
             object.__setattr__(self, "precursor_inference_tolerance_da", tolerance)
-            if not math.isclose(
-                self.precursor_mz,
-                self.product_mz + self.configured_neutral_loss_da,
-                rel_tol=1e-12,
-                abs_tol=1e-12,
-            ):
+            if self.observed_loss_error_ppm is not None:
                 raise CidNlEvidenceContractError(
-                    "inferred precursor_mz must equal product_mz + configured loss"
-                )
-            lower, upper = precursor_inference_bounds(
-                self.scan_precursor_mz, self.precursor_metadata, tolerance
-            )
-            if not lower <= self.precursor_mz <= upper:
-                raise CidNlEvidenceContractError(
-                    "scan_precursor_mz exceeds precursor inference tolerance"
+                    "inferred precursor has no independent observed_loss_error_ppm"
                 )
         else:
-            raise CidNlEvidenceContractError("precursor_mz_basis is not supported")
-        parent = self.ms1_precursor_observation
-        if parent is not None and (
-            not isinstance(parent, Ms1PrecursorObservation)
-            or self.precursor_mz_basis != "product_plus_neutral_loss"
-            or self.precursor_metadata is None
-            or parent.scan_number != self.precursor_metadata.master_scan_number
-            or parent.scan_number >= self.scan_number
-            or parent.rt_min > self.scan_rt_min
-        ):
-            raise CidNlEvidenceContractError(
-                "MS1 observation does not match the recorded parent"
+            if self.precursor_inference_tolerance_da is not None:
+                raise CidNlEvidenceContractError(
+                    "direct evidence cannot declare precursor inference tolerance"
+                )
+            if self.observed_loss_error_ppm is None:
+                raise CidNlEvidenceContractError(
+                    "recorded precursor requires observed_loss_error_ppm"
+                )
+            error_ppm = _finite_float(
+                self.observed_loss_error_ppm, field="observed_loss_error_ppm"
             )
+            if error_ppm < 0.0:
+                raise CidNlEvidenceContractError(
+                    "observed_loss_error_ppm must be non-negative"
+                )
+            object.__setattr__(self, "observed_loss_error_ppm", error_ppm)
         if self.configured_neutral_loss_da <= 0.0:
             raise CidNlEvidenceContractError(
                 "configured_neutral_loss_da must be positive"
@@ -197,57 +159,10 @@ class CidNlEvidenceObservation:
             raise CidNlEvidenceContractError(
                 "observed_neutral_loss_da must be positive"
             )
-        if self.precursor_mz_basis == "product_plus_neutral_loss":
-            if self.observed_loss_error_ppm is not None:
-                raise CidNlEvidenceContractError(
-                    "inferred precursor has no independent observed_loss_error_ppm"
-                )
-        else:
-            if self.observed_loss_error_ppm is None:
-                raise CidNlEvidenceContractError(
-                    "recorded precursor requires observed_loss_error_ppm"
-                )
-            object.__setattr__(
-                self,
-                "observed_loss_error_ppm",
-                _finite_float(
-                    self.observed_loss_error_ppm, field="observed_loss_error_ppm"
-                ),
-            )
-        if (
-            self.observed_loss_error_ppm is not None
-            and self.observed_loss_error_ppm < 0.0
-        ):
-            raise CidNlEvidenceContractError(
-                "observed_loss_error_ppm must be non-negative"
-            )
         if self.scan_rt_min < 0.0:
             raise CidNlEvidenceContractError("scan_rt_min must be non-negative")
         if self.product_intensity <= 0.0:
             raise CidNlEvidenceContractError("product_intensity must be positive")
-
-        precursor_product_loss = self.precursor_mz - self.product_mz
-        if not math.isclose(
-            self.observed_neutral_loss_da,
-            precursor_product_loss,
-            rel_tol=1e-12,
-            abs_tol=1e-12,
-        ):
-            raise CidNlEvidenceContractError(
-                "observed_neutral_loss_da must equal precursor_mz - product_mz"
-            )
-        expected_error_ppm = absolute_ppm_error(
-            precursor_product_loss, self.configured_neutral_loss_da
-        )
-        if self.observed_loss_error_ppm is not None and not math.isclose(
-            self.observed_loss_error_ppm,
-            expected_error_ppm,
-            rel_tol=1e-12,
-            abs_tol=1e-9,
-        ):
-            raise CidNlEvidenceContractError(
-                "observed_loss_error_ppm mismatches precursor-product neutral loss"
-            )
 
 
 def cid_nl_evidence_observation(

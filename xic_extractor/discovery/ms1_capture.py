@@ -38,7 +38,12 @@ from xic_extractor.discovery.models import (
 from xic_extractor.discovery.peak_binding import DiscoveryPeakPhysicalBinding
 from xic_extractor.discovery.same_ion_peaks import group_same_ion_peaks
 from xic_extractor.discovery.settings import DiscoverySettings
-from xic_extractor.mass_accuracy import mz_tolerance_da, weighted_ion_mz, within_ppm
+from xic_extractor.mass_accuracy import (
+    CARBON_ISOTOPE_SPACING_DA,
+    mz_tolerance_da,
+    weighted_ion_mz,
+    within_ppm,
+)
 from xic_extractor.peak_detection.physical_peak_models import (
     PhysicalPeakEvaluation,
     PhysicalSegment,
@@ -55,7 +60,7 @@ DISCOVERY_TRACE_ADAPTER_NAMESPACE = "xic_extractor.discovery.ms1_capture"
 _DISCOVERY_MS1_PREDICTION_MAX_REQUESTS = 256
 _APEX_ION_SCAN_RADIUS = 1
 _APEX_ION_SPREAD_PPM = 5.0
-_DOUBLY_CHARGED_ISOTOPE_SPACING_MZ = 1.0033548 / 2
+_DOUBLY_CHARGED_ISOTOPE_SPACING_MZ = CARBON_ISOTOPE_SPACING_DA / 2
 _DOUBLY_CHARGED_ISOTOPE_MIN_RATIO = 0.10
 _NL_PEAK_ATTACHMENT_TOLERANCE_MIN = 0.1
 
@@ -96,11 +101,6 @@ class _DiscoveryMs1Measurements:
             raise ValueError("Discovery MS1 measurements must be integral")
         if any(value < 0 for value in count_values) or self.batch_max_requests < 1:
             raise ValueError("Discovery MS1 measurements must be non-negative")
-        if any(
-            not isinstance(batch, TraceAcquisitionBatch)
-            for batch in self.acquisition_batches
-        ):
-            raise ValueError("Discovery MS1 acquisition batches must be owner-minted")
         logical_request_count = sum(
             batch.logical_xic_request_count for batch in self.acquisition_batches
         )
@@ -110,12 +110,6 @@ class _DiscoveryMs1Measurements:
             raise ValueError(
                 "Discovery MS1 reacquisition exceeds its initial population"
             )
-        if logical_request_count != (
-            self.initial_request_count
-            + self.reacquisition_request_count
-            + self.remeasurement_request_count
-        ):
-            raise ValueError("Discovery MS1 acquisition receipts are incomplete")
         if self.exact_scan_window_count > logical_request_count:
             raise ValueError("exact scan-window count exceeds logical requests")
         if self.predicted_chunked_call_count > logical_request_count:
