@@ -2,3 +2,8 @@
 *.bat text eol=crlf
 *.gz -text -eol
 *.json.gz -text -eol
+# Drawn by tools/rt_drift_guide_figures.py; collapsed in pull request diffs.
+docs/user/assets/rt-drift/residuals.svg linguist-generated
+docs/user/assets/rt-drift/batch-state.svg linguist-generated
+docs/user/assets/rt-drift/sample-shift.svg linguist-generated
+docs/user/assets/rt-drift/decomposition.svg linguist-generated

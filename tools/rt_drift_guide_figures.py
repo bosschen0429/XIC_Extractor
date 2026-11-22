@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import io
+import re
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
@@ -165,8 +166,7 @@ class Figures:
         buffer = io.StringIO()
         fig.savefig(buffer, format="svg", metadata={"Date": None})
         plt.close(fig)
-        lines = (line.rstrip() for line in buffer.getvalue().splitlines())
-        (self.output_dir / name).write_bytes(("\n".join(lines) + "\n").encode())
+        (self.output_dir / name).write_bytes(_compact_svg(buffer.getvalue()).encode())
 
     def residuals(self, anchor: DriftAnchor) -> None:
         """After the general map: an ordinary channel is flat, an anchor is not."""
@@ -267,6 +267,15 @@ class Figures:
         )
         fig.tight_layout(rect=(0, 0.04, 1, 1))
         self._save(fig, "decomposition.svg")
+
+
+def _compact_svg(text: str) -> str:
+    """One line per path and 0.01-px coordinates: same picture, a reviewable diff."""
+    text = re.sub(r'd="([^"]*)"', lambda m: f'd="{" ".join(m[1].split())}"', text)
+    text = re.sub(
+        r"-?\d+\.\d{3,}", lambda m: f"{float(m[0]):.2f}".rstrip("0").rstrip("."), text
+    )
+    return "\n".join(line.rstrip() for line in text.splitlines()) + "\n"
 
 
 def _centered(values: Mapping[str, float]) -> dict[str, float]:
