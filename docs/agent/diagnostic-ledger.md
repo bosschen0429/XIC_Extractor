@@ -369,15 +369,17 @@ Artifacts: `output/codex-rt1165-grouping-optimization/` in the #1165 worktree;
 computed groups, members and decisions directly. Replay capture is opt-in; no
 normal run reads and recomputes its own snapshot.
 
-Snapshots store the formal objects, curves included (#1246, 2026-11-22). The
-grouping snapshot, as a level-1 gzip pickle: 8RAW (2,849 observations) 13.8 MB,
-0.45 s to write, 0.4 s to load; 85RAW (27,082 observations) 154.8 MB, about 5.0 s
-to write, 6.8 s to load. The hand-written curve-free JSON it replaced was 5.7 MB
-(3.17 s write, 0.55 s load) and 52.7 MB (5.5 s load). Parallel regroup loads the
-whole snapshot in every worker: one 85RAW copy takes about 2.3 GB private memory,
-against 1.5 GB for the curve-free JSON. The 8RAW Backfill capture is 29 MB.
-Replays of all four stages were byte-identical to the JSON-era captures on 8RAW,
-single and two-batch. Single observations; not a timing acceptance claim.
+The grouping snapshot stays curve-free JSON; Backfill, pairing and Matrix
+snapshots store the formal objects (#1246, 2026-11-22). Parallel regroup loads
+the whole grouping snapshot in every worker. On 85RAW (27,082 observations, 11
+workers, the same `GroupingInputs`, process-tree private bytes sampled every
+0.5 s) the curve-free JSON peaked at 19.75 GB in 124 s; the formal objects,
+curves and source traces included, peaked at 29.9 GB in 136 s and filled the
+34 GB machine. As files, 8RAW (2,849 observations) was 5.7 MB as JSON against
+13.8 MB as a level-1 gzip pickle; 85RAW 52.7 MB against 154.8 MB. The 8RAW
+Backfill capture is 29 MB. Replays of all four stages were byte-identical to the
+earlier captures on 8RAW, single and two-batch. Single observations; not a
+timing acceptance claim.
 
 Reopen for changes to snapshot storage or grouping-only output.
 Artifacts: `output/i1246/` in the #1246 worktree.
