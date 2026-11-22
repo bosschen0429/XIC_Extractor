@@ -370,16 +370,17 @@ computed groups, members and decisions directly. Replay capture is opt-in; no
 normal run reads and recomputes its own snapshot. Snapshot correctness is covered
 by focused round-trip tests when its producer or reader changes.
 
-On the retained 8RAW inputs (871 groups, 2,681 observations), sharing batch models
-and curve-free elution contexts reduced the snapshot from 193,277,443 to 5,056,890
-bytes. Single observations: old load 25.41 s, compact write 3.88 s, compact load
-0.47 s. All five replay TSVs were byte-identical. A fresh cache-backed 8RAW run
-also matched the pre-change context-selection implementation in all five result
-tables; it wrote no snapshot and ran no diagnostic replay. This is not a new
-full85 timing or scientific acceptance claim.
+Snapshots store the formal objects, curves included (#1246, 2026-11-22). The
+grouping snapshot, as a level-1 gzip pickle: 8RAW (2,849 observations) 13.8 MB,
+0.9 s to write in a full run, 0.47 s to load; 85RAW (27,082 observations) 154.8 MB,
+about 5.0 s to write, 6.8 s to load. The hand-written curve-free JSON it replaced
+was 5.7 MB (3.17 s write, 0.55 s load) and 52.7 MB (5.5 s load). The 8RAW
+Backfill capture is 29 MB. Replays of all four stages were byte-identical to the
+JSON-era captures on 8RAW, single and two-batch. Single observations; not a
+timing acceptance claim.
 
-Reopen for changes to replay fields, context tie priority or grouping-only output.
-Artifacts: `output/codex-grouping-output/` in the #1165 worktree.
+Reopen for changes to snapshot storage or grouping-only output.
+Artifacts: `output/i1246/` in the #1246 worktree.
 
 ### Grouping time concentrates in dense windows
 
