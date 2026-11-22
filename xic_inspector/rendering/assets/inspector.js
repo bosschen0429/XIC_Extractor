@@ -677,7 +677,7 @@
     itemRows(item).forEach(r=>{if(!has(r,'quantitative_value'))noSingle++;else if(r.quantitative_value===null)nulls++;else values++;if(!(item.curves||[]).some(c=>c.sample_id===r.sample_id&&c.raw_rts?.length))noCurves++;});
     const multi=itemRows(item).filter(r=>candidates(item,r.sample_id).length>1&&!channelRoles(item,r.sample_id));
     const fact=(label,value,unit='',warn=false,title='')=>`<div class="fact ${warn?'warn':''}"${title?` title="${esc(title)}"`:''}><dt>${label}</dt><dd>${value}${unit?`<small>${unit}</small>`:''}</dd></div>`;
-    return `<dl class="fact-row">${fact('m/z',mz(item.precursor_mz))}${fact('主要 RT',rt(item.rt_apex_min),finite(item.rt_apex_min)?'min':'')}${fact('樣本',itemRows(item).length)}${fact('有定量值',values)}${nulls?fact('空值',nulls,'',true):''}${noSingle?fact('無單一結果',noSingle,'',true):''}${noCurves?fact('未提供曲線',noCurves,'',true):''}${multi.length?fact('多個候選',multi.length,'個樣本',true,multi.map(r=>sampleName(r.sample_id)).join('、')):''}</dl>`;
+    return `<dl class="fact-row">${fact('m/z',mz(item.precursor_mz))}${finite(item.rt_apex_min)?fact('主要 RT',rt(item.rt_apex_min),'min'):''}${fact('樣本',itemRows(item).length)}${fact('有定量值',values)}${nulls?fact('空值',nulls,'',true):''}${noSingle?fact('無單一結果',noSingle,'',true):''}${noCurves?fact('未提供曲線',noCurves,'',true):''}${multi.length?fact('多個候選',multi.length,'個樣本',true,multi.map(r=>sampleName(r.sample_id)).join('、')):''}</dl>`;
   }
   const recordRefText=ref=>Array.isArray(ref)?JSON.stringify(ref):ref;
   const itemForEvidence=()=>items.find(i=>i.id===state.id);
@@ -1147,6 +1147,66 @@
     const roster=itemRows(item).map(r=>{const c=(item.curves||[]).find(x=>x.sample_id===r.sample_id),decision=c?.quality_flags?.successor_decision||'unclassified';return `<label class="legend-item"><input type="checkbox" data-sample-visible="${esc(r.sample_id)}" ${state.visible.has(r.sample_id)?'checked':''}><span class="legend-line" style="background:${differentialColor(c||{})}"></span>${esc(sampleName(r.sample_id))} · ${esc(decision)} · ${esc(r.status_label||'')}</label><button type="button" data-focus="${esc(r.sample_id)}" aria-label="查看 ${esc(sampleName(r.sample_id))}">查看樣本</button>`;}).join('');
     setHTML($('workspace-content'),`<div class="detail-top"><div><p class="detail-eyebrow">CID-NL feature inclusion / identity relationship review</p><h2>${esc(item.title)} | Candidate ${esc(f.write_authorized_count)} / Existing ${esc(f.no_write_detected_baseline_preserved_count)}</h2><p class="detail-summary">${esc(f.sample_count)} samples · ${esc(f.source_peak_hypothesis_id)} → ${esc(f.successor_peak_hypothesis_id)}</p></div><span class="badge badge-rest">診斷曲線</span></div><section class="advanced-inspection" aria-label="Source / successor differential review"><div class="inspection-heading"><h3 id="inspection-title" tabindex="-1">${state.sample?esc(sampleName(state.sample)):'所有可見樣本'}</h3>${state.sample?'<button type="button" class="return-all" id="btn-unfocus">← 返回所有樣本</button>':''}</div><div class="sample-legend" aria-label="樣本曲線顯示">${roster}</div><div class="charts-grid"><section class="plot-card"><h4>Source · ${esc(f.source_peak_hypothesis_id)} · m/z ${mz(f.source_mz)} · RT ${drt(f.source_center_rt)}</h4><div class="svg-container">${differentialPlot(item,'source',sharedMax)}</div></section><section class="plot-card"><h4>Successor · ${esc(f.successor_peak_hypothesis_id)} · m/z ${mz(f.successor_mz)} · RT ${drt(f.successor_center_rt)}</h4><div class="svg-container">${differentialPlot(item,'successor',sharedMax)}</div></section><section class="plot-card"><h4>Same-sample max relationship · log-log</h4><div class="svg-container">${differentialScatter(item)}</div></section><section class="plot-card"><h4>Review notes</h4>${differentialNotes(f)}</section></div><p class="reading-hint">兩側使用相同絕對訊號上限；黑色虛線標示各 hypothesis 中心 RT。藍色：write authorized；橘色：baseline preserved；灰色：其他。</p></section>`);
   }
+  const sameMzOpen=new Map();
+  function sameMzSamples(item){
+    const m=item.same_mz;if(!sameMzOpen.has(item.id))sameMzOpen.set(item.id,[...m.expanded]);return sameMzOpen.get(item.id);
+  }
+  function sameMzLabel(m,sid){return sampleById.has(sid)?sampleName(sid):(m.points.find(p=>p.sample_key===sid)?.sample_stem||sid);}
+  const sameMzRowTag=id=>String(id).replace(/^[A-Za-z]+0*/,'')||id;
+  function sameMzOverview(item){
+    const m=item.same_mz,clickable=Object.keys(m.curves).length>0,open=new Set(sameMzSamples(item)),far=new Set(m.far.map(f=>f.sample_id));
+    const pts=m.points.filter(p=>finite(p.injection_order)&&finite(p.aligned_apex_rt_min));
+    if(!pts.length)return '';
+    const W=760,H=230,L=48,T=10,IW=W-60,IH=H-42;
+    let x0=Math.min(...pts.map(p=>p.injection_order)),x1=Math.max(...pts.map(p=>p.injection_order)),y0=Math.min(...pts.map(p=>p.aligned_apex_rt_min)),y1=Math.max(...pts.map(p=>p.aligned_apex_rt_min));
+    if(x0===x1){x0-=1;x1+=1;}const pad=Math.max(.3,(y1-y0)*.05);y0-=pad;y1+=pad;
+    const x=v=>L+(v-x0)/(x1-x0)*IW,y=v=>T+IH-(v-y0)/(y1-y0)*IH;
+    let svg='';
+    for(let i=0;i<=2;i++){const v=y0+(y1-y0)*i/2;svg+=`<line x1="${L}" x2="${L+IW}" y1="${y(v)}" y2="${y(v)}" class="plot-grid"/><text x="${L-6}" y="${y(v)+4}" text-anchor="end" font-size="12" class="plot-label">${rt(v)}</text>`;}
+    svg+=`<text x="${L}" y="${H-6}" font-size="12" class="plot-label">注射順序 →</text>`;
+    const own=p=>p.feature_id===m.row;
+    [...pts.filter(p=>!own(p)),...pts.filter(own)].forEach(p=>{
+      const cx=x(p.injection_order),cy=y(p.aligned_apex_rt_min),circled=own(p)&&far.has(p.sample_key);
+      const mark=own(p)?`<circle cx="${cx}" cy="${cy}" r="3.4" fill="var(--accent)"/>`:`<circle cx="${cx}" cy="${cy}" r="2.4" fill="var(--subtle)" opacity=".35"/>`;
+      const ring=circled?`<circle cx="${cx}" cy="${cy}" r="7" fill="none" stroke="var(--warn)" stroke-width="${open.has(p.sample_key)?2.2:1.3}"/>`:'';
+      const hit=clickable?`<circle cx="${cx}" cy="${cy}" r="8" fill="transparent"/>`:'';
+      svg+=`<g ${clickable?`data-same-mz-sample="${esc(p.sample_key)}" style="cursor:pointer"`:''} data-same-mz-row="${esc(p.feature_id)}" data-same-mz-far="${circled}">${ring}${mark}${hit}<title>${esc(sameMzLabel(m,p.sample_key))} · ${esc(p.feature_id)} · 順序 ${p.injection_order} · ${rt(p.aligned_apex_rt_min)} min</title></g>`;
+    });
+    return `<svg role="img" aria-label="注射順序對校正峰頂 RT" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">${svg}</svg>`;
+  }
+  function sameMzXic(item,sid,lo,hi,last){
+    const m=item.same_mz,c=m.curves[sid];
+    if(!c)return '<p class="plot-limit">沒有可用訊號。</p>';
+    const ys=display.signal==='raw'?c.raw:c.smoothed,W=760,H=last?104:84,L=48,T=22,IW=W-60,IH=58;
+    let top=0;c.rts.forEach((v,i)=>{if(v>=lo&&v<=hi&&finite(ys[i]))top=Math.max(top,ys[i]);});if(top<=0)top=1;
+    const x=v=>L+(v-lo)/(hi-lo)*IW,y=v=>T+IH-Math.max(0,v)/top*IH;
+    let svg=`<line x1="${L}" x2="${L+IW}" y1="${T+IH}" y2="${T+IH}" class="plot-axis"/>`;
+    if(last)for(let i=0;i<=4;i++){const v=lo+(hi-lo)*i/4;svg+=`<text x="${x(v)}" y="${T+IH+16}" text-anchor="middle" font-size="12" class="plot-label">${rt(v)}${i===4?' min':''}</text>`;}
+    const points=c.rts.map((v,i)=>v>=lo&&v<=hi&&finite(ys[i])?`${x(v).toFixed(1)},${y(ys[i]).toFixed(1)}`:'').filter(Boolean).join(' ');
+    svg+=`<polyline fill="none" stroke="var(--muted)" stroke-width="1.2" points="${points}"/>`;
+    const lanes=[];
+    m.points.filter(p=>p.sample_key===sid).sort((a,b)=>a.apex_rt_min-b.apex_rt_min).forEach(p=>{
+      const own=p.feature_id===m.row,stroke=own?'var(--accent)':'var(--subtle)',px=x(p.apex_rt_min);
+      let lane=lanes.findIndex(end=>px-end>34);if(lane<0)lane=Math.min(lanes.length,1);lanes[lane]=px;
+      svg+=`<g data-same-mz-peak="${esc(p.feature_id)}"><line x1="${px}" x2="${px}" y1="${T-2-lane*11}" y2="${T+IH}" stroke="${stroke}" stroke-width="${own?1.8:1}" stroke-dasharray="${own?'':'2 3'}"/><text x="${px}" y="${T-5-lane*11}" text-anchor="middle" font-size="11" fill="${stroke}">${esc(sameMzRowTag(p.feature_id))}</text><title>${esc(p.feature_id)} ${rt(p.apex_rt_min)} min</title></g>`;
+    });
+    return `<svg role="img" aria-label="${esc(sameMzLabel(m,sid))} 的 XIC" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">${svg}</svg>`;
+  }
+  function sameMzInner(item){
+    const m=item.same_mz,withCurves=Object.keys(m.curves).length>0,open=withCurves?sameMzSamples(item):m.far.map(f=>f.sample_id),dev=new Map(m.far.map(f=>[f.sample_id,f.deviation_min]));
+    const rts=Object.values(m.curves).flatMap(c=>[c.rts[0],c.rts[c.rts.length-1]]).filter(finite);
+    const lo=rts.length?Math.min(...rts):0,hi=rts.length?Math.max(...rts):1;
+    const shift=sid=>dev.has(sid)?`${dev.get(sid)>0?'+':'−'}${fixed(Math.abs(dev.get(sid)),1)} min`:sid===m.typical_sample_id?'典型':'';
+    const rows=open.map((sid,i)=>`<div class="same-mz-panel" data-same-mz-panel="${esc(sid)}"><div class="same-mz-panel-head"><span>${esc(sameMzLabel(m,sid))}</span><span class="same-mz-shift">${shift(sid)}</span>${withCurves?`<button type="button" class="same-mz-close" data-same-mz-sample="${esc(sid)}" aria-label="收起 ${esc(sameMzLabel(m,sid))}">×</button>`:''}</div>${withCurves?sameMzXic(item,sid,lo,hi,i===open.length-1):''}</div>`).join('');
+    return `<h3>${m.far.length} 針的峰離前後針超過 ${num(m.threshold_min)} 分鐘</h3><p class="same-mz-legend"><span class="same-mz-dot own"></span>${esc(m.row)}<span class="same-mz-dot"></span>同 m/z 其他 ${m.rows.length-1} 列<span class="same-mz-dot far"></span>圈出</p><div class="svg-container">${sameMzOverview(item)}</div>${rows}`;
+  }
+  function sameMzSection(item){
+    return item.same_mz?.far?.length?`<section class="same-mz" id="same-mz" aria-label="同 m/z 各列">${sameMzInner(item)}</section>`:'';
+  }
+  function appendSameMz(item){
+    const html=sameMzSection(item);if(!html)return;
+    const host=document.createElement('div');setHTML(host,html);$('workspace-content').append(...host.childNodes);
+  }
   function detail(){
     deltaView?.destroy();deltaView=null;
     const item=items.find(i=>i.id===state.id);if(!item){const excluded=filtered.filter(isCollapsedExcluded).length;setHTML($('workspace-content'),excluded?`<div class="empty-state"><strong>目前未選取項目</strong><p>左側有 ${excluded} 筆已排除候選，展開即可查看。</p></div>`:'<p class="empty-state">這份報告沒有符合的項目。</p>');return;}normalize(item);if(item.transition_review?.review_kind==='cid_nl_differential'){differentialDetail(item);return;}
@@ -1165,6 +1225,7 @@
     }
     if(mode==='curves'){
       renderCurveWorkspace(item);
+      appendSameMz(item);
       return;
     }
     const head=identified(item)
@@ -1173,11 +1234,21 @@
     const focus=state.sample?`<div class="inspection-heading"><h3 id="inspection-title" tabindex="-1">${esc(sampleName(state.sample))}</h3><button type="button" class="return-all" id="btn-unfocus">← 所有樣本</button></div><div class="selection-controls"><div class="control-group"><span class="control-label">${channelRoles(item,state.sample)?'曲線通道':'候選峰'}</span>${candidateControl(item)}</div><div class="control-group"><span class="control-label">擷取階段</span>${captureControl(item)}</div></div>`:'<h3 id="inspection-title" class="sr-only" tabindex="-1">曲線</h3>';
     const curvesShown=anyCurve(item);
     const inspection=curvesShown||state.sample?`<section class="inspection-section" id="inspection-workspace" aria-label="曲線與積分">${focus}${curvesShown?`<div class="chart-toolbar">${overlayControl(item)}${channelKey(item)}<label><input id="chk-bounds" type="checkbox" ${state.bounds?'checked':''}> 積分範圍與峰頂</label></div>${plotCard(item)}`:''}<section class="integration-card" id="integration-readout">${readout(item)}</section></section>`:'<p class="plot-limit inspection-section">沒有保存曲線</p>';
-    setHTML($('workspace-content'),`${head}${evidencePanel(item)}<section class="sample-section" aria-label="樣本結果">${cellTable(item)}</section>${inspection}${sampleRelationshipPanel(item)}`);
+    setHTML($('workspace-content'),`${head}${sameMzSection(item)}${evidencePanel(item)}<section class="sample-section" aria-label="樣本結果">${cellTable(item)}</section>${inspection}${sampleRelationshipPanel(item)}`);
   }
   function reset(){state.plotWindow=null;rel.captures={};state.sample=null;state.candidate='';state.capture='';state.evidence='';state.evidenceContext='';evidenceOpener=null;}
   function clearFilters(){for(const id of ['search','mz-min','mz-max','rt-min','rt-max'])$(id).value='';list();}
   if (mode === 'offline') $('record-list').addEventListener('click',event=>{const toggle=event.target.closest('[data-excluded-toggle]');if(toggle){const opening=!state.excludedOpen;state.excludedOpen=opening;list(!(opening&&!state.id));$('record-list').querySelector('[data-excluded-toggle]')?.focus();return;}const b=event.target.closest('[data-item]');if(!b)return;state.id=b.dataset.item;reset();list();$('record-list').querySelector('[aria-current="true"]')?.focus();});
+  $('detail-panel').addEventListener('click', event => {
+    const toggle = event.target.closest('[data-same-mz-sample]');
+    if (!toggle) return;
+    const item = items.find(i => i.id === state.id);
+    if (!item?.same_mz) return;
+    const sid = toggle.dataset.sameMzSample, open = sameMzSamples(item), index = open.indexOf(sid);
+    if (index >= 0) open.splice(index, 1); else open.push(sid);
+    setHTML($('same-mz'), sameMzInner(item));
+    event.stopPropagation();
+  });
   $('detail-panel').addEventListener('click', event => {
     const button = event.target.closest('[data-rt-view]');
     if (!button) return;

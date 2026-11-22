@@ -322,11 +322,17 @@ def project_alignment_explanation_child(
     }
     positions: dict[tuple[str, str], float] = {}
     centers: dict[str, tuple[float, float]] = {}
-    context_by_group = {
-        cell.group_hypothesis_id: cell.effective_cells[0].group_context
-        for cell in core.cell_observations
-        if cell.effective_cells
-    }
+    for final_cell in core.cell_observations:
+        if not final_cell.effective_cells:
+            continue
+        context = final_cell.effective_cells[0].group_context
+        center = (
+            context.group.group_center_mz,
+            context.method_subject.precursor_tolerance_ppm,
+        )
+        gid = final_cell.group_hypothesis_id
+        if centers.setdefault(gid, center) != center:
+            raise ValueError(f"one group has two inspection centres: {gid}")
     frame = sample_rt_frame
     sample_stems = {
         sample.sample_name: sample.raw_stem for sample in child.canonical_samples
@@ -363,14 +369,7 @@ def project_alignment_explanation_child(
         }
         for ref in refs.values():
             locate(ref)
-        if refs:
-            continue
-        context = (
-            final_cell.effective_cells[0].group_context
-            if final_cell.effective_cells
-            else context_by_group.get(final_cell.group_hypothesis_id)
-        )
-        if context is None:
+        if refs or final_cell.group_hypothesis_id not in centers:
             continue
         position = group_positions.get(final_cell.group_hypothesis_id)
         if position is None:
@@ -387,12 +386,6 @@ def project_alignment_explanation_child(
         positions[gid, final_cell.sample_key] = (
             estimate.rt_min if estimate is not None else raw_position
         )
-        center = (
-            context.group.group_center_mz,
-            context.method_subject.precursor_tolerance_ppm,
-        )
-        if centers.setdefault(gid, center) != center:
-            raise ValueError(f"one group has two inspection centres: {gid}")
     for group in core.final_population:
         position = centers.get(group.group_hypothesis_id)
         members = [

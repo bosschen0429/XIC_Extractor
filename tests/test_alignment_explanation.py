@@ -27,6 +27,7 @@ from xic_extractor.alignment_explanation.errors import (
 from xic_extractor.alignment_explanation.reader import (
     read_alignment_curves,
     read_alignment_explanation,
+    read_review_curves,
     read_review_evidence,
     read_summary_with_examples,
 )
@@ -246,6 +247,30 @@ def test_owner_facts_survive_persisted_candidate_query(tmp_path, monkeypatch, sc
             "method_assessments": "unavailable",
             "initial_groups": "unavailable",
         }
+
+
+def test_a_fully_detected_row_reviews_its_same_mz_peaks(tmp_path, monkeypatch):
+    completed, candidates, matrix, config = run_alignment_fixture(
+        tmp_path, monkeypatch, "positive"
+    )
+    report = write_alignment_explanation(
+        tmp_path / "report.sqlite",
+        full_audit=True,
+        completed=completed,
+        children=children_of(completed.application_result),
+        **explanation_discovery_facts(completed),
+        peaks_by_sample=candidates,
+        matrix_path=matrix,
+        alignment_config=config,
+    )
+
+    curves = read_review_curves(report, feature_id="F000001")
+
+    assert all(location.physical_peak_key for location in curves.locations)
+    assert (curves.row_mz, curves.row_ppm) == (500.0, 20.0)
+    assert {peak.sample_key for peak in curves.same_mz_peaks} == {
+        location.sample_key for location in curves.locations
+    }
 
 
 def test_partial_write_never_publishes_complete_report(tmp_path):
