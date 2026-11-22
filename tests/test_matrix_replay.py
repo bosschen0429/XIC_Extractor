@@ -1,55 +1,69 @@
 import csv
-import json
+from dataclasses import replace
 
 from scripts.run_alignment import main
+from xic_extractor.alignment.batch_correspondence import (
+    BatchCorrespondence,
+    BatchMap,
+    FeatureCorrespondence,
+)
+from xic_extractor.diagnostics.matrix_replay import save_matrix_cells, save_matrix_join
+from xic_extractor.output.alignment.tsv_writer import (
+    BatchRowSource,
+    FinalMatrixValues,
+    UntargetChildOutputs,
+    UntargetGroupRows,
+)
+from xic_extractor.sample_metadata import SampleMetadata
 
 
 def test_matrix_only_joins_batch_qualified_groups_and_keeps_missing_cells(tmp_path):
-    def group(key, mz, areas):
-        return {
-            "key": key,
-            "mz": mz,
-            "rt": 2,
-            "areas": areas,
-            "physical_peaks": [[f"{next(iter(areas))}-{key}", "digest"]],
-            "source_candidate_ids": [],
-        }
-
-    def save(name, data):
-        path = tmp_path / name
-        path.write_text(json.dumps(data))
-        return str(path)
+    def group(key, mz, sample, areas):
+        return key, UntargetGroupRows(
+            "matrix",
+            ((f"{sample}-{key}", "digest"),),
+            (),
+            rows=(),
+            matrix=FinalMatrixValues(mz, 2, areas),
+        )
 
     def cells(batch, order, groups):
-        return save(
-            batch,
-            {
-                "schema": "finalized_matrix_cells",
-                "batches": {batch: {"samples": order, "groups": groups}},
-            },
+        keys = {rows: key for key, rows in groups}
+        path = tmp_path / f"{batch}.pickle.gz"
+        save_matrix_cells(
+            path,
+            (
+                BatchRowSource(
+                    batch,
+                    tuple(
+                        SampleMetadata(stem, stem, number, batch_id=batch)
+                        for stem, number in order
+                    ),
+                    (UntargetChildOutputs(tuple(keys)),),
+                    keys.__getitem__,
+                ),
+            ),
         )
+        return str(path)
 
     old = cells(
         "old",
-        {"a": 1, "c": 3},
-        [
-            group("shared", 301, {"c": 30, "a": None}),
-            group("solo", 302, {"c": None, "a": 0}),
-        ],
+        (("a", 1), ("c", 3)),
+        [group("shared", 301, "c", (None, 30)), group("solo", 302, "a", (0, None))],
     )
     new = cells(
-        "new",
-        {"b": 2, "d": 4},
-        [
-            group("shared", 300, {"d": None, "b": 123.456789}),
-        ],
+        "new", (("b", 2), ("d", 4)), [group("shared", 300, "b", (123.456789, None))]
     )
-    pairing = {
-        "schema": "matrix_batch_join",
-        "reference_batch": "new",
-        "rows": [[["new", "shared"], ["old", "shared"]], [["old", "solo"]]],
-        "maps": {"old": None},
-    }
+    features = (
+        FeatureCorrespondence("new", "shared", "paired", (("old", "shared"),), 2, ()),
+        FeatureCorrespondence("old", "shared", "paired", (("new", "shared"),), 2, ()),
+        FeatureCorrespondence("old", "solo", "unpaired_no_map", (), None, ()),
+    )
+    pairing = BatchCorrespondence(
+        "new",
+        (BatchMap("old", (), {}, None, (), (), None, {}, ()),),
+        features,
+    )
     out = tmp_path / "replay"
 
     def run(*join_args):
@@ -65,6 +79,11 @@ def test_matrix_only_joins_batch_qualified_groups_and_keeps_missing_cells(tmp_pa
             ]
         )
 
+    def save(name, correspondence):
+        path = tmp_path / name
+        save_matrix_join(path, correspondence)
+        return str(path)
+
     assert run("--pairing", save("join", pairing)) == 0
     matrix = out / "alignment_matrix.tsv"
     with matrix.open(newline="", encoding="utf-8") as stream:
@@ -79,6 +98,6 @@ def test_matrix_only_joins_batch_qualified_groups_and_keeps_missing_cells(tmp_pa
     assert not (out / "alignment_matrix.tsv").exists()
 
     out = tmp_path / "stale"
-    pairing["rows"].pop()
-    assert run("--pairing", save("join", pairing)) == 2
+    stale = replace(pairing, features=features[:2])
+    assert run("--pairing", save("stale-join", stale)) == 2
     assert not (out / "alignment_matrix.tsv").exists()
