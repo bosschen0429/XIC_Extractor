@@ -32,7 +32,7 @@
 
 1. **找候選（Discovery）**：方法提供線索，例如 A 的 MS2 見到 dR 中性丟失，指出 A 有一個值得追的 MS1 峰。線索不是鑑定；C 沒採到 MS2 也不代表沒有這個化合物。
 2. **找峰與積分**：在 XIC 上找出峰的邊界並計算面積。旁邊較大或較漂亮的峰，不一定就是線索指的那個峰。
-3. **對齊（Alignment）**：A、B 的 m/z、RT 與峰相容，歸為同一個 feature，成為矩陣的一列。
+3. **對齊（Alignment）**：A、B 的 m/z、RT 與峰相容，歸為同一個 feature，成為矩陣的一列。比較 RT 前先校正各針的漂移，見 [RT 漂移模型](rt-drift.md)。
 4. **回填（Backfill）**：feature 成立後，回到 C 的 RAW 在預期位置附近重找。找到可用的峰才填值；找不到就留空，不會從 A、B 的面積推算。
 5. **每格判定**：每一格決定填哪個值，或為什麼不填。只有判定完成的 feature 進矩陣。
 
@@ -73,6 +73,7 @@ Untargeted 整理矩陣時，ISTD 對應的列一律保留。
 | 對齊 | 把各樣本相容的峰歸為同一個 feature | Alignment、`alignment_*` |
 | feature | 對齊後的一組訊號，矩陣的一列；不等於已確認的化合物 | `feature_id` |
 | 矩陣 | feature × 樣本的面積表 | `alignment_matrix.tsv`、**整理矩陣** 產生的 `analysis_matrix.tsv` |
+| 漂移錨點 | 一般 RT 校正後仍明顯漂移、且有另一個化合物佐證的通道，用來量批次狀態 B 與樣本位移 M；見 [RT 漂移模型](rt-drift.md) | `rt_drift_summary` 的 `drift_anchors` |
 | 回填（Backfill） | feature 成立後，回到缺值的樣本重找峰 | **回填** |
 | 上機資訊 | 上機時的序列表檔案（Word、Excel、CSV 或 TSV），提供樣本角色、組別與排除 | **上機資訊** |
 | 結果存放位置 | 放所有分析結果的上層資料夾 | **結果存放位置** |

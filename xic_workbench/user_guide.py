@@ -27,6 +27,7 @@ GUIDE_PAGES = (
     ("targeted.md", "Targeted 分析"),
     ("untargeted.md", "Untargeted 分析"),
     ("concepts.md", "判讀原理"),
+    ("rt-drift.md", "RT 漂移模型"),
 )
 THEME_SCRIPT = (
     "try{var t=localStorage.getItem('xic-theme')"

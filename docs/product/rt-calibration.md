@@ -267,6 +267,9 @@ Outputs:
 
 ## Drift beyond the map
 
+The user guide's [RT 漂移模型](../user/rt-drift.md) page explains this section
+with figures; keep it consistent when the model changes.
+
 The general map moves every compound at one RT together. A few compounds move
 more, and differently: after general calibration,
 
