@@ -56,7 +56,7 @@ def physical_peak_view_from_observation(peak: PeakObservation) -> PhysicalPeakVi
         apex_rt_min=integration.rt_apex_min,
         left_rt_min=integration.rt_left_min,
         right_rt_min=integration.rt_right_min,
-        xic_mz=peak.mz,
+        xic_mz=peak.source_trace.mz,
         xic_ppm_tol=provenance.query_ppm_tol,
         rt=peak.source_trace.rt,
         raw=peak.source_trace.intensity,

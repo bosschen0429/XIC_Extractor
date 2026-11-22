@@ -364,6 +364,7 @@ def project_alignment_explanation_child(
             ref.physical_peak_key: ref
             for ref in (
                 *final_cell.direct_observations,
+                *final_cell.ms1_only_group_observations,
                 *(hypothesis.peak for hypothesis in final_cell.direct_hypotheses),
             )
         }

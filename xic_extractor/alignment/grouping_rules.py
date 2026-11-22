@@ -66,6 +66,22 @@ class GroupingRules:
     chemistry_key: Callable[[SampleLocalMS1Owner], tuple[str, str]]
     mass_center: Callable[[Sequence[SampleLocalMS1Owner]], float | None]
     mass_fraction: Callable[[float | None, float | None, AlignmentConfig], float]
+    method_unobserved: Callable[[SampleLocalMS1Owner], bool]
     pair_mass_fraction: Callable[
         [SampleLocalMS1Owner, SampleLocalMS1Owner, AlignmentConfig], float
     ]
+
+
+def compatible_method_members(
+    owners: Sequence[SampleLocalMS1Owner], rules: GroupingRules
+) -> bool:
+    return (
+        len(
+            {
+                rules.chemistry_key(owner)
+                for owner in owners
+                if not rules.method_unobserved(owner)
+            }
+        )
+        <= 1
+    )

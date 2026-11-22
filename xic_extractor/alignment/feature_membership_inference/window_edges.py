@@ -100,6 +100,8 @@ def _window_candidate_edges(
             if rt_delta_sec > rt_limit_sec:
                 continue
             counts["owner_edge_evaluations"] += 1
+            if rules.pair_evidence(left, right, config).identity_failure:
+                continue
             if peak_correspondence_conflict(
                 (left,),
                 (right,),

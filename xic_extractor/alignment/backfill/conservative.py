@@ -181,10 +181,17 @@ def plan_conservative_backfill_targets(
     for group in groups:
         if group.disposition == "rejected":
             continue
-        support_ids = frozenset(member.sample_key for member in group.member_subjects)
+        support_ids = {
+            member.sample_key
+            for owner, member in (
+                (owner, owner.cross_sample_member_subject) for owner in group.owners
+            )
+            if owner.primary_identity_event is not None and member is not None
+        }
         if len(support_ids & eligible_ids) < minimum_support:
             continue
-        targets = eligible_ids - support_ids
+        occupied = {member.sample_key for member in group.member_subjects}
+        targets = eligible_ids - occupied
         if targets:
             planned.append((group, targets))
     return tuple(planned)
@@ -218,13 +225,13 @@ def assess_conservative_backfill_group(
         if _sample_is_activation_eligible(sample)
     )
     direct_support_ids = tuple(
-        support.sample.sample_name for support in group_context.supports
+        support.sample.sample_name for support in group_context.direct_supports
     )
     eligible_support_ids = tuple(
         sample_id for sample_id in direct_support_ids if sample_id in eligible_ids
     )
     support_traces = tuple(
-        support.hypothesis.peak for support in group_context.supports
+        support.hypothesis.peak for support in group_context.direct_supports
     )
     cell_sample_ids = tuple(cell.sample_key for cell in cells)
     sample_ids = tuple(sample.sample_name for sample in samples)

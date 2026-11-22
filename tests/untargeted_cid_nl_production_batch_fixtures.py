@@ -58,13 +58,6 @@ from xic_extractor.untargeted_execution.partition.models import (
 def _assert_jobs_match_direct_construction(batch) -> None:
 
     context = batch.context
-    memberships = dict(batch.subject_batch.candidate_memberships)
-    candidate_keys = {
-        (sample.sample_name, memberships[candidate.peak_id])
-        for sample in context.samples
-        for candidate in context.peaks_by_sample[sample.raw_stem]
-        if candidate.peak_id in memberships
-    }
     expected = tuple(
         UntargetedPartitionJob(
             processing_attempt_id=context.processing_attempt_id,
@@ -88,8 +81,6 @@ def _assert_jobs_match_direct_construction(batch) -> None:
         )
         for sample in context.samples
         for subject in batch.subject_batch.subjects
-        if not batch.sample_job_templates
-        or (sample.sample_name, subject.method_subject_id) in candidate_keys
     )
     assert batch.jobs == expected
     assert tuple(job._request_subjects for job in batch.jobs) == tuple(

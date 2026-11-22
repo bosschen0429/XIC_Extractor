@@ -14,6 +14,7 @@ from xic_extractor.acquisition.physical_capture import (
 )
 from xic_extractor.acquisition_contract import (
     AcquiredTrace,
+    TraceAcquisitionBatch,
     TraceAcquisitionCapability,
     mint_trace_acquisition_capability,
 )
@@ -37,6 +38,10 @@ from xic_extractor.peak_detection.cid_nl_peak_support import (
     DdaCidNlPeakSupport,
     DdaCidNlPeakSupportPolicy,
 )
+from xic_extractor.peak_detection.elution_context import (
+    SampleElutionContext,
+    project_elution_context,
+)
 from xic_extractor.peak_detection.observations import (
     PeakObservation,
     mint_physical_peak_observations,
@@ -51,7 +56,6 @@ from xic_extractor.peak_detection.physical_peak_population import (
 )
 from xic_extractor.peak_detection.traces import Trace, trace_from_xic_request
 from xic_extractor.processing_identity import AcquisitionSourceIdentity
-from xic_extractor.raw_superwindow_source import ScanResolvedXICSource
 from xic_extractor.sample_metadata import SampleMetadata
 from xic_extractor.untargeted_execution.acquisition_cache import (
     acquire_untargeted_trace_batch,
@@ -62,7 +66,7 @@ from xic_extractor.untargeted_execution.partition.cid_nl_discovery_evidence impo
 from xic_extractor.xic_models import XICRequest
 
 
-class RegionRawSource(ScanResolvedXICSource, Protocol):
+class RegionRawSource(Protocol):
     def acquisition_rt_bounds(self) -> tuple[float, float]: ...
 
     def ms1_centroid(
@@ -109,6 +113,8 @@ class CidNlSampleRegion:
     region: DiscoveryMassRegion
     coverage: tuple[RegionTraceCoverage, ...]
     peaks: tuple[PeakObservation, ...]
+    acquisitions: tuple[TraceAcquisitionBatch, ...]
+    contexts: tuple[SampleElutionContext, ...]
     unavailable_segments: tuple[RegionSegment, ...]
     unlocalized_mass: tuple[RegionSegment, ...]
     evidence: tuple[CidNlEvidenceObservation, ...]
@@ -199,29 +205,36 @@ def acquire_cid_nl_sample_regions(
     return tuple(results)
 
 
+_Capture = tuple[XICRequest, AcquiredTrace | None, TraceAcquisitionBatch | None, str]
+
+
 def _acquire_regions(
     raw: RegionRawSource,
     capability: TraceAcquisitionCapability,
     requests: tuple[XICRequest, ...],
-) -> Iterator[tuple[XICRequest, AcquiredTrace | None, str]]:
+) -> Iterator[_Capture]:
     for start in range(0, len(requests), PHYSICAL_CAPTURE_BATCH_MAX_REQUESTS):
         chunk = requests[start : start + PHYSICAL_CAPTURE_BATCH_MAX_REQUESTS]
         try:
             batch = acquire_untargeted_trace_batch(capability, chunk, raw)
+        except InterruptedError:
+            raise
         except Exception as exc:
             # This boundary owns vendor failures. Do not turn a failed chunk
             # into zero-intensity traces or re-run its requests one at a time.
             reason = f"{type(exc).__name__}: {exc}"
-            yield from ((request, None, reason) for request in chunk)
+            yield from ((request, None, None, reason) for request in chunk)
         else:
-            yield from ((item.coordinate.request, item, "") for item in batch.traces)
+            yield from (
+                (item.coordinate.request, item, batch, "") for item in batch.traces
+            )
 
 
 def _measure_region(
     *,
     sample: SampleMetadata,
     region: DiscoveryMassRegion,
-    acquired: tuple[tuple[XICRequest, AcquiredTrace | None, str], ...],
+    acquired: tuple[_Capture, ...],
     ms1_centroid: MS1Centroid,
     acquisition_source: AcquisitionSourceIdentity,
     events: tuple[DiscoveryEvent, ...],
@@ -232,10 +245,14 @@ def _measure_region(
     measured: list[RegionSegment] = []
     unavailable: list[RegionSegment] = []
     distinct: list[tuple[AcquiredTrace, PhysicalPeakPopulation]] = []
-    for request, trace, error in acquired:
+    batches = {}
+    contexts = []
+    for request, trace, batch, error in acquired:
         if trace is None:
             coverage.append(RegionTraceCoverage(request, None, None, "failed", error))
             continue
+        assert batch is not None
+        batches[id(batch)] = batch
         rt, y = trace.trace.rt, trace.trace.intensity
         matching = next(
             (pop for owner, pop in distinct if same_acquired_signal(owner, trace)),
@@ -261,6 +278,13 @@ def _measure_region(
         if matching is not None:
             continue
         distinct.append((trace, population))
+        if context := project_elution_context(
+            population.prepared,
+            sample_stem=sample.raw_stem,
+            mz=request.mz,
+            universe=population.universe,
+        ):
+            contexts.append(context)
         for segment in population.universe.segments:
             evaluation = population.measure_segment(segment)
             item = RegionSegment(trace, evaluation)
@@ -310,6 +334,8 @@ def _measure_region(
         region,
         tuple(coverage),
         observations,
+        tuple(batches.values()),
+        tuple(contexts),
         tuple(unavailable),
         tuple(unlocalized_mass),
         evidence,

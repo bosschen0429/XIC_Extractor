@@ -210,7 +210,10 @@ class _FakeThermoRaw:
         )
 
     def GetCentroidStream(self, scan_number: int, refresh: bool):
-        return SimpleNamespace(Masses=[], Intensities=[])
+        intensity = float(self.source.intensity[scan_number - 1])
+        if intensity <= 0:
+            return SimpleNamespace(Masses=[], Intensities=[])
+        return SimpleNamespace(Masses=[self.source.ms1_mz], Intensities=[intensity])
 
     def GetSimplifiedScan(self, scan_number: int):
         scan = self.scans[scan_number]
@@ -242,6 +245,7 @@ class _FakeRaw:
                 for neutral_loss_da in neutral_loss_das
             )
         self.acquisition_source = acquisition_source
+        self.ms1_mz = scan_precursor_mz
         self.rt = np.linspace(7.4, 8.7, 521)
         self.intensity = sum(
             (

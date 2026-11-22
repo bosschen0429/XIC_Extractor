@@ -10,13 +10,15 @@ from xic_extractor.alignment.cid_nl_initial_grouping import CidNlGrouping
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.execution.workers import WorkerAdmissionPool
 from xic_extractor.raw_reader import ensure_assemblies_loaded
+from xic_extractor.untargeted_execution.partition.cid_nl_region_acquisition import (
+    plan_cid_nl_mass_regions,
+)
 from xic_extractor.untargeted_execution.partition.models import (
     UntargetedInitialSampleResult,
     UntargetedPartitionError,
     UntargetedPartitionJob,
     UntargetedPartitionResult,
     UntargetedSampleResult,
-    _request_subject_candidates,
 )
 from xic_extractor.untargeted_execution.partition.workers import (
     _backfill_support_context,
@@ -43,7 +45,6 @@ def execute_partition(
     progress_callback: Callable[[Mapping[str, object]], None] | None = None,
     should_cancel: Callable[[], bool] | None = None,
     pool: WorkerAdmissionPool,
-    backfill_templates: tuple[UntargetedPartitionJob, ...] = (),
     initial_only: bool = False,
     initial_results: tuple[UntargetedInitialSampleResult, ...] | None = None,
     prepare_grouping: Callable[
@@ -63,7 +64,6 @@ def execute_partition(
         partition_key=partition_key,
         should_cancel=should_cancel,
         pool=pool,
-        backfill_templates=backfill_templates,
         prepare_grouping=prepare_grouping,
         initial_only=initial_only,
         initial_results=initial_results,
@@ -91,7 +91,6 @@ def _prepare_runtime_work(
     partition_key: str,
     should_cancel: Callable[[], bool] | None = None,
     pool: WorkerAdmissionPool,
-    backfill_templates: tuple[UntargetedPartitionJob, ...] = (),
     initial_only: bool = False,
     initial_results: tuple[UntargetedInitialSampleResult, ...] | None = None,
     prepare_grouping: Callable[
@@ -112,21 +111,7 @@ def _prepare_runtime_work(
                 }
             )
 
-    states: list[_RuntimeJobState] = []
-    for job in jobs:
-        try:
-            initial_requires_raw = bool(_request_subject_candidates(job))
-            error = None
-        except Exception as exc:
-            initial_requires_raw = False
-            error = exc
-        states.append(
-            _RuntimeJobState(
-                job=job,
-                initial_requires_raw=initial_requires_raw,
-                error=error,
-            )
-        )
+    states = [_RuntimeJobState(job) for job in jobs]
 
     if initial_results is not None:
         seeded = {
@@ -137,15 +122,22 @@ def _prepare_runtime_work(
             state.adapter_result = seeded[state.job.work_unit_key]
 
     sample_groups = _runtime_sample_groups(states)
-    initial_groups_by_sample = {
-        group[0].job.sample.sample_name: group for group in sample_groups
-    }
-    phase_templates = backfill_templates or tuple(
-        group[0].job for group in sample_groups
+    regions = (
+        plan_cid_nl_mass_regions(
+            (
+                event
+                for group in sample_groups
+                for candidate in group[0].job.candidates
+                for event in candidate.located_events
+            ),
+            settings=jobs[0].settings,
+        )
+        if jobs and initial_results is None
+        else ()
     )
     batch_phases: list[_BatchSamplePhaseState] = []
-    for first in phase_templates:
-        sample_states = initial_groups_by_sample.get(first.sample.sample_name, ())
+    for sample_states in sample_groups:
+        first = sample_states[0].job
         sample_id = first.sample.sample_name
         initial_resource_key: str | None = (
             f"acquisition-session:{partition_key}:{sample_id}:initial"
@@ -162,7 +154,7 @@ def _prepare_runtime_work(
                 states=sample_states,
                 initial_resource_key=initial_resource_key,
                 backfill_resource_key=backfill_resource_key,
-                sample_template=first,
+                regions=regions,
             )
         )
 
@@ -247,6 +239,7 @@ def _prepare_runtime_work(
             return _SampleInitialWorkerRequest(
                 jobs=tuple(s.job for s in sample_states),
                 initial_resource_key=phase.initial_resource_key,
+                regions=phase.regions,
             )
 
         def handle_initial_response(
@@ -342,22 +335,14 @@ def _prepare_runtime_work(
                             _prepare_group_authorized_backfills(
                                 states,
                                 prepared=work.prepared_grouping,
-                                sample_templates=backfill_templates,
                             )
                 elif not initial_only and alignment_config.backfill_enabled:
                     _prepare_owner_authorized_backfills(
                         states,
                         alignment_config=alignment_config,
-                        sample_templates=backfill_templates,
                     )
                 if not initial_only and alignment_config.backfill_enabled:
                     backfill_groups = _runtime_sample_groups(states)
-                    for sample_states in backfill_groups:
-                        phase = phases_by_sample.get(
-                            sample_states[0].job.sample.sample_name
-                        )
-                        if phase is not None:
-                            phase.states = sample_states
                     if pool.backend == "process":
                         pool.run_windowed(
                             backfill_groups,

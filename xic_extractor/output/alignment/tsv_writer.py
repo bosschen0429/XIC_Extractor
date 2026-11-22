@@ -59,7 +59,7 @@ if TYPE_CHECKING:
         FinalizedUntargetBatchApplicationResult,
     )
 
-CellOrigin = Literal["detected", "backfilled"]
+CellOrigin = Literal["detected", "backfilled", "ms1_only"]
 
 ALIGNMENT_REVIEW_COLUMNS = (
     "feature_id",
@@ -492,7 +492,12 @@ def _member_direct_peaks(
                 )
             peaks.add(peak)
     if not peaks:
-        raise ValueError("Matrix row lacks owner-backed Mz/RT observations")
+        group = observations[0].group
+        if group.destination == "matrix":
+            raise ValueError("Matrix row lacks owner-backed Mz/RT observations")
+        peaks.update(
+            peak for member in group.member_subjects for peak in member.physical_peaks
+        )
     return tuple(sorted(peaks, key=lambda peak: peak.measured_order_key))
 
 
@@ -547,7 +552,11 @@ def _selected_cell_source(
 ) -> str | None:
     """The Discovery candidate of a numeric cell read from a direct observation."""
 
-    if decision.value is None or evidence.ms1_only_backfill_observations:
+    if (
+        decision.value is None
+        or evidence.ms1_only_backfill_observations
+        or evidence.ms1_only_group_observations
+    ):
         return None
     direct = tuple(evidence.direct_observations)
     if len(direct) != 1:
@@ -594,6 +603,8 @@ def cell_origin(decision: ProductionCellDecision) -> CellOrigin | None:
     """
 
     evidence = cast(FinalGroupCellObservation, decision.evidence)
+    if evidence.ms1_only_group_observations:
+        return "ms1_only"
     if decision.value is not None:
         if evidence.direct_observations and not (
             evidence.ms1_only_backfill_observations

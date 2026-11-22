@@ -6,6 +6,7 @@ from typing import Literal, TypeAlias
 
 FinalCellEvidenceState: TypeAlias = Literal[
     "direct_observation",
+    "ms1_only_group_observation",
     "ms1_only_backfill_observation",
     "unresolved",
     "rejected_observation",

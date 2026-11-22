@@ -182,7 +182,6 @@ def build_initial_cid_nl_cross_sample_groups(
         alignment_config=alignment_config,
         sample_universe=frozenset(sample.raw_stem for sample in samples),
         rt_frame=rt_frame,
-        retain_observation_only_candidates=True,
         elution_contexts=elution_contexts,
         operation_counts_sink=operation_counts_sink,
         retained_hypotheses_by_assessment=retained_hypotheses_by_assessment,

@@ -23,6 +23,7 @@ from xic_extractor.alignment.feature_membership_inference.sample_assignment impo
     _solve_sample_assignment,
 )
 from xic_extractor.alignment.ownership_models import (
+    MS1_OBSERVATION_ASSIGNMENT,
     SampleLocalMS1Owner,
 )
 from xic_extractor.alignment.rt_frame import SampleRtFrame
@@ -212,21 +213,57 @@ def test_ms1_only_owner_requires_physical_signal_quality() -> None:
     )
 
 
-def test_ms1_only_and_cid_evidence_do_not_form_a_mixed_group() -> None:
+def test_measured_ms1_only_peak_can_match_cid_in_another_sample():
     ms1 = replace(
-        with_peak(cid_nl_owner("a", "ms1"), baseline_residual_mad=1.0),
+        cid_nl_owner("a", "ms1"),
         primary_identity_event=None,
+        assignment_reason=MS1_OBSERVATION_ASSIGNMENT,
     )
     cid = cid_nl_owner("b", "cid")
-    result = infer_feature_memberships(
+    result = _infer_feature_memberships(
         (ms1, cid),
         config=AlignmentConfig(),
-        rt_frame=SampleRtFrame(injection_order=({"a": 1, "b": 2})),
+        rt_frame=SampleRtFrame(injection_order={"a": 1, "b": 2}),
+        rules=CID_NL_GROUPING_RULES,
     )
-    assert _memberships(result) == {
-        frozenset((ms1.owner_id,)),
-        frozenset((cid.owner_id,)),
-    }
+    assert _memberships(result) == {frozenset((ms1.owner_id, cid.owner_id))}
+
+
+@pytest.mark.parametrize("bootstrap", (False, True))
+def test_ms1_only_cannot_bridge_a_method_conflict_or_two_peaks_of_one_sample(
+    bootstrap,
+):
+    first = cid_nl_owner("a", "first", apex_rt=10.0)
+    local_second = replace(
+        cid_nl_owner("a", "second", apex_rt=10.10),
+        primary_identity_event=None,
+        assignment_reason=MS1_OBSERVATION_ASSIGNMENT,
+    )
+    unknown = replace(
+        cid_nl_owner("b", "unknown", apex_rt=10.01),
+        primary_identity_event=None,
+        assignment_reason=MS1_OBSERVATION_ASSIGNMENT,
+    )
+    conflicting = cid_nl_owner("c", "different", apex_rt=10.02)
+    conflicting = replace(
+        conflicting,
+        primary_identity_event=replace(
+            conflicting.primary_identity_event, neutral_loss_tag="RNA_R"
+        ),
+    )
+    rows = (first, local_second, unknown, conflicting)
+    result = _infer_feature_memberships(
+        rows,
+        config=AlignmentConfig(),
+        rt_frame=SampleRtFrame(injection_order={"a": 1, "b": 2, "c": 3}),
+        bootstrap=bootstrap,
+        rules=CID_NL_GROUPING_RULES,
+    )
+    memberships = _memberships(result)
+    assert set().union(*memberships) == {owner.owner_id for owner in rows}
+    for group in memberships:
+        assert not {first.owner_id, local_second.owner_id}.issubset(group)
+        assert not {first.owner_id, conflicting.owner_id}.issubset(group)
 
 
 def test_true_drift_is_stable_without_requiring_distant_pair_edges() -> None:

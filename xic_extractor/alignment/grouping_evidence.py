@@ -9,7 +9,10 @@ from typing import TYPE_CHECKING
 
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.grouping_rules import GroupingRules
-from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
+from xic_extractor.alignment.ownership_models import (
+    MS1_OBSERVATION_ASSIGNMENT,
+    SampleLocalMS1Owner,
+)
 from xic_extractor.mass_accuracy import absolute_ppm_error
 from xic_extractor.peak_detection.ms1_shape_identity import (
     LocalPeakShapeComparisons,
@@ -184,6 +187,9 @@ def owner_uncertainty_reason(
         return "nonpositive_owner_area"
     if "ambiguous" in owner.assignment_reason:
         return "ambiguous_owner_assignment"
-    if rules.support_level(owner, owner, config) == "weak":
+    if (
+        owner.assignment_reason != MS1_OBSERVATION_ASSIGNMENT
+        and rules.support_level(owner, owner, config) == "weak"
+    ):
         return "weak_identity_evidence"
     return ""

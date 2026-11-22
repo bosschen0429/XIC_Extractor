@@ -2,26 +2,13 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, replace
+from dataclasses import replace
 from pathlib import Path
 
-from tests.cid_nl_raw_fixture import (
-    TEST_PROFILE,
-    _current_candidates,
-    _open_bound_raw,
-    _settings,
-)
 from tests.untargeted_cid_nl_no_raw_fixture import (
-    UntargetedCidNlNoRawFixture,
     build_untargeted_cid_nl_no_raw_fixture,
 )
-from xic_extractor.discovery.csv_reader import located_events_by_peak
-from xic_extractor.discovery.csv_writer import write_discovery_events_csv
 from xic_extractor.discovery.models import DiscoveryPeak
-from xic_extractor.discovery.settings import DiscoverySettings
-from xic_extractor.untargeted_execution.partition.cid_nl_sample_acquisition import (
-    adapt_current_discovery_sample_subject,
-)
 
 
 def build_sample_adapter_fixture(tmp_path: Path, *, sample_stem: str = "S1"):
@@ -30,73 +17,6 @@ def build_sample_adapter_fixture(tmp_path: Path, *, sample_stem: str = "S1"):
         tmp_path,
         sample_roles={sample_stem: "sample"},
         thermo_raw_sources=True,
-    )
-
-
-@dataclass
-class SampleAdapterScenario:
-    """Staged single-sample replay; mutations and assertions stay in each case.
-
-    Defaults are the raw fixture's single DNA_dR loss (116.0474 Da), RT
-    7.5–8.6 min, 0.20 min seed gap/search padding and local-minimum resolver;
-    peak configuration and the Gaussian15 TEST_PROFILE come from that fixture.
-    No spectra are invented here: each case supplies its own _FakeRaw and
-    changes it before discovery/opening. Binding stays explicit so fault
-    injection, candidate edits and acquisition happen in their original order.
-    Specialized profile/backfill cases do not use these adaptation defaults.
-    """
-
-    tmp_path: Path
-    fixture: UntargetedCidNlNoRawFixture
-    settings: DiscoverySettings
-    attachments: list = field(default_factory=list)
-
-    def discover(self, source_raw):
-        return _current_candidates(
-            source_raw,
-            raw_file=self.fixture.source_paths["S1"],
-            settings=self.settings,
-            attachments=self.attachments,
-        )
-
-    def through_event_table(self, candidates):
-        """Hand Discovery peaks to Alignment through the persisted event table."""
-        path = write_discovery_events_csv(
-            self.tmp_path / "S1" / "discovery_events.csv", self.attachments
-        )
-        located = located_events_by_peak(
-            path,
-            raw_file=self.fixture.source_paths["S1"],
-            sample_stem="S1",
-            neutral_loss_by_tag=self.settings.neutral_loss_by_tag,
-        )
-        return tuple(
-            replace(candidate, located_events=located.get(candidate.peak_id, ()))
-            for candidate in candidates
-        )
-
-    def open_raw(self, source_raw):
-        return _open_bound_raw(self.fixture, "S1", source_raw, tmp_path=self.tmp_path)
-
-    def adapt(self, candidates, *, raw, **overrides):
-        inputs = dict(
-            processing_attempt_id=self.fixture.processing_attempt_id,
-            sample=self.fixture.sample("S1"),
-            acquisition_source=self.fixture.source("S1"),
-            method_subject=self.fixture.method_subject,
-            peaks=candidates,
-            settings=self.settings,
-            raw=raw,
-            signal_processing_profile=TEST_PROFILE,
-        )
-        return adapt_current_discovery_sample_subject(**(inputs | overrides))
-
-
-def build_sample_adapter_scenario(tmp_path: Path) -> SampleAdapterScenario:
-    return SampleAdapterScenario(
-        tmp_path=tmp_path,
-        fixture=build_sample_adapter_fixture(tmp_path),
-        settings=_settings(),
     )
 
 

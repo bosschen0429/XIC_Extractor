@@ -13,7 +13,10 @@ from typing import cast
 
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.grouping_evidence import peak_correspondence_conflict
-from xic_extractor.alignment.grouping_rules import GroupingRules
+from xic_extractor.alignment.grouping_rules import (
+    GroupingRules,
+    compatible_method_members,
+)
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 from xic_extractor.alignment.peak_trajectories import PeakTrajectories
 from xic_extractor.alignment.rt_frame import RtFrame
@@ -225,6 +228,8 @@ def _join_window_bands(
         del links[left][right]
         del links[right][left]
         left_members, right_members = members[left], members[right]
+        if not compatible_method_members((*left_members, *right_members), rules):
+            continue
         if not trajectories.permits_membership(
             owner.owner_id for owner in (*left_members, *right_members)
         ):
@@ -340,6 +345,8 @@ def _bridge_separated_window_bands(
                     owner.owner_id for owner in (*bands[left], *bands[right])
                 ):
                     continue
+                if not compatible_method_members((*bands[left], *bands[right]), rules):
+                    continue
                 counts["feature_summary_comparisons"] += 1
                 left_mz, right_mz = mz_centers[left], mz_centers[right]
                 if not within_ppm(
@@ -418,6 +425,8 @@ def _window_band_candidate(
     if trajectories is not None and not trajectories.permits_membership(
         (owner.owner_id, *(item.owner_id for item in band))
     ):
+        return None
+    if not compatible_method_members((owner, *band), rules):
         return None
     if not any(
         within_ppm(
@@ -545,6 +554,10 @@ def _assign_window_singletons(
         for owner in by_sample[sample]:
             remaining = []
             for candidate in candidates_by_owner[owner.owner_id]:
+                if not compatible_method_members(
+                    (owner, *members[candidate.feature_key]), rules
+                ):
+                    continue
                 conflict = peak_correspondence_conflict(
                     (owner,),
                     members[candidate.feature_key],

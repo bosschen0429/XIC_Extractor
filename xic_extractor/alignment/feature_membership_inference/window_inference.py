@@ -89,8 +89,10 @@ def _window_inference(
     shape_conflicts: dict[str, set[str]] = defaultdict(set)
     eligible = tuple(owner for owner in owners if owner.owner_id not in weak)
     by_chemistry: dict[tuple[str, str], list[SampleLocalMS1Owner]] = defaultdict(list)
+    has_unobserved_method = any(rules.method_unobserved(owner) for owner in eligible)
     for owner in eligible:
-        by_chemistry[rules.chemistry_key(owner)].append(owner)
+        key = ("", "") if has_unobserved_method else rules.chemistry_key(owner)
+        by_chemistry[key].append(owner)
 
     final_components: list[tuple[str, ...]] = [(owner_id,) for owner_id in sorted(weak)]
     for chemistry in sorted(by_chemistry):

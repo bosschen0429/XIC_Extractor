@@ -97,7 +97,6 @@ class FrozenBackfillPartition:
             partition_key=partition_key,
             alignment_config=self.grouping.alignment_config,
             prepare_grouping=lambda _: self.grouping,
-            backfill_templates=self.batch.sample_job_templates,
             initial_results=self.initial_results,
             initial_only=False,
             progress_callback=progress_callback,
@@ -127,7 +126,6 @@ def materialize_untargeted_partition(
     subject_batch: UntargetedCidNlMethodSubjectBatch,
     *,
     acquisition_cache_dir: Path | None = None,
-    sparse: bool = False,
     rt_reference_only: bool = False,
     mass_recalibration_by_sample: Mapping[str, PreparedRawMassRecalibration]
     | None = None,
@@ -172,7 +170,6 @@ def materialize_untargeted_partition(
     subjects_by_id = {
         subject.method_subject_id: subject for subject in subject_batch.subjects
     }
-    bound_templates = []
     for source_template in templates:
         template = copy(source_template)
         object.__setattr__(template, "acquisition_cache_dir", acquisition_cache_dir)
@@ -182,17 +179,7 @@ def materialize_untargeted_partition(
                 "prepared_mass_recalibration",
                 mass_recalibration_by_sample[template.sample.raw_stem],
             )
-        bound_templates.append(template)
-        subject_ids = (
-            tuple(
-                subject_id
-                for subject_id in subjects_by_id
-                if template._request_candidates_by_subject.get(subject_id)
-            )
-            if sparse
-            else tuple(subjects_by_id)
-        )
-        for subject_id in subject_ids:
+        for subject_id in subjects_by_id:
             subject = subjects_by_id[subject_id]
             job = copy(template)
             subject_id = subject.method_subject_id
@@ -208,7 +195,6 @@ def materialize_untargeted_partition(
         subject_batch=subject_batch,
         context=context,
         jobs=tuple(jobs),
-        sample_job_templates=tuple(bound_templates) if sparse else (),
     )
 
 
@@ -461,7 +447,6 @@ class UntargetedPartitionPipelineAdapter:
             self._plan,
             self._partition_subject_batches[partition.partition_key],
             acquisition_cache_dir=self._acquisition_cache_dir,
-            sparse=True,
             rt_reference_only=self._rt_reference_only,
             mass_recalibration_by_sample=self._mass_recalibration_by_sample,
         )
@@ -612,7 +597,6 @@ class UntargetedPartitionPipelineAdapter:
                     progress_callback=progress_callback,
                     bootstrap_only=True,
                 ),
-                backfill_templates=batch.sample_job_templates,
                 alignment_config=self._alignment_config,
                 initial_only=True,
                 initial_results=None,

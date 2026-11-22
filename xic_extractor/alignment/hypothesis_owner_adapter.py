@@ -7,7 +7,11 @@ import math
 from xic_extractor.alignment.cross_sample.peak_groups import (
     group_member_subject_from_peak_hypothesis,
 )
-from xic_extractor.alignment.ownership_models import IdentityEvent, SampleLocalMS1Owner
+from xic_extractor.alignment.ownership_models import (
+    MS1_OBSERVATION_ASSIGNMENT,
+    IdentityEvent,
+    SampleLocalMS1Owner,
+)
 from xic_extractor.peak_detection.cid_nl_chromatographic_support import (
     CidNlChromatographicSupport,
     compose_cid_nl_chromatographic_support,
@@ -235,7 +239,7 @@ def owner_from_ms1_observation_hypothesis(
         peak=observation,
         primary_identity_event=None,
         supporting_events=(),
-        assignment_reason="ms1_observation_hypothesis",
+        assignment_reason=MS1_OBSERVATION_ASSIGNMENT,
         peak_shape=prepare_local_peak_shape(
             observation.rt,
             observation.intensity,

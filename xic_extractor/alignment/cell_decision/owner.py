@@ -57,7 +57,7 @@ _NO_WRITE_STATES = frozenset(
         "unavailable",
     }
 )
-_GROUP_VALUE_STATES = frozenset({"direct_observation"})
+_GROUP_VALUE_STATES = frozenset({"direct_observation", "ms1_only_group_observation"})
 _GROUP_TERMINAL_COMPANION_STATES = frozenset(
     {"not_searched", "searched_no_observation", "unavailable"}
 )

@@ -105,6 +105,11 @@ class CachedUntargetedRaw:
     def scan_window_for_request(self, request: XICRequest) -> tuple[int, int]:
         return self._raw.scan_window_for_request(request)
 
+    def ms1_centroid(
+        self, rt: float, mz_min: float, mz_max: float
+    ) -> tuple[float, float] | None:
+        return self._raw.ms1_centroid(rt, mz_min, mz_max)
+
     def acquisition_rt_bounds(self) -> tuple[float, float]:
         key = _key_bytes("acquisition_rt_bounds")
         cached = self._cache.read("metadata", key)

@@ -662,12 +662,15 @@ def reuse_cid_nl_backfill_peak(
     if len(matches) != 1:
         return None
     record, answer = next(iter(matches.values()))
+    initial_peak = record.observation_ref
+    assert initial_peak is not None
     (observed,) = mint_physical_peak_observations(
         sample=sample,
         trace=record.trace,
         evaluations=(answer,),
         resolver_mode=resolver_mode,
         signal_processing_profile=answer.prepared.profile,
+        measured_mz=(initial_peak.mz,),
         capture_stage="method_backfill",
     )
     return _close_backfill_attempt(

@@ -146,11 +146,18 @@ def construct_cross_sample_peak_group_hypotheses(
                 "known identity has conflicting sample observations; "
                 "selection is unresolved and identity cannot be split"
             )
+        observed_method = tuple(
+            owner for owner in group if not rules.method_unobserved(owner)
+        )
         hypotheses.append(
             _hypothesis_from_owner_group(
                 group,
                 disposition=(
-                    "unresolved" if basis.disposition == "undecided" else None
+                    "unresolved"
+                    if basis.disposition == "undecided"
+                    else "provisional"
+                    if not _settled_members(observed_method)
+                    else None
                 ),
                 evidence=f"owner_feature_inference;{basis.disposition};{basis.reason}",
                 inference_basis=basis,
@@ -199,22 +206,26 @@ def _hypothesis_from_owner_group(
         if not events
         else sum(event.observed_neutral_loss_da for event in events) / len(events)
     )
-    settled = len(members) >= 2 and not all(
-        owner.peak.requires_overlap_review for owner in group
-    )
+    settled = _settled_members(group)
     return CrossSamplePeakGroupHypothesis(
         member_subjects=members,
         disposition=disposition or ("established" if settled else "provisional"),
         owners=group,
         group_center_mz=center[0],
         group_center_rt=center[1],
-        neutral_loss_tag=group[0].neutral_loss_tag,
+        neutral_loss_tag=events[0].neutral_loss_tag if events else "",
         group_product_mz=center_product_mz,
         group_observed_neutral_loss_da=center_loss,
         has_anchor=True,
         evidence=evidence,
         inference_basis=inference_basis,
         inference_decisions=inference_decisions,
+    )
+
+
+def _settled_members(group: Sequence[SampleLocalMS1Owner]) -> bool:
+    return len(group) >= 2 and not all(
+        owner.peak.requires_overlap_review for owner in group
     )
 
 

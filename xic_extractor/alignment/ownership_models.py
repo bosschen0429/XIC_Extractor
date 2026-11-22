@@ -17,6 +17,9 @@ if TYPE_CHECKING:
 OwnerAssignmentStatus = Literal["primary", "supporting", "ambiguous", "unresolved"]
 
 
+MS1_OBSERVATION_ASSIGNMENT = "ms1_observation_hypothesis"
+
+
 @dataclass(frozen=True)
 class IdentityEvent:
     candidate_id: str

@@ -26,9 +26,6 @@ from tests.cid_nl_raw_fixture import (
     _FakeRaw,
     _FakeThermoRaw,
 )
-from tests.cid_nl_runtime_fixtures import (
-    load_plan_inputs,
-)
 from tests.discovery_csv_fixtures import representative_event
 from tests.untargeted_alignment_entry_fixtures import (
     PUBLISHED_TABLES,
@@ -46,7 +43,6 @@ from tests.untargeted_cid_nl_bounded_runtime_fixtures import (
 )
 from tests.untargeted_partition_fixtures import (
     children_of,
-    execute_dense_partition,
     physical_peak_keys,
     project_composed_child,
 )
@@ -270,9 +266,9 @@ def test_execution_profile_does_not_change_published_alignment(
             cell["status"]
             for (_f, stem), cell in published_cells(baseline).items()
             if stem == "S3"
-        } <= {"backfilled", "unavailable", "unresolved"}
+        } <= {"ms1_only", "backfilled", "unavailable", "unresolved"}
         assert any(
-            cell["status"] == "backfilled"
+            cell["status"] == "ms1_only"
             for (_f, stem), cell in published_cells(baseline).items()
             if stem == "S3"
         )
@@ -654,17 +650,14 @@ def test_bounded_partition_real_entry_mints_interleaved_worksets_canonically(
         subject_batch,
         *,
         acquisition_cache_dir=None,
-        sparse=False,
         rt_reference_only=False,
         mass_recalibration_by_sample=None,
     ):
-        assert sparse is True
         captured_batches.append(subject_batch)
         return original_materialize_partition(
             _plan,
             subject_batch,
             acquisition_cache_dir=acquisition_cache_dir,
-            sparse=sparse,
             rt_reference_only=rt_reference_only,
             mass_recalibration_by_sample=mass_recalibration_by_sample,
         )
@@ -832,9 +825,6 @@ def test_failed_attempt_retry_reuses_completed_raw_facts_and_recomposes(
         sum(vendor.chromatogram_request_counts) for vendor in retry_vendors
     )
     assert retry_queries < failed_queries
-    assert sum(ms2_reads.get(id(vendor), 0) for vendor in retry_vendors) < sum(
-        ms2_reads.get(id(vendor), 0) for vendor in failed_vendors
-    )
 
 
 def test_partition_acquisitions_overlap_with_shared_worker_budget_and_ordered_output(
@@ -1192,19 +1182,12 @@ def test_sample_parallelism_keeps_partition_and_acquisition_counts_fixed(
         nonlocal live_jobs
         assert get_ident() == coordinator and live_jobs == 0
         batch = original_materialize(*args, **kwargs)
-        from xic_extractor.untargeted_execution.partition.models import (
-            _request_subject_candidates,
-        )
-
         expected_initial_sample_ids = {
-            sample.sample_name
-            for sample in plan.context.samples
-            if load_plan_inputs(plan).get(sample.raw_stem)
+            sample.sample_name for sample in plan.context.samples
         }
         assert {
             job.sample.sample_name for job in batch.jobs
         } == expected_initial_sample_ids
-        assert all(_request_subject_candidates(job) for job in batch.jobs)
         assert all(
             job.processing_attempt_id == plan.context.processing_attempt_id
             for job in batch.jobs
@@ -1275,15 +1258,12 @@ def test_sample_parallelism_keeps_partition_and_acquisition_counts_fixed(
         project_child=project_composed_child,
     )
     assert type(result) is CompletedUntargetBatchWorkflowResult
-    initial_sample_count = sum(
-        bool(load_plan_inputs(plan).get(sample.raw_stem))
-        for sample in plan.context.samples
-    )
+    initial_sample_count = len(plan.context.samples)
     assert job_counts == [initial_sample_count * 2, initial_sample_count]
     assert live_jobs == 0
     assert append_order == ["partition-00000-backfill", "partition-00001-backfill"]
     assert len(handle_threads) == 8
-    assert barrier_checks == [6, 7]
+    assert barrier_checks == [8, 8]
     assert overlap_count <= peak_handles <= raw_workers
     assert len(intervals) == overlap_count
     if raw_workers > 1:
@@ -1596,113 +1576,6 @@ def test_process_outcome_must_cover_the_exact_work_units(
 
     assert not result.succeeded
     assert result.sample_results == ()
-
-
-def test_sparse_partition_materializes_only_samples_with_request_candidates(
-    tmp_path, monkeypatch
-):
-    from xic_extractor.untargeted_execution.partition.models import (
-        _request_subject_candidates,
-    )
-
-    plan, _ = _plan(tmp_path, monkeypatch, scenario="recovery")
-    batch = materialize_untargeted_partition(
-        plan,
-        plan.subject_batch,
-        sparse=True,
-    )
-
-    assert len(batch.sample_job_templates) == len(plan.context.samples)
-    assert batch.jobs
-    assert all(_request_subject_candidates(job) for job in batch.jobs)
-    initial_sample_ids = {job.sample.sample_name for job in batch.jobs}
-    assert len(initial_sample_ids) >= 2
-    missing_sample_id = plan.context.samples[-1].sample_name
-    assert missing_sample_id not in initial_sample_ids
-
-
-@pytest.mark.parametrize(
-    "scenario,expected_sparse_jobs,expected_sparse_results",
-    [("recovery", 9, 12), ("below_threshold", 3, 3), ("blank_missing", 9, 9)],
-)
-def test_sparse_recovery_partition_matches_dense_composition(
-    tmp_path, monkeypatch, scenario, expected_sparse_jobs, expected_sparse_results
-):
-    from tests.untargeted_partition_fixtures import (
-        execute_partition_inline,
-    )
-    from xic_extractor.untargeted_execution.partition_composition import (
-        compose_untargeted_partition,
-    )
-
-    plan, reference = _plan(tmp_path, monkeypatch, scenario=scenario)
-    config = AlignmentConfig(anchor_min_seed_events=1)
-    dense_batch = materialize_untargeted_partition(plan, plan.subject_batch)
-    assert len(dense_batch.jobs) == 12
-    dense_runtime = execute_dense_partition(
-        dense_batch,
-        alignment_config=config,
-    )
-    assert dense_runtime.succeeded
-    dense_composition = compose_untargeted_partition(
-        dense_batch,
-        dense_runtime.sample_results,
-        alignment_config=config,
-        known_istd_reference=reference,
-    )
-
-    sparse_batch = materialize_untargeted_partition(
-        plan, plan.subject_batch, sparse=True
-    )
-    assert len(sparse_batch.jobs) == expected_sparse_jobs
-    sparse_runtime = execute_partition_inline(
-        sparse_batch.jobs,
-        backfill_templates=sparse_batch.sample_job_templates,
-        partition_key="sparse-recovery",
-        alignment_config=config,
-    )
-    assert sparse_runtime.succeeded
-    assert len(sparse_runtime.sample_results) == expected_sparse_results
-    sparse_composition = compose_untargeted_partition(
-        sparse_batch,
-        sparse_runtime.sample_results,
-        alignment_config=config,
-        known_istd_reference=reference,
-    )
-
-    dense_by_key = {
-        (
-            result.job.sample.raw_stem,
-            result.job.method_subject.method_subject_id,
-        ): result
-        for result in dense_runtime.sample_results
-    }
-    sparse_by_key = {
-        (
-            result.job.sample.raw_stem,
-            result.job.method_subject.method_subject_id,
-        ): result
-        for result in sparse_runtime.sample_results
-    }
-    missing_stem = plan.context.samples[-1].raw_stem
-    if scenario == "recovery":
-        missing_results = [
-            result
-            for result in sparse_runtime.sample_results
-            if result.job.sample.raw_stem == missing_stem
-        ]
-        assert missing_results
-        assert all(result.backfill_attempts for result in missing_results)
-        assert set(sparse_by_key) == set(dense_by_key)
-    else:
-        assert missing_stem not in {
-            result.job.sample.raw_stem for result in sparse_runtime.sample_results
-        }
-    assert dense_composition.children == sparse_composition.children
-    assert dense_composition.initial_groups == sparse_composition.initial_groups
-    assert (
-        dense_composition.excluded_candidates == sparse_composition.excluded_candidates
-    )
 
 
 def test_formal_partition_reuses_prepared_group_ids_for_recovery_and_composition(
