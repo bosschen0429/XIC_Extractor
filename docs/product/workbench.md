@@ -206,6 +206,19 @@ the published Matrix hash. It cannot authorize a writer or prove readiness.
   review curves: saved curves where the run kept them and labelled RAW reads
   for the other samples. It does not rerun Backfill, choose peaks or replace
   recorded quantification.
+- A row's review also carries the valued apexes of every published row whose
+  center m/z lies within its ppm. When the row has samples whose calibrated
+  apex lies more than 3 min from the median of its 8 nearest injections in
+  that row, the view states their count and plots injection order against
+  calibrated apex for every row, this row coloured and the others grey. Those
+  samples are circled. The median follows a row that drifts with injection order,
+  so drift alone is not circled. Below the plot, the farthest five and one
+  typical sample show one XIC each across all rows' apexes, labelled by row;
+  clicking a point adds or removes its sample. The circle chooses what opens
+  first and decides nothing. A row without such samples looks as before.
+  These XICs are RAW reads, so a bundle has them only when
+  `explain_cid_nl_run --group-id` is given `--raw-dir`; Workbench shows the
+  plot without them.
 
 ## Packaging
 

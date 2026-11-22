@@ -41,7 +41,9 @@ def main(argv: list[str] | None = None) -> int:
         type=Path,
         help=(
             "Write a candidate's or group's curves into an Inspector bundle: "
-            "saved curves where the run kept them, RAW reads for the rest"
+            "saved curves where the run kept them, RAW reads for the rest; "
+            "a group also gets every row at its m/z, with one RAW curve per "
+            "sample across them when --raw-dir is given"
         ),
     )
     parser.add_argument(
@@ -66,7 +68,10 @@ def main(argv: list[str] | None = None) -> int:
             from xic_extractor.alignment_explanation.reader import (
                 read_review_curves,
             )
-            from xic_inspector.sources.curve_bundle import write_curve_bundle
+            from xic_inspector.sources.curve_bundle import (
+                SAME_MZ_ROLE,
+                write_curve_bundle,
+            )
             from xic_workbench.review_curves import review_curve_bundle
 
             if (args.candidate_id is None) == (args.group_id is None):
@@ -87,6 +92,7 @@ def main(argv: list[str] | None = None) -> int:
                 raw_dir=args.raw_dir,
                 dll_dir=args.dll_dir,
                 padding_min=args.curve_padding_min,
+                same_mz_curves=args.group_id is not None,
             )
             size = write_curve_bundle(bundle, args.curve_bundle)
             print(
@@ -94,7 +100,14 @@ def main(argv: list[str] | None = None) -> int:
                     {
                         "output": str(args.curve_bundle.resolve()),
                         "sample_count": len(samples),
-                        "curve_count": len(bundle.transitions[0].traces),
+                        "curve_count": sum(
+                            trace.role != SAME_MZ_ROLE
+                            for trace in bundle.transitions[0].traces
+                        ),
+                        "same_mz_curve_count": sum(
+                            trace.role == SAME_MZ_ROLE
+                            for trace in bundle.transitions[0].traces
+                        ),
                         "unusable_samples": unusable,
                         "bytes": size,
                     },

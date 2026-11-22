@@ -722,12 +722,29 @@ class ReviewCurveLocation:
 
 
 @dataclass(frozen=True, slots=True)
+class SameMzPeak:
+    """The apex of one Matrix value of a row sharing the reviewed row's m/z."""
+
+    sample_key: str
+    sample_stem: str
+    feature_id: str
+    apex_rt_min: float
+
+
+@dataclass(frozen=True, slots=True)
 class ReviewCurves:
-    """The locations of one item and the run facts that place them in time."""
+    """The locations of one item and the run facts that place them in time.
+
+    A result row also carries the valued apexes of every published row whose
+    center m/z lies within its ppm, itself included, and that m/z and ppm.
+    """
 
     locations: tuple[ReviewCurveLocation, ...]
     sample_rt_calibration: dict[str, Any] | None
     injection_order: dict[str, int]
+    same_mz_peaks: tuple[SameMzPeak, ...] = ()
+    row_mz: float | None = None
+    row_ppm: float | None = None
 
     def needs_raw(self, sample_ids: Iterable[str]) -> bool:
         """Whether a requested sample has a location without a saved curve."""
@@ -761,6 +778,14 @@ _CANDIDATE_LOCATIONS = (
     "FROM candidates k JOIN samples s ON s.id=k.sample "
     "JOIN peaks p ON p.id=k.terminal_peak WHERE k.candidate_id=? ORDER BY k.sample"
 )
+_SAME_MZ_PEAKS = (
+    "SELECT s.sample_key,s.sample_stem,o.feature_id,c.apex_rt_min "
+    "FROM groups g JOIN groups o ON o.feature_id IS NOT NULL "
+    "AND abs(o.center_mz-g.center_mz)<=g.center_mz*g.ppm*1e-6 "
+    "JOIN cells c ON c.group_id=o.id JOIN samples s ON s.id=c.sample "
+    "WHERE g.feature_id=? AND c.value IS NOT NULL AND c.apex_rt_min IS NOT NULL "
+    "ORDER BY o.feature_id,c.sample"
+)
 
 
 def read_review_curves(
@@ -776,6 +801,17 @@ def read_review_curves(
             query, key = _CANDIDATE_LOCATIONS, str(candidate_id)
         rows = db.execute(query.format(curve=curve), (key,)).fetchall()
         run = decode_json(db.execute("SELECT payload FROM run").fetchone()[0])
+        same_mz: tuple[SameMzPeak, ...] = ()
+        row_mz = row_ppm = None
+        if feature_id is not None:
+            same_mz = tuple(
+                SameMzPeak(*row) for row in db.execute(_SAME_MZ_PEAKS, (feature_id,))
+            )
+            center = db.execute(
+                "SELECT center_mz,ppm FROM groups WHERE feature_id=?", (feature_id,)
+            ).fetchone()
+            if center is not None:
+                row_mz, row_ppm = center
     locations = []
     for sample_key, stem, peak_key, mz, ppm, rt, payload in rows:
         locations.append(
@@ -793,6 +829,9 @@ def read_review_curves(
         tuple(locations),
         run["sample_rt_calibration"],
         run["injection_order"],
+        same_mz,
+        row_mz,
+        row_ppm,
     )
 
 

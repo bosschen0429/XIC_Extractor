@@ -473,3 +473,57 @@ def test_curve_bundle_command_never_replaces_an_existing_file(
             ]
         )
     assert output.read_bytes() == before
+
+
+def test_a_row_reads_every_row_at_its_mz_once_per_raw(tmp_path, monkeypatch):
+    from xic_inspector.sources.curve_bundle import SAME_MZ_ROLE
+
+    report, _ = _group_with_missing_apex_review(
+        tmp_path,
+        extraction_by_sample={sid: (500.0, 20.0) for sid in ("S1", "S2", "S3")},
+        other_rows=(("G2", 500.004, "S2", 11.0), ("G3", 500.05, "S1", 3.0)),
+    )
+    curves = read_review_curves(report, feature_id="G1")
+    assert {
+        (peak.feature_id, peak.sample_key, peak.apex_rt_min)
+        for peak in curves.same_mz_peaks
+    } == {("G1", "S1", 7.9), ("G1", "S2", 8.1), ("G1", "S3", 8.0), ("G2", "S2", 11.0)}
+
+    opened, reads = [], []
+
+    @contextmanager
+    def raw(path, dll, **kwargs):
+        opened.append(path.stem)
+
+        class Raw:
+            def extract_xic(self, mz, lower, upper, ppm):
+                reads.append((path.stem, mz, round(lower, 6), round(upper, 6), ppm))
+                rt = np.linspace(lower, upper, 51)
+                return rt, 1000 * np.exp(-(((rt - 8) / 0.08) ** 2))
+
+        yield Raw()
+
+    monkeypatch.setattr("xic_workbench.review_curves.open_raw", raw)
+    bundle, _ = review_curve_bundle(
+        report,
+        curves,
+        key="G1",
+        sample_ids=("S1", "S2", "S3"),
+        raw_dir=tmp_path,
+        dll_dir=tmp_path,
+        same_mz_curves=True,
+    )
+    assert sorted(opened) == ["S1", "S2", "S3"]
+    assert {read for read in reads if read[2:4] == (7.4, 11.5)} == {
+        (sid, 500.0, 7.4, 11.5, 20.0) for sid in ("S1", "S2", "S3")
+    }
+    transition = bundle.transitions[0]
+    assert {
+        trace.sample_id for trace in transition.traces if trace.role == SAME_MZ_ROLE
+    } == {"S1", "S2", "S3"}
+    assert len(transition.same_mz_peaks) == 4
+    assert sorted(q.sample_id for q in transition.quantifications) == [
+        "S1",
+        "S2",
+        "S3",
+    ]

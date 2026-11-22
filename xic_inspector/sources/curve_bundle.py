@@ -10,6 +10,7 @@ import hashlib
 import json
 import math
 import os
+import statistics
 import tempfile
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -25,6 +26,10 @@ from xic_inspector.sources.rt_replay import align_curve, read_calibration
 
 BUNDLE_SCHEMA_VERSION = "xic_curve_bundle"
 MAX_BUNDLE_SIZE_BYTES = 50 * 1024 * 1024
+SAME_MZ_ROLE = "同 m/z 全段曲線"
+FAR_FROM_NEIGHBOURS_MIN = 3.0
+NEIGHBOUR_COUNT = 8
+EXPANDED_FAR_COUNT = 5
 
 
 class CurveBundleError(ExplanationError):
@@ -86,12 +91,29 @@ class CurveBundleTrace:
 
 
 @dataclass(frozen=True, slots=True)
+class SameMzPeak:
+    """The apex of one Matrix value of a row sharing the transition's m/z."""
+
+    sample_id: str
+    sample_label: str
+    feature_id: str
+    apex_rt_min: float
+
+
+@dataclass(frozen=True, slots=True)
 class TransitionCurves:
+    """Curves of one reviewed item.
+
+    ``same_mz_peaks`` holds the valued apexes of every row at this m/z; traces
+    with ``SAME_MZ_ROLE`` span all of them in one sample.
+    """
+
     key: str
     review_rt_window: tuple[float, float]
     quality_flags: dict[str, Any]
     traces: tuple[CurveBundleTrace, ...]
     quantifications: tuple[SampleQuantification, ...] = ()
+    same_mz_peaks: tuple[SameMzPeak, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -233,6 +255,26 @@ def _quantifications(
     return tuple(result)
 
 
+def _same_mz_peaks(value: object, where: str) -> tuple[SameMzPeak, ...]:
+    if not isinstance(value, (list, tuple)):
+        raise _fail(where, "expected array")
+    peaks = []
+    for index, entry in enumerate(value):
+        loc = f"{where}[{index}]"
+        obj = _mapping(
+            entry, loc, {"sample_id", "sample_label", "feature_id", "apex_rt_min"}
+        )
+        peaks.append(
+            SameMzPeak(
+                _text(obj["sample_id"], f"{loc}.sample_id"),
+                _text(obj["sample_label"], f"{loc}.sample_label"),
+                _text(obj["feature_id"], f"{loc}.feature_id"),
+                _number(obj["apex_rt_min"], f"{loc}.apex_rt_min"),
+            )
+        )
+    return tuple(peaks)
+
+
 def _flags(value: object, where: str) -> dict[str, Any]:
     if not isinstance(value, dict) or any(
         not isinstance(key, str) or not key for key in value
@@ -282,10 +324,19 @@ def _decode_bundle(value: object) -> CurveBundle:
     keys: set[str] = set()
     for index, entry in enumerate(entries):
         where = f"$.transitions[{index}]"
+        if isinstance(entry, dict):
+            entry = {"same_mz_peaks": [], **entry}
         obj = _mapping(
             entry,
             where,
-            {"key", "review_rt_window", "quality_flags", "traces", "quantifications"},
+            {
+                "key",
+                "review_rt_window",
+                "quality_flags",
+                "traces",
+                "quantifications",
+                "same_mz_peaks",
+            },
         )
         key = _text(obj.get("key"), f"{where}.key")
         if key in keys:
@@ -399,7 +450,14 @@ def _decode_bundle(value: object) -> CurveBundle:
             {trace.sample_id for trace in traces},
         )
         transitions.append(
-            TransitionCurves(key, window, flags, tuple(traces), quantifications)
+            TransitionCurves(
+                key,
+                window,
+                flags,
+                tuple(traces),
+                quantifications,
+                _same_mz_peaks(obj["same_mz_peaks"], f"{where}.same_mz_peaks"),
+            )
         )
     return CurveBundle(
         tuple(transitions),
@@ -524,7 +582,11 @@ class CurveBundleSource:
     def load_items(self, sample_ids: set[str]) -> list[CanonicalItem]:
         items = []
         for transition in self.bundle.transitions:
-            scoped = tuple(t for t in transition.traces if t.sample_id in sample_ids)
+            scoped = tuple(
+                t
+                for t in transition.traces
+                if t.sample_id in sample_ids and t.role != SAME_MZ_ROLE
+            )
             _, ref = build_canonical_ref("group", transition.key, transition.key)
             witnesses = tuple(
                 Witness(
@@ -570,7 +632,7 @@ class CurveBundleSource:
             traces = [
                 trace
                 for trace in transition.traces
-                if trace.sample_id in item.sample_ids
+                if trace.sample_id in item.sample_ids and trace.role != SAME_MZ_ROLE
             ]
             quantifications = {q.sample_id: q for q in transition.quantifications}
             roles = {trace.trace_id: trace.role for trace in traces}
@@ -788,6 +850,89 @@ class CurveBundleSource:
                     "details": {"readable_records": records},
                     "review_summary": item.details["review_summary"],
                     "curves": projected_curves,
+                    "same_mz": self._same_mz(transition),
                 }
             )
         return rendered
+
+    def _same_mz(self, transition: TransitionCurves) -> dict[str, Any] | None:
+        """Every row's apexes at this m/z, and this row's samples far from theirs.
+
+        A sample is far when its apex lies more than ``FAR_FROM_NEIGHBOURS_MIN``
+        from the median apex of this row's ``NEIGHBOUR_COUNT`` nearest injections,
+        on the run's calibrated time: a row whose apex drifts with injection
+        order stays close to its neighbours. The rule only chooses which samples
+        open first; it decides nothing.
+        """
+        if not transition.same_mz_peaks:
+            return None
+        order = self.bundle.injection_order
+        points = [
+            {
+                **asdict(peak),
+                "aligned_apex_rt_min": self._aligned(peak),
+                "injection_order": order.get(peak.sample_label),
+            }
+            for peak in transition.same_mz_peaks
+        ]
+        own = sorted(
+            (p["injection_order"], p["aligned_apex_rt_min"], p["sample_id"])
+            for p in points
+            if p["feature_id"] == transition.key and p["injection_order"] is not None
+        )
+        deviations = {}
+        for index, (position, apex, sample_id) in enumerate(own):
+            others = own[:index] + own[index + 1 :]
+            nearest = sorted(others, key=lambda o: abs(o[0] - position))
+            if nearest:
+                neighbours = [o[1] for o in nearest[:NEIGHBOUR_COUNT]]
+                deviations[sample_id] = apex - statistics.median(neighbours)
+        far = sorted(
+            (
+                {"sample_id": sid, "deviation_min": deviation}
+                for sid, deviation in deviations.items()
+                if abs(deviation) > FAR_FROM_NEIGHBOURS_MIN
+            ),
+            key=lambda entry: (-abs(entry["deviation_min"]), entry["sample_id"]),
+        )
+        rows_by_sample: dict[str, set[str]] = {}
+        for point in points:
+            rows_by_sample.setdefault(point["sample_id"], set()).add(
+                point["feature_id"]
+            )
+        far_ids = {entry["sample_id"] for entry in far}
+        typical = min(
+            (sid for sid in deviations if sid not in far_ids),
+            key=lambda sid: (-len(rows_by_sample[sid]), abs(deviations[sid]), sid),
+            default=None,
+        )
+        curves = {}
+        for trace in transition.traces:
+            if trace.role != SAME_MZ_ROLE or trace.raw is None:
+                continue
+            assert trace.gaussian15 is not None
+            curves[trace.sample_id] = {
+                "rts": trace.raw.rt,
+                "raw": trace.raw.intensity,
+                "smoothed": trace.gaussian15.intensity,
+            }
+        return {
+            "row": transition.key,
+            "rows": sorted({point["feature_id"] for point in points}),
+            "points": points,
+            "far": far,
+            "expanded": [entry["sample_id"] for entry in far[:EXPANDED_FAR_COUNT]]
+            + ([typical] if typical is not None else []),
+            "typical_sample_id": typical,
+            "threshold_min": FAR_FROM_NEIGHBOURS_MIN,
+            "curves": curves,
+        }
+
+    def _aligned(self, peak: SameMzPeak) -> float:
+        sample = (
+            self.rt_calibration.samples.get(peak.sample_label)
+            if self.rt_calibration is not None
+            else None
+        )
+        estimate = sample.estimate_rt(peak.apex_rt_min) if sample else None
+        return estimate.rt_min if estimate is not None else peak.apex_rt_min

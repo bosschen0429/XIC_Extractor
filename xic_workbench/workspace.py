@@ -584,6 +584,7 @@ class ReviewWorkspace:
                         "curves": curve_item["curves"],
                         "witnesses": curve_item["witnesses"],
                         "review_rt_window": curve_item["review_rt_window"],
+                        "same_mz": curve_item["same_mz"],
                     }
                 ]
                 prepared.payload["samples"] = request["sample_catalog"]

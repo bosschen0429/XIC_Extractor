@@ -554,3 +554,59 @@ def test_generic_bundle_without_alignment_context_remains_readable(tmp_path):
         for item in projected["items"]
         for curve in item["curves"]
     )
+
+
+def test_far_samples_leave_a_rows_drift_and_stay_out_of_its_curves(tmp_path):
+    """A row drifting 8 min over the run circles only the sample that jumped."""
+    from xic_inspector.sources.curve_bundle import (
+        SAME_MZ_ROLE,
+        CurveBundleSource,
+        SameMzPeak,
+    )
+
+    base = _fixture_bundle()
+    reviewed = replace(base.transitions[0].traces[0], sample_id="s1", role="saved")
+    wide = replace(
+        reviewed,
+        trace_id="same-mz:s1",
+        role=SAME_MZ_ROLE,
+        extraction_rt_window=(3.5, 15.0),
+    )
+    drift = {f"s{order}": 6.0 + 0.1 * order for order in range(1, 81)}
+    drift["s40"] -= 5.0
+    peaks = tuple(SameMzPeak(sid, sid, "R", apex) for sid, apex in drift.items()) + (
+        SameMzPeak("s40", "s40", "Q", 10.0),
+    )
+    bundle = CurveBundle(
+        (
+            replace(
+                base.transitions[0],
+                key="R",
+                quality_flags={},
+                traces=(reviewed, wide),
+                same_mz_peaks=peaks,
+            ),
+        ),
+        injection_order={f"s{order}": order for order in range(1, 81)},
+    )
+    path = tmp_path / "curves.json"
+    write_curve_bundle(bundle, path)
+    assert read_curve_bundle(path) == bundle
+    body = json.loads(path.read_text(encoding="utf-8"))
+    del body["transitions"][0]["same_mz_peaks"]
+    assert bundle_source._decode_bundle(body).transitions[0].same_mz_peaks == ()
+
+    source = CurveBundleSource.read(path)
+    item = source.load_render_items(
+        source.load_items({"s1"}),
+        capability="retained_curves",
+        check_cancel=lambda: None,
+    )[0]
+    same_mz = item["same_mz"]
+    assert [entry["sample_id"] for entry in same_mz["far"]] == ["s40"]
+    assert same_mz["expanded"] == ["s40", same_mz["typical_sample_id"]]
+    assert same_mz["typical_sample_id"] != "s40"
+    assert same_mz["rows"] == ["Q", "R"]
+    assert set(same_mz["curves"]) == {"s1"}
+    assert [curve["kind"] for curve in item["curves"]] == ["saved"]
+    assert [row["sample_id"] for row in item["samples"]] == ["s1"]

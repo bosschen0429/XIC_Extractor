@@ -35,10 +35,12 @@ from xic_extractor.peak_detection.physical_peak_evaluation import (
 )
 from xic_extractor.raw_reader import open_raw
 from xic_inspector.sources.curve_bundle import (
+    SAME_MZ_ROLE,
     ChromatogramCurve,
     CurveBundle,
     CurveBundleTrace,
     CurveIntegration,
+    SameMzPeak,
     SampleQuantification,
     TransitionCurves,
 )
@@ -46,6 +48,20 @@ from xic_inspector.sources.curve_bundle import (
 RUN_METADATA_NAME = "alignment_run_metadata.json"
 SAVED_ROLE = "分析時保存的曲線"
 PUBLISHED_VALUE_METHOD = "published_matrix_value"
+
+
+class _RawRead:
+    """One RAW window to read: around a location, or across a row's m/z."""
+
+    def __init__(
+        self,
+        location: ReviewCurveLocation,
+        window: tuple[float, float],
+        same_mz: bool = False,
+    ) -> None:
+        self.location = location
+        self.window = window
+        self.same_mz = same_mz
 
 
 class RunSettings:
@@ -84,11 +100,14 @@ def review_curve_bundle(
     raw_dir: Path | None = None,
     dll_dir: Path | None = None,
     padding_min: float = 0.5,
+    same_mz_curves: bool = False,
     is_cancelled: Callable[[], bool] = lambda: False,
     on_progress: Callable[[int, int, str], None] | None = None,
 ) -> tuple[CurveBundle, list[str]]:
     """Saved curves of the requested samples, and RAW reads for the rest.
 
+    With ``same_mz_curves`` and a RAW folder, every sample with a value at this
+    m/z also gets one curve spanning all rows' apexes there.
     Returns the bundle and the samples whose window has no usable signal.
     """
     requested = set(sample_ids)
@@ -97,22 +116,31 @@ def review_curve_bundle(
     traces, unusable = _saved_traces(
         (loc for loc in selected if loc.curve is not None), settings.profile
     )
-    pending = [loc for loc in selected if loc.curve is None]
-    if pending:
-        if raw_dir is None or dll_dir is None:
-            raise ExplanationError("讀取未保存曲線的樣本需要 RAW 與 DLL 資料夾。")
+    reads = [
+        _RawRead(
+            loc,
+            (max(0.0, loc.rt_apex_min - padding_min), loc.rt_apex_min + padding_min),
+        )
+        for loc in selected
+        if loc.curve is None
+    ]
+    if reads and (raw_dir is None or dll_dir is None):
+        raise ExplanationError("讀取未保存曲線的樣本需要 RAW 與 DLL 資料夾。")
+    if same_mz_curves and raw_dir is not None and dll_dir is not None:
+        reads += _same_mz_reads(curves, padding_min)
+    if reads:
+        assert raw_dir is not None and dll_dir is not None
         read, missing = _raw_traces(
-            pending,
+            reads,
             raw_dir=raw_dir,
             dll_dir=dll_dir,
             settings=settings,
-            padding_min=padding_min,
             is_cancelled=is_cancelled,
             on_progress=on_progress,
         )
         traces += read
         unusable |= missing
-    represented = {trace.sample_id for trace in traces}
+    represented = {trace.sample_id for trace in traces if trace.role != SAME_MZ_ROLE}
     cells = [
         (sid, value, origin, apex)
         for _, sid, value, origin, apex in read_row_cell_values(report, {key})
@@ -124,6 +152,25 @@ def review_curve_bundle(
     )
     traces = _with_published_values(traces, cells)
     return _curve_bundle(key, curves, traces, quantities), sorted(unusable)
+
+
+def _same_mz_reads(curves: ReviewCurves, padding_min: float) -> list[_RawRead]:
+    """One read per sample at the row's m/z, across every row's apex there."""
+    if not curves.same_mz_peaks or curves.row_mz is None or curves.row_ppm is None:
+        return []
+    apexes = [peak.apex_rt_min for peak in curves.same_mz_peaks]
+    window = (max(0.0, min(apexes) - padding_min), max(apexes) + padding_min)
+    samples = {peak.sample_key: peak.sample_stem for peak in curves.same_mz_peaks}
+    return [
+        _RawRead(
+            ReviewCurveLocation(
+                key, stem, None, curves.row_mz, curves.row_ppm, window[0], None
+            ),
+            window,
+            same_mz=True,
+        )
+        for key, stem in sorted(samples.items())
+    ]
 
 
 def _with_published_values(
@@ -166,22 +213,24 @@ def _saved_traces(
 
 
 def _raw_traces(
-    locations: Iterable[ReviewCurveLocation],
+    reads: Iterable[_RawRead],
     *,
     raw_dir: Path,
     dll_dir: Path,
     settings: RunSettings,
-    padding_min: float,
     is_cancelled: Callable[[], bool],
     on_progress: Callable[[int, int, str], None] | None = None,
 ) -> tuple[list[CurveBundleTrace], set[str]]:
-    """Read locations from the RAW of the same name, around each recorded apex."""
-    by_stem: dict[str, list[ReviewCurveLocation]] = {}
-    for location in locations:
-        by_stem.setdefault(location.sample_stem, []).append(location)
+    """Read each window from the RAW of the same name, opening each RAW once.
+
+    A sample is unusable when none of its review windows has signal.
+    """
+    by_stem: dict[str, list[_RawRead]] = {}
+    for read in reads:
+        by_stem.setdefault(read.location.sample_stem, []).append(read)
     traces: list[CurveBundleTrace] = []
     unusable: set[str] = set()
-    for completed, (stem, sample_locations) in enumerate(sorted(by_stem.items())):
+    for completed, (stem, sample_reads) in enumerate(sorted(by_stem.items())):
         _check_cancel(is_cancelled)
         raw_path = raw_dir / f"{stem}.raw"
         if not raw_path.is_file():
@@ -196,28 +245,35 @@ def _raw_traces(
         ) as raw:
             if saved is not None:
                 raw.use_mass_recalibration_result(saved)
-            acquired = len(traces)
-            for location in sample_locations:
+            usable = False
+            for read in sample_reads:
                 _check_cancel(is_cancelled)
-                lower = max(0.0, location.rt_apex_min - padding_min)
-                upper = location.rt_apex_min + padding_min
+                location = read.location
+                lower, upper = read.window
                 rt, intensity = raw.extract_xic(location.mz, lower, upper, location.ppm)
                 trace = _trace(
                     location,
                     rt,
                     intensity,
                     settings.profile,
-                    role="diagnostic_reacquisition",
-                    flags={
+                    role=SAME_MZ_ROLE if read.same_mz else "diagnostic_reacquisition",
+                    flags={"new_diagnostic_extraction": True}
+                    if read.same_mz
+                    else {
                         "new_diagnostic_extraction": True,
                         "acquired_at_group_position": location.physical_peak_key
                         is None,
                     },
-                    window=(lower, upper),
+                    window=read.window,
                 )
-                if trace is not None:
-                    traces.append(trace)
-        if len(traces) == acquired:
+                if trace is None:
+                    continue
+                if read.same_mz:
+                    trace = replace(trace, trace_id=f"same-mz:{location.sample_key}")
+                else:
+                    usable = True
+                traces.append(trace)
+        if not usable and any(not read.same_mz for read in sample_reads):
             unusable.add(stem)
         if on_progress is not None:
             on_progress(completed + 1, len(by_stem), stem)
@@ -230,14 +286,15 @@ def _curve_bundle(
     traces: list[CurveBundleTrace],
     quantities: tuple[SampleQuantification, ...],
 ) -> CurveBundle:
-    if not traces:
+    reviewed = [trace for trace in traces if trace.role != SAME_MZ_ROLE]
+    if not reviewed:
         raise ExplanationError("所選樣本在擷取範圍內都沒有可用訊號。")
     window = (
-        min(trace.extraction_rt_window[0] for trace in traces),
-        max(trace.extraction_rt_window[1] for trace in traces),
+        min(trace.extraction_rt_window[0] for trace in reviewed),
+        max(trace.extraction_rt_window[1] for trace in reviewed),
     )
     read_from_raw = any(
-        trace.quality_flags.get("new_diagnostic_extraction") for trace in traces
+        trace.quality_flags.get("new_diagnostic_extraction") for trace in reviewed
     )
     return CurveBundle(
         (
@@ -249,6 +306,15 @@ def _curve_bundle(
                 else {},
                 traces=tuple(sorted(traces, key=lambda trace: trace.trace_id)),
                 quantifications=quantities,
+                same_mz_peaks=tuple(
+                    SameMzPeak(
+                        peak.sample_key,
+                        peak.sample_stem,
+                        peak.feature_id,
+                        peak.apex_rt_min,
+                    )
+                    for peak in curves.same_mz_peaks
+                ),
             ),
         ),
         sample_rt_calibration=curves.sample_rt_calibration,

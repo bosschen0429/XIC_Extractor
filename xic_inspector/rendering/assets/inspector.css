@@ -518,3 +518,14 @@
 .xic-inspector[data-mode="offline"] { min-height:100vh; }
 @media(max-width:1000px){.xic-inspector .workbench {grid-template-columns:1fr}
 .xic-inspector .list-panel {position:static;max-height:260px}}
+.xic-inspector .same-mz { margin-top:18px;padding-top:14px;border-top:1px solid var(--line); }
+.xic-inspector .same-mz h3 { margin:0 0 6px;font-size:15px; }
+.xic-inspector .same-mz-legend { display:flex;flex-wrap:wrap;align-items:center;gap:6px 16px;margin-bottom:6px;color:var(--muted);font-size:13px; }
+.xic-inspector .same-mz-legend span { display:inline-flex;align-items:center;gap:5px; }
+.xic-inspector .same-mz-dot { display:inline-block;width:8px;height:8px;border-radius:50%;border:1.2px solid var(--subtle); }
+.xic-inspector .same-mz-dot.own { background:var(--accent);border-color:var(--accent); }
+.xic-inspector .same-mz-dot.far { width:12px;height:12px;border:1.6px solid var(--warn); }
+.xic-inspector .same-mz-panel { margin-top:10px; }
+.xic-inspector .same-mz-panel-head { display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;font-size:13px;color:var(--muted); }
+.xic-inspector .same-mz-panel-head strong { color:var(--ink); }
+.xic-inspector .same-mz-panel-head button { margin-left:auto; }

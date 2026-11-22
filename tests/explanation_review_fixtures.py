@@ -42,7 +42,13 @@ def _install_distinct_curve_raws(monkeypatch, opened, cancelled=None, empty=()):
     monkeypatch.setattr("xic_workbench.review_curves.open_raw", raw)
 
 
-def _group_with_missing_apex_review(tmp_path, *, extraction_by_sample=None):
+def _group_with_missing_apex_review(
+    tmp_path, *, extraction_by_sample=None, other_rows=()
+):
+    """Row G1 with an empty S3 cell; ``other_rows`` adds one-sample rows.
+
+    Each other row is ``(feature_id, center_mz, sample_key, apex_rt_min)``.
+    """
     from dataclasses import asdict
 
     from xic_extractor.processing_identity import build_acquisition_source_identity
@@ -108,6 +114,9 @@ def _group_with_missing_apex_review(tmp_path, *, extraction_by_sample=None):
                     "sample_key": sid,
                     "variant": "numeric" if value else "unavailable",
                     "value": value,
+                    "apex_rt_min": {"S1": 7.9, "S2": 8.1, "S3": 8.0}[sid]
+                    if value
+                    else None,
                     "observation_ids": observations,
                     "support_origin": {
                         "S1": "discovery_support",
@@ -127,6 +136,49 @@ def _group_with_missing_apex_review(tmp_path, *, extraction_by_sample=None):
         )
         if not extraction_by_sample:
             writer.set_cell_position("G1", "S3", 8.0)
+        for feature_id, center_mz, owner, apex in other_rows:
+            peak = f"{feature_id}-peak"
+            writer.add_peak(owner, peak, (center_mz, apex, 20.0))
+            writer.add_candidate(peak, owner, precursor_mz=center_mz, **discovery(peak))
+            writer.add_terminal(
+                peak,
+                owner,
+                variant="observed",
+                hypothesis_id=peak,
+                physical_peak_key=peak,
+            )
+            writer.add_final_group(
+                feature_id,
+                feature_id=feature_id,
+                disposition="saved",
+                members=[
+                    {
+                        "sample_key": owner,
+                        "subject_id": peak,
+                        "subject_kind": "peak_hypothesis",
+                        "physical_peak_keys": [peak],
+                    }
+                ],
+                center_mz=center_mz,
+                ppm=20.0,
+            )
+            writer.set_row_destination(feature_id, "matrix")
+            writer.add_cells(
+                feature_id,
+                [
+                    {
+                        "sample_key": sid,
+                        "variant": "numeric" if sid == owner else "unavailable",
+                        "value": 50 if sid == owner else None,
+                        "apex_rt_min": apex if sid == owner else None,
+                        "observation_ids": [peak] if sid == owner else [],
+                        "support_origin": "discovery_support"
+                        if sid == owner
+                        else "unavailable",
+                    }
+                    for sid in ("S1", "S2", "S3")
+                ],
+            )
         writer.finalize(
             explanation_summary(
                 {
