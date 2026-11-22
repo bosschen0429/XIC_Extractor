@@ -212,14 +212,18 @@ def test_seeded_builder_uses_scan_order_for_low_intensity_bridge_points() -> Non
 def test_local_ms1_feature_table_rejects_edge_apex() -> None:
     index = (
         _scan(1, 1.00, [(500.0000, 100.0)]),
-        _scan(2, 1.05, [(500.0001, 50.0)]),
+        _scan(2, 1.05, [(500.0001, 90.0)]),
         _scan(3, 1.10, [(500.0000, 10.0)]),
     )
 
     features = build_local_ms1_feature_table(
         index,
         sample_stem="Sample_1",
-        settings=_settings(),
+        settings=_settings(
+            gaussian_window_points=1,
+            min_ok_prominence=0.0,
+            weak_support_prominence=0.0,
+        ),
     )
 
     assert features == ()
