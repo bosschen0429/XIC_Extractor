@@ -69,7 +69,7 @@ Each RAW's mass result is saved where its review can replay it:
 Saved `easy_ic_probe` results keep their original `a + b * LM` formula; a probe
 policy without its saved fit cannot be replayed and raises a read error.
 Re-analysis must select restoration or `none` explicitly. Direct `open_raw`
-callers default to `none`; QC and blank-library acquisition are unchanged.
+callers default to `none`; QC acquisition is unchanged.
 The built-in Pt Delta Mass presets select `easy_ic_restore` before feature
 construction. Their MS1 index, partner matching and XICs use the same restored
 coordinates. Delta Mass methods created in the Workbench write `easy_ic_restore`
@@ -130,12 +130,9 @@ profile. Export preserves the nested settings. See
 ## Tissue Validation Defaults
 
 The 8RAW validation set is a subset of the 85RAW tissue cohort. Both use the
-same `dna_dr` method and effective settings, including disabled blank
-qualification. Dataset selection changes the sample scope, not the method, and
-the runner keeps no second scientific preset. An explicit `--blank-library`
-binds the same library in Discovery and Alignment; its suitability must be
-established separately. ISTD input follows the normal Alignment targets CSV,
-and resolved inputs are shown before RAW work. See
+same `dna_dr` method and effective settings. Dataset selection changes the
+sample scope, not the method. ISTD input follows the normal Alignment targets
+CSV, and resolved inputs are shown before RAW work. See
 [local validation commands](../agent/local-execution.md#validation-scale).
 
 ## Verification

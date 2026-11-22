@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import math
-from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -12,7 +11,6 @@ from tests.processing_run_spec_fixtures import (
     _settings,
 )
 from xic_extractor.configuration.cid_nl_profile import NeutralLossProfile
-from xic_extractor.configuration.execution_profile import in_process_execution
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
@@ -316,94 +314,3 @@ def test_near_equal_neutral_loss_masses_remain_distinct_and_hashable(
     )
 
     assert spec.settings == settings
-
-
-def _write_bound_library(path: Path, intensity: float) -> None:
-    from xic_extractor.discovery.blank_qualification import (
-        BlankBackgroundIon,
-        BlankBackgroundLibrary,
-    )
-
-    BlankBackgroundLibrary(
-        ions=(BlankBackgroundIon(258.1085, intensity, 3, "blank"),),
-        min_intensity=0.0,
-        source_blanks=("blank",),
-    ).save_json(path)
-
-
-def test_run_identity_does_not_inherit_packaged_blank_library(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from xic_extractor.discovery import blank_qualification as blank
-
-    raw_paths = _raws(tmp_path)
-    packaged_path = tmp_path / "packaged" / "blank_library.json"
-    packaged_path.parent.mkdir()
-    _write_bound_library(packaged_path, 1000.0)
-    monkeypatch.setattr(
-        blank, "get_default_background_library_path", lambda: packaged_path
-    )
-    monkeypatch.setattr(blank, "_CACHED_DEFAULT_LIBRARY", None)
-    settings = replace(
-        _settings(),
-        neutral_loss_profile=None,
-        enable_blank_qualification=True,
-        blank_library_path=None,
-    )
-    first = _compile_paths(raw_paths, settings=settings)
-    _write_bound_library(packaged_path, 1.0)
-    monkeypatch.setattr(blank, "_CACHED_DEFAULT_LIBRARY", None)
-    second = _compile_paths(raw_paths, settings=settings)
-    assert all(item.blank_library_content is None for item in first.acquisition_inputs)
-    assert first == second
-
-
-def test_bound_blank_snapshot_controls_each_sample_after_library_mutation(
-    tmp_path: Path,
-) -> None:
-    import numpy as np
-
-    from tests.discovery_pipeline_fixtures import (
-        _OwnerBoundFakeRawHandle,
-        _read_csv,
-        _scan_event,
-    )
-    from xic_extractor.discovery.pipeline import run_discovery_batch
-
-    paths = []
-    for name, intensity in (("A", 1000.0), ("B", 1.0)):
-        directory = tmp_path / name
-        directory.mkdir()
-        raw = directory / f"{name}.raw"
-        raw.write_bytes(name.encode())
-        paths.append(raw)
-        _write_bound_library(directory / "blank_library.json", intensity)
-    settings = replace(
-        _settings(), neutral_loss_profile=None, enable_blank_qualification=True
-    )
-    spec = _compile_paths(tuple(paths), settings=settings)
-    for path, intensity in zip(paths, (1.0, 1000.0), strict=True):
-        _write_bound_library(path.parent / "blank_library.json", intensity)
-    rt = np.linspace(7.4, 8.2, 81)
-    handles = {
-        path: _OwnerBoundFakeRawHandle(
-            item.acquisition_source,
-            [_scan_event(scan_number=101, rt=7.8)],
-            rt=rt,
-            intensity=100.0 * np.exp(-0.5 * ((rt - 7.8) / 0.04) ** 2),
-        )
-        for path, item in zip(paths, spec.acquisition_inputs, strict=True)
-    }
-    result = run_discovery_batch(
-        spec,
-        output_dir=tmp_path / "out",
-        dll_dir=tmp_path / "dll",
-        raw_opener=lambda path, _dll: handles[path],
-        execution=in_process_execution(),
-    )
-    states = {
-        output.peaks_csv.parent.name: _read_csv(output.peaks_csv)[0]["status"]
-        for output in result.per_sample
-    }
-    assert states == {"A": "blank", "B": "admitted"}

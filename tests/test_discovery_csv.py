@@ -98,7 +98,6 @@ def test_peak_rows_follow_the_review_queue() -> None:
     def binding(
         peak_id: str,
         *,
-        status: str = "admitted",
         attached: int = 2,
         score: int = 50,
         intensity: float = 1000.0,
@@ -109,7 +108,6 @@ def test_peak_rows_follow_the_review_queue() -> None:
         return _OrderedBinding(
             peak=_peak(
                 peak_id=peak_id,
-                status=status,
                 attached_event_count=attached,
                 evidence_score=score,
                 located_events=(event,),
@@ -126,7 +124,6 @@ def test_peak_rows_follow_the_review_queue() -> None:
 
     ordered = order_discovery_peak_bindings(
         (
-            binding("blank", status="blank", score=99),
             binding("single", attached=1, score=90),
             binding("far", event_rt=7.0, score=95),
             binding("shoulder", shoulder=True, score=95),
@@ -144,9 +141,8 @@ def test_peak_rows_follow_the_review_queue() -> None:
         "far",
         "shoulder",
         "single",
-        "blank",
     ]
-    assert [item.final_ordinal for item in ordered] == list(range(7))
+    assert [item.final_ordinal for item in ordered] == list(range(6))
 
 
 @dataclass(frozen=True)

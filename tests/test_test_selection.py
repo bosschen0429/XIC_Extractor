@@ -740,10 +740,6 @@ def test_marker_intersection_without_owned_expression_keeps_caller_markers(
         (".github/workflows/ci.yml", {"packaging_build", "browser_e2e", "ci_workflow"}),
         ("tests/test_test_selection.py", {"ci_workflow"}),
         ("tests/test_pyinstaller_spec.py", {"packaging_build"}),
-        (
-            "xic_extractor/discovery/data/default_background_library_15min.json.gz",
-            {"packaging_build"},
-        ),
         ("xic_inspector/api.py", {"packaging_build", "browser_e2e"}),
         ("xic_workbench/targeted.py", {"packaging_build", "browser_e2e"}),
         ("xic_workbench/assets/analysis.js", {"packaging_build", "browser_e2e"}),

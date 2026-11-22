@@ -143,7 +143,6 @@ def test_method_toml_runs_sample_local_cli_to_compatible_csvs(
                     str(output_dir),
                     "--preset",
                     str(preset_path),
-                    "--no-blank-qualification",
                 ]
             )
             == 0
@@ -248,24 +247,10 @@ def test_single_discovery_cancelled_after_acquisition_closes_raw_without_output(
     assert not output_dir.exists()
 
 
-def _write_sample_background_library(directory: Path) -> None:
-    from xic_extractor.discovery.blank_qualification import (
-        BlankBackgroundIon,
-        BlankBackgroundLibrary,
-    )
-
-    BlankBackgroundLibrary(
-        ions=(BlankBackgroundIon(258.1085, 300.0, 3, "blank"),),
-        min_intensity=0.0,
-        source_blanks=("blank",),
-    ).save_json(directory / "blank_library.json")
-
-
 def test_single_raw_pipeline_groups_strict_ms2_seeds_and_writes_dual_csvs(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _write_sample_background_library(tmp_path)
     raw_path = tmp_path / "TumorBC2312_DNA.raw"
     output_dir = tmp_path / "out"
     raw = _FakeRawHandle(
@@ -279,7 +264,7 @@ def test_single_raw_pipeline_groups_strict_ms2_seeds_and_writes_dual_csvs(
     outputs = _run_discovery(
         raw_path,
         output_dir=output_dir,
-        settings=_settings(enable_blank_qualification=True),
+        settings=_settings(),
         dll_dir=tmp_path / "dll",
         raw_opener=lambda path, dll_dir: raw,
     )
@@ -291,7 +276,7 @@ def test_single_raw_pipeline_groups_strict_ms2_seeds_and_writes_dual_csvs(
     assert len(rows) == 1
     assert rows[0]["best_ms2_scan_id"] == "202"
     assert rows[0]["attached_event_count"] == "2"
-    assert rows[0]["status"] == "blank"
+    assert rows[0]["status"] == "admitted"
     event_rows = _read_csv(outputs.events_csv)
     assert [row["ms2_scan_number"] for row in event_rows] == ["101", "202"]
     assert {row["peak_id"] for row in event_rows} == {rows[0]["peak_id"]}
@@ -418,7 +403,6 @@ def test_batch_pipeline_writes_per_sample_csvs_and_index(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _write_sample_background_library(tmp_path)
     raw_paths = (
         tmp_path / "TumorBC2312_DNA.raw",
         tmp_path / "NormalBC2257_DNA.raw",
@@ -439,7 +423,7 @@ def test_batch_pipeline_writes_per_sample_csvs_and_index(
     outputs = _run_discovery_batch(
         raw_paths,
         output_dir=tmp_path / "out",
-        settings=_settings(enable_blank_qualification=True),
+        settings=_settings(),
         dll_dir=tmp_path / "dll",
         raw_opener=lambda path, dll_dir: raw_by_path[path],
     )
@@ -453,7 +437,7 @@ def test_batch_pipeline_writes_per_sample_csvs_and_index(
         "NormalBC2257_DNA",
     ]
     assert [row["peak_count"] for row in index_rows] == ["1", "1"]
-    assert [row["admitted_peak_count"] for row in index_rows] == ["0", "1"]
+    assert [row["admitted_peak_count"] for row in index_rows] == ["1", "1"]
     assert {row["schema_version"] for row in index_rows} == {
         "discovery_batch_index_peaks"
     }
@@ -475,7 +459,7 @@ def test_batch_pipeline_writes_per_sample_csvs_and_index(
     second_rows = _read_csv(
         tmp_path / "out" / "NormalBC2257_DNA" / "discovery_peaks.csv"
     )
-    assert first_rows[0]["status"] == "blank"
+    assert first_rows[0]["status"] == "admitted"
     assert second_rows[0]["status"] == "admitted"
     assert [row["peak_id"] for row in first_review_rows] == [first_rows[0]["peak_id"]]
     assert [row["sample_stem"] for row in second_rows] == ["NormalBC2257_DNA"]
@@ -1403,7 +1387,6 @@ def test_single_raw_pipeline_records_discovery_timing_stages(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _write_sample_background_library(tmp_path)
     raw = _FakeRawHandle(
         [_scan_event(scan_number=101, rt=7.80, product_intensity=3000.0)],
         **_peak_kwargs(7.8, 600.0),
@@ -1413,7 +1396,7 @@ def test_single_raw_pipeline_records_discovery_timing_stages(
     _run_discovery(
         tmp_path / "Sample.raw",
         output_dir=tmp_path / "out",
-        settings=_settings(enable_blank_qualification=True),
+        settings=_settings(),
         dll_dir=tmp_path / "dll",
         raw_opener=lambda path, dll_dir: raw,
         timing_recorder=recorder,
@@ -1424,7 +1407,6 @@ def test_single_raw_pipeline_records_discovery_timing_stages(
         "discover.ms2_events",
         "discover.ion_grouping",
         "discover.ms1_capture",
-        "discover.blank_qualification",
         "discover.write_peaks_csv",
         "discover.write_events_csv",
         "discover.publish_outputs",
@@ -1435,12 +1417,6 @@ def test_single_raw_pipeline_records_discovery_timing_stages(
     assert records_by_stage["discover.ion_grouping"].metrics["ion_count"] == 1
     assert records_by_stage["discover.ms1_capture"].metrics["peak_count"] == 1
     assert records_by_stage["discover.ms1_capture"].metrics["event_count"] == 1
-    assert (
-        records_by_stage["discover.blank_qualification"].metrics[
-            "excluded_background_count"
-        ]
-        == 1
-    )
     assert records_by_stage["discover.write_peaks_csv"].metrics["row_count"] == 1
     assert records_by_stage["discover.write_events_csv"].metrics["row_count"] == 1
     assert records_by_stage["discover.publish_outputs"].metrics == {

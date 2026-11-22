@@ -486,22 +486,6 @@ def test_pyinstaller_collects_builtin_preset_tomls() -> None:
     )
 
 
-def test_pyinstaller_collects_discovery_default_background_library() -> None:
-    datas = collect_data_files(
-        "xic_extractor.discovery",
-        includes=["data/*"],
-    )
-    collected = {
-        (Path(source).name, Path(destination).as_posix())
-        for source, destination in datas
-    }
-
-    assert (
-        "default_background_library_15min.json.gz",
-        "xic_extractor/discovery/data",
-    ) in collected
-
-
 @pytest.fixture(scope="module")
 def built_wheel(packaging_source: Path) -> Path:
     artifact_root = packaging_source.parent / "wheel-artifacts"
@@ -748,7 +732,6 @@ def test_final_pyinstaller_archive_runs_html_workbench_smoke(
     assert report["user_guide"]
     assert Path(report["executable"]).resolve() == executable.resolve()
     assert report["resources"]["target_rows"] > 0
-    assert report["resources"]["background_ions"] > 0
     assert Path(report["preset_path"]).is_file()
     assert hashlib.sha256(archive_path.read_bytes()).hexdigest() == archive_hash
     print(f"Delivered archive smoke report: {smoke_report}")

@@ -11,7 +11,6 @@ import uuid
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
-from xic_extractor.discovery.blank_qualification import get_default_background_library
 from xic_extractor.presets import bind_cid_nl_recipe, load_preset
 from xic_workbench.application import create_workspace
 from xic_workbench.server import _ASSETS, create_server
@@ -96,13 +95,9 @@ def run_smoke(report_path: Path) -> int:
             raise RuntimeError("Bundled settings or targets are empty")
         report["server_started"] = True
         report["stage"] = "bundled_resources"
-        background = get_default_background_library()
-        if background is None or not background.ions:
-            raise RuntimeError("Bundled background library is empty")
         report["resources"] = {
             "settings_keys": len(config["settings"]),
             "target_rows": len(config["targets"]),
-            "background_ions": len(background.ions),
         }
         report["stage"] = "method_roundtrip"
         method = json.loads(request("/api/method", {"preset": "dna_dr"}))

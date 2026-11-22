@@ -111,7 +111,6 @@ this table wins.
 
 | `status` | Meaning | Enters Alignment |
 | --- | --- | --- |
-| `blank` | Demoted by [blank qualification](#blank-qualification) | No |
 | `doubly_charged` | The MS1 ion reads as a doubly charged isotope ([accurate-mass reading](#accurate-mass-reading)) | No |
 | `no_nl_event` | A measurable MS1 peak without an [attached](#cid-nl-support-relations), precursor-verified NL event | No; review only |
 | `admitted` | At least one attached event and none of the above | Yes |
@@ -357,28 +356,6 @@ centroid stream, adjacent scans and scan mode before changing the mass window or
 peak algorithm. Sources:
 [Xcalibur 4.6 Qual Browser User Guide](https://docs.thermofisher.com/v/u/Xcalibur-4.6-Qual-Browser-User-Guide)
 and [Thermo RawFileReader](https://github.com/thermofisherlsms/RawFileReader).
-
-## Blank qualification
-
-Blank qualification is disabled by default. Producing a blank library alone
-does not enable it; an explicit opt-in requires method-appropriate validation.
-
-- The library aggregates centroid m/z and maximum intensity. It does not
-  preserve RT or qualify peak shape.
-- A short solvent blank with a different LC gradient is diagnostic background,
-  not a validated hard-exclusion reference for a longer method. RT must not be
-  scaled linearly between different 15-minute and 60-minute gradients.
-- Background references distinguish clean pre-sample solvent injections from
-  post-standard or post-sample carryover monitors and waste-directed runs. A
-  method-matched blank is a prerequisite for evaluating removal, not proof that
-  an m/z-only intensity rule is valid.
-- Instrument acquisition exclusion lists and software blank qualification are
-  separate. An acquisition exclusion can prevent an MS/MS trigger; disabling
-  software filtering does not recreate an unacquired spectrum.
-- When enabled, a peak matched within 10 ppm keeps its admission only when its
-  MS1 height is at least 3× the blank's maximum intensity. Below that its
-  `status` is `blank`. Qualification changes eligibility
-  only; it does not change the peak's boundaries, apex or area.
 
 ## Delta Mass Discovery
 

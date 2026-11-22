@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from dataclasses import field as dataclass_field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -55,11 +54,10 @@ _THRESHOLD_FLOAT_KEYS = (
 
 @dataclass(frozen=True, slots=True)
 class ProcessingAcquisitionInput:
-    """One RAW file, its fingerprinted content and its blank library snapshot."""
+    """One RAW file, its fingerprinted content."""
 
     raw_path: Path
     acquisition_source: AcquisitionSourceIdentity
-    blank_library_content: str | None = dataclass_field(default=None, repr=False)
 
 
 @dataclass(frozen=True, slots=True)
@@ -129,8 +127,6 @@ def validate_cid_nl_discovery_settings(settings: DiscoverySettings) -> None:
         "ms2_precursor_tol_da",
         "nl_min_intensity_ratio",
         "ms1_search_padding_min",
-        "blank_ppm_tol",
-        "blank_fold_change_threshold",
     )
     for field in positive_fields:
         value = getattr(settings, field)
@@ -138,15 +134,8 @@ def validate_cid_nl_discovery_settings(settings: DiscoverySettings) -> None:
             raise TypeError(f"{field} must be numeric")
         if not math.isfinite(float(value)) or float(value) <= 0.0:
             raise ValueError(f"{field} must be finite and positive")
-    if not isinstance(settings.enable_blank_qualification, bool):
-        raise TypeError("enable_blank_qualification must be a boolean")
     if not isinstance(settings.mass_recalibration, MassRecalibration):
         raise TypeError("mass_recalibration must be a MassRecalibration policy")
-    if settings.blank_library_path is not None:
-        if not isinstance(settings.blank_library_path, str):
-            raise TypeError("blank_library_path must be text or None")
-        if not settings.blank_library_path:
-            raise ValueError("blank_library_path must be non-empty text or None")
     for field in ("rt_min", "rt_max"):
         value = getattr(settings, field)
         if value is None:

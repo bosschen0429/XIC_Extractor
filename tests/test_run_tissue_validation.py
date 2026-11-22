@@ -8,7 +8,6 @@ import pytest
 from scripts import run_tissue_validation
 from tests.raw_header_fakes import install_fake_raw_headers
 from xic_extractor.configuration.execution_profile import default_parallel_workers
-from xic_extractor.discovery.blank_qualification import BlankBackgroundLibrary
 from xic_extractor.raw_reader import EXPECTED_THERMO_DLLS
 
 
@@ -17,7 +16,7 @@ def _placeholder_raw_headers(monkeypatch: pytest.MonkeyPatch) -> None:
     install_fake_raw_headers(monkeypatch)
 
 
-def _inputs(tmp_path: Path, *, count: int) -> tuple[Path, Path, Path]:
+def _inputs(tmp_path: Path, *, count: int) -> tuple[Path, Path]:
     tmp_path.mkdir(parents=True, exist_ok=True)
     raw_dir = tmp_path / f"raw-{count}"
     raw_dir.mkdir()
@@ -27,15 +26,11 @@ def _inputs(tmp_path: Path, *, count: int) -> tuple[Path, Path, Path]:
     dll_dir.mkdir(exist_ok=True)
     for name in EXPECTED_THERMO_DLLS:
         (dll_dir / name).write_bytes(b"")
-    library = tmp_path / "background.json"
-    BlankBackgroundLibrary(ions=(), min_intensity=25_000.0, source_blanks=()).save_json(
-        library
-    )
-    return raw_dir, dll_dir, library
+    return raw_dir, dll_dir
 
 
 def _preflight_args(
-    tmp_path: Path, *, dataset: int, raw_dir: Path, dll_dir: Path, library: Path
+    tmp_path: Path, *, dataset: int, raw_dir: Path, dll_dir: Path
 ) -> list[str]:
     return [
         "--dataset",
@@ -44,20 +39,16 @@ def _preflight_args(
         str(raw_dir),
         "--dll-dir",
         str(dll_dir),
-        "--blank-library",
-        str(library),
         "--output-dir",
         str(tmp_path / f"out-{dataset}"),
         "--preflight-only",
     ]
 
 
-@pytest.mark.parametrize("blank_enabled", [False, True])
 def test_preflight_8_and_85_share_science_without_output_or_execution(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
-    blank_enabled: bool,
 ) -> None:
     monkeypatch.setattr(run_tissue_validation, "preflight_raw_reader", lambda _path: [])
     executed: list[tuple[str, ...]] = []
@@ -66,38 +57,14 @@ def test_preflight_8_and_85_share_science_without_output_or_execution(
         "_run_command",
         lambda command, _log: executed.append(tuple(command)) or 0,
     )
-    if not blank_enabled:
-        monkeypatch.setattr(
-            run_tissue_validation.BlankBackgroundLibrary,
-            "load_json",
-            lambda _path: pytest.fail("disabled filtering must not read a library"),
-        )
     plans = []
     for dataset in (8, 85):
-        raw_dir, dll_dir, library = _inputs(tmp_path / str(dataset), count=dataset)
+        raw_dir, dll_dir = _inputs(tmp_path / str(dataset), count=dataset)
         output_dir = tmp_path / str(dataset) / f"out-{dataset}"
-        code = run_tissue_validation.main(
-            _preflight_args(
-                tmp_path / str(dataset),
-                dataset=dataset,
-                raw_dir=raw_dir,
-                dll_dir=dll_dir,
-                library=library,
-            )
-            if blank_enabled
-            else [
-                "--dataset",
-                str(dataset),
-                "--raw-dir",
-                str(raw_dir),
-                "--dll-dir",
-                str(dll_dir),
-                "--output-dir",
-                str(output_dir),
-                "--preflight-only",
-            ]
+        args = _preflight_args(
+            tmp_path / str(dataset), dataset=dataset, raw_dir=raw_dir, dll_dir=dll_dir
         )
-        assert code == 0
+        assert run_tissue_validation.main(args) == 0
         assert not output_dir.exists()
         plans.append(json.loads(capsys.readouterr().out))
 
@@ -116,11 +83,6 @@ def test_preflight_8_and_85_share_science_without_output_or_execution(
 
     assert executed == []
     assert plans[0]["science"] == plans[1]["science"]
-    assert (
-        plans[0]["science"]["discovery"]["enable_blank_qualification"] is blank_enabled
-    )
-    if not blank_enabled:
-        assert all(p["inputs"]["blank_library"] is None for p in plans)
     assert plans[0]["execution"]["parallel_workers"] == default_parallel_workers()
     assert plans[1]["execution"]["parallel_workers"] == default_parallel_workers()
     assert plans[0]["execution"]["alignment_workers"] == 4
@@ -142,7 +104,7 @@ def test_preflight_rejects_wrong_raw_count_before_creating_output(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    raw_dir, dll_dir, library = _inputs(tmp_path, count=7)
+    raw_dir, dll_dir = _inputs(tmp_path, count=7)
     output_dir = tmp_path / "out-8"
     monkeypatch.setattr(run_tissue_validation, "preflight_raw_reader", lambda _path: [])
 
@@ -152,7 +114,6 @@ def test_preflight_rejects_wrong_raw_count_before_creating_output(
             dataset=8,
             raw_dir=raw_dir,
             dll_dir=dll_dir,
-            library=library,
         )
     )
 
@@ -166,7 +127,7 @@ def test_preflight_exposes_overrides_and_rejects_output_reuse(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    raw_dir, dll_dir, library = _inputs(tmp_path, count=8)
+    raw_dir, dll_dir = _inputs(tmp_path, count=8)
     targets = tmp_path / "targets.xlsx"
     targets.write_bytes(
         Path("xic_extractor/configuration/data/targets.xlsx").read_bytes()
@@ -182,8 +143,6 @@ def test_preflight_exposes_overrides_and_rejects_output_reuse(
             str(raw_dir),
             "--dll-dir",
             str(dll_dir),
-            "--blank-library",
-            str(library),
             "--targets-csv",
             str(targets),
             "--workers",
@@ -204,7 +163,6 @@ def test_preflight_exposes_overrides_and_rejects_output_reuse(
     assert discovery_command[discovery_command.index("--max-workers") + 1] == "2"
     assert alignment_command[alignment_command.index("--raw-workers") + 1] == "3"
     assert plan["inputs"]["targets_csv"] == str(targets.resolve())
-    assert plan["inputs"]["blank_library"] == str(library.resolve())
 
     reused_output = tmp_path / "out-8"
     reused_output.mkdir()
@@ -214,7 +172,6 @@ def test_preflight_exposes_overrides_and_rejects_output_reuse(
             dataset=8,
             raw_dir=raw_dir,
             dll_dir=dll_dir,
-            library=library,
         )
     )
     assert code == 2
@@ -227,7 +184,7 @@ def test_execution_runs_alignment_once_only_after_successful_discovery(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    raw_dir, dll_dir, library = _inputs(tmp_path, count=8)
+    raw_dir, dll_dir = _inputs(tmp_path, count=8)
     output_dir = tmp_path / "out-8"
     monkeypatch.setattr(run_tissue_validation, "preflight_raw_reader", lambda _path: [])
     executed: list[tuple[tuple[str, ...], Path]] = []
@@ -244,7 +201,6 @@ def test_execution_runs_alignment_once_only_after_successful_discovery(
             dataset=8,
             raw_dir=raw_dir,
             dll_dir=dll_dir,
-            library=library,
         )[:-1]
     )
 
@@ -278,7 +234,7 @@ def test_preflight_passes_a_shared_acquisition_cache_to_alignment(
     configured: str | None,
     expected: str | None,
 ) -> None:
-    raw_dir, dll_dir, _ = _inputs(tmp_path, count=8)
+    raw_dir, dll_dir = _inputs(tmp_path, count=8)
     monkeypatch.setattr(run_tissue_validation, "preflight_raw_reader", lambda _path: [])
     monkeypatch.setattr(run_tissue_validation, "_LOCAL_ENV", tmp_path / "absent.env")
     monkeypatch.delenv("XIC_ACQUISITION_CACHE_DIR", raising=False)
@@ -321,7 +277,7 @@ def test_85raw_preflight_applies_tracked_sample_metadata_by_default(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     monkeypatch.setattr(run_tissue_validation, "preflight_raw_reader", lambda _path: [])
-    raw_dir, dll_dir, _ = _inputs(tmp_path, count=85)
+    raw_dir, dll_dir = _inputs(tmp_path, count=85)
     tracked = run_tissue_validation._DATASET_SAMPLE_METADATA[85]
     excluded = [
         line.split("\t")[2]

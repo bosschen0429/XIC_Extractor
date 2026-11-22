@@ -6,9 +6,6 @@ import pytest
 
 from scripts import run_discovery
 from tests.raw_header_fakes import install_fake_raw_headers
-from xic_extractor.discovery.blank_qualification import (
-    get_default_background_library_path,
-)
 from xic_extractor.discovery.models import DiscoveryBatchOutputs, DiscoveryRunOutputs
 from xic_extractor.raw_reader_errors import RawReaderError
 
@@ -18,12 +15,10 @@ def _placeholder_raw_headers(monkeypatch: pytest.MonkeyPatch) -> None:
     install_fake_raw_headers(monkeypatch)
 
 
-@pytest.mark.parametrize("blank_override", [False, True])
 def test_run_discovery_cli_passes_single_raw_settings(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
-    blank_override: bool,
 ) -> None:
     raw_path = tmp_path / "TumorBC2312_DNA.raw"
     raw_path.write_text("", encoding="utf-8")
@@ -71,15 +66,6 @@ def test_run_discovery_cli_passes_single_raw_settings(
             "--resolver-mode",
             "local_minimum",
         ]
-        + (
-            [
-                "--enable-blank-qualification",
-                "--blank-library",
-                str(get_default_background_library_path()),
-            ]
-            if blank_override
-            else []
-        )
     )
 
     assert code == 0

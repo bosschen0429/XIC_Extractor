@@ -18,14 +18,12 @@ GroupPrecursorMzBasis = Literal[
 ]
 PeakStatus = Literal[
     "admitted",
-    "blank",
     "doubly_charged",
     "no_nl_event",
 ]
 """Whether a peak enters Alignment, and if not, the first reason that holds it."""
 PEAK_STATUSES: tuple[PeakStatus, ...] = (
     "admitted",
-    "blank",
     "doubly_charged",
     "no_nl_event",
 )

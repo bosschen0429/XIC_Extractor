@@ -18,10 +18,6 @@ preset_datas = collect_data_files(
     "xic_extractor.presets",
     includes=["data/*.toml"],
 )
-discovery_datas = collect_data_files(
-    "xic_extractor.discovery",
-    includes=["data/*"],
-)
 inspector_datas = collect_data_files("xic_inspector.rendering", includes=["assets/*"])
 workbench_datas = collect_data_files(
     "xic_workbench",
@@ -39,7 +35,6 @@ a = Analysis(
         ),
     ]
     + preset_datas
-    + discovery_datas
     + inspector_datas
     + workbench_datas,
     hiddenimports=[

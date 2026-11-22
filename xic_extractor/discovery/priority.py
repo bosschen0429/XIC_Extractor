@@ -17,8 +17,8 @@ def order_discovery_peak_bindings(
     """Order peaks for the peak table and physical sidecar, numbering each one.
 
     Peaks a reviewer should see first lead: two or more attached events at the
-    event RT on an unshouldered peak, then the rest, then blank background;
-    stronger evidence first within each.
+    event RT on an unshouldered peak, then the rest. Stronger evidence goes first
+    within each tier.
     """
 
     ordered = sorted(
@@ -60,8 +60,6 @@ def _review_rank(
     settings: DiscoverySettings,
 ) -> int:
     peak = binding.peak
-    if peak.status == "blank":
-        return 2
     evaluation = binding.physical_evaluation
     shouldered = (
         evaluation.state not in {"unavailable", "failed"}

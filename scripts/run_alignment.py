@@ -482,11 +482,6 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--blank-library",
-        type=Path,
-        help="Use the same explicit background library binding as Discovery.",
-    )
-    parser.add_argument(
         "--known-istd-reference-workbook",
         type=Path,
         help=(
@@ -756,22 +751,7 @@ def _resolve_preset(args: argparse.Namespace) -> tuple[Preset, BoundCidNlRecipe]
             "--preset dna_dr with an owner-closed discovery batch index"
         )
     preset = load_preset(args.preset)
-    recipe_overrides: dict[str, object] = {}
-    recipe = bind_cid_nl_recipe(
-        preset, "align_only", recipe_overrides=recipe_overrides or None
-    )
-    if args.blank_library is not None:
-        blank_library = args.blank_library.resolve()
-        if not blank_library.is_file():
-            raise PresetError(f"{blank_library}: blank library does not exist")
-        recipe = replace(
-            recipe,
-            discovery_settings=replace(
-                recipe.discovery_settings,
-                enable_blank_qualification=True,
-                blank_library_path=str(blank_library),
-            ),
-        )
+    recipe = bind_cid_nl_recipe(preset, "align_only")
     if not is_supported_alignment_discovery(recipe.discovery_settings):
         raise PresetError(
             f"Alignment does not support discovery settings in preset {preset.name}"

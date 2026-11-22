@@ -425,8 +425,8 @@ subtraction and area with it:
 - `area_raw_counts_seconds` stays internal grouping evidence (shoulder test and
   owner order) and is not shown.
 
-Segmentation, selection, grouping and blank qualification keep their own
-signals; this rule does not change which peaks are kept.
+Segmentation, selection and grouping keep their own signals; this rule does
+not change which peaks are kept.
 
 ### Area changes
 

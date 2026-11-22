@@ -159,10 +159,6 @@ def test_discovery_cli_forwards_worker_budget_and_run_spec(
     else:
         assert forwarded["execution"].parallel_workers == expected_workers
     assert (forwarded["timing_recorder"] is not None) is timing
-    assert not run_spec.settings.enable_blank_qualification
-    assert all(
-        item.blank_library_content is None for item in run_spec.acquisition_inputs
-    )
 
 
 @pytest.mark.parametrize("value", ["0", "-1", "1.5"])

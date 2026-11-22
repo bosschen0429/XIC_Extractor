@@ -7,7 +7,7 @@ import subprocess
 import sys
 import time
 from collections.abc import Mapping, Sequence
-from dataclasses import asdict, is_dataclass, replace
+from dataclasses import asdict, is_dataclass
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
@@ -23,7 +23,6 @@ from xic_extractor.configuration.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
 )
 from xic_extractor.configuration.targets import read_istd_targets
-from xic_extractor.discovery.blank_qualification import BlankBackgroundLibrary
 from xic_extractor.presets import bind_cid_nl_recipe, load_preset
 from xic_extractor.raw_reader import preflight_raw_reader
 from xic_extractor.raw_sequence import read_analysis_set
@@ -103,11 +102,6 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
             "(default: XIC_ACQUISITION_CACHE_DIR, else the run's own output)."
         ),
     )
-    parser.add_argument(
-        "--blank-library",
-        type=Path,
-        help="Explicitly opt in to blank filtering with this library (default: off).",
-    )
     istd = parser.add_mutually_exclusive_group()
     istd.add_argument("--targets-csv", type=Path)
     istd.add_argument("--known-istd-reference-workbook", type=Path)
@@ -169,10 +163,6 @@ def _build_plan(args: argparse.Namespace) -> dict[str, Any]:
             f"{raw_dir}: expected {dataset} analysis RAW files, found {len(raw_paths)}"
         )
 
-    blank_library = None
-    if args.blank_library is not None:
-        blank_library = args.blank_library.resolve()
-        BlankBackgroundLibrary.load_json(blank_library)
     targets_csv, workbook = _validate_istd_input(args)
     acquisition_cache_dir = _acquisition_cache_dir(
         args.acquisition_cache_dir, environment
@@ -226,9 +216,6 @@ def _build_plan(args: argparse.Namespace) -> dict[str, Any]:
     ]
     if sample_metadata is not None:
         discovery_command.extend(["--sample-metadata", str(sample_metadata)])
-    if blank_library is not None:
-        discovery_command.extend(["--blank-library", str(blank_library)])
-        alignment_command.extend(["--blank-library", str(blank_library)])
     if acquisition_cache_dir is not None:
         alignment_command.extend(
             ["--acquisition-cache-dir", str(acquisition_cache_dir)]
@@ -239,16 +226,11 @@ def _build_plan(args: argparse.Namespace) -> dict[str, Any]:
         alignment_command.extend(["--targets-csv", str(targets_csv)])
 
     recipe = bind_cid_nl_recipe(load_preset("dna_dr"), "full")
-    effective_discovery = replace(
-        recipe.discovery_settings,
-        enable_blank_qualification=blank_library is not None,
-        blank_library_path=None,
-    )
     return {
         "dataset": dataset,
         "science": {
             "preset": "dna_dr",
-            "discovery": _json_value(effective_discovery),
+            "discovery": _json_value(recipe.discovery_settings),
             "alignment": _json_value(recipe.alignment_config),
             "signal_processing": _json_value(DEFAULT_SIGNAL_PROCESSING_PROFILE),
         },
@@ -259,7 +241,6 @@ def _build_plan(args: argparse.Namespace) -> dict[str, Any]:
                 str(sample_metadata) if sample_metadata is not None else None
             ),
             "dll_dir": str(dll_dir),
-            "blank_library": str(blank_library) if blank_library is not None else None,
             "targets_csv": str(targets_csv) if targets_csv is not None else None,
             "known_istd_reference_workbook": (
                 str(workbook) if workbook is not None else None
