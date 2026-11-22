@@ -19,6 +19,7 @@ from xic_extractor.discovery.ms1_capture import (
 from xic_extractor.discovery.ms2_events import collect_strict_nl_events
 from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.discovery.strict_event_receipts import read_parent_ms1_observations
+from xic_extractor.mass_accuracy import mz_window
 from xic_extractor.ms2_scan_models import Ms2Scan, Ms2ScanEvent
 from xic_extractor.processing_identity import (
     AcquisitionSourceIdentity,
@@ -188,11 +189,23 @@ class _FakeThermoRaw:
     def GetChromatogramData(self, settings, start_scan: int, end_scan: int):
         self.chromatogram_request_counts.append(len(settings))
         self.chromatogram_windows.append((start_scan, end_scan))
-        rt = self.source.rt[start_scan - 1 : end_scan]
-        intensity = self.source.intensity[start_scan - 1 : end_scan]
+        selection = slice(start_scan - 1, end_scan)
+        rt = self.source.rt[selection]
+        # Native mass-range traces have MS1 scans only. The source's native
+        # scan-number axis still includes DDA scans.
+        present = np.ones(rt.shape, dtype=bool)
+        if self.source.additional_ms1_ions is not None:
+            for scan in self.scans:
+                if start_scan <= scan <= end_scan:
+                    present[scan - start_scan] = False
         return SimpleNamespace(
-            PositionsArray=[rt.tolist() for _setting in settings],
-            IntensitiesArray=[intensity.tolist() for _setting in settings],
+            PositionsArray=[rt[present].tolist() for _setting in settings],
+            IntensitiesArray=[
+                self.source.xic_for_mass_ranges(setting.MassRanges)[selection][
+                    present
+                ].tolist()
+                for setting in settings
+            ],
         )
 
     def GetFilterForScanNumber(self, scan_number: int):
@@ -210,10 +223,15 @@ class _FakeThermoRaw:
         )
 
     def GetCentroidStream(self, scan_number: int, refresh: bool):
-        intensity = float(self.source.intensity[scan_number - 1])
-        if intensity <= 0:
-            return SimpleNamespace(Masses=[], Intensities=[])
-        return SimpleNamespace(Masses=[self.source.ms1_mz], Intensities=[intensity])
+        points = [
+            (mz, float(intensity[scan_number - 1]))
+            for mz, intensity in self.source.ion_profiles()
+            if intensity[scan_number - 1] > 0
+        ]
+        return SimpleNamespace(
+            Masses=[mz for mz, _ in points],
+            Intensities=[intensity for _, intensity in points],
+        )
 
     def GetSimplifiedScan(self, scan_number: int):
         scan = self.scans[scan_number]
@@ -246,6 +264,7 @@ class _FakeRaw:
             )
         self.acquisition_source = acquisition_source
         self.ms1_mz = scan_precursor_mz
+        self.additional_ms1_ions: dict[float, np.ndarray] | None = None
         self.rt = np.linspace(7.4, 8.7, 521)
         self.intensity = sum(
             (
@@ -328,9 +347,30 @@ class _FakeRaw:
                     scan_number=scan.scan_number,
                 )
 
+    def ion_profiles(self):
+        return (
+            (self.ms1_mz, self.intensity),
+            *(self.additional_ms1_ions or {}).items(),
+        )
+
+    def xic_for_mass_ranges(self, ranges):
+        if self.additional_ms1_ions is None:
+            # Older single-ion fixtures only model the requested time axis.
+            return self.intensity
+        return sum(
+            (
+                signal
+                for mz, signal in self.ion_profiles()
+                if any(low <= mz <= high for low, high in ranges)
+            ),
+            np.zeros_like(self.rt),
+        )
+
     def _trace(self, request: XICRequest) -> XICTrace:
         first, last = self.scan_window_for_request(request)
         return XICTrace(
             rt=self.rt[first - 1 : last].copy(),
-            intensity=self.intensity[first - 1 : last].copy(),
+            intensity=self.xic_for_mass_ranges(
+                (mz_window(request.mz, request.ppm_tol),)
+            )[first - 1 : last].copy(),
         )

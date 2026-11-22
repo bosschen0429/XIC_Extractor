@@ -100,6 +100,11 @@ def _shifted_feature_raws(tmp_path, *, samples, features, shifts, spacing):
             )
             for feature, scan in enumerate(raw.scans)
         )
+        raw.additional_ms1_ions = {
+            scan.precursor_mz: raw.intensity * (1 + feature / 10)
+            for feature, scan in enumerate(raw.scans)
+            if feature != 0
+        }
         raws[stem] = raw
         peaks[stem] = discover(raw, paths[stem], settings)
         assert len(peaks[stem]) == features
@@ -166,7 +171,7 @@ def test_partition_capacity_keeps_batch_calibration_and_grouping(tmp_path, monke
     assert apexes["S12"] - apexes["S00"] == pytest.approx(0.1, abs=0.01)
 
 
-def test_backfill_is_partition_invariant_and_never_supplies_ms2_support(
+def test_batch_ms1_only_members_are_partition_invariant_and_do_not_supply_cid(
     tmp_path, monkeypatch
 ):
     """S20 and S21 have no Discovery peak for the heavier subject; S21 also has no CID-
@@ -215,7 +220,7 @@ def test_backfill_is_partition_invariant_and_never_supplies_ms2_support(
     cells = published_cells(together)
     for stem, apex in (("S20", 8.1), ("S21", 7.9)):
         cell = cells[(heavy, stem)]
-        assert cell["status"] == "backfilled"
+        assert cell["status"] == "ms1_only"
         assert cell["source_candidate_id"] == ""
         assert float(cell["apex_rt"]) == pytest.approx(apex, abs=0.005)
 
@@ -1099,7 +1104,7 @@ def test_final_grouping_failure_stops_before_any_backfill(
             ),
             project_child=project_composed_child,
         )
-    assert len(finalized) >= 2
+    assert len(finalized) >= 2, repr(error.value.__cause__ or error.value)
     assert not admitted
     assert not any(admitted_first for _, admitted_first in finalized)
     assert len({subjects for subjects, _ in finalized}) == len(finalized)
@@ -1578,7 +1583,7 @@ def test_process_outcome_must_cover_the_exact_work_units(
     assert result.sample_results == ()
 
 
-def test_formal_partition_reuses_prepared_group_ids_for_recovery_and_composition(
+def test_formal_partition_reuses_prepared_group_ids_with_ms1_only_members(
     tmp_path, monkeypatch
 ):
     import xic_extractor.alignment.cid_nl_initial_grouping as grouping_owner
@@ -1617,52 +1622,15 @@ def test_formal_partition_reuses_prepared_group_ids_for_recovery_and_composition
     prepared = leaf.prepared_grouping
     assert prepared is not None
     assert len(prepared.worksets) == 1
-    assert len(batch.jobs) == 2
-    assert len({job.method_subject.method_subject_id for job in batch.jobs}) == 2
-    assert len(leaf.sample_results) == 4
+    assert len(batch.jobs) == len(leaf.sample_results) == 8
     assert calls == [1]
-    prepared_group_ids = {
-        group.group_hypothesis_id
-        for workset in prepared.worksets
-        for group in workset.grouping_scope.groups
-    }
-    assert len(prepared_group_ids) == 1
-    backfill_group_ids = {
-        attempt.group_hypothesis_id
-        for result in leaf.sample_results
-        for attempt in result.backfill_attempts
-        if attempt.group_hypothesis_id is not None
-    }
-    assert backfill_group_ids
-    assert backfill_group_ids == prepared_group_ids
+    (group,) = prepared.worksets[0].grouping_scope.groups
     assert {
-        result.job.sample.raw_stem
-        for result in leaf.sample_results
-        if result.backfill_attempts
-    } == {"S2", "S3"}
-    recovery_result = next(
-        result for result in leaf.sample_results if result.backfill_attempts
-    )
-    backfill_attempt = recovery_result.backfill_attempts[0]
-    same_rt_different_groups = replace(
-        recovery_result,
-        backfill_attempts=(
-            replace(backfill_attempt, group_hypothesis_id="group-a"),
-            replace(backfill_attempt, group_hypothesis_id="group-b"),
-        ),
-    )
-    assert (
-        same_rt_different_groups.backfill_for_group(
-            0.0, group_hypothesis_id="group-b"
-        ).group_hypothesis_id
-        == "group-b"
-    )
-    assert (
-        same_rt_different_groups.backfill_for_group(
-            0.0, group_hypothesis_id="wrong-group"
-        )
-        is None
-    )
+        owner.sample_stem: owner.primary_identity_event is not None
+        for owner in group.owners
+    } == {"S0": True, "S1": True, "S2": False, "S3": False}
+    assert all(not result.backfill_attempts for result in leaf.sample_results)
+    prepared_group_ids = {group.group_hypothesis_id}
     calls_before_composition = len(calls)
     composed = adapter.execute_composition(
         partition,

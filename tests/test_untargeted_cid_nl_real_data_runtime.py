@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import errno
 import json
+import os
 import threading
 from dataclasses import replace
 from pathlib import Path
@@ -20,13 +22,11 @@ from tests.cid_nl_raw_fixture import (
 )
 from tests.cid_nl_runtime_fixtures import (
     build_discovery_receipts,
-    install_runtime_raw,
     install_runtime_raws,
 )
 from tests.processing_identity_no_raw_fixture import (
     build_targeted_processing_identity_raw_fixture,
 )
-from tests.untargeted_cid_nl_real_data_adapter_fixtures import _without_ms1_peak
 from tests.untargeted_partition_fixtures import (
     execute_partition_inline,
     partition_context,
@@ -91,6 +91,40 @@ def test_acquisition_cache_windows_publish_race(tmp_path, monkeypatch, winner):
             cache.write("ms2", key, payload)
         assert cache.read("ms2", key) == winner
     assert not tuple(tmp_path.rglob("*.tmp"))
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows cache file sharing")
+@pytest.mark.parametrize("denial_persists", [False, True])
+def test_fact_cache_metadata_read_handles_windows_sharing(
+    tmp_path, monkeypatch, denial_persists
+):
+    from xic_extractor.untargeted_execution import acquisition_cache as cache_owner
+
+    cache = cache_owner._FactCache(tmp_path, "source")
+    key = b"acquisition-rt-bounds"
+    payload = b'["1.0", "20.0"]'
+    cache.write("metadata", key, payload)
+    entry = cache._path("metadata", key)
+    read_bytes = Path.read_bytes
+    denial = PermissionError(errno.EACCES, "cache read denied", str(entry))
+    attempts = 0
+
+    def read_during_publish(path):
+        nonlocal attempts
+        if path == entry:
+            attempts += 1
+            if denial_persists or attempts == 1:
+                raise denial
+        return read_bytes(path)
+
+    monkeypatch.setattr(Path, "read_bytes", read_during_publish)
+    if denial_persists:
+        with pytest.raises(PermissionError) as error:
+            cache.read("metadata", key)
+        assert error.value is denial
+    else:
+        assert cache.read("metadata", key) == payload
+        assert attempts == 2
 
 
 def test_fact_cache_read_preserves_facts_without_outer_reencoding(
@@ -671,10 +705,12 @@ def test_runtime_delivers_one_real_subject_cohort_with_cache_replay(
         ),
         signal_processing_profile=TEST_PROFILE,
     )
-    vendor_raw = install_runtime_raw(
+    # S2 has an acquired MS1 peak, but no declared local Discovery event.
+    source_without_cid = _FakeRaw((8.1,))
+    source_without_cid.scans = ()
+    opened = install_runtime_raws(
         monkeypatch,
-        source_raw=source_raw,
-        raw_path=raw_paths[0],
+        sources_by_path={raw_paths[0]: source_raw, raw_paths[1]: source_without_cid},
         tmp_path=tmp_path,
     )
     jobs = tuple(
@@ -730,16 +766,14 @@ def test_runtime_delivers_one_real_subject_cohort_with_cache_replay(
     assert s2_assessment.method_result is None
     assert not s2_assessment.evaluation_receipt.search_completed
     assert by_stem["S1"].adapter_result.strict_scan_count == 2
-    assert by_stem["S2"].adapter_result.acquisition is None
-    assert vendor_raw.chromatogram_request_counts == [2]
-    assert vendor_raw.disposed is True
+    (s2_peak,) = s2_assessment.candidate_peaks
+    assert s2_peak.integration.rt_apex_min == pytest.approx(8.1)
+    assert not s2_assessment.individual_support_refs
+    for path in raw_paths:
+        (vendor,) = opened[path]
+        assert vendor.chromatogram_request_counts == [1]
+        assert vendor.disposed is True
 
-    warm_vendor_raw = install_runtime_raw(
-        monkeypatch,
-        source_raw=source_raw,
-        raw_path=raw_paths[0],
-        tmp_path=tmp_path,
-    )
     warm_open_calls: list[Path] = []
     installed_warm_open = partition_workers.open_raw
 
@@ -764,12 +798,8 @@ def test_runtime_delivers_one_real_subject_cohort_with_cache_replay(
     assert tuple(map(serialize_acquired_trace, warm_s1.acquisition.traces)) == tuple(
         map(serialize_acquired_trace, by_stem["S1"].adapter_result.acquisition.traces)
     )
-    assert warm_vendor_raw.chromatogram_request_counts == []
-    assert warm_vendor_raw.disposed is False, (
-        warm_open_calls,
-        sorted(str(path) for path in (tmp_path / "runtime-cache").rglob("*.json")),
-        by_stem["S1"].backfill_attempt,
-        warm_by_stem["S1"].backfill_attempt,
+    assert (
+        warm_by_stem["S2"].adapter_result.assessment_input.assessment == s2_assessment
     )
     assert warm_open_calls == []
 
@@ -910,12 +940,13 @@ def test_runtime_recovers_from_single_scan_cid_nl_support_owners(
     if backfill_stop is not None:
         acquire = _FakeThermoRaw.GetChromatogramData
 
-        def stop_backfill(raw, *args, **kwargs):
-            if raw.source is source_raws[raw_paths[2]]:
+        def stop_backfill(raw, settings, start, end):
+            handles = opened.get(raw_paths[3], ())
+            if len(handles) > 1 and raw is handles[1]:
                 if cancel_accepted:
                     cancelled.set()
                 raise backfill_stop("backfill interrupted")
-            return acquire(raw, *args, **kwargs)
+            return acquire(raw, settings, start, end)
 
         monkeypatch.setattr(_FakeThermoRaw, "GetChromatogramData", stop_backfill)
 
@@ -946,22 +977,24 @@ def test_runtime_recovers_from_single_scan_cid_nl_support_owners(
         assert initial.technical_state == "not_evaluated"
         assert initial.method_result is None
         assert not initial.evaluation_receipt.search_completed
-    assert by_stem["Missing"].backfill_attempt is not None
-    assert by_stem["Missing"].backfill_input is not None
-    assert len(by_stem["Missing"].backfill_attempt.assessment.candidate_peaks) == 1
-    assert by_stem["NoPeak"].backfill_attempt is not None
-    assert by_stem["NoPeak"].backfill_input is None
-    assert len(by_stem["NoPeak"].backfill_attempt.assessment.candidate_peaks) == 0
+    missing = by_stem["Missing"]
+    (peak,) = missing.adapter_result.assessment_input.assessment.candidate_peaks
+    assert peak.integration.rt_apex_min == pytest.approx(8.0)
+    assert missing.backfill_attempt is None
+    no_peak = by_stem["NoPeak"]
+    assert not no_peak.adapter_result.assessment_input.assessment.candidate_peaks
+    assert no_peak.backfill_attempt is not None
+    assert no_peak.backfill_input is None
+    assert not no_peak.backfill_attempt.assessment.candidate_peaks
     assert by_stem["Blank"].backfill_attempt is None
-    assert raw_paths[4] not in opened
-    assert {
-        path: [vendor.chromatogram_request_counts for vendor in vendors]
-        for path, vendors in opened.items()
-    } == {
-        raw_paths[0]: [[2]],
-        raw_paths[1]: [[2]],
-        raw_paths[2]: [[2]],
-        raw_paths[3]: [[2]],
+    # Every sample reached full-LC acquisition. Only the genuinely empty,
+    # eligible sample required a second, bounded Backfill read.
+    assert {path.stem: len(handles) for path, handles in opened.items()} == {
+        "S1": 1,
+        "S2": 1,
+        "Missing": 1,
+        "NoPeak": 2,
+        "Blank": 1,
     }
     assert all(vendor.disposed for vendors in opened.values() for vendor in vendors)
 
@@ -1103,33 +1136,21 @@ def test_batch_candidate_selection_preserves_order_and_request_sample_membership
 
 
 @pytest.mark.parametrize("excluded", [False, True])
-def test_runtime_does_not_open_recovery_resource_when_owner_condition_is_false(
+def test_runtime_reads_seeded_regions_without_backfill_when_support_is_below_quorum(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     excluded: bool,
 ) -> None:
-    stems = ("Support", "Reject", "Empty")
+    stems = ("Support", "Empty")
     raw_paths = tuple(tmp_path / f"{stem}.synthetic" for stem in stems)
     for raw_path in raw_paths:
         raw_path.write_bytes(raw_path.stem.encode())
     settings = _settings()
-    source_raws = {path: _FakeRaw((8.0,)) for path in raw_paths}
-    support = _current_candidates(
-        source_raws[raw_paths[0]],
-        raw_file=raw_paths[0],
-        settings=settings,
-    )
-    reject = tuple(
-        _without_ms1_peak(candidate)
-        for candidate in _current_candidates(
-            source_raws[raw_paths[1]],
-            raw_file=raw_paths[1],
-            settings=settings,
-        )
-    )
+    source_raws = {raw_paths[0]: _FakeRaw((8.0,)), raw_paths[1]: _FakeRaw(())}
     peaks_by_sample = {
-        "Support": support,
-        "Reject": reject,
+        "Support": _current_candidates(
+            source_raws[raw_paths[0]], raw_file=raw_paths[0], settings=settings
+        ),
         "Empty": (),
     }
     subject = mint_untargeted_cid_nl_method_subject(
@@ -1167,14 +1188,6 @@ def test_runtime_does_not_open_recovery_resource_when_owner_condition_is_false(
         sources_by_path=source_raws,
         tmp_path=tmp_path,
     )
-    installed_open_raw = partition_workers.open_raw
-
-    def _reject_unused_open(path: Path, *args: object, **kwargs: object):
-        if path == raw_paths[2]:
-            raise AssertionError("owner-false recovery resource must not open RAW")
-        return installed_open_raw(path, *args, **kwargs)
-
-    monkeypatch.setattr(partition_workers, "open_raw", _reject_unused_open)
     jobs = tuple(
         UntargetedPartitionJob(
             processing_attempt_id=context.processing_attempt_id,
@@ -1201,13 +1214,19 @@ def test_runtime_does_not_open_recovery_resource_when_owner_condition_is_false(
         alignment_config=CID_NL_ALIGNMENT_CONFIG,
     )
 
-    assert result.succeeded is True
-    assert [
-        item.adapter_result.assessment_input.assessment.method_result
+    assert result.succeeded is True, result.failure
+    support, empty = (
+        item.adapter_result.assessment_input.assessment
         for item in result.sample_results
-    ] == ["SUPPORT", "REJECT", None]
-    assert raw_paths[2] not in opened
-    assert sum(len(vendors) for vendors in opened.values()) == 2
+    )
+    assert support.method_result == "SUPPORT"
+    assert empty.technical_state == "not_evaluated"
+    assert empty.method_result is None and not empty.candidate_peaks
+    assert all(item.backfill_attempt is None for item in result.sample_results)
+    for path in raw_paths:
+        (handle,) = opened[path]
+        assert handle.chromatogram_windows == [(1, len(source_raws[path].rt))]
+        assert handle.disposed
 
 
 def test_ms2_cache_preserves_precursor_metadata_and_reacquires_old_schema(tmp_path):

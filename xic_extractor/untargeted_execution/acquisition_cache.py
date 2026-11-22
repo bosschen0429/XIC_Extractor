@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import errno
 import hashlib
 import json
 import logging
@@ -13,6 +14,7 @@ import tempfile
 from collections.abc import Callable, Iterator, Sequence
 from dataclasses import asdict
 from pathlib import Path
+from time import sleep
 from typing import Any, Literal, cast
 
 import numpy as np
@@ -39,7 +41,7 @@ from xic_extractor.xic_models import XICRequest
 
 _CACHE_SCHEMA = "untargeted_raw_fact_cache"
 _MS2_SCHEMA = "untargeted_ms2_precursor_facts"
-_FactKind = Literal["metadata", "ms2", "xic"]
+_FactKind = Literal["metadata", "ms1", "ms2", "xic"]
 _NAME_HEX_DIGITS = 16
 _LOGGER = logging.getLogger(__name__)
 
@@ -108,7 +110,39 @@ class CachedUntargetedRaw:
     def ms1_centroid(
         self, rt: float, mz_min: float, mz_max: float
     ) -> tuple[float, float] | None:
-        return self._raw.ms1_centroid(rt, mz_min, mz_max)
+        key = _key_bytes(
+            "ms1_centroid", _float_text(rt), _float_text(mz_min), _float_text(mz_max)
+        )
+        cached = self._cache.read("ms1", key)
+        if cached is not None:
+            try:
+                value = json.loads(cached)
+                if value is None:
+                    return None
+                if not isinstance(value, list) or len(value) != 2:
+                    raise UntargetedAcquisitionCacheError("invalid cached MS1 centroid")
+                mz = _float(value[0], field="centroid m/z")
+                intensity = _float(value[1], field="centroid intensity")
+                if not mz_min <= mz <= mz_max:
+                    raise UntargetedAcquisitionCacheError(
+                        "cached MS1 centroid crossed its query window"
+                    )
+                return mz, intensity
+            except (
+                UnicodeDecodeError,
+                json.JSONDecodeError,
+                UntargetedAcquisitionCacheError,
+            ) as exc:
+                self._cache.reject("ms1", key, exc)
+        centroid = self._raw.ms1_centroid(rt, mz_min, mz_max)
+        self._cache.write(
+            "ms1",
+            key,
+            _canonical_json(
+                None if centroid is None else [_float_text(v) for v in centroid]
+            ),
+        )
+        return centroid
 
     def acquisition_rt_bounds(self) -> tuple[float, float]:
         key = _key_bytes("acquisition_rt_bounds")
@@ -274,10 +308,17 @@ class _FactCache:
 
     def read(self, kind: _FactKind, key: bytes) -> bytes | None:
         path = self._path(kind, key)
-        try:
-            payload = path.read_bytes()
-        except FileNotFoundError:
-            return None
+        for attempt in range(3):
+            try:
+                payload = path.read_bytes()
+                break
+            except FileNotFoundError:
+                return None
+            except PermissionError as exc:
+                # Concurrent publication can briefly deny a Windows reader.
+                if os.name != "nt" or exc.errno != errno.EACCES or attempt == 2:
+                    raise
+                sleep(0.005)
         try:
             envelope = json.loads(payload, object_pairs_hook=_unique_mapping)
             if not isinstance(envelope, dict) or set(envelope) != {
@@ -544,15 +585,15 @@ def _integer(value: object, *, field: str) -> int:
 
 def _float(value: object, *, field: str) -> float:
     if not isinstance(value, str):
-        raise UntargetedAcquisitionCacheError(f"cached MS2 {field} is not text")
+        raise UntargetedAcquisitionCacheError(f"cached {field} is not text")
     try:
         parsed = float.fromhex(value)
     except ValueError as exc:
         raise UntargetedAcquisitionCacheError(
-            f"cached MS2 {field} is not a hexadecimal float"
+            f"cached {field} is not a hexadecimal float"
         ) from exc
     if not math.isfinite(parsed) or parsed.hex() != value:
-        raise UntargetedAcquisitionCacheError(f"cached MS2 {field} is not canonical")
+        raise UntargetedAcquisitionCacheError(f"cached {field} is not canonical")
     return parsed
 
 

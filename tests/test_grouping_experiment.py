@@ -330,11 +330,11 @@ def test_application_outputs_formal_groups_with_an_optional_snapshot(
     assert len(groups) == 1
     assert inputs.sample_stems == ("S0", "S1", "S2", "S3")
     (group,) = groups
-    assert group.disposition == "provisional"
+    assert group.disposition == "established"
     assert {
         owner.sample_stem: owner.primary_identity_event is not None
         for owner in group.owners
-    } == {"S0": True, "S1": False, "S2": False, "S3": False}
+    } == {"S0": True, "S1": True, "S2": False, "S3": False}
     assert {owner.owner_id for owner in group.owners} == {
         row["owner_id"] for row in formal_members
     }
