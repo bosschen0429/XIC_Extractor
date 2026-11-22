@@ -78,6 +78,91 @@ def test_snapshot_from_the_previous_format_asks_for_a_new_capture(tmp_path, comp
     assert list(output.iterdir()) == []
 
 
+@pytest.mark.parametrize("repeat_equal_priority", (False, True))
+def test_equal_contexts_choose_the_landmark_by_curve(repeat_equal_priority):
+    from xic_extractor.alignment.peak_trajectories import _local_patterns
+    from xic_extractor.peak_detection.elution_context import (
+        ElutionLandmark,
+        SampleElutionContext,
+    )
+
+    owner = _owner("A", "one", apex_rt=9.0, precursor_mz=500.0)
+    first = SampleElutionContext(
+        "A",
+        500.0,
+        8.0,
+        11.0,
+        (ElutionLandmark(9.0, 100.0, 0.2),),
+        rt=(8.0, 11.0),
+        raw=(1.0, 0.0),
+    )
+    preferred = replace(
+        first, landmarks=(ElutionLandmark(9.0, 500.0, 0.2),), raw=(0.0, 1.0)
+    )
+    contexts = (
+        (first, replace(preferred, raw=first.raw), first)
+        if repeat_equal_priority
+        else (first, preferred)
+    )
+    nodes, _, owner_nodes, _ = _local_patterns(
+        (owner,), contexts, AlignmentConfig(), None
+    )
+    assert nodes[owner_nodes[owner.owner_id]].landmark.height == (
+        100.0 if repeat_equal_priority else 500.0
+    )
+
+
+def test_elution_landmarks_separate_rows_in_a_crowded_workset():
+    from xic_extractor.peak_detection.ms1_shape_identity import (
+        prepare_local_peak_shape,
+    )
+
+    owners = []
+    contexts = []
+    for sample, shift, selected in (
+        ("A", 0.0, 0),
+        ("B", 0.05, 1),
+        ("C", 0.6, 0),
+        ("D", 0.65, 1),
+    ):
+        owner = _owner(
+            sample,
+            str(selected),
+            apex_rt=9.0 + shift + 0.6 * selected,
+            precursor_mz=500.0,
+        )
+        assert owner.cross_sample_member_subject is not None
+        owners.append(
+            replace(
+                owner,
+                owner_id=owner.cross_sample_member_subject.subject_id,
+                peak_shape=prepare_local_peak_shape(
+                    [-0.3, -0.2, -0.1, 0, 0.1, 0.2, 0.3],
+                    [0, 0, 0.5, 1, 0.5, 0, 0],
+                    apex_rt_min=0,
+                ),
+            )
+        )
+        contexts.append(
+            resolved_elution_context(
+                sample, ((9.0 + shift, 100.0), (9.6 + shift, 100.0))
+            )
+        )
+    inputs = GroupingInputs(
+        sample_stems=("A", "B", "C", "D"),
+        injection_order={"A": 1, "B": 2, "C": 3, "D": 4},
+        alignment_config=AlignmentConfig(),
+        worksets=(
+            GroupingWorkset("crowded", tuple(owners), (), None, tuple(contexts)),
+        ),
+        candidate_ids_by_owner={},
+    )
+    assert {frozenset(group.owner_ids) for group in replay_grouping(inputs)} == {
+        frozenset((owners[0].owner_id, owners[2].owner_id)),
+        frozenset((owners[1].owner_id, owners[3].owner_id)),
+    }
+
+
 def _snapshot_grouping(
     plan, *, spool_directory, workers, alignment_config, known_istd_reference=None
 ):

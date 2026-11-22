@@ -367,17 +367,17 @@ Artifacts: `output/codex-rt1165-grouping-optimization/` in the #1165 worktree;
 
 `diagnostic_only` (#1165, 2026-11-17). Grouping-only execution writes its first
 computed groups, members and decisions directly. Replay capture is opt-in; no
-normal run reads and recomputes its own snapshot. Snapshot correctness is covered
-by focused round-trip tests when its producer or reader changes.
+normal run reads and recomputes its own snapshot.
 
 Snapshots store the formal objects, curves included (#1246, 2026-11-22). The
 grouping snapshot, as a level-1 gzip pickle: 8RAW (2,849 observations) 13.8 MB,
-0.9 s to write in a full run, 0.47 s to load; 85RAW (27,082 observations) 154.8 MB,
-about 5.0 s to write, 6.8 s to load. The hand-written curve-free JSON it replaced
-was 5.7 MB (3.17 s write, 0.55 s load) and 52.7 MB (5.5 s load). The 8RAW
-Backfill capture is 29 MB. Replays of all four stages were byte-identical to the
-JSON-era captures on 8RAW, single and two-batch. Single observations; not a
-timing acceptance claim.
+0.45 s to write, 0.4 s to load; 85RAW (27,082 observations) 154.8 MB, about 5.0 s
+to write, 6.8 s to load. The hand-written curve-free JSON it replaced was 5.7 MB
+(3.17 s write, 0.55 s load) and 52.7 MB (5.5 s load). Parallel regroup loads the
+whole snapshot in every worker: one 85RAW copy takes about 2.3 GB private memory,
+against 1.5 GB for the curve-free JSON. The 8RAW Backfill capture is 29 MB.
+Replays of all four stages were byte-identical to the JSON-era captures on 8RAW,
+single and two-batch. Single observations; not a timing acceptance claim.
 
 Reopen for changes to snapshot storage or grouping-only output.
 Artifacts: `output/i1246/` in the #1246 worktree.
