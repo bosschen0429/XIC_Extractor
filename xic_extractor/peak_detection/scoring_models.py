@@ -51,8 +51,6 @@ class ScoringContext:
     ms1_peak_group_trigger_scan_count: int | None = None
     ms1_peak_group_strict_nl_scan_count: int | None = None
     ms1_peak_group_strict_nl_event_count: int | None = None
-    outside_ms1_peak_group_trigger_scan_count: int | None = None
-    outside_ms1_peak_group_strict_nl_scan_count: int | None = None
     signal_quality: SignalQuality | None = None
     baseline_method: str = ""
 

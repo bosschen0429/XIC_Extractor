@@ -74,8 +74,6 @@ class ChemicalEvidenceFacts:
     ms1_peak_group_trigger_scan_count: int | None = None
     ms1_peak_group_strict_nl_scan_count: int | None = None
     ms1_peak_group_strict_nl_event_count: int | None = None
-    outside_ms1_peak_group_trigger_scan_count: int | None = None
-    outside_ms1_peak_group_strict_nl_scan_count: int | None = None
     alignment_source: str = ""
     acquisition_opportunity: AcquisitionOpportunity = "not_observed"
 
@@ -349,12 +347,6 @@ def _chemical_facts(ctx: ScoringContext) -> ChemicalEvidenceFacts:
         ms1_peak_group_trigger_scan_count=ctx.ms1_peak_group_trigger_scan_count,
         ms1_peak_group_strict_nl_scan_count=ctx.ms1_peak_group_strict_nl_scan_count,
         ms1_peak_group_strict_nl_event_count=ctx.ms1_peak_group_strict_nl_event_count,
-        outside_ms1_peak_group_trigger_scan_count=(
-            ctx.outside_ms1_peak_group_trigger_scan_count
-        ),
-        outside_ms1_peak_group_strict_nl_scan_count=(
-            ctx.outside_ms1_peak_group_strict_nl_scan_count
-        ),
         alignment_source=str(ctx.ms2_alignment_source or ""),
         acquisition_opportunity=(
             "not_required"

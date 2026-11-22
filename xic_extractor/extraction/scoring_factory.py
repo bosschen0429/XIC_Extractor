@@ -143,16 +143,6 @@ def build_scoring_context_factory(
                 if candidate_ms2 is not None
                 else None
             )
-            outside_ms1_peak_group_trigger_scan_count = (
-                candidate_ms2.outside_ms1_peak_group_trigger_scan_count
-                if candidate_ms2 is not None
-                else None
-            )
-            outside_ms1_peak_group_strict_nl_scan_count = (
-                candidate_ms2.outside_ms1_peak_group_strict_nl_scan_count
-                if candidate_ms2 is not None
-                else None
-            )
             half_width_ratio, width_min = ms1_morphology.compute_shape_metrics(
                 shape_rt,
                 shape_signal,
@@ -193,12 +183,6 @@ def build_scoring_context_factory(
                 ),
                 ms1_peak_group_strict_nl_event_count=(
                     ms1_peak_group_strict_nl_event_count
-                ),
-                outside_ms1_peak_group_trigger_scan_count=(
-                    outside_ms1_peak_group_trigger_scan_count
-                ),
-                outside_ms1_peak_group_strict_nl_scan_count=(
-                    outside_ms1_peak_group_strict_nl_scan_count
                 ),
                 signal_quality=candidate_signal_quality(
                     candidate,
