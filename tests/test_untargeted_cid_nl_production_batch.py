@@ -179,9 +179,8 @@ def test_sample_metadata_sets_matrix_order_and_backfill_eligibility(
 ) -> None:
     """Request sample metadata reaches Alignment planning unchanged.
 
-    Matrix columns follow the requested injection order. Backfill needs two eligible
-    direct supports; a blank or excluded Support2 leaves only Support1, and Hold,
-    without a Discovery peak, is then never read.
+    Matrix columns follow injection order. An MS1-only peak is measured in
+    every case, but a blank or excluded Support2 cannot vote to publish it.
     """
 
     stems = ("Support1", "Support2", "Hold")
@@ -237,6 +236,8 @@ def test_sample_metadata_sets_matrix_order_and_backfill_eligibility(
             for (_f, stem), cell in published_cells(output).items()
             if stem == "Hold"
         )
+        assert row["Support1"] != "" and row["Support2"] != ""
+        assert hold["source_candidate_id"] == ""
         outcomes[(role, excluded)] = (
             row["Hold"] != "",
             hold["status"],
@@ -244,9 +245,9 @@ def test_sample_metadata_sets_matrix_order_and_backfill_eligibility(
         )
 
     assert outcomes == {
-        ("sample", False): (True, "backfilled", True),
-        ("blank", False): (False, "not_searched", False),
-        ("sample", True): (False, "not_searched", False),
+        ("sample", False): (True, "ms1_only", True),
+        ("blank", False): (False, "unresolved", True),
+        ("sample", True): (False, "unresolved", True),
     }
 
 

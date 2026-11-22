@@ -121,6 +121,13 @@ that group.
   group and the local RT/mass request bound the workset.
 - A Backfill candidate does not add a direct SUPPORT vote.
 
+The same sample eligibility and direct-SUPPORT quorum gate the publication of
+an MS1-only group member found during initial acquisition. The peak can still
+be compared and assigned before this check. A member that fails the value
+gate remains observed but has an `unresolved` cell with no numeric value.
+This does not change direct CID-NL observations or the separate Backfill
+execution switch.
+
 ### Query RT versus group RT
 
 The frozen group center remains its reference/display coordinate, not an identity key.

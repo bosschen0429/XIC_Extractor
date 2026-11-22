@@ -603,7 +603,7 @@ def cell_origin(decision: ProductionCellDecision) -> CellOrigin | None:
     """
 
     evidence = cast(FinalGroupCellObservation, decision.evidence)
-    if evidence.ms1_only_group_observations:
+    if evidence.ms1_only_group_observations and decision.variant != "unresolved":
         return "ms1_only"
     if decision.value is not None:
         if evidence.direct_observations and not (

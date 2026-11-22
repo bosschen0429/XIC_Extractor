@@ -200,6 +200,7 @@ class WriterEvidence:
     """The ``FinalGroupCellObservation`` facts the Alignment writers read."""
 
     direct_observations: tuple[object, ...] = ()
+    ms1_only_group_observations: tuple[object, ...] = ()
     ms1_only_backfill_observations: tuple[object, ...] = ()
     method_assessments: tuple[object, ...] = ()
     direct_hypotheses: tuple[object, ...] = ()

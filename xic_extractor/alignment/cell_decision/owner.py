@@ -6,6 +6,9 @@ import math
 from dataclasses import dataclass, fields
 from typing import Literal, TypeAlias, cast
 
+from xic_extractor.alignment.backfill.conservative import (
+    samples_eligible_for_ms1_only_group_values,
+)
 from xic_extractor.alignment.cell_observation.observations import (
     FinalGroupCellObservation,
 )
@@ -161,11 +164,17 @@ def decide_group_cell_population(
         }
         for group in finalized_alignment.final_population
     }
+    ms1_only_eligible = samples_eligible_for_ms1_only_group_values(
+        finalized_alignment.final_population,
+        sample_population=finalized_alignment.canonical_samples,
+    )
     return {
         observation.key: _decide_group(
             observation,
             is_member=observation.sample_key
             in member_samples[observation.group_hypothesis_id],
+            ms1_only_eligible=observation.sample_key
+            in ms1_only_eligible.get(observation.group, ()),
         )
         for observation in finalized_alignment.cell_observations
     }
@@ -258,6 +267,7 @@ def _decide_group(
     observation: FinalGroupCellObservation,
     *,
     is_member: bool,
+    ms1_only_eligible: bool = False,
 ) -> tuple[CellDecisionPayload, IntegrationResult | None]:
     state = observation.evidence_state
     states = observation.evidence_states
@@ -270,6 +280,8 @@ def _decide_group(
                 raise CellDecisionContractError(
                     "Group numeric decision requires exactly one integration"
                 )
+            if "ms1_only_group_observation" in states and not ms1_only_eligible:
+                return NoWriteCellDecision("unresolved"), None
             integration = integrations[0]
             return _payload_from_integration(integration), integration
         if value_state_count > 1:

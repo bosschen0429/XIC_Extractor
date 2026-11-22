@@ -158,26 +158,19 @@ def mint_conservative_backfill_candidate_universe(
     )
 
 
-def plan_conservative_backfill_targets(
+def samples_eligible_for_ms1_only_group_values(
     groups: tuple[CrossSamplePeakGroupHypothesis, ...],
     *,
     sample_population: tuple[SampleMetadata, ...],
-) -> tuple[tuple[CrossSamplePeakGroupHypothesis, frozenset[str]], ...]:
-    """Plan missing-sample work from frozen direct-SUPPORT membership.
-
-    The acquisition caller supplies groups constructed only from direct SUPPORT
-    owners and a complete sample population. Scheduling needs their sample votes,
-    not a dense population of CellObservations or quantitation artifacts.
-    Final cell composition remains responsible for the output evidence. A
-    rejected group is no row, so it searches no missing sample.
-    """
+) -> dict[CrossSamplePeakGroupHypothesis, frozenset[str]]:
+    """Apply the direct SUPPORT quorum to eligibility without granting a value."""
     eligible_ids = frozenset(
         sample.sample_name
         for sample in sample_population
         if _sample_is_activation_eligible(sample)
     )
     minimum_support = minimum_direct_support_count(len(eligible_ids))
-    planned = []
+    validated = {}
     for group in groups:
         if group.disposition == "rejected":
             continue
@@ -188,8 +181,21 @@ def plan_conservative_backfill_targets(
             )
             if owner.primary_identity_event is not None and member is not None
         }
-        if len(support_ids & eligible_ids) < minimum_support:
-            continue
+        if len(support_ids & eligible_ids) >= minimum_support:
+            validated[group] = eligible_ids
+    return validated
+
+
+def plan_conservative_backfill_targets(
+    groups: tuple[CrossSamplePeakGroupHypothesis, ...],
+    *,
+    sample_population: tuple[SampleMetadata, ...],
+) -> tuple[tuple[CrossSamplePeakGroupHypothesis, frozenset[str]], ...]:
+    """Plan missing-sample work from frozen direct-SUPPORT membership."""
+    planned = []
+    for group, eligible_ids in samples_eligible_for_ms1_only_group_values(
+        groups, sample_population=sample_population
+    ).items():
         occupied = {member.sample_key for member in group.member_subjects}
         targets = eligible_ids - occupied
         if targets:

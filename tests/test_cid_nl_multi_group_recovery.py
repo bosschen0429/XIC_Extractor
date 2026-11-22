@@ -393,13 +393,13 @@ def test_backfill_query_and_empty_completion_keep_sample_rt_separate_from_group(
 
 
 @pytest.mark.parametrize(
-    "outcome", ["support", "empty", "below-quorum", "blank", "failed"]
+    "outcome", ["support", "empty", "below-quorum", "blank", "excluded", "failed"]
 )
 def test_rejected_discovery_input_cannot_supply_backfill_support(
     tmp_path, monkeypatch, outcome
 ):
-    """A Discovery peak held at peak level is not admitted to Alignment. Only an
-    authorized Backfill reads the rejected sample's RAW.
+    """A review-only Discovery candidate supplies no support; a new physical
+    observation may be measured but cannot bypass sample role or support quorum.
     """
     stems = ("S1", "S2", "Rejected")
     paths = raw_paths(tmp_path, stems)
@@ -410,19 +410,27 @@ def test_rejected_discovery_input_cannot_supply_backfill_support(
     assert not any(peak.admitted for peak in peaks["Rejected"])
     if outcome == "empty":
         raws["Rejected"].intensity[:] = 0.0
-    blank = {"blank": "Rejected", "below-quorum": "S2"}.get(outcome)
+    context_stem = {
+        "blank": "Rejected",
+        "excluded": "Rejected",
+        "below-quorum": "S2",
+    }.get(outcome)
     metadata = sample_metadata_for(
         stems,
         **(
             {
-                blank: SampleMetadata(
-                    sample_name=blank,
-                    raw_stem=blank,
-                    injection_order=stems.index(blank) + 1,
-                    sample_role="blank",
+                context_stem: SampleMetadata(
+                    sample_name=context_stem,
+                    raw_stem=context_stem,
+                    injection_order=stems.index(context_stem) + 1,
+                    sample_role="sample" if outcome == "excluded" else "blank",
+                    excluded=outcome == "excluded",
+                    exclusion_reason="operator exclusion"
+                    if outcome == "excluded"
+                    else "",
                 )
             }
-            if blank
+            if context_stem
             else {}
         ),
     )
@@ -457,16 +465,20 @@ def test_rejected_discovery_input_cannot_supply_backfill_support(
     assert not rejected_ids & {cell["source_candidate_id"] for cell in cells.values()}
     (rejected,) = (cell for (_f, stem), cell in cells.items() if stem == "Rejected")
     assert rejected["source_candidate_id"] == ""
+    (matrix_row,) = read_tsv(output / "alignment_matrix.tsv")
     if outcome == "support":
-        assert rejected["status"] == "backfilled"
+        assert rejected["status"] == "ms1_only"
         assert float(rejected["area"]) > 0
+        assert float(matrix_row["Rejected"]) == pytest.approx(
+            float(rejected["area"]), rel=1e-5
+        )
     elif outcome == "empty":
         assert rejected["status"] == "unavailable"
-        assert rejected["area"] == ""
+        assert rejected["area"] == matrix_row["Rejected"] == ""
     else:
-        assert rejected["status"] == "not_searched"
-        assert rejected["area"] == ""
-    assert ("Rejected" in opened) is (outcome in {"support", "empty"})
+        assert rejected["status"] == "unresolved"
+        assert rejected["area"] == matrix_row["Rejected"] == ""
+    assert "Rejected" in opened
 
 
 @pytest.mark.parametrize(
