@@ -412,8 +412,6 @@ def test_candidate_evidence_facts_preserve_gaussian15_ms1_peak_group_scope() -> 
         ms1_peak_group_trigger_scan_count=2,
         ms1_peak_group_strict_nl_scan_count=2,
         ms1_peak_group_strict_nl_event_count=1,
-        outside_ms1_peak_group_trigger_scan_count=1,
-        outside_ms1_peak_group_strict_nl_scan_count=1,
         signal_quality=SignalQuality(
             "available",
             noise_sigma=5.0,
@@ -430,8 +428,6 @@ def test_candidate_evidence_facts_preserve_gaussian15_ms1_peak_group_scope() -> 
     assert facts.chemical.ms1_peak_group_trigger_scan_count == 2
     assert facts.chemical.ms1_peak_group_strict_nl_scan_count == 2
     assert facts.chemical.ms1_peak_group_strict_nl_event_count == 1
-    assert facts.chemical.outside_ms1_peak_group_trigger_scan_count == 1
-    assert facts.chemical.outside_ms1_peak_group_strict_nl_scan_count == 1
 
 
 def test_candidate_facts_drive_semantics_and_projection_without_score_labels() -> None:

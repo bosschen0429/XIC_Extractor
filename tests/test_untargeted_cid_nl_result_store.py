@@ -108,7 +108,8 @@ def test_tuple_field_read_skips_header_and_other_fields_after_preservation(tmp_p
     )
     store.append("other", Payload((), method_assessments=(("other", -1),)))
     _restored_children.clear()
-    for reader in (store, open_preserved_results(store.preserve_failed_results())):
+    store.seal()
+    for reader in (store, open_preserved_results(store.preserve_results())):
         assert reader.read_tuple(0, "method_assessments") == expected
         assert reader.read_tuple(1, "method_assessments") == (("other", -1),)
         assert reader.read_tuple(0, "excluded_candidates") == ()
@@ -122,7 +123,8 @@ def test_header_field_read_skips_acquired_records_after_preservation(tmp_path):
     store.append("first", Payload((_ObservedChild(),), label="grouping-S1"))
     store.append("second", Payload((_ObservedChild(),), label="grouping-S2"))
     _restored_children.clear()
-    for reader in (store, open_preserved_results(store.preserve_failed_results())):
+    store.seal()
+    for reader in (store, open_preserved_results(store.preserve_results())):
         assert reader.read_header_field(0, "label") == "grouping-S1"
         assert reader.read_header_field(1, "label") == "grouping-S2"
         assert not _restored_children

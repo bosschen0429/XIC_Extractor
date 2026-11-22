@@ -201,7 +201,11 @@ class AnalysisJobs:
                 assert self._current is not None
                 self._current.update(
                     status="cancelled",
-                    error=str(exc) or "工作已停止。",
+                    error=(
+                        "工作已停止；已發布的結果保留。"
+                        if kind == "untargeted"
+                        else str(exc) or "工作已停止。"
+                    ),
                     finished_at=time.time(),
                 )
         except Exception as exc:

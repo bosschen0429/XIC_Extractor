@@ -155,8 +155,6 @@ class StreamedResultStore:
 
     This object owns every readable path and its metadata. Reads reuse the
     owned paths and record offsets without rescanning unchanged files.
-    A failure snapshot retains this private store for diagnostic replay; it
-    neither resumes a runtime attempt nor grants publication authority.
     """
 
     def __init__(
@@ -466,7 +464,7 @@ class StreamedResultStore:
             tuple(length for _, _, length in chunks), load_chunk, load_chunks
         )
 
-    def preserve_results(self, *, name: str = PRESERVED_INDEX_NAME) -> Path:
+    def preserve_results(self) -> Path:
         """Publish the sealed record index beside the partitions it addresses.
 
         The index carries the per-field record offsets and the shared owner
@@ -482,7 +480,7 @@ class StreamedResultStore:
             "field_lengths": self._field_lengths,
             "field_records": self._field_records,
         }
-        destination = self._directory / name
+        destination = self._directory / PRESERVED_INDEX_NAME
         temporary = destination.with_suffix(".tmp")
         if destination.exists():
             raise FileExistsError(destination)
@@ -495,18 +493,6 @@ class StreamedResultStore:
             temporary.unlink(missing_ok=True)
         self._field_caches.clear()
         return destination
-
-    def preserve_failed_results(self) -> Path | None:
-        """Retain sealed records and their shared references after a failure.
-
-        Only the already-written partitions are retained. The private snapshot
-        uses the same pickle codec and is read-only; it is not an external input
-        format or a completed workflow result.
-        """
-        if not self._partitions:
-            self.cleanup()
-            return None
-        return self.preserve_results(name="failed-results.pickle")
 
     def cleanup(self) -> None:
         """Remove private spool directory and release in-memory caches."""

@@ -2140,3 +2140,4 @@ def test_acquisition_cache_survives_a_failed_attempt(tmp_path, monkeypatch):
             execution=in_process_execution(),
         )
     assert (output_dir / ".cid_nl_acquisition_cache").is_dir()
+    assert not _spool_dirs(output_dir)

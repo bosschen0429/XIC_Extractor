@@ -101,8 +101,6 @@ class CandidateMS2Evidence:
     ms1_peak_group_trigger_scan_count: int | None = None
     ms1_peak_group_strict_nl_scan_count: int | None = None
     ms1_peak_group_strict_nl_event_count: int | None = None
-    outside_ms1_peak_group_trigger_scan_count: int | None = None
-    outside_ms1_peak_group_strict_nl_scan_count: int | None = None
     best_product_evidence: MS2ProductEvidence | None = None
 
     def __deepcopy__(self, memo: dict[int, object]) -> CandidateMS2Evidence:

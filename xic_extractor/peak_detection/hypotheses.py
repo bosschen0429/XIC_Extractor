@@ -74,8 +74,6 @@ class EvidenceVector:
     ms1_peak_group_trigger_scan_count: int | None = None
     ms1_peak_group_strict_nl_scan_count: int | None = None
     ms1_peak_group_strict_nl_event_count: int | None = None
-    outside_ms1_peak_group_trigger_scan_count: int | None = None
-    outside_ms1_peak_group_strict_nl_scan_count: int | None = None
     ms2_alignment_source: str = ""
     diagnostic_product_absence_reason: str = ""
     nearest_product_loss_ppm: float | None = None
@@ -436,16 +434,6 @@ def _evidence_from_candidate(
         ),
         ms1_peak_group_strict_nl_event_count=(
             evidence.ms1_peak_group_strict_nl_event_count
-            if evidence is not None
-            else None
-        ),
-        outside_ms1_peak_group_trigger_scan_count=(
-            evidence.outside_ms1_peak_group_trigger_scan_count
-            if evidence is not None
-            else None
-        ),
-        outside_ms1_peak_group_strict_nl_scan_count=(
-            evidence.outside_ms1_peak_group_strict_nl_scan_count
             if evidence is not None
             else None
         ),

@@ -828,7 +828,7 @@ def execute_untargeted_plan(
         mass_recalibration_by_sample=mass_recalibration_by_sample,
         project_child=project_child,
     )
-    completed_once = False
+    discard_default_cache = False
     try:
         result = PartitionPipelineScheduler.execute(
             adapter,
@@ -842,12 +842,16 @@ def execute_untargeted_plan(
             store_factory=StreamedResultStore,
             acquisition_cleanup=adapter.close_process_worker_pools,
         )
-        completed_once = True
+    except InterruptedError:
+        discard_default_cache = True
+        raise
+    else:
+        discard_default_cache = True
         return result
     finally:
         adapter.close_process_worker_pools()
         if (
-            completed_once
+            discard_default_cache
             and acquisition_cache_dir is None
             and not retain_acquisition_cache
         ):
