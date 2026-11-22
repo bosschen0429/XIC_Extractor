@@ -392,10 +392,7 @@ def discovery_raw_peak_components(
         acquired_intensity_values=raw,
     )
     peaks = enumeration.segments
-    valleys = tuple(
-        left.apex_index + int(np.argmin(raw[left.apex_index : right.apex_index + 1]))
-        for left, right in zip(peaks, peaks[1:], strict=False)
-    )
+    valleys = enumeration.component_cut_indices
     return tuple(
         RawPeakComponent(
             start_index=valleys[index - 1] if index else 0,

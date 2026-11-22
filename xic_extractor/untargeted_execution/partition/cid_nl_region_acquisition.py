@@ -240,7 +240,11 @@ def _measure_region(
     settings: DiscoverySettings,
     profile: SignalProcessingProfile,
 ) -> CidNlSampleRegion:
-    """Resolve aliases from acquired signal before attaching any CID-NL events."""
+    """Resolve signal aliases before attaching any CID-NL events.
+
+    A compact peak may have fewer hits than the partial-overlap test needs.
+    Identical selected scans of the same measured ion still observe one peak.
+    """
     coverage = []
     measured: list[RegionSegment] = []
     unavailable: list[RegionSegment] = []
@@ -291,7 +295,7 @@ def _measure_region(
             (measured if evaluation.state == "available" else unavailable).append(item)
 
     traces: dict[XICRequest, Trace] = {}
-    peaks: list[PeakObservation] = []
+    peaks: dict[tuple[str, tuple[float, ...], tuple[float, ...]], PeakObservation] = {}
     unlocalized_mass = []
     for same_ion in group_same_ion_peaks(measured):
         kept = same_ion[0]
@@ -309,17 +313,18 @@ def _measure_region(
                 source=__name__,
                 acquisition_source_id=acquisition_source.acquisition_source_id,
             )
-        peaks.extend(
-            mint_physical_peak_observations(
-                sample=sample,
-                trace=traces[request],
-                evaluations=(kept.evaluation,),
-                measured_mz=(mz,),
-                signal_processing_profile=profile,
-                resolver_mode=settings.resolver_mode,
-            )
+        (peak,) = mint_physical_peak_observations(
+            sample=sample,
+            trace=traces[request],
+            evaluations=(kept.evaluation,),
+            measured_mz=(mz,),
+            signal_processing_profile=profile,
+            resolver_mode=settings.resolver_mode,
         )
-    observations = tuple(sorted(peaks, key=lambda peak: peak.measured_order_key))
+        peaks.setdefault((peak.physical_peak_key, peak.rt, peak.intensity), peak)
+    observations = tuple(
+        sorted(peaks.values(), key=lambda peak: peak.measured_order_key)
+    )
     evidence, individual, ambiguous = attach_cid_nl_events(
         sample=sample,
         acquisition_source=acquisition_source,

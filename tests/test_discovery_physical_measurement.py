@@ -217,7 +217,7 @@ def test_pipeline_retains_each_seeded_physical_peak_from_one_rt_group(
     (
         ("discovery_normal_single_peak", (18.4,), 14067),
         ("discovery_same_peak_seeds", (38.2,), None),
-        ("discovery_true_double_peak", (), None),
+        ("discovery_true_double_peak", (15.255241,), 12327),
         ("discovery_non_peak_background", (), None),
     ),
 )
@@ -300,7 +300,11 @@ def test_discovery_retained_physical_peak_cardinality(
         assert {event.peak_id for event in result.attachments if event.peak_id} <= {
             peak.peak_id
         }
-    if fixture_name in {"discovery_true_double_peak", "discovery_non_peak_background"}:
+    if fixture_name == "discovery_true_double_peak":
+        assert {
+            item.event.scan_number for item in result.attachments if item.peak_id
+        } == {12327}
+    if fixture_name == "discovery_non_peak_background":
         assert all(not event.peak_id for event in result.attachments)
     if representative_scan is not None:
         assert [c.best_ms2_scan_id for c in valid] == [representative_scan]

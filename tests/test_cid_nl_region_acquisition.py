@@ -115,6 +115,36 @@ def _measurements(result):
     ]
 
 
+def test_exact_two_scan_alias_from_overlapping_windows_is_one_observation():
+    local = _scan_events("A", 302, 3.0, 499.995)
+    other = _scan_events("B", 800, 8.0, 500.005)
+    regions = plan_cid_nl_mass_regions((*local, *other), settings=SETTINGS)
+    raw = _Raw(((499.990, 13.0, 2.3e5), (500.011, 15.0, 1.7e5)))
+    shared_signal = np.zeros_like(raw.rt)
+    shared_signal[149:151] = [42_700, 72_500]
+    raw.ions.append((500.000, shared_signal))
+
+    (result,) = _capture("A", raw, regions, local)
+
+    assert len(result.coverage) == 2
+    assert [peak.mz for peak in result.peaks] == pytest.approx(
+        (500.000, 499.990, 500.011), abs=1e-6
+    )
+    assert [
+        (relation.dda_scan_number, relation.peak_observation.mz)
+        for relation in result.individual_relations
+    ] == [(302, pytest.approx(500.000, abs=1e-6))]
+    assert not result.ambiguous_relations
+    peak = result.peaks[0]
+    sources = [trace for batch in result.acquisitions for trace in batch.traces]
+    assert tuple(trace.coordinate.request.mz for trace in sources) == (499.995, 500.005)
+    for trace in sources:
+        rt = trace.trace.rt
+        selected = (rt >= peak.rt[0]) & (rt <= peak.rt[-1])
+        assert tuple(rt[selected]) == peak.rt
+        assert tuple(trace.trace.intensity[selected]) == peak.intensity
+
+
 def test_batch_seed_search_retains_local_competition_without_local_cid(monkeypatch):
     early = _scan_events("A", 301, 3.0, 500.000)
     late = _scan_events("A", 1301, 13.0, 499.995)
