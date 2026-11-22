@@ -289,7 +289,7 @@ Persisted and public exceptions retain their exact spelling:
 | Spelling | Why it remains |
 | --- | --- |
 | `preferred_rt_recovery` | Existing proposal-source label |
-| `owner_backfill_xic_backend`, `owner_backfill_window_strategy`, `owner_backfill_superwindow_span_factor`, `owner_backfill_min_detected_samples` | Existing timing-metric and diagnostic keys |
+| `owner_backfill_xic_backend`, `owner_backfill_window_strategy`, `owner_backfill_superwindow_span_factor` | Existing timing-metric and diagnostic keys |
 | `owner_backfill_evaluation_coverage` | Public run-output field |
 | `alignment_owner_backfill_*`, `owner_backfill_revisit`, `alignment.owner_backfill` | Existing artifact names, source labels, and timing stage |
 

@@ -28,8 +28,8 @@ from xic_extractor.configuration.execution_profile import (
     UntargetedExecutionPolicy,
     in_process_execution,
 )
-from xic_extractor.diagnostics.grouping_experiment_io import (
-    group_signature,
+from xic_extractor.diagnostics.grouping_experiment_io import group_signature
+from xic_extractor.diagnostics.stage_snapshot import (
     read_grouping_inputs,
     write_grouping_inputs,
 )
@@ -41,59 +41,69 @@ def _replay_without_execution(inputs, *, execution, **options):
     return replay_grouping(inputs, **options)
 
 
-def _snapshot_grouping(
-    plan, *, spool_directory, workers, alignment_config, known_istd_reference=None
-):
-    return execute_prepared_alignment(
-        plan,
-        output_dir=spool_directory,
-        execution=ExecutionProfile(alignment_workers=workers, backend="thread"),
-        alignment_config=alignment_config,
-        known_istd_reference=known_istd_reference,
-        grouping_only=True,
+def _two_sample_snapshot(path: Path) -> Path:
+    """Same apex; precursor masses 500.000 and 500.015 are 30 ppm apart."""
+    owners = []
+    for sample, mz in (("a", 500.0), ("b", 500.015)):
+        owner = _owner(sample, "peak", precursor_mz=mz)
+        assert owner.cross_sample_member_subject is not None
+        owners.append(
+            replace(owner, owner_id=owner.cross_sample_member_subject.subject_id)
+        )
+    write_grouping_inputs(
+        path,
+        GroupingInputs(
+            sample_stems=("a", "b"),
+            injection_order={"a": 1, "b": 2},
+            alignment_config=AlignmentConfig(),
+            worksets=(GroupingWorkset("channel", tuple(owners), (), None),),
+            candidate_ids_by_owner={},
+        ),
+        provenance={},
     )
+    return path
 
 
-def test_retained_snapshot_ignores_only_retired_alignment_keys(tmp_path):
-    inputs = GroupingInputs(
-        sample_stems=(),
-        injection_order={},
-        alignment_config=AlignmentConfig(),
-        worksets=(),
-        candidate_ids_by_owner={},
-    )
-    path = tmp_path / "legacy.json.gz"
-    write_grouping_inputs(path, inputs, provenance={})
+def _rewrite(path: Path, edit) -> None:
     with gzip.open(path, "rt", encoding="utf-8") as stream:
         payload = json.load(stream)
-    payload["alignment_config"].update(
-        duplicate_fold_ppm=5.0,
-        duplicate_fold_rt_sec=2.0,
-        duplicate_fold_product_ppm=10.0,
-        duplicate_fold_observed_loss_ppm=10.0,
-        duplicate_fold_min_detected_overlap=0.8,
-        duplicate_fold_min_shared_detected_count=3,
-        duplicate_fold_min_detected_jaccard=0.6,
-        duplicate_fold_min_present_overlap=0.8,
-        anchor_priorities=["HIGH"],
-        anchor_min_scan_support_score=0.5,
-        mz_bucket_neighbor_radius=2,
-        owner_window_overlap_fraction=0.5,
-        owner_tail_seed_guard_sec=30.0,
-        owner_tail_max_secondary_ratio=0.3,
-        owner_backfill_min_detected_samples=1,
-        identity_rt_candidate_window_sec=180.0,
-    )
+    edit(payload)
     with gzip.open(path, "wt", encoding="utf-8") as stream:
         json.dump(payload, stream)
-    restored, _ = read_grouping_inputs(path)
-    assert restored == inputs
 
-    payload["alignment_config"]["max_ppmm"] = 30.0
-    with gzip.open(path, "wt", encoding="utf-8") as stream:
-        json.dump(payload, stream)
-    with pytest.raises(TypeError, match="max_ppmm"):
-        read_grouping_inputs(path)
+
+def _inline_rt_model(payload):
+    """The layout before batch RT models were shared by index."""
+    for workset in payload["worksets"]:
+        workset.update(payload["rt_models"][workset.pop("rt_model_index")])
+    payload.pop("rt_models")
+
+
+@pytest.mark.parametrize(
+    "previous_format",
+    (
+        lambda path: path.write_bytes(json.dumps({"schema": "x"}).encode()),
+        lambda path: _rewrite(
+            path,
+            lambda payload: payload["alignment_config"].update(anchor_priorities=[]),
+        ),
+        lambda path: _rewrite(path, _inline_rt_model),
+    ),
+    ids=("uncompressed", "retired_config_key", "inline_rt_model"),
+)
+def test_snapshot_from_a_previous_format_asks_for_a_new_capture(
+    tmp_path, previous_format
+):
+    snapshot = _two_sample_snapshot(tmp_path / "grouping-inputs.json.gz")
+    previous_format(snapshot)
+    output = tmp_path / "replay"
+    output.mkdir()
+    with pytest.raises(SystemExit) as error:
+        main(["replay", "--inputs", str(snapshot), "--output-dir", str(output)])
+    assert error.value.code == 2
+    with pytest.raises(ValueError, match="capture it again"):
+        read_grouping_inputs(snapshot)
+    assert list(output.iterdir()) == []
 
 
 @pytest.mark.parametrize("repeat_equal_priority", (False, True))
@@ -165,10 +175,7 @@ def test_compact_snapshot_keeps_curve_tie_priority_and_distinct_anchor_bindings(
         )
 
 
-@pytest.mark.parametrize("saved_acquisition_window", [None, 1.0, 2.0])
-def test_snapshot_retains_elution_inputs_and_replays_separated_rows(
-    tmp_path, saved_acquisition_window
-):
+def test_snapshot_retains_elution_inputs_and_replays_separated_rows(tmp_path):
     owners = []
     contexts = []
     for sample, shift, selected in (
@@ -217,11 +224,6 @@ def test_snapshot_retains_elution_inputs_and_replays_separated_rows(
     write_grouping_inputs(path, inputs, provenance={"evidence": "synthetic"})
     with gzip.open(path, "rt", encoding="utf-8") as stream:
         payload = json.load(stream)
-    assert "backfill_half_window_min" not in payload
-    if saved_acquisition_window is not None:
-        payload["backfill_half_window_min"] = saved_acquisition_window
-        with gzip.open(path, "wt", encoding="utf-8") as stream:
-            json.dump(payload, stream)
     restored, _ = read_grouping_inputs(path)
     compact_contexts = tuple(
         replace(context, rt=(), raw=())
@@ -239,30 +241,18 @@ def test_snapshot_retains_elution_inputs_and_replays_separated_rows(
         frozenset(group.owner_ids) for group in replay_grouping(restored)
     } == expected
 
-    for workset in payload["worksets"]:
-        workset.update(payload["rt_models"][workset.pop("rt_model_index")])
-        workset["elution_contexts"] = [
-            payload["elution_contexts"][index]
-            for index in workset.pop("elution_context_indices")
-        ]
-    payload.pop("rt_models")
-    payload.pop("elution_contexts")
-    for item in payload["worksets"][0]["owners"]:
-        item["peak_shape"].pop("half_height_point_count")
-        item["peak_shape"].pop("edge_intensity_ratio")
-        item["identity_conflict"] = False
-        item["is_provisional"] = False
-    with gzip.open(path, "wt", encoding="utf-8") as stream:
-        json.dump(payload, stream)
-    legacy, _ = read_grouping_inputs(path)
-    assert {frozenset(group.owner_ids) for group in replay_grouping(legacy)} == expected
-    assert [owner.peak for owner in legacy.worksets[0].owners] == [
-        owner.peak for owner in restored.worksets[0].owners
-    ]
-    for owner in legacy.worksets[0].owners:
-        assert owner.peak_shape is not None
-        assert owner.peak_shape.half_height_point_count is None
-        assert owner.peak_shape.edge_intensity_ratio is None
+
+def _snapshot_grouping(
+    plan, *, spool_directory, workers, alignment_config, known_istd_reference=None
+):
+    return execute_prepared_alignment(
+        plan,
+        output_dir=spool_directory,
+        execution=ExecutionProfile(alignment_workers=workers, backend="thread"),
+        alignment_config=alignment_config,
+        known_istd_reference=known_istd_reference,
+        grouping_only=True,
+    )
 
 
 @pytest.mark.parametrize("raw_workers", [1, 4])
@@ -926,7 +916,7 @@ def test_calibrated_patterns_reject_shifted_decoys_without_merging_real_peaks(
 
 
 def test_replay_only_recomputes_when_grouping_inputs_change(tmp_path, monkeypatch):
-    snapshot = Path(__file__).parent / "fixtures" / "synthetic-grouping.json.gz"
+    snapshot = _two_sample_snapshot(tmp_path / "two-sample.json.gz")
     a, b = "a|hypothesis|peak", "b|hypothesis|peak"
     counted_replay = Mock(wraps=_replay_without_execution)
     monkeypatch.setattr(
@@ -1175,11 +1165,12 @@ def test_grouping_anchor_table_lists_istd_knots_without_any_workset(
 def test_regroup_cannot_overwrite_previous_results(tmp_path):
     from scripts.run_alignment import main
 
-    snapshot = Path(__file__).parent / "fixtures" / "synthetic-grouping.json.gz"
-    args = ["regroup", "--inputs", str(snapshot), "--output-dir", str(tmp_path)]
+    snapshot = _two_sample_snapshot(tmp_path / "two-sample.json.gz")
+    output = tmp_path / "replay"
+    args = ["regroup", "--inputs", str(snapshot), "--output-dir", str(output)]
     assert main(args) == 0
-    before = {p: p.read_bytes() for p in tmp_path.iterdir()}
+    before = {p: p.read_bytes() for p in output.iterdir()}
     with pytest.raises(SystemExit) as error:
         main([*args, "--set", "max_ppm=20", "--compare-to", str(tmp_path / "missing")])
     assert error.value.code == 2
-    assert before == {p: p.read_bytes() for p in tmp_path.iterdir()}
+    assert before == {p: p.read_bytes() for p in output.iterdir()}

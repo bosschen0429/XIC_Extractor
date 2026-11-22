@@ -118,16 +118,24 @@ first three flags below.
 | --- | --- | --- |
 | `regroup` | `--save-grouping-inputs` → `grouping-inputs.json.gz` | Initial groups, members and reassignments, after refitting batch RT calibration and drift from the retained anchors; `--compare-to <capture output dir>` keeps a variant to one replay when that capture ran the current grouping code |
 | `backfill` | `--save-backfill-inputs` → `backfill-inputs/` | `backfill-cells.tsv`: competing rows, sample, area, decision and status |
-| `pair-batches` | `--save-pairing-inputs` → one JSON per declared batch | `batch_correspondence.tsv`: partners, competitors and unpaired reasons; `summary.json`: reference and RT map diagnostics |
-| `matrix` | `--save-matrix-inputs` → `matrix-cells.json` and, for multiple batches, `matrix-join.json` | Only `alignment_matrix.tsv`, from the formal writer |
+| `pair-batches` | `--save-pairing-inputs` → one file per declared batch | `batch_correspondence.tsv`: partners, competitors and unpaired reasons; `summary.json`: reference and RT map diagnostics |
+| `matrix` | `--save-matrix-inputs` → `matrix-cells.pickle.gz` and, for multiple batches, `matrix-join.pickle.gz` | Only `alignment_matrix.tsv`, from the formal writer |
 
-**Try regrouping without RAW, a preset or a DLL.** The two fixture observations
-fit the original 50 ppm window; at 20 ppm, `members.tsv` shows two singletons
-and `changes.tsv` shows both reassignments. For real observations, substitute
-your captured snapshot. See the [grouping diagnostic](../../tools/diagnostics/grouping_experiment.py)
-for baseline comparisons and which RT model changes replay covers.
+The Backfill, pairing and Matrix inputs are the compressed pickle of the formal
+objects that stage consumes, so replay sees exactly what the full run handed it.
+The grouping input is JSON without chromatograms, because parallel regroup loads
+it in every worker. Each matches only the code that captured it, and a pickle
+runs code when loaded: replay captures you made yourself, and capture again
+after upstream code changes. A capture in an earlier format is rejected with a
+request to capture it again.
 
-    .venv\Scripts\python.exe -m scripts.run_alignment regroup --inputs tests/fixtures/synthetic-grouping.json.gz --set max_ppm=20 --output-dir output/regroup-smoke
+**Regroup without RAW, a preset or a DLL.** `--set` changes an `AlignmentConfig`
+value; `members.tsv` shows the new membership and `changes.tsv` the
+reassignments. See the
+[grouping diagnostic](../../tools/diagnostics/grouping_experiment.py) for
+baseline comparisons and which RT model changes replay covers.
+
+    .venv\Scripts\python.exe -m scripts.run_alignment regroup --inputs output/baseline/grouping-inputs.json.gz --set max_ppm=20 --output-dir output/regroup-trial
 
 **Replay Backfill or pairing independently.** These examples use captures in
 `output/baseline`. Only Backfill may read RAW: it reuses initial assessments
@@ -135,13 +143,10 @@ and grouping, not the measurements needed for new Backfill queries. Pairing
 accepts batches captured together or separately, in any order.
 
     .venv\Scripts\python.exe -m scripts.run_alignment backfill --inputs output/baseline/backfill-inputs --output-dir output/backfill-trial
-    .venv\Scripts\python.exe -m scripts.run_alignment pair-batches --inputs output/baseline/pairing-inputs/batch-1.json output/baseline/pairing-inputs/batch-2.json --output-dir output/pairing-trial
+    .venv\Scripts\python.exe -m scripts.run_alignment pair-batches --inputs output/baseline/pairing-inputs/batch-1.pickle.gz output/baseline/pairing-inputs/batch-2.pickle.gz --output-dir output/pairing-trial
 
-Keep the Backfill checkpoint at its original absolute path, under the same
-user. Its Python objects are not exchange files: replay verifies the bytes
-against a user-local receipt in `~/.xic-extractor/backfill-v1/` before decoding.
-Recapture if upstream inputs or stored models change. A digest-only receipt
-can replay Backfill but lacks the sample roster needed to export Matrix inputs.
+A Backfill capture is usable once its run completes and writes the sample
+roster beside the partitions.
 
 **After a Matrix writer edit, run only this command.** No RAW, grouping,
 Backfill or pair fitting is needed. For a single batch, omit `--pairing`
@@ -150,7 +155,7 @@ and a common canonical injection order. The inputs retain unrounded values,
 samples with no candidates, batch-qualified partners and fitted RT maps;
 old report TSVs cannot substitute for them.
 
-    .venv\Scripts\python.exe -m scripts.run_alignment matrix --backfill output/baseline/matrix-cells.json --pairing output/baseline/matrix-join.json --output-dir output/matrix-trial
+    .venv\Scripts\python.exe -m scripts.run_alignment matrix --backfill output/baseline/matrix-cells.pickle.gz --pairing output/baseline/matrix-join.pickle.gz --output-dir output/matrix-trial
 
 To render a changed Backfill or pairing result, use the cells exported by
 `backfill --save-matrix-inputs` or the join exported by `pair-batches`,
@@ -165,9 +170,6 @@ output directory.
 The live timing file is the heartbeat for interrupted runs; the final timing
 file is the completed history. Use `xic-performance-diagnosis` to interpret it.
 
-Treat a Backfill replay capture as executable, not as an ordinary report. Only
-a receipt from this user's successful local capture can authorize decoding the
-owner graph; a digest supplied by the input itself is not evidence of trust.
 On Windows the cache path budget is measured below the run directory: a
 141-character prefix plus a 48-character cache path leaves 70 of the 259
 usable characters for longer installations and batch names. Paths distribute

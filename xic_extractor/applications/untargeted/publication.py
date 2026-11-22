@@ -174,7 +174,7 @@ def publish_untargeted_outputs(
                 if batch_id
                 else lambda _: None,
             )
-            extra_tables[output_dir / "matrix-cells.json"] = lambda path: (
+            extra_tables[output_dir / "matrix-cells.pickle.gz"] = lambda path: (
                 save_matrix_cells(path, (source,))
             )
         write_completed_untargeted_outputs_atomic(
@@ -411,10 +411,10 @@ def publish_batch_untargeted_outputs(
             )
         }
         if save_matrix_inputs:
-            extra_tables[output_dir / "matrix-cells.json"] = lambda path: (
+            extra_tables[output_dir / "matrix-cells.pickle.gz"] = lambda path: (
                 save_matrix_cells(path, sources)
             )
-            extra_tables[output_dir / "matrix-join.json"] = lambda path: (
+            extra_tables[output_dir / "matrix-join.pickle.gz"] = lambda path: (
                 save_matrix_join(path, correspondence)
             )
         write_completed_untargeted_outputs_atomic(

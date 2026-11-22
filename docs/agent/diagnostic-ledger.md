@@ -367,19 +367,22 @@ Artifacts: `output/codex-rt1165-grouping-optimization/` in the #1165 worktree;
 
 `diagnostic_only` (#1165, 2026-11-17). Grouping-only execution writes its first
 computed groups, members and decisions directly. Replay capture is opt-in; no
-normal run reads and recomputes its own snapshot. Snapshot correctness is covered
-by focused round-trip tests when its producer or reader changes.
+normal run reads and recomputes its own snapshot.
 
-On the retained 8RAW inputs (871 groups, 2,681 observations), sharing batch models
-and curve-free elution contexts reduced the snapshot from 193,277,443 to 5,056,890
-bytes. Single observations: old load 25.41 s, compact write 3.88 s, compact load
-0.47 s. All five replay TSVs were byte-identical. A fresh cache-backed 8RAW run
-also matched the pre-change context-selection implementation in all five result
-tables; it wrote no snapshot and ran no diagnostic replay. This is not a new
-full85 timing or scientific acceptance claim.
+The grouping snapshot stays curve-free JSON; Backfill, pairing and Matrix
+snapshots store the formal objects (#1246, 2026-11-22). Parallel regroup loads
+the whole grouping snapshot in every worker. On 85RAW (27,082 observations, 11
+workers, the same `GroupingInputs`, process-tree private bytes sampled every
+0.5 s) the curve-free JSON peaked at 19.75 GB in 124 s; the formal objects,
+curves and source traces included, peaked at 29.9 GB in 136 s and filled the
+34 GB machine. As files, 8RAW (2,849 observations) was 5.7 MB as JSON against
+13.8 MB as a level-1 gzip pickle; 85RAW 52.7 MB against 154.8 MB. The 8RAW
+Backfill capture is 29 MB. Replays of all four stages were byte-identical to the
+earlier captures on 8RAW, single and two-batch. Single observations; not a
+timing acceptance claim.
 
-Reopen for changes to replay fields, context tie priority or grouping-only output.
-Artifacts: `output/codex-grouping-output/` in the #1165 worktree.
+Reopen for changes to snapshot storage or grouping-only output.
+Artifacts: `output/i1246/` in the #1246 worktree.
 
 ### Grouping time concentrates in dense windows
 

@@ -163,7 +163,7 @@ def test_regroup_preserves_overlap_disposition(tmp_path, all_overlap, expected):
         GroupingWorkset,
         replay_grouping,
     )
-    from xic_extractor.diagnostics.grouping_experiment_io import (
+    from xic_extractor.diagnostics.stage_snapshot import (
         read_grouping_inputs,
         write_grouping_inputs,
     )

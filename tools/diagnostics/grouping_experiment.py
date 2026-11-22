@@ -41,7 +41,6 @@ from xic_extractor.alignment.cross_sample.peak_groups import (
 )
 from xic_extractor.alignment.grouping_experiment import (
     GroupingInputs,
-    GroupingWorkset,
     refit_rt_models,
     replay_grouping,
 )
@@ -52,7 +51,6 @@ from xic_extractor.configuration.execution_profile import (
 )
 from xic_extractor.diagnostics.grouping_experiment_io import (
     query_discovery,
-    read_grouping_inputs,
     read_rt_calibration,
     write_grouping_result,
     write_json,
@@ -60,8 +58,8 @@ from xic_extractor.diagnostics.grouping_experiment_io import (
     write_rt_calibration,
     write_table,
 )
+from xic_extractor.diagnostics.stage_snapshot import read_grouping_inputs
 from xic_extractor.execution.workers import WorkerAdmissionPool
-from xic_extractor.rt_calibration_codec import rt_calibration_payload, rt_drift_payload
 
 
 def _range(value: str) -> tuple[float, float]:
@@ -332,7 +330,7 @@ def _replay_workset(
 
 
 def _rt_models_changed(frozen: GroupingInputs, refitted: GroupingInputs) -> bool:
-    """Compare each batch's models as the snapshot persists them."""
+    """Compare each batch's calibration and drift model once."""
     pairs = {
         (
             id(before.rt_calibration),
@@ -343,17 +341,9 @@ def _rt_models_changed(frozen: GroupingInputs, refitted: GroupingInputs) -> bool
         for before, after in zip(frozen.worksets, refitted.worksets, strict=True)
     }
     return any(
-        _rt_model_payload(before) != _rt_model_payload(after)
+        (before.rt_calibration, before.rt_drift)
+        != (after.rt_calibration, after.rt_drift)
         for before, after in pairs.values()
-    )
-
-
-def _rt_model_payload(workset: GroupingWorkset) -> tuple[object, object]:
-    return (
-        None
-        if workset.rt_calibration is None
-        else rt_calibration_payload(workset.rt_calibration),
-        None if workset.rt_drift is None else rt_drift_payload(workset.rt_drift),
     )
 
 
