@@ -12,6 +12,7 @@ injection order and the pooled-QC role.
 from __future__ import annotations
 
 import argparse
+import io
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
@@ -161,8 +162,11 @@ class Figures:
 
     def _save(self, fig, name: str) -> None:
         fig.text(0.01, 0.01, self.source, fontsize=8, color="#6b7280")
-        fig.savefig(self.output_dir / name, metadata={"Date": None})
+        buffer = io.StringIO()
+        fig.savefig(buffer, format="svg", metadata={"Date": None})
         plt.close(fig)
+        lines = (line.rstrip() for line in buffer.getvalue().splitlines())
+        (self.output_dir / name).write_bytes(("\n".join(lines) + "\n").encode())
 
     def residuals(self, anchor: DriftAnchor) -> None:
         """After the general map: an ordinary channel is flat, an anchor is not."""
@@ -203,7 +207,7 @@ class Figures:
                 else None,
             )
         ax.legend(loc="upper left", frameon=False)
-        for sample in self.qc:
+        for sample in sorted(self.qc):
             ax.axvline(self.order[sample], color=QC, alpha=0.35, linewidth=1, zorder=0)
         bar = fig.colorbar(matplotlib.cm.ScalarMappable(norm, cmap), ax=ax)
         bar.set_label("漂移錨點的 RT（min）")
@@ -257,7 +261,7 @@ class Figures:
         axes[0].set_ylabel("秒")
         fig.suptitle(
             f"m/z {self.mz[anchor.channel]:.2f}，約 {anchor.reference_rt_min:.1f} min："
-            f"散布 {_spread(seconds['measured']):.0f} 秒 → "
+            f"中間 90% 寬 {_spread(seconds['measured']):.0f} 秒 → "
             f"{_spread(seconds['error']):.0f} 秒（{len(samples)} 針）",
             fontsize=11,
         )

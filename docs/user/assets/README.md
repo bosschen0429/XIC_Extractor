@@ -25,8 +25,9 @@ Files used by the [user guides](../README.md) and the developer maps.
   .venv\Scripts\python.exe -m tools.rt_drift_guide_figures output/<run>/grouping-inputs.json.gz
   ```
 
-  `--output-dir` draws a user's own run elsewhere to explain one of its rows;
-  `--mz` picks the drift anchor to decompose.
+  To show the same figures for another single-batch run, pass its snapshot
+  and `--output-dir`; `--mz` picks the drift anchor to decompose (only drift
+  anchors can be decomposed).
 
 The SVG maps below are implementation responsibility maps linked from the
 [developer reading path](../../development/README.md). They are not embedded
