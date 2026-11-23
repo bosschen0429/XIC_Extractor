@@ -148,11 +148,20 @@ def serialize_acquired_trace(
     omits it here and supplies it again to ``deserialize_acquired_trace``.
     """
 
-    content = _acquired_trace_content(acquired_trace, with_capability=with_capability)
+    if not isinstance(acquired_trace, AcquiredTrace):
+        raise TypeError("acquired_trace must be an AcquiredTrace")
     return _canonical_json_bytes(
         {
             "schema_version": _ACQUIRED_TRACE_SCHEMA_VERSION,
-            **content,
+            "coordinate": _coordinate_content(
+                acquired_trace.coordinate, with_capability
+            ),
+            "trace": {
+                "rt": [_float_text(value) for value in acquired_trace.trace.rt],
+                "intensity": [
+                    _float_text(value) for value in acquired_trace.trace.intensity
+                ],
+            },
         }
     )
 
@@ -237,48 +246,40 @@ def deserialize_acquired_trace(
         ),
     )
     acquired = AcquiredTrace(coordinate=coordinate, trace=trace)
-    content = _acquired_trace_content(
-        acquired, with_capability="capability" in coordinate_value
-    )
+    # Each sample's hex spelling was checked while parsing; reuse it for the byte check.
     canonical = _canonical_json_bytes(
-        {"schema_version": _ACQUIRED_TRACE_SCHEMA_VERSION, **content}
+        {
+            "schema_version": _ACQUIRED_TRACE_SCHEMA_VERSION,
+            "coordinate": _coordinate_content(
+                coordinate, "capability" in coordinate_value
+            ),
+            "trace": {"rt": trace_value["rt"], "intensity": trace_value["intensity"]},
+        }
     )
     if canonical != raw:
         raise AcquisitionContractError("acquired trace payload is not canonical")
     return acquired
 
 
-def _acquired_trace_content(
-    acquired_trace: AcquiredTrace, *, with_capability: bool = True
+def _coordinate_content(
+    coordinate: TraceCoordinate, with_capability: bool
 ) -> dict[str, object]:
-    if not isinstance(acquired_trace, AcquiredTrace):
-        raise TypeError("acquired_trace must be an AcquiredTrace")
-    coordinate = acquired_trace.coordinate
     request = coordinate.request
-    capability = (
-        {"capability": _capability_content(coordinate.capability)}
-        if with_capability
-        else {}
-    )
     return {
-        "coordinate": {
-            **capability,
-            "request": {
-                "mz": _float_text(request.mz),
-                "rt_min": _float_text(request.rt_min),
-                "rt_max": _float_text(request.rt_max),
-                "ppm_tol": _float_text(request.ppm_tol),
-            },
-            "first_scan": coordinate.first_scan,
-            "last_scan": coordinate.last_scan,
-            "trace_point_count": coordinate.trace_point_count,
+        **(
+            {"capability": _capability_content(coordinate.capability)}
+            if with_capability
+            else {}
+        ),
+        "request": {
+            "mz": _float_text(request.mz),
+            "rt_min": _float_text(request.rt_min),
+            "rt_max": _float_text(request.rt_max),
+            "ppm_tol": _float_text(request.ppm_tol),
         },
-        "trace": {
-            "rt": [_float_text(value) for value in acquired_trace.trace.rt],
-            "intensity": [
-                _float_text(value) for value in acquired_trace.trace.intensity
-            ],
-        },
+        "first_scan": coordinate.first_scan,
+        "last_scan": coordinate.last_scan,
+        "trace_point_count": coordinate.trace_point_count,
     }
 
 

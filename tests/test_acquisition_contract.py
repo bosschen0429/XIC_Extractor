@@ -121,6 +121,7 @@ def test_acquired_trace_owner_roundtrip_closes_coordinate_request_and_content(
         lambda value: value["trace"]["intensity"].__setitem__(0, "0x0p+0"),
         lambda value: value["trace"]["intensity"].__setitem__(0, "nan"),
         lambda value: value["trace"]["intensity"].__setitem__(0, "inf"),
+        lambda value: value.update(trace=dict(reversed(value["trace"].items()))),
         lambda value: value["coordinate"].__setitem__("first_scan", 100.0),
     ],
 )

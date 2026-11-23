@@ -107,7 +107,7 @@ def parse_canonical_float_hex(
         number = float.fromhex(value)
     except ValueError as exc:
         raise error_factory(f"{field} must be canonical hexadecimal text") from exc
-    if not math.isfinite(number) or canonical_float_hex(number) != value:
+    if not math.isfinite(number) or (0.0 if number == 0.0 else number).hex() != value:
         raise error_factory(f"{field} must be canonical finite hexadecimal text")
     return number
 
