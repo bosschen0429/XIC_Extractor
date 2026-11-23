@@ -77,7 +77,6 @@ def _assert_jobs_match_direct_construction(batch) -> None:
             acquisition_source_expectation=context.acquisition_sources_by_sample[
                 sample.raw_stem
             ],
-            acquisition_cache_dir=batch.jobs[0].acquisition_cache_dir,
         )
         for sample in context.samples
         for subject in batch.subject_batch.subjects

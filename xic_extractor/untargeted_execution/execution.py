@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import importlib
-import shutil
 import threading
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import nullcontext
@@ -140,7 +139,6 @@ def materialize_untargeted_partition(
     plan: UntargetedInputPlan,
     subject_batch: UntargetedCidNlMethodSubjectBatch,
     *,
-    acquisition_cache_dir: Path | None = None,
     mass_recalibration_by_sample: Mapping[str, PreparedRawMassRecalibration]
     | None = None,
 ) -> UntargetedPartitionInputs:
@@ -176,7 +174,6 @@ def materialize_untargeted_partition(
                 ],
                 subject_partition=subject_batch,
                 support_candidates=support[stem],
-                acquisition_cache_dir=acquisition_cache_dir,
             )
         )
     jobs = []
@@ -185,7 +182,6 @@ def materialize_untargeted_partition(
     }
     for source_template in templates:
         template = copy(source_template)
-        object.__setattr__(template, "acquisition_cache_dir", acquisition_cache_dir)
         if mass_recalibration_by_sample:
             object.__setattr__(
                 template,
@@ -202,7 +198,6 @@ def materialize_untargeted_partition(
                 "work_unit_key",
                 f"untargeted-cid-nl:{template.sample.raw_stem}:{subject_id}",
             )
-            object.__setattr__(job, "acquisition_cache_dir", acquisition_cache_dir)
             jobs.append(job)
     return UntargetedPartitionInputs(
         subject_batch=subject_batch,
@@ -224,7 +219,6 @@ class UntargetedPartitionPipelineAdapter:
         known_istd_reference: KnownIstdReference | None = None,
         execution: ExecutionProfile,
         max_partition_jobs: int = 100_000,
-        acquisition_cache_dir: Path | None = None,
         retain_partition_spool: bool = False,
         grouping_only: bool = False,
         capture_grouping: Callable[[PreparedGroupingExperiment], None] | None = None,
@@ -255,7 +249,6 @@ class UntargetedPartitionPipelineAdapter:
         )
         self._max_partition_jobs = max_partition_jobs
         self._execution = execution
-        self._acquisition_cache_dir = acquisition_cache_dir
         self._mass_recalibration_by_sample = mass_recalibration_by_sample
 
         context = plan.context
@@ -427,7 +420,6 @@ class UntargetedPartitionPipelineAdapter:
         return materialize_untargeted_partition(
             self._plan,
             self._partition_subject_batches[partition.partition_key],
-            acquisition_cache_dir=self._acquisition_cache_dir,
             mass_recalibration_by_sample=self._mass_recalibration_by_sample,
         )
 
@@ -560,7 +552,6 @@ class UntargetedPartitionPipelineAdapter:
                 else materialize_untargeted_partition(
                     self._reference_plan,
                     reference_subjects,
-                    acquisition_cache_dir=self._acquisition_cache_dir,
                     mass_recalibration_by_sample=self._mass_recalibration_by_sample,
                 )
                 if reference_subjects.subjects
@@ -768,8 +759,6 @@ def execute_untargeted_plan(
     should_cancel: Callable[[], bool] | None = None,
     retain_partition_memory: bool = False,
     retain_partition_spool: bool = False,
-    retain_acquisition_cache: bool = False,
-    acquisition_cache_dir: Path | None = None,
     grouping_only: bool = False,
     capture_grouping: Callable[[PreparedGroupingExperiment], None] | None = None,
     capture_backfill: Callable[[FrozenBackfillPartition], None] | None = None,
@@ -789,18 +778,12 @@ def execute_untargeted_plan(
     ):
         raise ValueError("Grouping replay requires a scalar CID-NL preset")
 
-    cache_dir = (
-        Path(acquisition_cache_dir)
-        if acquisition_cache_dir is not None
-        else Path(output_dir) / ".cid_nl_acquisition_cache"
-    )
     adapter = UntargetedPartitionPipelineAdapter(
         plan,
         alignment_config=alignment_config,
         known_istd_reference=known_istd_reference,
         execution=execution,
         max_partition_jobs=max_partition_jobs,
-        acquisition_cache_dir=cache_dir,
         retain_partition_spool=retain_partition_spool,
         grouping_only=grouping_only,
         capture_grouping=capture_grouping,
@@ -808,9 +791,8 @@ def execute_untargeted_plan(
         mass_recalibration_by_sample=mass_recalibration_by_sample,
         project_child=project_child,
     )
-    discard_default_cache = False
     try:
-        result = PartitionPipelineScheduler.execute(
+        return PartitionPipelineScheduler.execute(
             adapter,
             phases=adapter.execution_phases(progress_callback=progress_callback),
             output_dir=output_dir,
@@ -822,20 +804,8 @@ def execute_untargeted_plan(
             store_factory=StreamedResultStore,
             acquisition_cleanup=adapter.close_process_worker_pools,
         )
-    except InterruptedError:
-        discard_default_cache = True
-        raise
-    else:
-        discard_default_cache = True
-        return result
     finally:
         adapter.close_process_worker_pools()
-        if (
-            discard_default_cache
-            and acquisition_cache_dir is None
-            and not retain_acquisition_cache
-        ):
-            shutil.rmtree(cache_dir, ignore_errors=True)
 
 
 def _shared_objects(plan: UntargetedInputPlan) -> tuple[object, ...]:

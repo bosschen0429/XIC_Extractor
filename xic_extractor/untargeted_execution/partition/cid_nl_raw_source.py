@@ -12,7 +12,6 @@ import numpy as np
 from xic_extractor.acquisition.ms2_windows import MS2ScanSource
 from xic_extractor.acquisition_contract import (
     AcquiredTrace,
-    BatchXICAdapter,
     TraceAcquisitionBatch,
 )
 from xic_extractor.discovery.models import DiscoveryEvent
@@ -20,6 +19,7 @@ from xic_extractor.discovery.ms2_events import discovery_events_from_scan
 from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.mass_accuracy import within_ppm
 from xic_extractor.precursor_evidence import MS1MassWindowSource
+from xic_extractor.raw_superwindow_source import ScanResolvedXICSource
 
 _ADAPTER_NAMESPACE = "xic_extractor.untargeted_cid_nl_real_data_adapter"
 
@@ -29,7 +29,7 @@ class CidNlAcquisitionError(ValueError):
 
 
 class CidNlRawSource(
-    BatchXICAdapter,
+    ScanResolvedXICSource,
     MS2ScanSource,
     MS1MassWindowSource,
     Protocol,

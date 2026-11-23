@@ -16,6 +16,7 @@ from xic_extractor.acquisition_contract import (
     AcquiredTrace,
     TraceAcquisitionBatch,
     TraceAcquisitionCapability,
+    acquire_trace_batch,
     mint_trace_acquisition_capability,
 )
 from xic_extractor.configuration.signal_processing_profile import (
@@ -59,17 +60,18 @@ from xic_extractor.peak_detection.physical_peak_population import (
 )
 from xic_extractor.peak_detection.traces import Trace, trace_from_xic_request
 from xic_extractor.processing_identity import AcquisitionSourceIdentity
-from xic_extractor.sample_metadata import SampleMetadata
-from xic_extractor.untargeted_execution.acquisition_cache import (
-    acquire_untargeted_trace_batch,
+from xic_extractor.raw_superwindow_source import (
+    RawSuperWindowSource,
+    ScanResolvedXICSource,
 )
+from xic_extractor.sample_metadata import SampleMetadata
 from xic_extractor.untargeted_execution.partition.cid_nl_discovery_evidence import (
     discovery_scan_evidence,
 )
 from xic_extractor.xic_models import XICRequest
 
 
-class RegionRawSource(Protocol):
+class RegionRawSource(ScanResolvedXICSource, Protocol):
     def acquisition_rt_bounds(self) -> tuple[float, float]: ...
 
     def ms1_centroid(
@@ -259,7 +261,7 @@ def _acquire_regions(
     for start in range(0, len(requests), PHYSICAL_CAPTURE_BATCH_MAX_REQUESTS):
         chunk = requests[start : start + PHYSICAL_CAPTURE_BATCH_MAX_REQUESTS]
         try:
-            batch = acquire_untargeted_trace_batch(capability, chunk, raw)
+            batch = acquire_trace_batch(capability, chunk, RawSuperWindowSource(raw))
         except InterruptedError:
             raise
         except Exception as exc:

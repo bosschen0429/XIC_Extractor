@@ -12,6 +12,7 @@ Backfill query follows each sample's own RT rather than the group centre.
 """
 
 from dataclasses import replace
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -548,12 +549,10 @@ def test_backfill_recovers_every_authorized_rt_group(
         )
 
 
-def _shared_peak_scenario(tmp_path, mz_separation_ppm, *, observed=("S1", "S2")):
+def _shared_peak_raws(mz_separation_ppm, observed=("S1", "S2")):
     """Two groups 0.12 min apart; Missing has one MS1 peak between them."""
     centers = {**dict.fromkeys(observed, (8.0, 8.12)), "Missing": (8.06,)}
-    settings = replace(SETTINGS, neutral_loss_profile=None, rt_max=8.6)
-    paths = raw_paths(tmp_path, tuple(centers))
-    raws, peaks = {}, {}
+    raws = {}
     for index, stem in enumerate(centers, start=1):
         raw = _gaussian_raw(
             centers[stem],
@@ -575,6 +574,15 @@ def _shared_peak_scenario(tmp_path, mz_separation_ppm, *, observed=("S1", "S2"))
             )
         )
         raws[stem] = raw
+    return raws
+
+
+def _shared_peak_scenario(tmp_path, mz_separation_ppm, *, observed=("S1", "S2")):
+    settings = replace(SETTINGS, neutral_loss_profile=None, rt_max=8.6)
+    raws = _shared_peak_raws(mz_separation_ppm, observed)
+    paths = raw_paths(tmp_path, tuple(raws))
+    peaks = {}
+    for stem, raw in raws.items():
         discovered = discover(raw, paths[stem], settings)
         peaks[stem] = (
             discovered
@@ -880,19 +888,22 @@ def _shared_peak_inputs(
     )
 
 
-def _run_cached_backfill_cli(directory, output):
-    """Run in a fresh interpreter: the fixture supplies RAW facts, not a DLL."""
+def _run_backfill_cli(root, directory, output):
+    """Run in a fresh interpreter, rereading the fixture's synthetic RAWs."""
     from scripts.run_alignment import main
-    from xic_extractor.untargeted_execution.partition import execution as phases
     from xic_extractor.untargeted_execution.partition import workers
 
-    def forbidden(*args, **kwargs):
-        raise AssertionError("Replay opened a RAW")
-
+    root = Path(root)
+    raws = _shared_peak_raws(0.0)
     with pytest.MonkeyPatch.context() as patch:
-        patch.setattr(phases, "ensure_assemblies_loaded", lambda *_: None)
         patch.setattr(workers, "ensure_assemblies_loaded", lambda *_: None)
-        patch.setattr(workers, "open_raw", forbidden)
+        install_runtime_raws(
+            patch,
+            sources_by_path={
+                root / "raw" / f"{stem}.raw": raw for stem, raw in raws.items()
+            },
+            tmp_path=root,
+        )
         return main(["backfill", "--inputs", directory, "--output-dir", output])
 
 
@@ -924,8 +935,7 @@ def _backfill_request(tmp_path, options, config):
         output_dir=tmp_path / "grouping",
         discovery_settings=options["settings"],
         execution=UntargetedExecutionPolicy(
-            profile=ExecutionProfile(alignment_workers=1, backend="thread"),
-            acquisition_cache_dir=tmp_path / "raw-facts",
+            profile=ExecutionProfile(alignment_workers=1, backend="thread")
         ),
     )
 
@@ -970,9 +980,6 @@ def test_full_alignment_captures_competing_rows_and_single_batch_matrix(
         replace(
             request,
             output_dir=control_dir,
-            execution=replace(
-                request.execution, acquisition_cache_dir=tmp_path / "control-facts"
-            ),
             publication=UntargetedPublicationPolicy(emit_alignment_cells=True),
         )
     )
@@ -1036,7 +1043,8 @@ def test_full_alignment_captures_competing_rows_and_single_batch_matrix(
             sys.executable,
             "-c",
             "import sys; from tests.test_cid_nl_multi_group_recovery import "
-            "_run_cached_backfill_cli as run; sys.exit(run(*sys.argv[1:]))",
+            "_run_backfill_cli as run; sys.exit(run(*sys.argv[1:]))",
+            str(tmp_path),
             str(directory),
             str(backfilled),
         ],

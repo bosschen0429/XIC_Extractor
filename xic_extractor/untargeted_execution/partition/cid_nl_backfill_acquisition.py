@@ -13,6 +13,7 @@ from xic_extractor.acquisition_contract import (
     NATIVE_SCAN_COORDINATE_KIND,
     AcquiredTrace,
     TraceAcquisitionBatch,
+    acquire_trace_batch,
     mint_trace_acquisition_capability,
 )
 from xic_extractor.alignment.backfill.cid_nl_planning import CidNlBackfillQuestion
@@ -64,10 +65,8 @@ from xic_extractor.peak_detection.physical_peak_models import (
 )
 from xic_extractor.peak_detection.traces import Trace, trace_from_xic_request
 from xic_extractor.processing_identity import AcquisitionSourceIdentity
+from xic_extractor.raw_superwindow_source import RawSuperWindowSource
 from xic_extractor.sample_metadata import SampleMetadata
-from xic_extractor.untargeted_execution.acquisition_cache import (
-    acquire_untargeted_trace_batch,
-)
 from xic_extractor.untargeted_execution.partition.cid_nl_raw_source import (
     _ADAPTER_NAMESPACE,
     CidNlAcquisitionError,
@@ -319,7 +318,7 @@ def acquire_untargeted_cid_nl_backfill_trace_batch(
         adapter_namespace=f"{_ADAPTER_NAMESPACE}.backfill_batch",
     )
     acquisition = _freeze_acquisition(
-        acquire_untargeted_trace_batch(capability, tuple(unique), raw)
+        acquire_trace_batch(capability, tuple(unique), RawSuperWindowSource(raw))
     )
     return UntargetedCidNlBackfillTraceBatch(
         sample_key=sample.sample_name,
@@ -404,10 +403,8 @@ def backfill_untargeted_cid_nl_sample_subject(
             adapter_namespace=f"{_ADAPTER_NAMESPACE}.backfill",
         )
         acquisition = _freeze_acquisition(
-            acquire_untargeted_trace_batch(
-                capability,
-                (request, context_request),
-                raw,
+            acquire_trace_batch(
+                capability, (request, context_request), RawSuperWindowSource(raw)
             )
         )
         acquired = acquisition.traces[0]

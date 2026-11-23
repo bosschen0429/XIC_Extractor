@@ -424,16 +424,16 @@ def test_intersection_rechecks_an_observed_peak_outside_the_discovery_window(
     assert local_losses == tuple(
         round(scan.precursor_mz - float(scan.masses[0]), 4) for scan in late.scans
     )
-    from xic_extractor.untargeted_execution.acquisition_cache import CachedUntargetedRaw
+    from xic_extractor.raw_reader import RawFileHandle
 
     method_windows = []
-    acquire_ms2 = CachedUntargetedRaw.iter_ms2_scans
+    acquire_ms2 = RawFileHandle.iter_ms2_scans
 
     def trace_method_window(raw, rt_min, rt_max):
         method_windows.append((raw.acquisition_source, rt_min, rt_max))
         yield from acquire_ms2(raw, rt_min, rt_max)
 
-    monkeypatch.setattr(CachedUntargetedRaw, "iter_ms2_scans", trace_method_window)
+    monkeypatch.setattr(RawFileHandle, "iter_ms2_scans", trace_method_window)
     out = tmp_path / "alignment"
     run_untargeted_application(
         UntargetedRequest(

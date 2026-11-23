@@ -24,11 +24,6 @@ from xic_extractor.peak_detection.cid_nl_peak_support_models import (
     DdaCidNlPeakSupportPolicy,
 )
 from xic_extractor.raw_reader import RawFileHandle, ensure_assemblies_loaded, open_raw
-from xic_extractor.raw_source_binding import bind_expected_path_identity
-from xic_extractor.untargeted_execution.acquisition_cache import (
-    CachedUntargetedRaw,
-    bind_untargeted_acquisition_cache,
-)
 from xic_extractor.untargeted_execution.partition import (
     cid_nl_backfill_acquisition,
 )
@@ -152,38 +147,15 @@ class _BatchSamplePhaseState:
         )
 
 
-def _open_job_raw(
-    job: UntargetedPartitionJob,
-) -> RawFileHandle | CachedUntargetedRaw:
-    active_open = open_raw
+def _open_job_raw(job: UntargetedPartitionJob) -> RawFileHandle:
     expectation = job.acquisition_source_expectation
-    source = expectation.source
-
-    mass_recalibration = job.settings.mass_recalibration
-
-    def open_native():
-        return active_open(
-            job.raw_path,
-            job.dll_dir,
-            mass_recalibration=mass_recalibration,
-            expected_acquisition_source=source,
-            _expected_path_identity=expectation.path_identity,
-            prepared_mass_recalibration=job.prepared_mass_recalibration,
-        )
-
-    if job.acquisition_cache_dir is not None:
-        bind_expected_path_identity(job.raw_path, source, expectation.path_identity)
-        return CachedUntargetedRaw(
-            open_native,
-            source=source,
-            cache_dir=job.acquisition_cache_dir,
-            mass_recalibration=mass_recalibration,
-        )
-    raw = open_native()
-    return bind_untargeted_acquisition_cache(
-        raw,
-        source=source,
-        cache_dir=job.acquisition_cache_dir,
+    return open_raw(
+        job.raw_path,
+        job.dll_dir,
+        mass_recalibration=job.settings.mass_recalibration,
+        expected_acquisition_source=expectation.source,
+        _expected_path_identity=expectation.path_identity,
+        prepared_mass_recalibration=job.prepared_mass_recalibration,
     )
 
 

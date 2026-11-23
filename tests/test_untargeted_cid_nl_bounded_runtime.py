@@ -709,14 +709,12 @@ def test_bounded_partition_real_entry_mints_interleaved_worksets_canonically(
         _plan,
         subject_batch,
         *,
-        acquisition_cache_dir=None,
         mass_recalibration_by_sample=None,
     ):
         captured_batches.append(subject_batch)
         return original_materialize_partition(
             _plan,
             subject_batch,
-            acquisition_cache_dir=acquisition_cache_dir,
             mass_recalibration_by_sample=mass_recalibration_by_sample,
         )
 
@@ -772,20 +770,11 @@ def test_bounded_partition_real_entry_mints_interleaved_worksets_canonically(
     } == {subject.method_subject_id for subject in subjects}
 
 
-def test_failed_attempt_retry_reuses_completed_raw_facts_and_recomposes(
+def test_failed_attempt_retry_recomposes_the_same_result(
     tmp_path: Path, monkeypatch
 ) -> None:
     import xic_extractor.untargeted_execution.execution as owner
 
-    ms2_reads: dict[int, int] = {}
-    original_filter = _FakeThermoRaw.GetFilterForScanNumber
-
-    def count_filter(vendor, scan_number):
-        key = id(vendor)
-        ms2_reads[key] = ms2_reads.get(key, 0) + 1
-        return original_filter(vendor, scan_number)
-
-    monkeypatch.setattr(_FakeThermoRaw, "GetFilterForScanNumber", count_filter)
     baseline_plan, _ = _plan(tmp_path, monkeypatch)
     baseline = owner.execute_untargeted_plan(
         baseline_plan,
@@ -798,8 +787,7 @@ def test_failed_attempt_retry_reuses_completed_raw_facts_and_recomposes(
         project_child=project_composed_child,
     )
     baseline_writer = baseline.application_result
-    opened_runs = []
-    plan, _ = _plan(tmp_path, monkeypatch, opened_sink=opened_runs)
+    plan, _ = _plan(tmp_path, monkeypatch)
     output_dir = tmp_path / "retry-output"
     original_append = owner.StreamedResultStore.append_child_outputs
     append_calls = 0
@@ -828,7 +816,7 @@ def test_failed_attempt_retry_reuses_completed_raw_facts_and_recomposes(
     monkeypatch.setattr(
         owner.StreamedResultStore, "append_child_outputs", original_append
     )
-    retry_plan, _ = _plan(tmp_path, monkeypatch, opened_sink=opened_runs)
+    retry_plan, _ = _plan(tmp_path, monkeypatch)
     completed = owner.execute_untargeted_plan(
         retry_plan,
         output_dir=output_dir,
@@ -869,20 +857,6 @@ def test_failed_attempt_retry_reuses_completed_raw_facts_and_recomposes(
     assert {
         sample.raw_stem for sample in completed.application_result.canonical_samples
     } == {path.stem for path in retry_plan.context.raw_paths_by_sample.values()}
-
-    retry_vendors = tuple(
-        vendor for vendors in opened_runs[1].values() for vendor in vendors
-    )
-    failed_vendors = tuple(
-        vendor for vendors in opened_runs[0].values() for vendor in vendors
-    )
-    failed_queries = sum(
-        sum(vendor.chromatogram_request_counts) for vendor in failed_vendors
-    )
-    retry_queries = sum(
-        sum(vendor.chromatogram_request_counts) for vendor in retry_vendors
-    )
-    assert retry_queries < failed_queries
 
 
 def test_partition_acquisitions_overlap_with_shared_worker_budget_and_ordered_output(
@@ -2012,53 +1986,7 @@ def test_result_store_close_failure_is_reported_once(tmp_path, monkeypatch, reta
             original_close(calls[0])
 
 
-def _run_for_cache(tmp_path, monkeypatch, *, retain, tag, shared=None):
-    from xic_extractor.untargeted_execution.execution import (
-        execute_untargeted_plan,
-    )
-
-    plan, reference = _plan(tmp_path, monkeypatch)
-    output_dir = tmp_path / tag
-    result = execute_untargeted_plan(
-        plan,
-        output_dir=output_dir,
-        alignment_config=AlignmentConfig(anchor_min_seed_events=1),
-        known_istd_reference=reference,
-        max_partition_jobs=len(plan.context.samples),
-        retain_acquisition_cache=retain,
-        acquisition_cache_dir=shared,
-        project_child=project_composed_child,
-        execution=in_process_execution(),
-    )
-    result.close()
-    return output_dir / ".cid_nl_acquisition_cache"
-
-
-def test_acquisition_cache_is_released_after_a_successful_run(tmp_path, monkeypatch):
-    """A one-shot run leaves no cache behind; it only accelerates acquisition."""
-    cache = _run_for_cache(tmp_path, monkeypatch, retain=False, tag="released")
-    assert not cache.exists()
-
-
-def test_acquisition_cache_is_kept_when_asked(tmp_path, monkeypatch):
-    """Repeated development runs can keep it and skip rereading every RAW."""
-    cache = _run_for_cache(tmp_path, monkeypatch, retain=True, tag="retained")
-    assert cache.is_dir()
-
-
-def test_a_shared_acquisition_cache_outlives_the_run(tmp_path, monkeypatch):
-    """Runs into new output directories reuse one cache, e.g. on a fast disk."""
-    shared = tmp_path / "ssd-cache"
-    own = _run_for_cache(
-        tmp_path, monkeypatch, retain=False, tag="shared", shared=shared
-    )
-    entries = sorted(path for path in shared.rglob("*.json"))
-    assert entries
-    assert not own.exists()
-
-
-def test_acquisition_cache_survives_a_failed_attempt(tmp_path, monkeypatch):
-    """A retry allowed by the marker must not have to reread every RAW file."""
+def test_a_failed_attempt_leaves_no_partition_spool(tmp_path, monkeypatch):
     import xic_extractor.untargeted_execution.execution as bounded_owner
 
     plan, _ = _plan(tmp_path, monkeypatch)
@@ -2084,5 +2012,4 @@ def test_acquisition_cache_survives_a_failed_attempt(tmp_path, monkeypatch):
             project_child=project_composed_child,
             execution=in_process_execution(),
         )
-    assert (output_dir / ".cid_nl_acquisition_cache").is_dir()
     assert not _spool_dirs(output_dir)

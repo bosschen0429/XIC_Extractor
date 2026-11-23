@@ -173,9 +173,7 @@ def entry_scenario(tmp_path, scenario, sample_count=4):
     )
 
 
-def _plan(
-    tmp_path, monkeypatch, *, scenario="positive", opened_sink=None, sample_count=4
-):
+def _plan(tmp_path, monkeypatch, *, scenario="positive", sample_count=4):
     paths = tuple(tmp_path / f"S{i}.synthetic" for i in range(sample_count))
     for path in paths:
         if not path.exists():
@@ -205,9 +203,7 @@ def _plan(
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,
     )
-    opened = install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
-    if opened_sink is not None:
-        opened_sink.append(opened)
+    install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
     import xic_extractor.untargeted_execution.partition.execution as runtime_owner
 
     monkeypatch.setattr(

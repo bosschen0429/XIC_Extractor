@@ -144,7 +144,6 @@ def publish_alignment(
                             backend="thread",
                             overlap_partitions=False,
                         ),
-                        acquisition_cache_dir=tmp_path / f"{name}-facts",
                     ),
                     **(execution_changes or {}),
                 ),
