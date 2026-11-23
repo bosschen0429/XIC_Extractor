@@ -86,6 +86,7 @@ def count_run(
                 p.ms1_apex_rt,
                 p.attached_event_count,
                 ratios.get(p.peak_id, 0.0),
+                p.requires_overlap_review,
             )
             for p in peaks
         ]

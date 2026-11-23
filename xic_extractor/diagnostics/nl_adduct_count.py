@@ -6,7 +6,9 @@ or a peak shape synchronized with another candidate or with a nucleoside of
 another sugar. A compound whose every ion leaves a negative mass defect after
 the loss holds no organic nucleobase: an inorganic cluster or multiply charged
 ion lost the same elemental composition. A compound whose groups each had one
-attached MS2 event is unconfirmed and listed apart. Each candidate's fate is
+attached MS2 event is unconfirmed and listed apart. A compound whose every
+peak carries Discovery's overlap review is listed apart as well, as Alignment
+keeps a group of only such peaks out of the Matrix. Each candidate's fate is
 decided once, with the ion it derives from and, where its mass difference is
 known, the relation; the summary counts those fates. Chromatograms come from
 an injected reader, so RAW access stays in ``nl_adduct_count_acquisition``.
@@ -64,6 +66,7 @@ MATCH_PPM = 10.0
 MATCH_RT_MIN = 0.3
 KINDS = ("nucleoside", "nucleoside_mz", "two_sugar", "other")
 COUNTED, UNCONFIRMED, NO_NUCLEOBASE = "counted", "unconfirmed", "no_nucleobase"
+OVERLAP_ONLY = "overlap_only"
 KNOWN_DIFFERENCE = "derived_known_difference"
 NUCLEOSIDE_ELUTION = "derived_nucleoside_elution"
 OTHER_SUGAR = "derived_other_sugar_nucleoside"
@@ -80,6 +83,7 @@ class Candidate:
     rt: float
     event_count: int
     second_loss_ratio: float = 0.0
+    overlap: bool = False
 
 
 @dataclass(frozen=True)
@@ -149,12 +153,18 @@ class Unit:
         )
 
     @property
+    def overlap_only(self) -> bool:
+        return all(c.overlap for g in self.groups for c in g.members)
+
+    @property
     def fate(self) -> str:
         if self.other_sugar:
             return OTHER_SUGAR
         if self.no_nucleobase:
             return NO_NUCLEOBASE
-        return UNCONFIRMED if self.unconfirmed else COUNTED
+        if self.unconfirmed:
+            return UNCONFIRMED
+        return OVERLAP_ONLY if self.overlap_only else COUNTED
 
     @property
     def late(self) -> bool:
@@ -370,6 +380,7 @@ class RunCount:
             "derived_synchronized_shape": fates[SYNCHRONIZED_SHAPE],
             "no_nucleobase": fates[NO_NUCLEOBASE],
             "unconfirmed": fates[UNCONFIRMED],
+            "overlap_only": fates[OVERLAP_ONLY],
             "counted": fates[COUNTED],
             "counted_kinds": {k: kinds.get(k, 0) for k in KINDS},
             "counted_late": sum(u.late for u in self.counted),

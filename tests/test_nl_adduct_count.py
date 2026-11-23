@@ -20,8 +20,8 @@ DR = 116.0474
 DC = (Anchor("dC", 228.0979, 8.66), Anchor("dU", 229.0822, None))
 
 
-def _c(peak_id, mz, rt, events=2, ratio=0.0):
-    return Candidate(peak_id, mz, rt, events, ratio)
+def _c(peak_id, mz, rt, events=2, ratio=0.0, overlap=False):
+    return Candidate(peak_id, mz, rt, events, ratio, overlap)
 
 
 def _trace(rt, apex):
@@ -138,6 +138,30 @@ def test_no_nucleobase_needs_every_ion_of_the_compound_without_a_base():
         "metal_complex": "derived_synchronized_shape",
         "mg_acetate_cluster": "no_nucleobase",
     }
+
+
+def test_compound_of_only_overlap_peaks_is_listed_apart_from_the_count():
+    run = _run(
+        (
+            _c("overlap", 300.1, 20.0, overlap=True),
+            _c("overlap_13c", 301.1034, 20.02, overlap=True),
+            _c("clean_isotope", 400.1, 25.0, overlap=True),
+            _c("clean_isotope_13c", 401.1034, 25.02),
+            _c("overlap_one_event", 500.1, 30.0, events=1, overlap=True),
+        )
+    )
+    assert _fates(run) == {
+        "overlap": "overlap_only",
+        "overlap_13c": "derived_known_difference",
+        "clean_isotope": "counted",
+        "clean_isotope_13c": "derived_known_difference",
+        "overlap_one_event": "unconfirmed",
+    }
+    assert (run.summary()["overlap_only"], run.summary()["counted"]) == (1, 1)
+    assert [c.members for c in union_runs([run])] == [
+        ((400.1, 25.0),),
+        ((500.1, 30.0),),
+    ]
 
 
 def test_derived_ions_name_their_parent_and_known_relation():
