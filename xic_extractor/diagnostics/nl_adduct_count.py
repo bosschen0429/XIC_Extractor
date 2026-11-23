@@ -52,14 +52,12 @@ METAL_LABEL_DA = {
 }
 RELATION_TOL_DA = 0.003
 DIMER_TOL_DA = 0.004
-RELATION_RT_MIN = 0.1
+SAME_COMPOUND_RT_MIN = 0.1
 NUCLEOSIDE_TOL_DA = 0.003
-NUCLEOSIDE_SELF_RT_MIN = 0.1
-COELUTION_RT_MIN = 0.25
+NUCLEOSIDE_ELUTION_RT_MIN = 0.25
 BASE_MIN_MASS_DEFECT = 0.0
 SECOND_LOSS_MIN_RATIO = 0.1
 LATE_RT_MIN = 40.0
-SHAPE_PAIR_RT_MIN = 0.06
 SHAPE_MIN_MZ_GAP = 0.01
 SHAPE_MIN_R = 0.9
 SHAPE_MIN_POINTS = 5
@@ -244,7 +242,7 @@ def group_candidates(
     edges = []
     for i, light in enumerate(ordered):
         for j, heavy in enumerate(ordered):
-            if i == j or abs(light.rt - heavy.rt) > RELATION_RT_MIN:
+            if i == j or abs(light.rt - heavy.rt) > SAME_COMPOUND_RT_MIN:
                 continue
             name = relation_label(
                 heavy.mz - light.mz, light.mz, (), loss_da, joining=True
@@ -268,8 +266,8 @@ def _category(members, relations, anchors) -> str:
     seen = [a.rt for a in anchors if a.rt is not None]
     gap = min((abs(light.rt - rt) for rt in seen), default=float("inf"))
     if any(abs(light.mz - a.mz) < NUCLEOSIDE_TOL_DA for a in anchors):
-        return "nucleoside" if gap < NUCLEOSIDE_SELF_RT_MIN else "nucleoside_mz"
-    if gap <= COELUTION_RT_MIN:
+        return "nucleoside" if gap <= SAME_COMPOUND_RT_MIN else "nucleoside_mz"
+    if gap <= NUCLEOSIDE_ELUTION_RT_MIN:
         return "nucleoside_elution"
     two = any(c.second_loss_ratio >= SECOND_LOSS_MIN_RATIO for c in members)
     two = two or any(n in ("+loss", "+2loss") for v in relations.values() for n in v)
@@ -282,7 +280,7 @@ def synced(first: XICTrace, second: XICTrace, *, same_apex: bool = False) -> boo
     if len(a) < SHAPE_MIN_POINTS or len(a) != len(b) or a.std() == 0 or b.std() == 0:
         return False
     if same_apex and (
-        abs(first.rt[a.argmax()] - second.rt[b.argmax()]) > SHAPE_PAIR_RT_MIN
+        abs(first.rt[a.argmax()] - second.rt[b.argmax()]) > SAME_COMPOUND_RT_MIN
     ):
         return False
     return float(np.corrcoef(a, b)[0, 1]) >= SHAPE_MIN_R
@@ -308,7 +306,7 @@ def count_candidates(
         (a, b)
         for a in range(len(kept))
         for b in range(a + 1, len(kept))
-        if abs(kept[a].rt - kept[b].rt) <= SHAPE_PAIR_RT_MIN
+        if abs(kept[a].rt - kept[b].rt) <= SAME_COMPOUND_RT_MIN
         and abs(kept[a].mz - kept[b].mz) > SHAPE_MIN_MZ_GAP
     ]
     traces = xic(
@@ -327,7 +325,7 @@ def count_candidates(
         if unit.kind != "nucleoside"
         for g in unit.groups
         for a in other_sugar_anchors
-        if a.rt is not None and abs(g.rt - a.rt) <= COELUTION_RT_MIN
+        if a.rt is not None and abs(g.rt - a.rt) <= NUCLEOSIDE_ELUTION_RT_MIN
     ]
     traces = xic([(m, rt) for _, mz, rt, a in checks for m in (mz, a.mz)])
     for k, (u, _, _, anchor) in enumerate(checks):
