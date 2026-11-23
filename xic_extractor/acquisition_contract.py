@@ -246,7 +246,6 @@ def deserialize_acquired_trace(
         ),
     )
     acquired = AcquiredTrace(coordinate=coordinate, trace=trace)
-    # Each sample's hex spelling was checked while parsing; reuse it for the byte check.
     canonical = _canonical_json_bytes(
         {
             "schema_version": _ACQUIRED_TRACE_SCHEMA_VERSION,
