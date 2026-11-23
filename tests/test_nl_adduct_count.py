@@ -9,10 +9,7 @@ from xic_extractor.diagnostics.nl_adduct_count import (
     count_candidates,
     cumulative,
     group_candidates,
-    overlap,
     relation_label,
-    rt_map,
-    shared_rt_pairs,
     synced,
     union_runs,
 )
@@ -210,14 +207,10 @@ def test_other_sugar_removes_only_compounds_that_follow_a_seen_nucleoside():
     }
 
 
-def test_controls_union_cumulative_and_shared_compounds_after_rt_mapping():
-    anchors = lambda shift: (  # noqa: E731
-        Anchor("dC", 228.0979, 8.66 + shift),
-        Anchor("dA", 252.1091, 19.6 + shift),
-    )
+def test_controls_union_within_measured_rt_and_count_cumulatively():
     controls = [
-        _run((_c("a", 400.1, 14.4), _c("u", mz, 30.2, events=1)), anchors=anchors(0.2))
-        for mz in (500.1, 510.1)
+        _run((_c("a", 400.1, 14.0 + shift), _c("u", mz, 30.2, events=1)))
+        for mz, shift in ((500.1, 0.0), (510.1, 0.2))
     ]
     consensus = union_runs(controls)
     assert sorted((c.runs, c.unconfirmed) for c in consensus) == [
@@ -226,59 +219,8 @@ def test_controls_union_cumulative_and_shared_compounds_after_rt_mapping():
         ((1,), True),
     ]
     assert cumulative(consensus, 2) == {"counted": [1, 1], "unconfirmed": [1, 2]}
-    main = _run((_c("a", 400.1, 14.0),), anchors=anchors(0.0))
-    assert overlap(main, controls, consensus) == [
-        {
-            "unit": "400.1000@14.00",
-            "kind": "other",
-            "control_injections": 2,
-            "control_unconfirmed": False,
-        }
-    ]
-
-
-def test_compounds_extend_rt_pairs_only_past_nucleosides_and_one_to_one():
-    nucleosides = lambda shift: (  # noqa: E731
-        Anchor("dC", 228.0979, 8.66 + shift),
-        Anchor("dA", 252.1091, 19.6 + shift),
-    )
-    control = _run(
-        (
-            _c("inside", 300.1, 15.0),
-            _c("late", 400.1, 30.0),
-            _c("twin1", 450.1, 32.0),
-            _c("twin2", 450.1, 32.5),
-            _c("x", 500.1, 35.0),
-        ),
-        anchors=nucleosides(0.4),
-    )
-    main = _run(
-        (
-            _c("inside", 300.1, 14.0),
-            _c("late", 400.1, 30.0),
-            _c("twin", 450.1, 32.2),
-            _c("x", 500.1, 35.1),
-        ),
-        anchors=nucleosides(0.0),
-    )
-    consensus = union_runs([control])
-    assert shared_rt_pairs(main, [control], consensus) == [
-        (8.66, 9.06),
-        (19.6, 20.0),
-        (30.0, 30.0),
-        (35.1, 35.0),
-    ]
-    assert {row["unit"] for row in overlap(main, [control], consensus)} == {
-        "400.1000@30.00",
-        "450.1000@32.20",
-        "500.1000@35.10",
-    }
-
-
-def test_rt_map_interpolates_and_shifts_past_the_ends():
-    mapped = rt_map([(20.0, 20.5), (8.0, 9.0)])
-    assert [mapped(rt) for rt in (4.0, 8.0, 14.0, 30.0)] == [5.0, 9.0, 14.75, 30.5]
-    assert rt_map([])(12.0) == 12.0
+    shifted = _run((_c("a", 400.1, 14.4),))
+    assert len(union_runs([controls[0], shifted])) == 3
 
 
 def test_nucleoside_table_pairs_windows_with_tags_and_locates_bad_rows(tmp_path):

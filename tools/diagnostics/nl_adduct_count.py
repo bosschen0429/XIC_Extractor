@@ -4,7 +4,8 @@ Each compound counts once: ions derived from another candidate (known mass
 difference and synchronized peak shape) or from a nucleoside are removed, so
 are compounds whose every ion leaves a negative mass defect after the loss (no
 organic nucleobase), and single-MS2 compounds are listed as unconfirmed.
-Optional replicate controls add per-injection and cumulative counts. Writes
+Optional replicate controls from the same batch add per-injection and
+cumulative counts; their RT is compared as measured. Writes
 ``nl_adduct_count.json`` and ``nl_adduct_candidates.tsv`` with each
 candidate's fate; a derived ion also names the ion it derives from and its
 known relation (isotope, adduct, metal complex, dimer). Rules live in
@@ -22,7 +23,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from xic_extractor.configuration import paths
-from xic_extractor.diagnostics.nl_adduct_count import cumulative, overlap, union_runs
+from xic_extractor.diagnostics.nl_adduct_count import cumulative, union_runs
 from xic_extractor.diagnostics.nl_adduct_count_acquisition import (
     count_run,
     read_nucleosides,
@@ -56,7 +57,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             "unconfirmed_in_one_injection": sum(
                 c.unconfirmed and len(c.runs) == 1 for c in consensus
             ),
-            "shared_with_sample": overlap(sample, controls, consensus),
         }
     args.output_dir.mkdir(parents=True, exist_ok=True)
     text = json.dumps(report, indent=2, ensure_ascii=False)

@@ -14,7 +14,6 @@ an injected reader, so RAW access stays in ``nl_adduct_count_acquisition``.
 
 from __future__ import annotations
 
-import statistics
 from collections import Counter, defaultdict
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
@@ -63,7 +62,6 @@ SHAPE_MIN_R = 0.9
 SHAPE_MIN_POINTS = 5
 MATCH_PPM = 10.0
 MATCH_RT_MIN = 0.3
-ANCHOR_SEARCH_RT_MIN = 1.0
 KINDS = ("nucleoside", "nucleoside_mz", "two_sugar", "other")
 COUNTED, UNCONFIRMED, NO_NUCLEOBASE = "counted", "unconfirmed", "no_nucleobase"
 KNOWN_DIFFERENCE = "derived_known_difference"
@@ -436,9 +434,9 @@ class RunCount:
         return rows
 
 
-def _match(first, second, rt_map=lambda rt: rt) -> bool:
+def _match(first, second) -> bool:
     return any(
-        within_ppm(mz_b, mz_a, MATCH_PPM) and abs(rt_map(rt_a) - rt_b) <= MATCH_RT_MIN
+        within_ppm(mz_b, mz_a, MATCH_PPM) and abs(rt_a - rt_b) <= MATCH_RT_MIN
         for mz_a, rt_a in first
         for mz_b, rt_b in second
     )
@@ -485,71 +483,3 @@ def cumulative(consensus: Sequence[Consensus], runs: int) -> dict[str, list[int]
         ]
         for name, flag in (("counted", False), ("unconfirmed", True))
     }
-
-
-def rt_map(pairs: Sequence[tuple[float, float]]):
-    """Piecewise-linear map through (RT here, RT there) pairs, shifted past ends."""
-    if not pairs:
-        return lambda rt: rt
-    xs, shifts = zip(*sorted((x, y - x) for x, y in pairs), strict=True)
-    return lambda rt: rt + float(np.interp(rt, xs, shifts))
-
-
-def shared_rt_pairs(
-    main: RunCount, controls: Sequence[RunCount], consensus: Sequence[Consensus]
-) -> list[tuple[float, float]]:
-    """RT pairs of nucleosides, extended past their range by paired compounds.
-
-    Outside the nucleosides' RT range, a counted compound pairs when exactly
-    one counted control compound shares its m/z within ANCHOR_SEARCH_RT_MIN,
-    and that compound pairs with no other.
-    """
-    seen: dict[str, list[float]] = defaultdict(list)
-    for run in controls:
-        for a in run.anchors:
-            if a.rt:
-                seen[a.label].append(a.rt)
-    pairs = [
-        (a.rt, statistics.median(seen[a.label]))
-        for a in main.anchors
-        if a.rt and a.label in seen
-    ]
-    covered = (min(x for x, _ in pairs), max(x for x, _ in pairs)) if pairs else None
-    hits: dict[int, dict[int, float]] = defaultdict(dict)
-    for i, unit in enumerate(main.counted):
-        mz, rt = unit.members[0]
-        if covered and covered[0] <= rt <= covered[1]:
-            continue
-        for j, c in enumerate(consensus):
-            rts = [
-                y
-                for x, y in c.members
-                if within_ppm(x, mz, MATCH_PPM) and abs(y - rt) <= ANCHOR_SEARCH_RT_MIN
-            ]
-            if rts and not c.unconfirmed:
-                hits[i][j] = statistics.median(rts)
-    partners = Counter(j for found in hits.values() for j in found)
-    for i, found in hits.items():
-        (j, rt_there), *others = found.items()
-        if not others and partners[j] == 1:
-            pairs.append((main.counted[i].members[0][1], rt_there))
-    return pairs
-
-
-def overlap(main: RunCount, controls: Sequence[RunCount], consensus) -> list[dict]:
-    """Counted compounds of ``main`` also found among replicate controls."""
-    mapped = rt_map(shared_rt_pairs(main, controls, consensus))
-    rows = []
-    for unit in main.counted:
-        found = [c for c in consensus if _match(unit.members, c.members, mapped)]
-        if found:
-            best = max(found, key=lambda c: len(c.runs))
-            rows.append(
-                {
-                    "unit": unit.unit_id,
-                    "kind": unit.kind,
-                    "control_injections": len(best.runs),
-                    "control_unconfirmed": best.unconfirmed,
-                }
-            )
-    return rows
