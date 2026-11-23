@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from bisect import bisect_left, bisect_right
 from collections.abc import Iterable, Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from functools import partial
 from typing import Protocol
 
 from xic_extractor.acquisition.peak_apex_ion import MS1Centroid, read_peak_apex_ion
@@ -159,49 +160,117 @@ def acquire_cid_nl_sample_regions(
     settings: DiscoverySettings,
     profile: SignalProcessingProfile,
 ) -> tuple[CidNlSampleRegion, ...]:
-    """Search every planned region over this RAW's actual LC run, even without CID."""
+    measured, _ = acquire_region_views(
+        raw,
+        sample=sample,
+        acquisition_source=acquisition_source,
+        regions=regions,
+        events=events,
+        settings=settings,
+        profile=profile,
+        reference_regions=(),
+        reference_events=(),
+    )
+    return measured
+
+
+def acquire_region_views(
+    raw: RegionRawSource,
+    *,
+    sample: SampleMetadata,
+    acquisition_source: AcquisitionSourceIdentity,
+    regions: tuple[DiscoveryMassRegion, ...],
+    events: Iterable[DiscoveryEvent],
+    settings: DiscoverySettings,
+    profile: SignalProcessingProfile,
+    reference_regions: tuple[DiscoveryMassRegion, ...],
+    reference_events: Iterable[DiscoveryEvent],
+) -> tuple[tuple[CidNlSampleRegion, ...], tuple[CidNlSampleRegion, ...]]:
+    """Measure a signal once; a reduced reference can select a different alias."""
     if not regions:
-        return ()
+        return (), ()
     rt_start, rt_end = raw.acquisition_rt_bounds()
     requests = tuple(
         XICRequest(mz=mz, rt_min=rt_start, rt_max=rt_end, ppm_tol=region.ppm)
         for region in regions
         for mz in region.centers
     )
-    local = sorted(
-        (
-            (event_ion_mz(event), event)
-            for event in events
-            if event.sample_stem == sample.raw_stem
-            and event.neutral_loss_tag in settings.selected_tag_names
-        ),
-        key=lambda item: item[0],
-    )
-    masses = tuple(mz for mz, _ in local)
+
+    def local_events(items: Iterable[DiscoveryEvent]):
+        ordered = sorted(
+            (
+                (event_ion_mz(event), event)
+                for event in items
+                if event.sample_stem == sample.raw_stem
+                and event.neutral_loss_tag in settings.selected_tag_names
+            ),
+            key=lambda item: item[0],
+        )
+        masses = tuple(mz for mz, _ in ordered)
+
+        def select(region: DiscoveryMassRegion) -> tuple[DiscoveryEvent, ...]:
+            low, high = region.mz_bounds
+            return tuple(
+                event
+                for _, event in ordered[
+                    bisect_left(masses, low) : bisect_right(masses, high)
+                ]
+            )
+
+        return select
+
+    all_events, clean_events = local_events(events), local_events(reference_events)
     capability = mint_trace_acquisition_capability(
         acquisition_source, adapter_namespace=__name__
     )
     captures = _acquire_regions(raw, capability, requests)
     results = []
+    reference = []
+    by_first = {r.centers[0]: r for r in reference_regions}
     for region in regions:
-        low, high = region.mz_bounds
-        region_events = tuple(
-            event
-            for _, event in local[bisect_left(masses, low) : bisect_right(masses, high)]
+        acquired = tuple(next(captures) for _ in region.centers)
+        subset = tuple(by_first[mz] for mz in region.centers if mz in by_first)
+        populations: dict[
+            float, tuple[PhysicalPeakPopulation, tuple[PhysicalPeakEvaluation, ...]]
+        ] = {}
+
+        measure = partial(
+            _measure_region,
+            sample=sample,
+            ms1_centroid=raw.ms1_centroid,
+            acquisition_source=acquisition_source,
+            settings=settings,
+            profile=profile,
+            populations=populations,
         )
-        results.append(
-            _measure_region(
-                sample=sample,
-                region=region,
-                acquired=tuple(next(captures) for _ in region.centers),
-                ms1_centroid=raw.ms1_centroid,
-                acquisition_source=acquisition_source,
-                events=region_events,
-                settings=settings,
-                profile=profile,
-            )
-        )
-    return tuple(results)
+        events_here = all_events(region)
+        full = measure(region=region, acquired=acquired, events=events_here)
+        results.append(full)
+        lookup = {item[0].mz: item for item in acquired}
+        for r in subset:
+            ev = clean_events(r)
+            if r != region:
+                selected = measure(
+                    region=r, acquired=tuple(lookup[mz] for mz in r.centers), events=ev
+                )
+            elif ev != events_here:
+                evidence, individual, ambiguous = attach_cid_nl_events(
+                    sample=sample,
+                    acquisition_source=acquisition_source,
+                    peaks=full.peaks,
+                    events=ev,
+                    settings=settings,
+                )
+                selected = replace(
+                    full,
+                    evidence=evidence,
+                    individual_relations=individual,
+                    ambiguous_relations=ambiguous,
+                )
+            else:
+                selected = full
+            reference.append(selected)
+    return tuple(results), tuple(reference)
 
 
 _Capture = tuple[XICRequest, AcquiredTrace | None, TraceAcquisitionBatch | None, str]
@@ -238,6 +307,9 @@ def _measure_region(
     events: tuple[DiscoveryEvent, ...],
     settings: DiscoverySettings,
     profile: SignalProcessingProfile,
+    populations: dict[
+        float, tuple[PhysicalPeakPopulation, tuple[PhysicalPeakEvaluation, ...]]
+    ],
 ) -> CidNlSampleRegion:
     """Resolve signal aliases before attaching any CID-NL events.
 
@@ -246,7 +318,7 @@ def _measure_region(
     """
     coverage = []
     measured: list[RegionSegment] = []
-    distinct: list[tuple[AcquiredTrace, PhysicalPeakPopulation]] = []
+    distinct: list[AcquiredTrace] = []
     batches = {}
     contexts = []
     for request, trace, batch, error in acquired:
@@ -257,16 +329,31 @@ def _measure_region(
         batches[id(batch)] = batch
         rt, y = trace.trace.rt, trace.trace.intensity
         matching = next(
-            (pop for owner, pop in distinct if same_acquired_signal(owner, trace)),
-            None,
+            (owner for owner in distinct if same_acquired_signal(owner, trace)), None
         )
-        population = matching or measure_physical_peak_population(
-            rt,
-            y,
-            context_rt_start_min=request.rt_min,
-            context_rt_end_min=request.rt_max,
-            profile=profile,
+        source_mz = (
+            matching.coordinate.request.mz if matching is not None else request.mz
         )
+        facts = populations.get(source_mz)
+        if facts is None:
+            population = measure_physical_peak_population(
+                rt,
+                y,
+                context_rt_start_min=request.rt_min,
+                context_rt_end_min=request.rt_max,
+                profile=profile,
+            )
+            facts = (
+                population,
+                tuple(
+                    evaluation
+                    for segment in population.universe.segments
+                    if (evaluation := population.measure_segment(segment)).state
+                    == "available"
+                ),
+            )
+        populations[request.mz] = facts
+        population, evaluations = facts
         coordinate = trace.coordinate
         coverage.append(
             RegionTraceCoverage(
@@ -277,7 +364,7 @@ def _measure_region(
         )
         if matching is not None:
             continue
-        distinct.append((trace, population))
+        distinct.append(trace)
         if context := project_elution_context(
             population.prepared,
             sample_stem=sample.raw_stem,
@@ -285,10 +372,7 @@ def _measure_region(
             universe=population.universe,
         ):
             contexts.append(context)
-        for segment in population.universe.segments:
-            evaluation = population.measure_segment(segment)
-            if evaluation.state == "available":
-                measured.append(RegionSegment(trace, evaluation))
+        measured.extend(RegionSegment(trace, evaluation) for evaluation in evaluations)
 
     traces: dict[XICRequest, Trace] = {}
     peaks: dict[tuple[str, tuple[float, ...], tuple[float, ...]], PeakObservation] = {}

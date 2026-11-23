@@ -60,6 +60,63 @@ class PreparedUntargetedAlignmentWorksets:
     worksets: tuple[tuple[CidNlMethodSubject, ...], ...]
     memberships_by_subject: dict[str, tuple[tuple[str, str], ...]]
 
+    def partitions(
+        self, *, max_partition_jobs: int, sample_count: int
+    ) -> tuple[tuple[CidNlMethodSubject, ...], ...]:
+        subjects_per_partition = max(1, max_partition_jobs // sample_count)
+        subject_partitions_list: list[tuple[CidNlMethodSubject, ...]] = []
+        current_subjects: list[CidNlMethodSubject] = []
+        current_candidate_count = 0
+        current_mass_bin: int | None = None
+        worksets = self.worksets
+        worksets = tuple(
+            sorted(
+                worksets,
+                key=lambda workset: (
+                    min(subject.precursor_mz for subject in workset),
+                    min(subject.method_subject_id for subject in workset),
+                ),
+            )
+        )
+        for workset in worksets:
+            mass_bin = int(min(subject.precursor_mz for subject in workset) // 100.0)
+            candidate_count = sum(
+                len(self.memberships_by_subject.get(subject.method_subject_id, ()))
+                for subject in workset
+            )
+            if len(workset) > subjects_per_partition:
+                raise ValueError(
+                    "max_partition_jobs cannot contain one alignment subject workset"
+                )
+            if current_subjects and (
+                len(current_subjects) + len(workset) > subjects_per_partition
+                or current_mass_bin != mass_bin
+                or current_candidate_count + candidate_count > 1024
+            ):
+                subject_partitions_list.append(
+                    tuple(
+                        sorted(
+                            current_subjects,
+                            key=lambda subject: subject.method_subject_id,
+                        )
+                    )
+                )
+                current_subjects = []
+                current_candidate_count = 0
+            current_subjects.extend(workset)
+            current_candidate_count += candidate_count
+            current_mass_bin = mass_bin
+        if current_subjects:
+            subject_partitions_list.append(
+                tuple(
+                    sorted(
+                        current_subjects,
+                        key=lambda subject: subject.method_subject_id,
+                    )
+                )
+            )
+        return tuple(subject_partitions_list)
+
     def subject_batch(
         self,
         subjects: tuple[CidNlMethodSubject, ...],

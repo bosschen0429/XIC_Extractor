@@ -257,63 +257,9 @@ class UntargetedPartitionPipelineAdapter:
                 known_istd_reference=self._known_istd_reference,
             )
         )
-        subjects_per_partition = max(1, max_partition_jobs // len(context.samples))
-        subject_partitions_list: list[tuple[CidNlMethodSubject, ...]] = []
-        current_subjects: list[CidNlMethodSubject] = []
-        current_candidate_count = 0
-        current_mass_bin: int | None = None
-        worksets = self._prepared_worksets.worksets
-        worksets = tuple(
-            sorted(
-                worksets,
-                key=lambda workset: (
-                    min(subject.precursor_mz for subject in workset),
-                    min(subject.method_subject_id for subject in workset),
-                ),
-            )
+        subject_partitions = self._prepared_worksets.partitions(
+            max_partition_jobs=max_partition_jobs, sample_count=len(context.samples)
         )
-        for workset in worksets:
-            mass_bin = int(min(subject.precursor_mz for subject in workset) // 100.0)
-            candidate_count = sum(
-                len(
-                    self._prepared_worksets.memberships_by_subject.get(
-                        subject.method_subject_id, ()
-                    )
-                )
-                for subject in workset
-            )
-            if len(workset) > subjects_per_partition:
-                raise ValueError(
-                    "max_partition_jobs cannot contain one alignment subject workset"
-                )
-            if current_subjects and (
-                len(current_subjects) + len(workset) > subjects_per_partition
-                or current_mass_bin != mass_bin
-                or current_candidate_count + candidate_count > 1024
-            ):
-                subject_partitions_list.append(
-                    tuple(
-                        sorted(
-                            current_subjects,
-                            key=lambda subject: subject.method_subject_id,
-                        )
-                    )
-                )
-                current_subjects = []
-                current_candidate_count = 0
-            current_subjects.extend(workset)
-            current_candidate_count += candidate_count
-            current_mass_bin = mass_bin
-        if current_subjects:
-            subject_partitions_list.append(
-                tuple(
-                    sorted(
-                        current_subjects,
-                        key=lambda subject: subject.method_subject_id,
-                    )
-                )
-            )
-        subject_partitions = tuple(subject_partitions_list)
         self._acquisition_workers = (
             2
             if execution.overlap_partitions
@@ -350,6 +296,46 @@ class UntargetedPartitionPipelineAdapter:
             )
             for partition in self._partitions
         }
+        self._paired_reference: dict[int, UntargetedCidNlMethodSubjectBatch] = {}
+        self._reference_batches = tuple(
+            self._partition_subject_batches[p.partition_key]
+            for p in self.bootstrap_partitions
+        )
+        self._reference_plan = plan
+        if not rt_reference_only and plan.rt_reference_subjects is not None:
+            clean = plan.rt_reference_subjects
+            self._reference_plan = replace(
+                plan,
+                subject_batch=clean,
+                runtime_subjects=clean.subjects,
+                context=replace(plan.context, method_subject=clean),
+                rt_reference_subjects=None,
+            )
+            layout = prepare_untargeted_alignment_worksets(
+                self._reference_plan, known_istd_reference=self._known_istd_reference
+            )
+            self._reference_batches = tuple(
+                layout.subject_batch(subjects)
+                for subjects in layout.partitions(
+                    max_partition_jobs=max_partition_jobs,
+                    sample_count=len(context.samples),
+                )
+            )
+            by_candidate = {
+                cid: p.index
+                for p in self.bootstrap_partitions
+                for cid, _ in self._partition_subject_batches[
+                    p.partition_key
+                ].candidate_memberships
+            }
+            partners: dict[int, list[UntargetedCidNlMethodSubjectBatch]] = {}
+            for part in self._reference_batches:
+                owners = {by_candidate[cid] for cid, _ in part.candidate_memberships}
+                if len(owners) == 1:
+                    partners.setdefault(next(iter(owners)), []).append(part)
+            self._paired_reference = {
+                idx: parts[0] for idx, parts in partners.items() if len(parts) == 1
+            }
         self._process_pool_lock = threading.Lock()
         self._process_pools_closed = False
         self._process_pools: tuple[WorkerAdmissionPool, ...] = ()
@@ -504,20 +490,15 @@ class UntargetedPartitionPipelineAdapter:
         self,
         check_cancellation: Callable[[], None],
         progress_callback: Callable[[Mapping[str, object]], None] | None,
-    ) -> CidNlBatchGrouping | None:
-        """Bootstrap unreviewed channels on their own knots without finalizing rows."""
-        subjects = self._plan.rt_reference_subjects
-        if subjects is None and len(self._clean_anchors) == self._bootstrap_count:
-            return None
-        subjects = subjects if subjects is not None else self._plan.subject_batch
-        plan = replace(
-            self._plan,
-            subject_batch=subjects,
-            runtime_subjects=subjects.subjects,
-            context=replace(self._plan.context, method_subject=subjects),
-            rt_reference_subjects=None,
-        )
+    ) -> CidNlBatchGrouping:
+        """Collect the reference anchors; reacquire only if packing precluded reuse."""
+        plan = self._reference_plan
         reference = CidNlBatchGrouping(plan.context.rt_frame)
+        if all(part in self._clean_anchors for part in self._reference_batches):
+            for part in self._reference_batches:
+                check_cancellation()
+                reference.add_anchor_observations(self._clean_anchors[part])
+            return reference
         lane = UntargetedPartitionPipelineAdapter(
             plan,
             alignment_config=self._alignment_config,
@@ -585,9 +566,24 @@ class UntargetedPartitionPipelineAdapter:
         initial_only = self._is_bootstrap(partition)
         if initial_only:
             batch = self.materialize_partition(partition)
+            ref_subjects = self._paired_reference.get(partition.index)
+            reference_batch = None
+            if ref_subjects is not None:
+                reference_batch = materialize_untargeted_partition(
+                    self._reference_plan,
+                    ref_subjects,
+                    acquisition_cache_dir=self._acquisition_cache_dir,
+                    rt_reference_only=True,
+                    mass_recalibration_by_sample=self._mass_recalibration_by_sample,
+                )
+            elif (
+                not self._rt_reference_only and self._plan.rt_reference_subjects is None
+            ):
+                reference_batch = batch
             execute = partial(
                 execute_partition,
                 batch.jobs,
+                reference_jobs=() if reference_batch is None else reference_batch.jobs,
                 partition_key=partition.partition_key,
                 prepare_grouping=partial(
                     group_acquired_partition,
@@ -639,6 +635,28 @@ class UntargetedPartitionPipelineAdapter:
                 progress_callback=progress_callback,
                 should_cancel=should_cancel,
             )
+        if (
+            initial_only
+            and reference_batch is not None
+            and leaf.failure is None
+            and leaf.prepared_grouping is not None
+        ):
+            if reference_batch.subject_batch != batch.subject_batch or any(
+                obs.requires_overlap_review
+                for result in leaf.sample_results
+                for _, obs in result.adapter_result.candidate_observations
+            ):
+                prepared_reference = group_acquired_partition(
+                    reference_batch,
+                    leaf.reference_results,
+                    alignment_config=self._alignment_config,
+                    known_istd_reference=self._known_istd_reference,
+                    bootstrap_only=True,
+                )
+                self._clean_anchors[reference_batch.subject_batch] = (
+                    prepared_reference.rt_anchor_observations
+                )
+            leaf = replace(leaf, reference_results=())
         return PartitionAcquisitionOutput(
             result=(replace(batch, prepared_grouping=leaf.prepared_grouping), leaf),
             failure=leaf.failure,
