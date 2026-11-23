@@ -89,7 +89,6 @@ class UntargetedPartitionJob:
     acquisition_source_expectation: AcquisitionSourceExpectation = field(compare=False)
     subject_partition: UntargetedCidNlMethodSubjectBatch | None = None
     support_candidates: tuple[DiscoveryPeak, ...] = ()
-    rt_reference_only: bool = False
     acquisition_cache_dir: Path | None = field(default=None, compare=False)
     prepared_mass_recalibration: PreparedRawMassRecalibration | None = field(
         default=None, compare=False
@@ -144,7 +143,6 @@ def build_sample_jobs(
     support_candidates: tuple[DiscoveryPeak, ...] = (),
     acquisition_cache_dir: Path | None = None,
     prepared_mass_recalibration: PreparedRawMassRecalibration | None = None,
-    rt_reference_only: bool = False,
 ) -> tuple[UntargetedPartitionJob, ...]:
     """Bind each subject of one sample to that sample's shared inputs."""
 
@@ -164,7 +162,6 @@ def build_sample_jobs(
         work_unit_key=first_key,
         subject_partition=subject_partition,
         support_candidates=support_candidates,
-        rt_reference_only=rt_reference_only,
         signal_processing_profile=signal_processing_profile,
         acquisition_source_expectation=acquisition_source_expectation,
         acquisition_cache_dir=acquisition_cache_dir,

@@ -143,19 +143,6 @@ def _prepare_runtime_work(
     reference_by_sample: dict[str, list[UntargetedPartitionJob]] = {}
     for job in reference_jobs:
         reference_by_sample.setdefault(job.sample.sample_name, []).append(job)
-    reference_regions = (
-        plan_cid_nl_mass_regions(
-            (
-                ev
-                for refs in reference_by_sample.values()
-                for c in refs[0].candidates
-                for ev in c.located_events
-            ),
-            settings=jobs[0].settings,
-        )
-        if reference_jobs
-        else ()
-    )
     batch_phases: list[_BatchSamplePhaseState] = []
     for sample_states in sample_groups:
         first = sample_states[0].job
@@ -176,7 +163,6 @@ def _prepare_runtime_work(
                 initial_resource_key=initial_resource_key,
                 backfill_resource_key=backfill_resource_key,
                 regions=regions,
-                reference_regions=reference_regions,
                 reference_jobs=tuple(reference_by_sample.get(sample_id, ())),
             )
         )
@@ -263,7 +249,6 @@ def _prepare_runtime_work(
                 jobs=tuple(s.job for s in sample_states),
                 initial_resource_key=phase.initial_resource_key,
                 regions=phase.regions,
-                reference_regions=phase.reference_regions,
                 reference_jobs=phase.reference_jobs,
             )
 

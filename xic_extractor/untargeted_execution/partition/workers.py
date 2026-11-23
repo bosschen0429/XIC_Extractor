@@ -42,7 +42,8 @@ from xic_extractor.untargeted_execution.partition.cid_nl_backfill_acquisition im
 from xic_extractor.untargeted_execution.partition.cid_nl_region_acquisition import (
     CidNlSampleRegion,
     DiscoveryMassRegion,
-    acquire_region_views,
+    acquire_cid_nl_sample_regions,
+    relate_region_events,
 )
 from xic_extractor.untargeted_execution.partition.cid_nl_sample_acquisition import (
     CidNlAcquisitionResult,
@@ -132,7 +133,6 @@ class _BatchSamplePhaseState:
     initial_resource_key: str | None
     backfill_resource_key: str | None
     regions: tuple[DiscoveryMassRegion, ...] = ()
-    reference_regions: tuple[DiscoveryMassRegion, ...] = ()
     reference_jobs: tuple[UntargetedPartitionJob, ...] = ()
     reference_results: tuple[CidNlAcquisitionResult, ...] = ()
 
@@ -195,24 +195,14 @@ def _execute_initial_assessment_batch(
     raw = None
     try:
         regions: tuple[CidNlSampleRegion, ...] = ()
-        reference_regions: tuple[CidNlSampleRegion, ...] = ()
         if phase.regions and any(state.error is None for state in states):
             if phase.initial_resource_key is None:
                 raise UntargetedPartitionError(
                     "sample batch is missing its acquisition reservation"
                 )
             raw = _open_job_raw(job)
-            ref = phase.reference_jobs[0] if phase.reference_jobs else None
-            regions, reference_regions = acquire_region_views(
+            regions = acquire_cid_nl_sample_regions(
                 raw,
-                reference_regions=phase.reference_regions,
-                reference_events=(
-                    e
-                    for c in (*ref.candidates, *ref.support_candidates)
-                    for e in c.located_events
-                )
-                if ref
-                else (),
                 sample=job.sample,
                 acquisition_source=job.acquisition_source_expectation.source,
                 regions=phase.regions,
@@ -243,34 +233,34 @@ def _execute_initial_assessment_batch(
             processing_attempt_id=job.processing_attempt_id,
             settings=job.settings,
             raw=raw,
-            rt_reference_only=job.rt_reference_only,
+            rt_reference_only=False,
         )
         if phase.reference_jobs:
             ref_jobs = phase.reference_jobs
-            same_view = (
-                len(reference_regions) == len(regions)
-                and all(a is b for a, b in zip(reference_regions, regions, strict=True))
-                and tuple(j.method_subject for j in ref_jobs)
-                == tuple(state.job.method_subject for state in states)
-                and ref_jobs[0].candidates == job.candidates
-                and not any(p.requires_overlap_review for r in regions for p in r.peaks)
-            )
-            answers = (
-                results
-                if same_view
-                else assess_sample_regions(
-                    regions=reference_regions,
+            answers = assess_sample_regions(
+                regions=relate_region_events(
+                    regions,
                     sample=job.sample,
                     acquisition_source=job.acquisition_source_expectation.source,
-                    scopes=tuple(
-                        (j.method_subject, _request_subject_candidates(j))
-                        for j in ref_jobs
+                    events=(
+                        event
+                        for candidate in (
+                            *ref_jobs[0].candidates,
+                            *ref_jobs[0].support_candidates,
+                        )
+                        for event in candidate.located_events
                     ),
-                    processing_attempt_id=job.processing_attempt_id,
                     settings=job.settings,
-                    raw=raw,
-                    rt_reference_only=True,
-                )
+                ),
+                sample=job.sample,
+                acquisition_source=job.acquisition_source_expectation.source,
+                scopes=tuple(
+                    (j.method_subject, _request_subject_candidates(j)) for j in ref_jobs
+                ),
+                processing_attempt_id=job.processing_attempt_id,
+                settings=job.settings,
+                raw=raw,
+                rt_reference_only=True,
             )
             phase.reference_results = tuple(
                 replace(
@@ -459,7 +449,6 @@ class _SampleInitialWorkerRequest:
     jobs: tuple[UntargetedPartitionJob, ...]
     initial_resource_key: str | None
     regions: tuple[DiscoveryMassRegion, ...]
-    reference_regions: tuple[DiscoveryMassRegion, ...] = ()
     reference_jobs: tuple[UntargetedPartitionJob, ...] = ()
 
 
@@ -536,7 +525,6 @@ def _execute_sample_initial_worker(
         initial_resource_key=request.initial_resource_key,
         backfill_resource_key=None,
         regions=request.regions,
-        reference_regions=request.reference_regions,
         reference_jobs=request.reference_jobs,
     )
     return _execute_initial_sample_phase(phase)

@@ -54,14 +54,13 @@ equivalent: that peak may have set a channel center or changed which bootstrap
 correspondences agreed. Final rows and their coefficients are inferred on the
 full population.
 
-If a reference partition is contained in a single initial partition, both
-views can select from the first pass's measured XIC segments. They need not
-choose the same representative window: removing a reviewed Discovery input
-can change which measured segment represents the ion. Selection and bootstrap
-for that reference still use only its own windows and events. The resulting
-anchor observations, not a second acquisition, feed the batch fit. Differently
-packed partitions without a one-to-one handoff use the independent reference
-path.
+The reference population is read from the first pass, not acquired again.
+Partitions are packed so every reference workset lies inside one partition;
+its channels are assessed on that partition's measured regions, related only
+to their own Discovery events and without peaks that carry shoulder review,
+then bootstrapped on their own. A representative window can therefore come
+from any search window of the region, including one planned for a reviewed
+Discovery input.
 
 [`sample_rt_calibration`](../../xic_extractor/alignment/sample_rt_calibration.py)
 turns each agreed bootstrap group into one ordinary correspondence and fits the

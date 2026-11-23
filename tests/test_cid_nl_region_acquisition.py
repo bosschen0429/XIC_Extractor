@@ -22,6 +22,7 @@ from xic_extractor.untargeted_execution.partition import cid_nl_region_acquisiti
 from xic_extractor.untargeted_execution.partition.cid_nl_region_acquisition import (
     acquire_cid_nl_sample_regions,
     plan_cid_nl_mass_regions,
+    relate_region_events,
 )
 from xic_extractor.xic_models import XICRequest, XICTrace
 
@@ -317,36 +318,31 @@ def test_scan_shared_by_isotope_and_monoisotope_binds_only_the_subject_ion():
         ] == [pytest.approx(monoisotope, abs=1e-4)]
 
 
-def test_reference_keeps_its_own_window_and_scan_without_remeasuring_equal_signal(
-    monkeypatch,
-):
+def test_reference_relates_only_its_own_events_to_the_first_pass_peaks():
     early = _scan_events("A", 300, 3.0, 499.995)
     late = _scan_events("A", 800, 8.0, 500.005)
     raw = _Raw(((500.0, 3.0, 9e4), (500.0, 8.0, 2e5)))
-    measured = []
-    measure = cid_nl_region_acquisition.measure_physical_peak_population
-
-    def count(rt, y, **kwargs):
-        measured.append(len(y))
-        return measure(rt, y, **kwargs)
-
-    monkeypatch.setattr(
-        cid_nl_region_acquisition, "measure_physical_peak_population", count
-    )
-    full, clean = cid_nl_region_acquisition.acquire_region_views(
+    sample = SampleMetadata("A", "A")
+    full = acquire_cid_nl_sample_regions(
         raw,
-        sample=SampleMetadata("A", "A"),
+        sample=sample,
         acquisition_source=raw.acquisition_source,
         regions=plan_cid_nl_mass_regions((*early, *late), settings=SETTINGS),
-        reference_regions=plan_cid_nl_mass_regions(late, settings=SETTINGS),
         events=(*early, *late),
-        reference_events=late,
         settings=SETTINGS,
         profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
     )
-    assert raw.raw_chromatogram_call_count == len(measured) == 1
-    assert [p.rt_apex_min for p in clean[0].peaks] == pytest.approx([3.0, 8.0])
-    assert {p.source_trace.mz for p in full[0].peaks} == {499.995}
-    assert {p.source_trace.mz for p in clean[0].peaks} == {500.005}
+    calls = raw.raw_chromatogram_call_count
+
+    (reference,) = relate_region_events(
+        full,
+        sample=sample,
+        acquisition_source=raw.acquisition_source,
+        events=late,
+        settings=SETTINGS,
+    )
+
+    assert raw.raw_chromatogram_call_count == calls
+    assert reference.peaks == full[0].peaks
     assert [r.dda_scan_number for r in full[0].individual_relations] == [300, 800]
-    assert [r.dda_scan_number for r in clean[0].individual_relations] == [800]
+    assert [r.dda_scan_number for r in reference.individual_relations] == [800]
