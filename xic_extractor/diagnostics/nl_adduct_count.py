@@ -6,8 +6,9 @@ or a peak shape synchronized with another candidate or with a nucleoside of
 another sugar. A compound whose every ion leaves a negative mass defect after
 the loss holds no organic nucleobase: an inorganic cluster or multiply charged
 ion lost the same elemental composition. A compound whose groups each had one
-attached MS2 event is unconfirmed and listed apart. RAW reading lives in
-``nl_adduct_count_acquisition``.
+attached MS2 event is unconfirmed and listed apart. Each derived ion names the
+ion it derives from and, where its mass difference is known, the relation.
+RAW reading lives in ``nl_adduct_count_acquisition``.
 """
 
 from __future__ import annotations
@@ -33,6 +34,17 @@ RELATIONS_DA = {
     "K": 37.955882,
     "NH4": 17.026549,
     "+H2O": 18.010565,
+}
+ISOTOPES = ("13C", "15N", "13C2", "13C15N")
+ADDUCT_LABEL_DA = {"+H4": 4.0313, "MeOH": 32.026215, "H2O2": 34.005479}
+METAL_LABEL_DA = {
+    "Mg-H": 21.969392,
+    "Mg+Cl": 57.946069,
+    "Mg+OAc": 81.990521,
+    "Ca+OAc": 97.96807,
+    "Fe+OAc": 113.940416,
+    "FeEDTA": 345.002127,
+    "ZnEDTA": 354.004157,
 }
 RELATION_TOL_DA = 0.003
 DIMER_TOL_DA = 0.004
@@ -206,6 +218,43 @@ def _category(members, relations, anchors) -> str:
     return "two_sugar" if two else "other"
 
 
+def relation_label(
+    delta: float, parent_mz: float, anchors: Sequence[Anchor], loss_da: float
+) -> str:
+    """Name a derived ion's difference from its parent, after up to one isotope."""
+    named = {
+        **RELATIONS_DA,
+        **ADDUCT_LABEL_DA,
+        **METAL_LABEL_DA,
+        "+loss": loss_da,
+        "+2loss": 2 * loss_da,
+        "2M+H": parent_mz - PROTON,
+        "2M+Na": parent_mz - PROTON + NA,
+        **{f"M+{a.label}": a.mz - PROTON for a in anchors},
+    }
+    for isotope, shift in (("", 0.0), *((n, RELATIONS_DA[n]) for n in ISOTOPES)):
+        for name, d in named.items():
+            if abs(delta - shift - d) < RELATION_TOL_DA:
+                return f"{name};{isotope}" if isotope else name
+    return ""
+
+
+def relation_family(relation: str) -> str:
+    """isotope, adduct, metal, dimer, extra_loss, or unlabeled."""
+    names = [n for n in relation.split(";") if n]
+    chemical = [n for n in names if n not in ISOTOPES]
+    if not names:
+        return "unlabeled"
+    if not chemical:
+        return "isotope"
+    name = chemical[0]
+    if name.startswith(("2M", "M+")):
+        return "dimer"
+    if name in ("+loss", "+2loss"):
+        return "extra_loss"
+    return "metal" if name in METAL_LABEL_DA else "adduct"
+
+
 def shape_pairs(kept: Sequence[Group]) -> list[tuple[int, int]]:
     """Kept groups close enough in apex to test for synchronized peak shape."""
     return [
@@ -261,6 +310,7 @@ class RunCount:
     units: tuple[Unit, ...]
     removed: frozenset[str]
     anchors: tuple[Anchor, ...]
+    loss_da: float
 
     @property
     def remaining(self) -> list[Unit]:
@@ -290,6 +340,13 @@ class RunCount:
             "counted": len(self.counted),
             "counted_kinds": {k: kinds.get(k, 0) for k in KINDS},
             "counted_late": sum(u.late for u in self.counted),
+            "derived_relations": dict(
+                Counter(
+                    relation_family(str(row["relation"]))
+                    for row in self.candidate_rows()
+                    if str(row["fate"]).startswith("derived")
+                )
+            ),
             "removed_other_sugar": sorted(self.removed),
             "anchor_rt": {a.label: round(a.rt, 3) for a in self.anchors if a.rt},
         }
@@ -297,30 +354,47 @@ class RunCount:
     def candidate_rows(self) -> list[dict[str, object]]:
         """Every candidate and why it counts, is derived, or is unconfirmed."""
         unit_of = {g.members[0].peak_id: u for u in self.units for g in u.groups}
+        seen = [(a.rt, a) for a in self.anchors if a.rt is not None]
         rows = []
         for group in self.groups:
             unit = unit_of.get(group.members[0].peak_id)
+            parent: tuple[str, float] | None = None
+            if unit is None:
+                fate = "derived_nucleoside_elution"
+                if seen:
+                    _, anchor = min(seen, key=lambda s: abs(group.rt - s[0]))
+                    parent = (anchor.label, anchor.mz)
+            elif unit.unit_id in self.removed:
+                fate = "derived_other_sugar_nucleoside"
+            elif unit.groups[0] is not group:
+                fate = "derived_synchronized_shape"
+                parent = (unit.unit_id, unit.groups[0].mz)
+            elif unit.no_nucleobase:
+                fate = "no_nucleobase"
+            else:
+                fate = "unconfirmed" if unit.unconfirmed else "counted"
+            head_relation = (
+                relation_label(
+                    group.mz - parent[1], parent[1], self.anchors, self.loss_da
+                )
+                if parent
+                else ""
+            )
             for c in group.members:
-                if c is not group.members[0]:
-                    fate = "derived_known_difference"
-                elif unit is None:
-                    fate = "derived_nucleoside_elution"
-                elif unit.unit_id in self.removed:
-                    fate = "derived_other_sugar_nucleoside"
-                elif unit.groups[0] is not group:
-                    fate = "derived_synchronized_shape"
-                elif unit.no_nucleobase:
-                    fate = "no_nucleobase"
-                else:
-                    fate = "unconfirmed" if unit.unconfirmed else "counted"
+                head = c is group.members[0]
                 rows.append(
                     {
                         "sample": self.sample,
                         "peak_id": c.peak_id,
                         "mz": round(c.mz, 4),
                         "rt": round(c.rt, 3),
-                        "fate": fate,
-                        "relation": ";".join(group.relations.get(c.peak_id, ())),
+                        "fate": fate if head else "derived_known_difference",
+                        "relation": head_relation
+                        if head
+                        else ";".join(group.relations[c.peak_id]),
+                        "derived_from": (parent[0] if parent else "")
+                        if head
+                        else f"{group.mz:.4f}@{group.rt:.2f}",
                         "group_category": group.category,
                         "unit": unit.unit_id if unit else "",
                         "attached_ms2_events": c.event_count,

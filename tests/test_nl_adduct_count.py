@@ -12,6 +12,7 @@ from xic_extractor.diagnostics.nl_adduct_count import (
     group_candidates,
     other_sugar_checks,
     overlap,
+    relation_label,
     rt_map,
     shape_pairs,
     shared_rt_pairs,
@@ -32,7 +33,7 @@ def _run(candidates, pairs=(), removed=frozenset(), anchors=DC, sample="s"):
     groups = group_candidates(candidates, DR, anchors)
     kept = [g for g in groups if g.category != "nucleoside_elution"]
     units = build_units(kept, pairs)
-    return RunCount(sample, tuple(candidates), groups, units, removed, anchors)
+    return RunCount(sample, tuple(candidates), groups, units, removed, anchors, DR)
 
 
 def test_groups_join_coeluting_known_differences_and_take_their_category():
@@ -120,6 +121,38 @@ def test_no_nucleobase_needs_every_ion_of_the_compound_without_a_base():
         "metal_complex": "derived_synchronized_shape",
         "mg_acetate_cluster": "no_nucleobase",
     }
+
+
+def test_derived_ions_name_their_parent_and_known_relation():
+    run = _run(
+        (
+            _c("dc", 228.0979, 8.66),
+            _c("dc_meoh", 260.1241, 8.70),
+            _c("dc_unknown", 371.2, 8.75),
+            _c("compound", 300.1, 20.0),
+            _c("mg_acetate", 382.0905, 20.0),
+            _c("mg_acetate_13c", 383.0939, 20.04),
+        ),
+        pairs=[(1, 2)],
+    )
+    rows = {
+        r["peak_id"]: (r["relation"], r["derived_from"]) for r in run.candidate_rows()
+    }
+    assert rows == {
+        "dc": ("", ""),
+        "dc_meoh": ("MeOH", "dC"),
+        "dc_unknown": ("", "dC"),
+        "compound": ("", ""),
+        "mg_acetate": ("Mg+OAc", "300.1000@20.00"),
+        "mg_acetate_13c": ("13C", "382.0905@20.00"),
+    }
+    assert run.summary()["derived_relations"] == {
+        "adduct": 1,
+        "unlabeled": 1,
+        "metal": 1,
+        "isotope": 1,
+    }
+    assert relation_label(82.9939, 300.1, DC, DR) == "Mg+OAc;13C"
 
 
 def test_shape_sync_needs_close_apex_different_mass_and_same_shape():

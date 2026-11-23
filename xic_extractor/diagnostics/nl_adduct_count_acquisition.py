@@ -127,7 +127,9 @@ def count_run(
                 np.asarray(traces[2 * k + 1].rt),
             )
         }
-    return RunCount(sample, candidates, groups, units, frozenset(removed), anchors)
+    return RunCount(
+        sample, candidates, groups, units, frozenset(removed), anchors, loss
+    )
 
 
 def _apices(handle, windows: list[MzRtWindow]) -> tuple[Anchor, ...]:
