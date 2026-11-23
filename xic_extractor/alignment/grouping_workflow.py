@@ -10,10 +10,7 @@ from typing import cast
 from xic_extractor.alignment.backfill.membership_selection import (
     select_backfill_memberships,
 )
-from xic_extractor.alignment.cid_nl_grouping import (
-    CID_NL_GROUPING_RULES,
-    cid_nl_backfill_comparison_rules,
-)
+from xic_extractor.alignment.cid_nl_grouping import CID_NL_GROUPING_RULES
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample.grouping_result import (
     CrossSampleGroupingContractError,
@@ -37,7 +34,6 @@ from xic_extractor.alignment.grouping_bootstrap import (
 )
 from xic_extractor.alignment.hypothesis_owner_adapter import (
     compose_peak_hypotheses_from_assessment_universe,
-    owner_from_cid_nl_assessment_observation,
     owner_from_cid_nl_assessment_support,
     owner_from_ms1_observation_hypothesis,
 )
@@ -116,17 +112,9 @@ def build_targeted_cross_sample_groups(
                 hypothesis=selected,
             )
         elif selected.method == HYPOTHESIS_METHOD_MS1_OBSERVATION:
-            owner = (
-                owner_from_cid_nl_assessment_observation(
-                    sample=sample,
-                    assessment=assessment,
-                    hypothesis=selected,
-                )
-                if assessment is not None
-                else owner_from_ms1_observation_hypothesis(
-                    sample=sample,
-                    hypothesis=selected,
-                )
+            owner = owner_from_ms1_observation_hypothesis(
+                sample=sample,
+                hypothesis=selected,
             )
         else:
             raise CrossSampleGroupingContractError(
@@ -315,9 +303,8 @@ def admit_cid_nl_group_backfills(
                 hypothesis=hypothesis,
             )
             if assessment.method_result == "SUPPORT"
-            else owner_from_cid_nl_assessment_observation(
+            else owner_from_ms1_observation_hypothesis(
                 sample=sample,
-                assessment=assessment,
                 hypothesis=hypothesis,
             )
         )
@@ -382,14 +369,7 @@ def admit_cid_nl_group_backfills(
                 )
             }.values()
         ),
-        rules=cid_nl_backfill_comparison_rules(
-            frozenset(
-                owner.owner_id
-                for _, _, owner, _, assessment in eligible
-                if assessment.method_result != "SUPPORT"
-                and assessment.method_subject.composition is not None
-            )
-        ),
+        rules=CID_NL_GROUPING_RULES,
         config=alignment_config,
         rt_frame=result.rt_frame,
         trajectories=peak_trajectories or PeakTrajectories(),

@@ -191,11 +191,12 @@ def test_batch_seed_search_retains_local_competition_without_local_cid(monkeypat
     ):
         for observed, target in zip(_measurements(result), expected, strict=True):
             assert observed == pytest.approx(target)
-        assert {cover.observed_rt_bounds for cover in result.coverage} == {(0.0, 20.0)}
+        assert {
+            (cover.request.rt_min, cover.request.rt_max) for cover in result.coverage
+        } == {(0.0, 20.0)}
         assert all(
             peak.physical_evaluation.state == "available" for peak in result.peaks
         )
-        assert not result.unlocalized_mass
 
     assert [
         (item.dda_scan_number, item.peak_observation.integration.rt_apex_min)
@@ -206,12 +207,7 @@ def test_batch_seed_search_retains_local_competition_without_local_cid(monkeypat
         not np.isclose(peak.mz, peak.source_trace.mz, atol=1e-4, rtol=0)
         for peak in a.peaks
     )
-    assert any(
-        item.evaluation.state == "unavailable"
-        and item.evaluation.reason == "insufficient_original_xic_support"
-        and item.evaluation.question.admissible_segments[0].apex_rt_min == 16.0
-        for item in a.unavailable_segments
-    )
+    assert all(peak.rt_apex_min != pytest.approx(16.0) for peak in a.peaks)
 
     (without_remote,) = _capture("A", a_raw, regions, early)
     assert without_remote.peaks == a.peaks
@@ -237,10 +233,9 @@ def test_raw_failure_and_acquired_flat_signal_keep_distinct_coverage():
     assert flat.peaks == failed.peaks == ()
     (flat_coverage,) = flat.coverage
     (failed_coverage,) = failed.coverage
-    assert flat_coverage.observed_rt_bounds == (0.0, 20.0)
+    assert flat_coverage.scan_bounds is not None
     assert flat_coverage.reason == "no_signal_above_baseline"
     assert failed_coverage.scan_bounds is None
-    assert failed_coverage.observed_rt_bounds is None
     assert "lost native chromatogram" in failed_coverage.reason
 
 
@@ -250,12 +245,6 @@ def test_acquired_edge_segment_keeps_incomplete_reason():
     raw = _Raw(((500.0, 0.08, 1.1e6), (500.0, 5.0, 5.1e5)))
     (result,) = _capture("B", raw, regions, ())
     assert [(p.integration.rt_apex_min, p.mz) for p in result.peaks] == [(5.0, 500.0)]
-    assert any(
-        item.evaluation.state == "unavailable"
-        and item.evaluation.reason == "incomplete_peak_context"
-        and item.evaluation.question.admissible_segments[0].left_rt_min == 0.0
-        for item in result.unavailable_segments
-    )
 
 
 def test_overlapping_requests_do_not_merge_two_coeluting_ions():

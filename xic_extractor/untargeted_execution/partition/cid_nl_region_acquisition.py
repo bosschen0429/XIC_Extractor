@@ -52,7 +52,6 @@ from xic_extractor.peak_detection.physical_peak_evaluation import (
 )
 from xic_extractor.peak_detection.physical_peak_models import (
     PhysicalPeakEvaluation,
-    PhysicalPeakState,
 )
 from xic_extractor.peak_detection.physical_peak_population import (
     PhysicalPeakPopulation,
@@ -94,12 +93,10 @@ class DiscoveryMassRegion:
 
 @dataclass(frozen=True, slots=True)
 class RegionTraceCoverage:
-    """Native query and actual MS1 span; a failed read did not search this request."""
+    """Native scans read for one query; a failed read did not search this request."""
 
     request: XICRequest
     scan_bounds: tuple[int, int] | None
-    observed_rt_bounds: tuple[float, float] | None
-    state: PhysicalPeakState
     reason: str
 
 
@@ -119,8 +116,6 @@ class CidNlSampleRegion:
     peaks: tuple[PeakObservation, ...]
     acquisitions: tuple[TraceAcquisitionBatch, ...]
     contexts: tuple[SampleElutionContext, ...]
-    unavailable_segments: tuple[RegionSegment, ...]
-    unlocalized_mass: tuple[RegionSegment, ...]
     evidence: tuple[CidNlEvidenceObservation, ...]
     individual_relations: tuple[DdaCidNlPeakSupport, ...]
     ambiguous_relations: tuple[DdaCidNlCandidateSetRelation, ...]
@@ -251,13 +246,12 @@ def _measure_region(
     """
     coverage = []
     measured: list[RegionSegment] = []
-    unavailable: list[RegionSegment] = []
     distinct: list[tuple[AcquiredTrace, PhysicalPeakPopulation]] = []
     batches = {}
     contexts = []
     for request, trace, batch, error in acquired:
         if trace is None:
-            coverage.append(RegionTraceCoverage(request, None, None, "failed", error))
+            coverage.append(RegionTraceCoverage(request, None, error))
             continue
         assert batch is not None
         batches[id(batch)] = batch
@@ -278,8 +272,6 @@ def _measure_region(
             RegionTraceCoverage(
                 request,
                 (coordinate.first_scan, coordinate.last_scan),
-                (float(rt[0]), float(rt[-1])) if rt.size else None,
-                population.universe.state,
                 population.universe.reason,
             )
         )
@@ -295,12 +287,11 @@ def _measure_region(
             contexts.append(context)
         for segment in population.universe.segments:
             evaluation = population.measure_segment(segment)
-            item = RegionSegment(trace, evaluation)
-            (measured if evaluation.state == "available" else unavailable).append(item)
+            if evaluation.state == "available":
+                measured.append(RegionSegment(trace, evaluation))
 
     traces: dict[XICRequest, Trace] = {}
     peaks: dict[tuple[str, tuple[float, ...], tuple[float, ...]], PeakObservation] = {}
-    unlocalized_mass = []
     for same_ion in group_same_ion_peaks(measured):
         kept = same_ion[0]
         trace = kept.acquired_trace
@@ -314,7 +305,6 @@ def _measure_region(
         for apex, lobe in sites:
             mz, _ = read_peak_apex_ion(trace, apex, ms1_centroid=ms1_centroid)
             if mz is None:
-                unlocalized_mass.append(kept)
                 continue
             if request not in traces:
                 traces[request] = trace_from_xic_request(
@@ -360,8 +350,6 @@ def _measure_region(
         observations,
         tuple(batches.values()),
         tuple(contexts),
-        tuple(unavailable),
-        tuple(unlocalized_mass),
         evidence,
         individual,
         ambiguous,
