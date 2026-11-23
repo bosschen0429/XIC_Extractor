@@ -157,6 +157,15 @@ that measurement as the sample's cell, so its area and bounds equal the peak
 table. Scheduling partitions pack worksets for execution only; they do not
 restrict scientific comparison or RT calibration.
 
+The first pass searches every sample, with or without its own CID-NL events,
+in each mass region planned from the batch's qualifying events. Each trace
+covers the sample's whole LC run and is measured once, but a peak becomes an
+observation only when its apex lies within 3 min of some sample's event in
+that region. On 8RAW, every Matrix peak lay within 2.72 min of such an event;
+the peaks beyond 3 min fed only unadopted groups or displaced nearby
+correspondences. Backfill is not bounded by this distance: a cell without a
+first-pass peak is searched again.
+
 Each declared batch is aligned alone and its finished Matrix groups are then
 paired with the reference batch's; see
 [Declared batches](rt-calibration.md#declared-batches). Grouping, Backfill and

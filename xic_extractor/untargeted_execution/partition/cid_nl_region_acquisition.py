@@ -69,6 +69,9 @@ from xic_extractor.untargeted_execution.partition.cid_nl_discovery_evidence impo
 )
 from xic_extractor.xic_models import XICRequest
 
+EVENT_NEIGHBORHOOD_MIN = 3.0
+"""A peak apex this far from every batch event of its region is not minted."""
+
 
 class RegionRawSource(ScanResolvedXICSource, Protocol):
     def acquisition_rt_bounds(self) -> tuple[float, float]: ...
@@ -80,10 +83,22 @@ class RegionRawSource(ScanResolvedXICSource, Protocol):
 
 @dataclass(frozen=True, slots=True)
 class DiscoveryMassRegion:
-    """A connected union of seed mass windows, not a chemical ion identity."""
+    """A connected union of seed mass windows and the batch event RTs inside it.
+
+    Not a chemical ion identity. Each sample measures the full LC run, but only
+    peaks near some sample's event become observations.
+    """
 
     centers: tuple[float, ...]
     ppm: float
+    event_rts: tuple[float, ...]
+
+    def near_event(self, rt: float) -> bool:
+        index = bisect_left(self.event_rts, rt)
+        return any(
+            abs(rt - event_rt) <= EVENT_NEIGHBORHOOD_MIN
+            for event_rt in self.event_rts[max(index - 1, 0) : index + 1]
+        )
 
     @property
     def mz_bounds(self) -> tuple[float, float]:
@@ -130,23 +145,26 @@ def plan_cid_nl_mass_regions(
     request so two neighboring ions cannot be fused by merely sharing a region.
     """
     ppm = settings.precursor_mz_tolerance_ppm
-    centers = sorted(
-        {
-            event_ion_mz(event)
-            for event in events
-            if event.neutral_loss_tag in settings.selected_tag_names
+    rts_by_mz: dict[float, set[float]] = {}
+    for event in events:
+        if (
+            event.neutral_loss_tag in settings.selected_tag_names
             and event.assess_precursor_loss(settings.nl_tolerance_ppm).supports_nl
-        }
-    )
-    regions: list[list[float]] = []
+        ):
+            rts_by_mz.setdefault(event_ion_mz(event), set()).add(float(event.rt))
+    regions: list[tuple[list[float], set[float]]] = []
     right = 0.0
-    for mz in centers:
+    for mz in sorted(rts_by_mz):
         low, high = mz_window(mz, ppm)
         if not regions or low > right:
-            regions.append([])
-        regions[-1].append(mz)
+            regions.append(([], set()))
+        regions[-1][0].append(mz)
+        regions[-1][1].update(rts_by_mz[mz])
         right = high
-    return tuple(DiscoveryMassRegion(tuple(region), ppm) for region in regions)
+    return tuple(
+        DiscoveryMassRegion(tuple(centers), ppm, tuple(sorted(rts)))
+        for centers, rts in regions
+    )
 
 
 def acquire_cid_nl_sample_regions(
@@ -341,6 +359,8 @@ def _measure_region(
             else ((kept.evaluation.apex_rt_min, None),)
         )
         for apex, lobe in sites:
+            if apex is None or not region.near_event(apex):
+                continue
             mz, _ = read_peak_apex_ion(trace, apex, ms1_centroid=ms1_centroid)
             if mz is None:
                 continue

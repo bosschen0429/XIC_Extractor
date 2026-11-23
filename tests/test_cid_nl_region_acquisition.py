@@ -146,7 +146,7 @@ def test_localized_overlap_lobes_keep_separate_events_without_areas():
 
 def test_exact_two_scan_alias_from_overlapping_windows_is_one_observation():
     local = _scan_events("A", 302, 3.0, 499.995)
-    other = _scan_events("B", 800, 8.0, 500.005)
+    other = _scan_events("B", 1300, 13.0, 500.005)
     regions = plan_cid_nl_mass_regions((*local, *other), settings=SETTINGS)
     raw = _Raw(((499.990, 13.0, 2.3e5), (500.011, 15.0, 1.7e5)))
     shared_signal = np.zeros_like(raw.rt)
@@ -216,6 +216,21 @@ def test_batch_seed_search_retains_local_competition_without_local_cid(monkeypat
     (chunked,) = _capture("A", a_raw, regions, reversed_events)
     assert chunked.peaks == a.peaks
     assert chunked.individual_relations == a.individual_relations
+
+
+def test_only_peaks_near_some_batch_event_become_observations():
+    events = (
+        *_scan_events("A", 301, 3.0, 500.0),
+        *_scan_events("B", 901, 9.0, 500.0),
+    )
+    regions = plan_cid_nl_mass_regions(events, settings=SETTINGS)
+    raw = _Raw(((500.0, 3.2, 1.0e6), (500.0, 11.5, 4.0e5), (500.0, 15.0, 8.0e5)))
+
+    (result,) = _capture("C", raw, regions, ())
+
+    assert [peak.rt_apex_min for peak in result.peaks] == pytest.approx([3.2, 11.5])
+    (coverage,) = result.coverage
+    assert (coverage.request.rt_min, coverage.request.rt_max) == (0.0, 20.0)
 
 
 def test_raw_failure_and_acquired_flat_signal_keep_distinct_coverage():
