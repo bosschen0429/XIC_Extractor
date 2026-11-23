@@ -1,10 +1,16 @@
 """Count adducts among neutral-loss Discovery candidates of one sample.
 
 Each compound counts once: ions derived from another candidate (known mass
-difference and synchronized peak shape) or from a nucleoside are removed, and
-single-MS2 compounds are listed as unconfirmed. Optional replicate controls add
-per-injection and cumulative counts. Writes ``nl_adduct_count.json`` and
-``nl_adduct_candidates.tsv`` with each candidate's fate. Rules live in
+difference and synchronized peak shape) or from a nucleoside are removed, so
+are compounds whose MS2 fragments mainly by losing another preset's sugar and
+compounds whose every ion leaves a negative mass defect after the loss (no
+organic nucleobase); single-MS2 compounds are listed as unconfirmed, and
+compounds made only of overlap-review peaks as overlap_only.
+Optional replicate controls from the same batch add per-injection and
+cumulative counts; their RT is compared as measured. Writes
+``nl_adduct_count.json`` and ``nl_adduct_candidates.tsv`` with each
+candidate's fate; a derived ion also names the ion it derives from and its
+known relation (isotope, adduct, metal complex, dimer). Rules live in
 ``xic_extractor.diagnostics.nl_adduct_count``. The result screens Discovery
 candidates before Alignment; it is not chemical identity, and Matrix Curation
 judges the published Matrix.
@@ -19,13 +25,13 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from xic_extractor.configuration import paths
-from xic_extractor.diagnostics.nl_adduct_count import cumulative, overlap, union_runs
+from xic_extractor.diagnostics.nl_adduct_count import cumulative, union_runs
 from xic_extractor.diagnostics.nl_adduct_count_acquisition import (
     count_run,
     read_nucleosides,
 )
 from xic_extractor.presets.apply import bind_cid_nl_recipe
-from xic_extractor.presets.loader import load_preset
+from xic_extractor.presets.loader import list_presets, load_preset
 
 NUCLEOSIDES = Path(paths.__file__).with_name("data") / "nl_adduct_nucleosides.tsv"
 
@@ -34,11 +40,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = _parse_args(argv)
     preset = bind_cid_nl_recipe(load_preset(args.preset), "full")
     nucleosides = read_nucleosides(args.nucleosides)
+    sugar_losses = {
+        tag.name: tag.value
+        for name in list_presets()
+        for tag in load_preset(name).tags
+        if tag.strategy == "neutral_loss" and tag.value is not None
+    }
     runs = [
         count_run(
             directory,
             dll_dir=args.dll_dir,
             neutral_loss_by_tag=preset.discovery_settings.neutral_loss_by_tag,
+            sugar_losses=sugar_losses,
             nucleosides=nucleosides,
         )
         for directory in (args.discovery_dir, *args.control_dir)
@@ -53,7 +66,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             "unconfirmed_in_one_injection": sum(
                 c.unconfirmed and len(c.runs) == 1 for c in consensus
             ),
-            "shared_with_sample": overlap(sample, controls, consensus),
         }
     args.output_dir.mkdir(parents=True, exist_ok=True)
     text = json.dumps(report, indent=2, ensure_ascii=False)
@@ -74,7 +86,8 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         description=(
             "Count adducts in one sample's neutral-loss Discovery output: remove "
             "ions derived from another candidate or a nucleoside, list single-MS2 "
-            "compounds apart, and compare with replicate control injections."
+            "and overlap-only compounds apart, and compare with replicate control "
+            "injections."
         ),
     )
     parser.add_argument("--discovery-dir", type=Path, required=True)
