@@ -734,7 +734,6 @@ def test_reused_hold_peak_needs_its_own_group_window(
             if peak.integration.rt_apex_min == pytest.approx(reused_apex, abs=0.005)
         )
         assert attempt.group_hypothesis_id == "bounded-group"
-        assert attempt.acquisition is capture.acquisition
         assert is_ms1_only_cid_nl_backfill_assessment(attempt.assessment)
         assert attempt.assessment.candidate_peaks[0].integration == (
             measured.integration

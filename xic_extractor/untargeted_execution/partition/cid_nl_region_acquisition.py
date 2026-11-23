@@ -14,7 +14,6 @@ from xic_extractor.acquisition.physical_capture import (
 )
 from xic_extractor.acquisition_contract import (
     AcquiredTrace,
-    TraceAcquisitionBatch,
     TraceAcquisitionCapability,
     acquire_trace_batch,
     mint_trace_acquisition_capability,
@@ -116,7 +115,6 @@ class CidNlSampleRegion:
     region: DiscoveryMassRegion
     coverage: tuple[RegionTraceCoverage, ...]
     peaks: tuple[PeakObservation, ...]
-    acquisitions: tuple[TraceAcquisitionBatch, ...]
     contexts: tuple[SampleElutionContext, ...]
     evidence: tuple[CidNlEvidenceObservation, ...]
     individual_relations: tuple[DdaCidNlPeakSupport, ...]
@@ -249,7 +247,7 @@ def _region_event_selector(
     return select
 
 
-_Capture = tuple[XICRequest, AcquiredTrace | None, TraceAcquisitionBatch | None, str]
+_Capture = tuple[XICRequest, AcquiredTrace | None, str]
 
 
 def _acquire_regions(
@@ -266,11 +264,9 @@ def _acquire_regions(
             raise
         except Exception as exc:
             reason = f"{type(exc).__name__}: {exc}"
-            yield from ((request, None, None, reason) for request in chunk)
+            yield from ((request, None, reason) for request in chunk)
         else:
-            yield from (
-                (item.coordinate.request, item, batch, "") for item in batch.traces
-            )
+            yield from ((item.coordinate.request, item, "") for item in batch.traces)
 
 
 def _measure_region(
@@ -292,14 +288,11 @@ def _measure_region(
     coverage = []
     measured: list[RegionSegment] = []
     distinct: list[tuple[AcquiredTrace, PhysicalPeakPopulation]] = []
-    batches = {}
     contexts = []
-    for request, trace, batch, error in acquired:
+    for request, trace, error in acquired:
         if trace is None:
             coverage.append(RegionTraceCoverage(request, None, error))
             continue
-        assert batch is not None
-        batches[id(batch)] = batch
         rt, y = trace.trace.rt, trace.trace.intensity
         matching = next(
             (pop for owner, pop in distinct if same_acquired_signal(owner, trace)),
@@ -393,7 +386,6 @@ def _measure_region(
         region,
         tuple(coverage),
         observations,
-        tuple(batches.values()),
         tuple(contexts),
         evidence,
         individual,

@@ -673,7 +673,6 @@ def profile_replay(tmp_path, monkeypatch, request):
                 }
                 assessment = adapter.assessment_input.assessment
                 if assessment.candidate_peaks:
-                    assert adapter.acquisition is not None
                     assert all(
                         peak.source_trace.sample_name
                         == sample_result.job.sample.sample_name

@@ -8,9 +8,6 @@ from dataclasses import dataclass
 from dataclasses import field as dataclass_field
 from pathlib import Path
 
-from xic_extractor.acquisition_contract import (
-    TraceAcquisitionBatch,
-)
 from xic_extractor.alignment.backfill.conservative import is_backfill_eligible_sample
 from xic_extractor.alignment.cid_nl_inputs import (
     UntargetedCidNlAssessmentInput,
@@ -67,7 +64,6 @@ _WRITER_ROUNDING_ABS_TOL = 5e-6
 @dataclass(frozen=True, slots=True)
 class CidNlAcquisitionResult:
     assessment_input: UntargetedCidNlAssessmentInput
-    acquisition: TraceAcquisitionBatch | None
     candidate_observations: tuple[tuple[str, PeakObservation], ...]
     source_candidate_ids: tuple[str, ...]
     strict_scan_count: int
@@ -258,18 +254,8 @@ def assess_sample_regions(
             )
             for peak in peaks
         )
-        acquisition = next(
-            (
-                batch
-                for region in regions
-                if any(p in own for p in region.peaks)
-                for batch in region.acquisitions
-            ),
-            None,
-        )
         by_subject[key] = CidNlAcquisitionResult(
             assessment_input=UntargetedCidNlAssessmentInput(sample, assessment),
-            acquisition=acquisition,
             candidate_observations=bound,
             source_candidate_ids=tuple(p.peak_id for p in candidates),
             strict_scan_count=len(

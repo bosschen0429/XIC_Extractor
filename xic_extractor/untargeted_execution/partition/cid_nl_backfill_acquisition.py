@@ -87,7 +87,7 @@ if TYPE_CHECKING:
 class UntargetedCidNlBackfillAttemptResult:
     assessment: CidNlMethodAssessment
     backfill_input: UntargetedCidNlBackfillInput | None
-    acquisition: TraceAcquisitionBatch
+    acquisition: TraceAcquisitionBatch | None
     group_hypothesis_id: str | None = None
     query_rt: float | None = None
     query_rt_basis: str = "group_center"
@@ -540,7 +540,7 @@ def _close_backfill_attempt(
     backfill_evidence: tuple[CidNlEvidenceObservation, ...],
     backfill_support: tuple[DdaCidNlPeakSupport, ...],
     backfill_sets: tuple[DdaCidNlCandidateSetRelation, ...],
-    acquisition: TraceAcquisitionBatch,
+    acquisition: TraceAcquisitionBatch | None,
     capture_evidence: tuple[RetainedCaptureEvidence, ...],
 ) -> UntargetedCidNlBackfillAttemptResult:
     try:
@@ -614,10 +614,7 @@ def reuse_cid_nl_backfill_peak(
     Never create a new segment by narrowing an ambiguous chemical universe.
     """
     initial = capture.assessment_input.assessment
-    if (
-        initial.reason_codes != ("no_unique_qualifying_relation",)
-        or capture.acquisition is None
-    ):
+    if initial.reason_codes != ("no_unique_qualifying_relation",):
         return None
     sample = capture.assessment_input.sample
     query = target.sample_query_rt
@@ -685,7 +682,7 @@ def reuse_cid_nl_backfill_peak(
         backfill_evidence=(),
         backfill_support=(),
         backfill_sets=(),
-        acquisition=capture.acquisition,
+        acquisition=None,
         capture_evidence=(
             RetainedCaptureEvidence(
                 sample_key=sample.sample_name,

@@ -272,6 +272,7 @@ def _project_completed_backfill(
         or not receipt.search_completed
         or not receipt.acquisition_supported
         or backfill.backfill_input is not None
+        or backfill.acquisition is None
     ):
         raise UntargetedPartitionError("backfill is not a completed empty epoch")
     query_rt = center if backfill.query_rt is None else backfill.query_rt

@@ -164,14 +164,6 @@ def test_exact_two_scan_alias_from_overlapping_windows_is_one_observation():
         for relation in result.individual_relations
     ] == [(302, pytest.approx(500.000, abs=1e-6))]
     assert not result.ambiguous_relations
-    peak = result.peaks[0]
-    sources = [trace for batch in result.acquisitions for trace in batch.traces]
-    assert tuple(trace.coordinate.request.mz for trace in sources) == (499.995, 500.005)
-    for trace in sources:
-        rt = trace.trace.rt
-        selected = (rt >= peak.rt[0]) & (rt <= peak.rt[-1])
-        assert tuple(rt[selected]) == peak.rt
-        assert tuple(trace.trace.intensity[selected]) == peak.intensity
 
 
 def test_batch_seed_search_retains_local_competition_without_local_cid(monkeypatch):

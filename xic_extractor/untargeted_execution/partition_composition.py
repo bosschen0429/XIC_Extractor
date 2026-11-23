@@ -538,10 +538,7 @@ def _build_production_composition_inputs(
             for subject in subject_workset
             for result in results_by_subject.get(subject.method_subject_id, ())
             for assessment, acquisition in (
-                (
-                    result.adapter_result.assessment_input.assessment,
-                    result.adapter_result.acquisition,
-                ),
+                (result.adapter_result.assessment_input.assessment, None),
                 *(
                     (attempt.assessment, attempt.acquisition)
                     for attempt in result.backfill_attempts

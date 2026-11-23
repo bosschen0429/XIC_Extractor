@@ -254,7 +254,6 @@ def _execute_initial_assessment_batch(
             phase.reference_results = tuple(
                 replace(
                     answers[j.method_subject.method_subject_id],
-                    acquisition=None,
                     capture_evidence=(),
                 )
                 for j in ref_jobs
