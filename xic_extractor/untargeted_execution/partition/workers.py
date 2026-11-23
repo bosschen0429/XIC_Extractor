@@ -235,32 +235,49 @@ def _execute_initial_assessment_batch(
             raw=raw,
             rt_reference_only=False,
         )
-        if phase.reference_jobs:
-            ref_jobs = phase.reference_jobs
-            answers = assess_sample_regions(
-                regions=relate_region_events(
-                    regions,
+        ref_jobs = phase.reference_jobs
+        if ref_jobs:
+            same_view = (
+                len(ref_jobs) == len(states)
+                and all(
+                    ref is state.job and state.error is None
+                    for ref, state in zip(ref_jobs, states, strict=True)
+                )
+                and not any(
+                    peak.requires_overlap_review
+                    for region in regions
+                    for peak in region.peaks
+                )
+            )
+            answers = (
+                results
+                if same_view
+                else assess_sample_regions(
+                    regions=relate_region_events(
+                        regions,
+                        sample=job.sample,
+                        acquisition_source=job.acquisition_source_expectation.source,
+                        events=(
+                            event
+                            for candidate in (
+                                *ref_jobs[0].candidates,
+                                *ref_jobs[0].support_candidates,
+                            )
+                            for event in candidate.located_events
+                        ),
+                        settings=job.settings,
+                    ),
                     sample=job.sample,
                     acquisition_source=job.acquisition_source_expectation.source,
-                    events=(
-                        event
-                        for candidate in (
-                            *ref_jobs[0].candidates,
-                            *ref_jobs[0].support_candidates,
-                        )
-                        for event in candidate.located_events
+                    scopes=tuple(
+                        (j.method_subject, _request_subject_candidates(j))
+                        for j in ref_jobs
                     ),
+                    processing_attempt_id=job.processing_attempt_id,
                     settings=job.settings,
-                ),
-                sample=job.sample,
-                acquisition_source=job.acquisition_source_expectation.source,
-                scopes=tuple(
-                    (j.method_subject, _request_subject_candidates(j)) for j in ref_jobs
-                ),
-                processing_attempt_id=job.processing_attempt_id,
-                settings=job.settings,
-                raw=raw,
-                rt_reference_only=True,
+                    raw=raw,
+                    rt_reference_only=True,
+                )
             )
             phase.reference_results = tuple(
                 replace(
