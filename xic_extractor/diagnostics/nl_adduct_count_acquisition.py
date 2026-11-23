@@ -95,7 +95,7 @@ def count_run(
         )
         anchors = _apices(handle, same)
         groups = group_candidates(candidates, loss, anchors)
-        kept = [g for g in groups if g.category != "nucleoside_elution"]
+        kept = [g for g in groups if g.compound]
         pairs = shape_pairs(kept)
         traces = _traces(
             handle,

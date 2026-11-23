@@ -30,7 +30,7 @@ def _c(peak_id, mz, rt, events=2, ratio=0.0):
 
 def _run(candidates, pairs=(), removed=frozenset(), anchors=DC, sample="s"):
     groups = group_candidates(candidates, DR, anchors)
-    kept = [g for g in groups if g.category != "nucleoside_elution"]
+    kept = [g for g in groups if g.compound]
     units = build_units(kept, pairs)
     return RunCount(sample, tuple(candidates), groups, units, removed, anchors)
 
@@ -45,8 +45,8 @@ def test_groups_join_coeluting_known_differences_and_take_their_category():
             _c("dc", 228.0979, 8.70),
             _c("dc_other_rt", 228.0979, 11.0),
             _c("du", 229.0822, 30.0),
-            _c("near", 350.0, 8.80),
-            _c("two", 500.0, 25.0, ratio=0.1),
+            _c("near", 350.1, 8.80),
+            _c("two", 500.1, 25.0, ratio=0.1),
         ),
         DR,
         DC,
@@ -70,15 +70,17 @@ def test_waterfall_matches_each_candidates_fate():
         (
             _c("dc", 228.0979, 8.66),
             _c("dc13", 229.1013, 8.66),
-            _c("near", 350.0, 8.75),
-            _c("x", 400.0, 20.0),
-            _c("y", 450.0, 20.03),
-            _c("one", 500.0, 30.0, events=1),
-            _c("late", 600.0, 45.0),
-            _c("rna", 700.0, 22.3),
+            _c("near", 350.1, 8.75),
+            _c("x", 400.1, 20.0),
+            _c("y", 450.1, 20.03),
+            _c("one", 500.1, 30.0, events=1),
+            _c("late", 600.1, 45.0),
+            _c("rna", 700.1, 22.3),
+            # Mg2(OAc)2(OMe)(H2O)2+ loses MeOAc + ketene = C5H8O3: 116.988 is no base
+            _c("mg", 233.0361, 55.99),
         ),
         pairs=[(1, 2)],
-        removed=frozenset({"700.0000@22.30"}),
+        removed=frozenset({"700.1000@22.30"}),
     )
     summary = run.summary()
     assert [
@@ -88,17 +90,19 @@ def test_waterfall_matches_each_candidates_fate():
             "derived_known_difference",
             "derived_nucleoside",
             "derived_synchronized_shape",
+            "no_nucleobase",
             "unconfirmed",
             "counted",
             "counted_late",
         )
-    ] == [8, 1, 2, 1, 1, 3, 1]
+    ] == [9, 1, 2, 1, 1, 1, 3, 1]
     assert Counter(row["fate"] for row in run.candidate_rows()) == {
         "counted": 3,
         "derived_known_difference": 1,
         "derived_nucleoside_elution": 1,
         "derived_other_sugar_nucleoside": 1,
         "derived_synchronized_shape": 1,
+        "no_nucleobase": 1,
         "unconfirmed": 1,
     }
 
@@ -106,10 +110,10 @@ def test_waterfall_matches_each_candidates_fate():
 def test_shape_sync_needs_close_apex_different_mass_and_same_shape():
     groups = group_candidates(
         (
-            _c("a", 400.0, 20.0),
-            _c("b", 450.0, 20.05),
-            _c("c", 400.005, 20.0),
-            _c("d", 500.0, 20.2),
+            _c("a", 400.1, 20.0),
+            _c("b", 450.1, 20.05),
+            _c("c", 400.105, 20.0),
+            _c("d", 500.1, 20.2),
         ),
         DR,
         DC,
@@ -137,8 +141,8 @@ def test_controls_union_cumulative_and_shared_compounds_after_rt_mapping():
         Anchor("dA", 252.1091, 19.6 + shift),
     )
     controls = [
-        _run((_c("a", 400.0, 14.4), _c("u", mz, 30.2, events=1)), anchors=anchors(0.2))
-        for mz in (500.0, 510.0)
+        _run((_c("a", 400.1, 14.4), _c("u", mz, 30.2, events=1)), anchors=anchors(0.2))
+        for mz in (500.1, 510.1)
     ]
     consensus = union_runs(controls)
     assert sorted((c.runs, c.unconfirmed) for c in consensus) == [
@@ -147,10 +151,10 @@ def test_controls_union_cumulative_and_shared_compounds_after_rt_mapping():
         ((1,), True),
     ]
     assert cumulative(consensus, 2) == {"counted": [1, 1], "unconfirmed": [1, 2]}
-    main = _run((_c("a", 400.0, 14.0),), anchors=anchors(0.0))
+    main = _run((_c("a", 400.1, 14.0),), anchors=anchors(0.0))
     assert overlap(main, controls, consensus) == [
         {
-            "unit": "400.0000@14.00",
+            "unit": "400.1000@14.00",
             "kind": "other",
             "control_injections": 2,
             "control_unconfirmed": False,
@@ -165,20 +169,20 @@ def test_compounds_extend_rt_pairs_only_past_nucleosides_and_one_to_one():
     )
     control = _run(
         (
-            _c("inside", 300.0, 15.0),
-            _c("late", 400.0, 30.0),
-            _c("twin1", 450.0, 32.0),
-            _c("twin2", 450.0, 32.5),
-            _c("x", 500.0, 35.0),
+            _c("inside", 300.1, 15.0),
+            _c("late", 400.1, 30.0),
+            _c("twin1", 450.1, 32.0),
+            _c("twin2", 450.1, 32.5),
+            _c("x", 500.1, 35.0),
         ),
         anchors=nucleosides(0.4),
     )
     main = _run(
         (
-            _c("inside", 300.0, 14.0),
-            _c("late", 400.0, 30.0),
-            _c("twin", 450.0, 32.2),
-            _c("x", 500.0, 35.1),
+            _c("inside", 300.1, 14.0),
+            _c("late", 400.1, 30.0),
+            _c("twin", 450.1, 32.2),
+            _c("x", 500.1, 35.1),
         ),
         anchors=nucleosides(0.0),
     )
@@ -190,9 +194,9 @@ def test_compounds_extend_rt_pairs_only_past_nucleosides_and_one_to_one():
         (35.1, 35.0),
     ]
     assert {row["unit"] for row in overlap(main, [control], consensus)} == {
-        "400.0000@30.00",
-        "450.0000@32.20",
-        "500.0000@35.10",
+        "400.1000@30.00",
+        "450.1000@32.20",
+        "500.1000@35.10",
     }
 
 

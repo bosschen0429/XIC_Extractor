@@ -1,10 +1,12 @@
 """Count adducts among neutral-loss Discovery candidates of one sample.
 
 Each compound counts once: ions derived from another candidate (known mass
-difference and synchronized peak shape) or from a nucleoside are removed, and
-single-MS2 compounds are listed as unconfirmed. Optional replicate controls add
-per-injection and cumulative counts. Writes ``nl_adduct_count.json`` and
-``nl_adduct_candidates.tsv`` with each candidate's fate. Rules live in
+difference and synchronized peak shape) or from a nucleoside are removed, so
+are ions whose remainder after the loss has a negative mass defect (no organic
+nucleobase), and single-MS2 compounds are listed as unconfirmed. Optional
+replicate controls add per-injection and cumulative counts. Writes
+``nl_adduct_count.json`` and ``nl_adduct_candidates.tsv`` with each
+candidate's fate. Rules live in
 ``xic_extractor.diagnostics.nl_adduct_count``. The result screens Discovery
 candidates before Alignment; it is not chemical identity, and Matrix Curation
 judges the published Matrix.
