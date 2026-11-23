@@ -76,8 +76,7 @@ def test_waterfall_matches_each_candidates_fate():
             _c("one", 500.1, 30.0, events=1),
             _c("late", 600.1, 45.0),
             _c("rna", 700.1, 22.3),
-            # Mg2(OAc)2(OMe)(H2O)2+ loses MeOAc + ketene = C5H8O3: 116.988 is no base
-            _c("mg", 233.0361, 55.99),
+            _c("mg_acetate_cluster", 233.0361, 55.99),
         ),
         pairs=[(1, 2)],
         removed=frozenset({"700.1000@22.30"}),
