@@ -3,7 +3,9 @@
 A compound counts once. Derived ions are other ions of a compound that elute
 with it: a known mass difference, elution with a nucleoside of the same sugar,
 or a peak shape synchronized with another candidate or with a nucleoside of
-another sugar. A compound whose every ion leaves a negative mass defect after
+another sugar. A compound whose best-sampled ion fragments mainly by losing
+another sugar belongs to that sugar, though a minor product matched this loss.
+A compound whose every ion leaves a negative mass defect after
 the loss holds no organic nucleobase: an inorganic cluster or multiply charged
 ion lost the same elemental composition. A compound whose groups each had one
 attached MS2 event is unconfirmed and listed apart. A compound whose every
@@ -70,6 +72,7 @@ OVERLAP_ONLY = "overlap_only"
 KNOWN_DIFFERENCE = "derived_known_difference"
 NUCLEOSIDE_ELUTION = "derived_nucleoside_elution"
 OTHER_SUGAR = "derived_other_sugar_nucleoside"
+OTHER_SUGAR_FRAGMENT = "other_sugar_fragment"
 SYNCHRONIZED_SHAPE = "derived_synchronized_shape"
 
 Xic = Callable[[Sequence[tuple[float, float]]], Sequence[XICTrace]]
@@ -78,12 +81,16 @@ Xic = Callable[[Sequence[tuple[float, float]]], Sequence[XICTrace]]
 
 @dataclass(frozen=True)
 class Candidate:
+    """``fragment_sugar`` names another sugar whose loss gives a stronger product
+    than this loss across the candidate's attached MS2."""
+
     peak_id: str
     mz: float
     rt: float
     event_count: int
     second_loss_ratio: float = 0.0
     overlap: bool = False
+    fragment_sugar: str = ""
 
 
 @dataclass(frozen=True)
@@ -157,9 +164,17 @@ class Unit:
         return all(c.overlap for g in self.groups for c in g.members)
 
     @property
+    def fragment_sugar(self) -> str:
+        """The fragment sugar of the ion with the most attached MS2 events."""
+        ions = [c for g in self.groups for c in g.members]
+        return max(ions, key=lambda c: c.event_count).fragment_sugar
+
+    @property
     def fate(self) -> str:
         if self.other_sugar:
             return OTHER_SUGAR
+        if self.fragment_sugar:
+            return OTHER_SUGAR_FRAGMENT
         if self.no_nucleobase:
             return NO_NUCLEOBASE
         if self.unconfirmed:
@@ -389,6 +404,7 @@ class RunCount:
             "derived_known_difference": fates[KNOWN_DIFFERENCE],
             "derived_nucleoside": fates[NUCLEOSIDE_ELUTION] + fates[OTHER_SUGAR],
             "derived_synchronized_shape": fates[SYNCHRONIZED_SHAPE],
+            "other_sugar_fragment": fates[OTHER_SUGAR_FRAGMENT],
             "no_nucleobase": fates[NO_NUCLEOBASE],
             "unconfirmed": fates[UNCONFIRMED],
             "overlap_only": fates[OVERLAP_ONLY],
@@ -437,7 +453,12 @@ class RunCount:
                     )
                     derived_from = parent[0]
                 else:
-                    relation = derived_from = ""
+                    derived_from = ""
+                    relation = (
+                        unit.fragment_sugar
+                        if unit and fate == OTHER_SUGAR_FRAGMENT
+                        else ""
+                    )
                 rows.append(
                     {
                         "sample": self.sample,

@@ -52,8 +52,11 @@ def count_run(
     *,
     dll_dir: Path,
     neutral_loss_by_tag: dict[str, float],
+    sugar_losses: dict[str, float],
     nucleosides: list[tuple[MzRtWindow, str]],
 ) -> RunCount:
+    """``sugar_losses`` holds every sugar's neutral loss by tag; those outside
+    ``neutral_loss_by_tag`` show when a compound fragments as another sugar."""
     index = read_discovery_batch_index(discovery_dir / "discovery_batch_index.csv")
     (sample,) = index.sample_order
     raw, events = index.raw_files[sample], index.event_csvs[sample]
@@ -76,20 +79,29 @@ def count_run(
     same = [w for w, tag in nucleosides if tag in neutral_loss_by_tag]
     other = [w for w, tag in nucleosides if tag not in neutral_loss_by_tag]
 
+    other_losses = {
+        tag: da for tag, da in sugar_losses.items() if tag not in neutral_loss_by_tag
+    }
+
     recalibration = MassRecalibration.EASY_IC_RESTORE
     with open_raw(raw, dll_dir, mass_recalibration=recalibration) as handle:
-        ratios = _second_loss_ratios(handle, scans, loss)
-        candidates = [
-            Candidate(
-                p.peak_id,
-                p.peak_mz,
-                p.ms1_apex_rt,
-                p.attached_event_count,
-                ratios.get(p.peak_id, 0.0),
-                p.requires_overlap_review,
+        evidence = _ms2_evidence(
+            handle, scans, {p.peak_id: p.peak_mz for p in peaks}, loss, other_losses
+        )
+        candidates = []
+        for p in peaks:
+            ratio, sugar = evidence.get(p.peak_id, (0.0, ""))
+            candidates.append(
+                Candidate(
+                    p.peak_id,
+                    p.peak_mz,
+                    p.ms1_apex_rt,
+                    p.attached_event_count,
+                    ratio,
+                    p.requires_overlap_review,
+                    sugar,
+                )
             )
-            for p in peaks
-        ]
         return count_candidates(
             sample,
             candidates,
@@ -124,8 +136,18 @@ def _apices(handle, windows: list[MzRtWindow]) -> tuple[Anchor, ...]:
     return tuple(anchors)
 
 
-def _second_loss_ratios(handle, scans, loss: float) -> dict[str, float]:
-    wanted = frozenset(n for numbers in scans.values() for n in numbers)
+def _ms2_evidence(
+    handle,
+    scans,
+    peak_mz: dict[str, float],
+    loss: float,
+    other_losses: dict[str, float],
+) -> dict[str, tuple[float, str]]:
+    """Per peak: the strongest second-loss ratio, and another sugar whose loss
+    gives the base peak of more attached MS2 than this loss does. Only MS2 of
+    the peak's own m/z vote; an event attached across the isolation window
+    fragments a different ion."""
+    wanted = frozenset(n for p in peak_mz for n in scans.get(p, ()))
     spectra = {
         e.scan_number: e.scan
         for e in handle.iter_ms2_scan_subset(None, None, wanted)
@@ -140,16 +162,33 @@ def _second_loss_ratios(handle, scans, loss: float) -> dict[str, float]:
         )
         return float(scan.intensities[inside].max()) if inside.any() else 0.0
 
-    ratios = {}
-    for peak_id, numbers in scans.items():
+    def base_peak_loss(scan) -> str | None:
+        fragments = scan.masses < scan.precursor_mz - 1.0
+        if not fragments.any():
+            return None
+        top = float(scan.masses[fragments][scan.intensities[fragments].argmax()])
+        for tag, da in (("", loss), *other_losses.items()):
+            target = scan.precursor_mz - da
+            if abs(top - target) <= mz_tolerance_da(target, MS2_PRODUCT_PPM):
+                return tag
+        return None
+
+    evidence = {}
+    for peak_id, own in peak_mz.items():
         best = 0.0
-        for scan in filter(None, (spectra.get(n) for n in numbers)):
+        votes = dict.fromkeys(("", *other_losses), 0)
+        for scan in filter(None, (spectra.get(n) for n in scans.get(peak_id, ()))):
             one = product(scan, scan.precursor_mz - loss)
             two = product(scan, scan.precursor_mz - 2 * loss)
             if two > 0:
                 best = max(best, two / one if one else 99.0)
-        ratios[peak_id] = best
-    return ratios
+            if abs(scan.precursor_mz - own) > mz_tolerance_da(own, MS2_PRODUCT_PPM):
+                continue
+            tag = base_peak_loss(scan)
+            if tag is not None:
+                votes[tag] += 1
+        evidence[peak_id] = (best, max(votes, key=lambda tag: votes[tag]))
+    return evidence
 
 
 def _traces(handle, requests):

@@ -20,8 +20,8 @@ DR = 116.0474
 DC = (Anchor("dC", 228.0979, 8.66), Anchor("dU", 229.0822, None))
 
 
-def _c(peak_id, mz, rt, events=2, ratio=0.0, overlap=False):
-    return Candidate(peak_id, mz, rt, events, ratio, overlap)
+def _c(peak_id, mz, rt, events=2, ratio=0.0, overlap=False, fragment_sugar=""):
+    return Candidate(peak_id, mz, rt, events, ratio, overlap, fragment_sugar)
 
 
 def _trace(rt, apex):
@@ -166,6 +166,26 @@ def test_compound_of_only_overlap_peaks_is_listed_apart_from_the_count():
         ((400.1, 25.0),),
         ((500.1, 30.0),),
     ]
+
+
+def test_compound_whose_best_sampled_ion_fragments_as_another_sugar_is_not_counted():
+    run = _run(
+        (
+            _c("ribo", 258.1085, 20.0, events=4, fragment_sugar="RNA_ribose"),
+            _c("ribo_13c", 259.1119, 20.02, events=2),
+            _c("dna", 300.1, 25.0, events=4),
+            _c("dna_13c", 301.1034, 25.02, events=2, fragment_sugar="RNA_ribose"),
+        )
+    )
+    rows = {row["peak_id"]: row for row in run.candidate_rows()}
+    assert {k: r["fate"] for k, r in rows.items()} == {
+        "ribo": "other_sugar_fragment",
+        "ribo_13c": "derived_known_difference",
+        "dna": "counted",
+        "dna_13c": "derived_known_difference",
+    }
+    assert rows["ribo"]["relation"] == "RNA_ribose"
+    assert (run.summary()["other_sugar_fragment"], run.summary()["counted"]) == (1, 1)
 
 
 def test_derived_ions_name_their_parent_and_known_relation():

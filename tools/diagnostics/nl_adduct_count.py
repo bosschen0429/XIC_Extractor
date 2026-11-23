@@ -2,7 +2,8 @@
 
 Each compound counts once: ions derived from another candidate (known mass
 difference and synchronized peak shape) or from a nucleoside are removed, so
-are compounds whose every ion leaves a negative mass defect after the loss (no
+are compounds whose MS2 fragments mainly by losing another preset's sugar and
+compounds whose every ion leaves a negative mass defect after the loss (no
 organic nucleobase); single-MS2 compounds are listed as unconfirmed, and
 compounds made only of overlap-review peaks as overlap_only.
 Optional replicate controls from the same batch add per-injection and
@@ -30,7 +31,7 @@ from xic_extractor.diagnostics.nl_adduct_count_acquisition import (
     read_nucleosides,
 )
 from xic_extractor.presets.apply import bind_cid_nl_recipe
-from xic_extractor.presets.loader import load_preset
+from xic_extractor.presets.loader import list_presets, load_preset
 
 NUCLEOSIDES = Path(paths.__file__).with_name("data") / "nl_adduct_nucleosides.tsv"
 
@@ -39,11 +40,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = _parse_args(argv)
     preset = bind_cid_nl_recipe(load_preset(args.preset), "full")
     nucleosides = read_nucleosides(args.nucleosides)
+    sugar_losses = {
+        tag.name: tag.value
+        for name in list_presets()
+        for tag in load_preset(name).tags
+        if tag.strategy == "neutral_loss" and tag.value is not None
+    }
     runs = [
         count_run(
             directory,
             dll_dir=args.dll_dir,
             neutral_loss_by_tag=preset.discovery_settings.neutral_loss_by_tag,
+            sugar_losses=sugar_losses,
             nucleosides=nucleosides,
         )
         for directory in (args.discovery_dir, *args.control_dir)
