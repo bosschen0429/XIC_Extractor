@@ -30,7 +30,7 @@ def _c(peak_id, mz, rt, events=2, ratio=0.0):
 
 def _run(candidates, pairs=(), removed=frozenset(), anchors=DC, sample="s"):
     groups = group_candidates(candidates, DR, anchors)
-    kept = [g for g in groups if g.compound]
+    kept = [g for g in groups if g.category != "nucleoside_elution"]
     units = build_units(kept, pairs)
     return RunCount(sample, tuple(candidates), groups, units, removed, anchors)
 
@@ -78,7 +78,7 @@ def test_waterfall_matches_each_candidates_fate():
             _c("rna", 700.1, 22.3),
             _c("mg_acetate_cluster", 233.0361, 55.99),
         ),
-        pairs=[(1, 2)],
+        pairs=[(2, 3)],
         removed=frozenset({"700.1000@22.30"}),
     )
     summary = run.summary()
@@ -103,6 +103,22 @@ def test_waterfall_matches_each_candidates_fate():
         "derived_synchronized_shape": 1,
         "no_nucleobase": 1,
         "unconfirmed": 1,
+    }
+
+
+def test_no_nucleobase_needs_every_ion_of_the_compound_without_a_base():
+    run = _run(
+        (
+            _c("compound", 231.0719, 8.29),
+            _c("metal_complex", 307.0281, 8.29),
+            _c("mg_acetate_cluster", 233.0361, 55.99),
+        ),
+        pairs=[(0, 2)],
+    )
+    assert {row["peak_id"]: row["fate"] for row in run.candidate_rows()} == {
+        "compound": "counted",
+        "metal_complex": "derived_synchronized_shape",
+        "mg_acetate_cluster": "no_nucleobase",
     }
 
 

@@ -3,8 +3,8 @@
 A compound counts once. Derived ions are other ions of a compound that elute
 with it: a known mass difference, elution with a nucleoside of the same sugar,
 or a peak shape synchronized with another candidate or with a nucleoside of
-another sugar. A candidate whose ion left after the loss has a negative mass
-defect holds no organic nucleobase: an inorganic cluster or multiply charged
+another sugar. A compound whose every ion leaves a negative mass defect after
+the loss holds no organic nucleobase: an inorganic cluster or multiply charged
 ion lost the same elemental composition. A compound whose groups each had one
 attached MS2 event is unconfirmed and listed apart. RAW reading lives in
 ``nl_adduct_count_acquisition``.
@@ -51,7 +51,6 @@ MATCH_PPM = 10.0
 MATCH_RT_MIN = 0.3
 ANCHOR_SEARCH_RT_MIN = 1.0
 KINDS = ("nucleoside", "nucleoside_mz", "two_sugar", "other")
-NOT_COMPOUND = ("nucleoside_elution", "no_nucleobase")
 
 
 @dataclass(frozen=True)
@@ -79,6 +78,7 @@ class Group:
     members: tuple[Candidate, ...]
     relations: Mapping[str, tuple[str, ...]]
     category: str
+    base_mass_defect: float
 
     @property
     def mz(self) -> float:
@@ -91,11 +91,6 @@ class Group:
     @property
     def single_event(self) -> bool:
         return max(c.event_count for c in self.members) == 1
-
-    @property
-    def compound(self) -> bool:
-        """False when the group is a nucleoside's ion or holds no nucleobase."""
-        return self.category not in NOT_COMPOUND
 
 
 @dataclass(frozen=True)
@@ -119,6 +114,11 @@ class Unit:
     @property
     def unconfirmed(self) -> bool:
         return self.kind == "other" and all(g.single_event for g in self.groups)
+
+    @property
+    def no_nucleobase(self) -> bool:
+        """Every ion's remainder after the loss has a negative mass defect."""
+        return all(g.base_mass_defect < BASE_MIN_MASS_DEFECT for g in self.groups)
 
     @property
     def late(self) -> bool:
@@ -181,20 +181,24 @@ def group_candidates(
         relations = {
             ordered[i].peak_id: tuple(sorted(set(reached[i]))) for i in found[1:]
         }
-        category = _category(members, relations, anchors, loss_da)
-        groups.append(Group(members, relations, category))
+        base = members[0].mz - loss_da
+        groups.append(
+            Group(
+                members,
+                relations,
+                _category(members, relations, anchors),
+                base - round(base),
+            )
+        )
     return tuple(sorted(groups, key=lambda g: (g.mz, g.rt)))
 
 
-def _category(members, relations, anchors, loss_da: float) -> str:
+def _category(members, relations, anchors) -> str:
     light = members[0]
     seen = [a.rt for a in anchors if a.rt is not None]
     gap = min((abs(light.rt - rt) for rt in seen), default=float("inf"))
     if any(abs(light.mz - a.mz) < NUCLEOSIDE_TOL_DA for a in anchors):
         return "nucleoside" if gap < NUCLEOSIDE_SELF_RT_MIN else "nucleoside_mz"
-    base = light.mz - loss_da
-    if base - round(base) < BASE_MIN_MASS_DEFECT:
-        return "no_nucleobase"
     if gap <= COELUTION_RT_MIN:
         return "nucleoside_elution"
     two = any(c.second_loss_ratio >= SECOND_LOSS_MIN_RATIO for c in members)
@@ -260,23 +264,28 @@ class RunCount:
 
     @property
     def remaining(self) -> list[Unit]:
-        return [u for u in self.units if u.unit_id not in self.removed]
+        return [
+            u
+            for u in self.units
+            if u.unit_id not in self.removed and not u.no_nucleobase
+        ]
 
     @property
     def counted(self) -> list[Unit]:
         return [u for u in self.remaining if not u.unconfirmed]
 
     def summary(self) -> dict[str, object]:
-        categories = Counter(g.category for g in self.groups)
-        kept = sum(g.compound for g in self.groups)
+        kept = sum(g.category != "nucleoside_elution" for g in self.groups)
         kinds = Counter(u.kind for u in self.counted)
         return {
             "sample": self.sample,
             "detected": len(self.candidates),
             "derived_known_difference": len(self.candidates) - len(self.groups),
-            "derived_nucleoside": categories["nucleoside_elution"] + len(self.removed),
+            "derived_nucleoside": len(self.groups) - kept + len(self.removed),
             "derived_synchronized_shape": kept - len(self.units),
-            "no_nucleobase": categories["no_nucleobase"],
+            "no_nucleobase": sum(
+                u.no_nucleobase and u.unit_id not in self.removed for u in self.units
+            ),
             "unconfirmed": len(self.remaining) - len(self.counted),
             "counted": len(self.counted),
             "counted_kinds": {k: kinds.get(k, 0) for k in KINDS},
@@ -295,15 +304,13 @@ class RunCount:
                 if c is not group.members[0]:
                     fate = "derived_known_difference"
                 elif unit is None:
-                    fate = (
-                        "no_nucleobase"
-                        if group.category == "no_nucleobase"
-                        else "derived_nucleoside_elution"
-                    )
+                    fate = "derived_nucleoside_elution"
                 elif unit.unit_id in self.removed:
                     fate = "derived_other_sugar_nucleoside"
                 elif unit.groups[0] is not group:
                     fate = "derived_synchronized_shape"
+                elif unit.no_nucleobase:
+                    fate = "no_nucleobase"
                 else:
                     fate = "unconfirmed" if unit.unconfirmed else "counted"
                 rows.append(
