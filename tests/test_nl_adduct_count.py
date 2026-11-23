@@ -178,13 +178,13 @@ def test_derived_ions_name_their_parent_and_known_relation():
 def test_shape_sync_joins_close_apices_of_different_mass_with_the_same_shape():
     candidates = (
         _c("a", 400.1, 20.0),
-        _c("b", 450.1, 20.05),
+        _c("b", 450.1, 20.08),
         _c("c", 400.105, 20.0),
         _c("d", 500.1, 20.2),
     )
     run = _run(candidates, {400.1: 20.0, 450.1: 20.0, 400.105: 20.0, 500.1: 20.0})
     assert [u.members for u in run.units] == [
-        [(400.1, 20.0), (400.105, 20.0), (450.1, 20.05)],
+        [(400.1, 20.0), (400.105, 20.0), (450.1, 20.08)],
         [(500.1, 20.2)],
     ]
     rt = np.linspace(21.8, 22.8, 40)
