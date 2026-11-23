@@ -67,11 +67,13 @@ def group_same_ion_peaks(
             index = parent[index]
         return index
 
-    order = sorted(range(len(items)), key=lambda index: _window(items[index])[0])
+    windows = tuple(_window(item) for item in items)
+    order = sorted(range(len(items)), key=lambda index: windows[index][0])
     for position, left in enumerate(order):
-        left_high = _window(items[left])[1]
-        for right in order[position + 1 :]:
-            if _window(items[right])[0] > left_high:
+        left_high = windows[left][1]
+        for offset in range(position + 1, len(order)):
+            right = order[offset]
+            if windows[right][0] > left_high:
                 break
             if _same_ion_peak(items[left], items[right]):
                 parent[root(left)] = root(right)
@@ -84,10 +86,6 @@ def group_same_ion_peaks(
 
 
 def _same_ion_peak(left: _MeasuredSegment, right: _MeasuredSegment) -> bool:
-    left_low, left_high = _window(left)
-    right_low, right_high = _window(right)
-    if max(left_low, right_low) > min(left_high, right_high):
-        return False
     left_peak = left.evaluation.answer.selected_segment
     right_peak = right.evaluation.answer.selected_segment
     assert left_peak is not None and right_peak is not None
@@ -102,14 +100,13 @@ def _same_ion_peak(left: _MeasuredSegment, right: _MeasuredSegment) -> bool:
     )
     left_trace = left.acquired_trace.trace
     right_trace = right.acquired_trace.trace
-    common, left_index, right_index = np.intersect1d(
-        np.asarray(left_trace.rt, dtype=float),
-        np.asarray(right_trace.rt, dtype=float),
-        return_indices=True,
+    left_inside = (left_trace.rt >= region[0]) & (left_trace.rt <= region[1])
+    right_inside = (right_trace.rt >= region[0]) & (right_trace.rt <= region[1])
+    _, left_index, right_index = np.intersect1d(
+        left_trace.rt[left_inside], right_trace.rt[right_inside], return_indices=True
     )
-    inside = (common >= region[0]) & (common <= region[1])
-    left_values = np.asarray(left_trace.intensity, dtype=float)[left_index][inside]
-    right_values = np.asarray(right_trace.intensity, dtype=float)[right_index][inside]
+    left_values = left_trace.intensity[left_inside][left_index]
+    right_values = right_trace.intensity[right_inside][right_index]
     both = (left_values > 0.0) & (right_values > 0.0)
     equal = int(np.count_nonzero(both & (left_values == right_values)))
     return equal >= SAME_ION_MIN_EQUAL_POINTS and 2 * equal > int(
@@ -122,6 +119,8 @@ def _ranked(
     *,
     recorded: Callable[[_M], bool] | None,
 ) -> tuple[_M, ...]:
+    if len(members) == 1:
+        return tuple(members)
     peaks = [member.evaluation.answer.selected_segment for member in members]
     traces = [member.acquired_trace.trace for member in members]
     low = max(
