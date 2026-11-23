@@ -1313,7 +1313,9 @@ def _match_patterns(
     """The unique best ordered pairing under one shared displacement.
 
     Displacements range within ``max_shift``; ``shift_hypotheses`` adds
-    discrete displacements, each checked only at its own value.
+    discrete displacements, each checked only at its own value. Each shift
+    scores only cells within its tolerance; a column prefix tree supplies the
+    best two distinct earlier paths, and a row enters it once fully read.
     """
     heights = max(peak.height for peak in left), max(peak.height for peak in right)
     deltas = [[b.apex_rt - a.apex_rt for b in right] for a in left]
@@ -1339,33 +1341,70 @@ def _match_patterns(
     ordered = sorted(endpoints)
     shifts.update((a + b) / 2.0 for a, b in zip(ordered, ordered[1:], strict=False))
     shifts.update(shift_hypotheses)
-    empty: _ScoredPath = ((0, 0.0, 0.0), ())
+    empty: list[_ScoredPath] = [((0, 0.0, 0.0), ())]
+    columns = len(right)
+    windows = sorted(
+        (
+            deltas[i][j] - tolerances[i][j] * (1.0 + 1e-9) - 1e-12,
+            deltas[i][j] + tolerances[i][j] * (1.0 + 1e-9) + 1e-12,
+            i,
+            j,
+        )
+        for i in range(len(left))
+        for j in range(columns)
+    )
+    next_window = 0
+    active: list[tuple[float, float, int, int]] = []
     alternatives: dict[tuple[tuple[int, int], ...], tuple[int, float, float]] = {}
     for shift in sorted(shifts):
-        previous_row = [[empty] for _ in range(len(right) + 1)]
-        for i in range(len(left)):
-            row = [[empty]]
-            for j in range(len(right)):
-                upper, across = previous_row[j + 1], row[j]
-                residual = abs(deltas[i][j] - shift) / tolerances[i][j]
-                if residual <= 1.0:
-                    options = [*upper, *across]
-                    options.extend(
+        while next_window < len(windows) and windows[next_window][0] <= shift:
+            active.append(windows[next_window])
+            next_window += 1
+        active = [window for window in active if window[1] >= shift]
+        cells = sorted(
+            (i, j, residual)
+            for _, _, i, j in active
+            if (residual := abs(deltas[i][j] - shift) / tolerances[i][j]) <= 1.0
+        )
+        tree = [empty] * (columns + 1)
+        position = 0
+        while position < len(cells):
+            row = cells[position][0]
+            updates = []
+            while position < len(cells) and cells[position][0] == row:
+                _, j, residual = cells[position]
+                position += 1
+                before = empty
+                index = j
+                while index:
+                    before = _merge_top_two_paths(before, tree[index])
+                    index -= index & -index
+                extended = sorted(
+                    {
                         (
                             (
                                 previous[0] + 1,
-                                previous[1] - errors[i][j],
+                                previous[1] - errors[row][j],
                                 previous[2] - residual,
                             ),
-                            (*pairs, (i, j)),
+                            (*pairs, (row, j)),
                         )
-                        for previous, pairs in previous_row[j]
-                    )
-                    row.append(sorted(set(options), reverse=True)[:2])
-                else:
-                    row.append(_merge_top_two_paths(upper, across))
-            previous_row = row
-        for score, pairs in previous_row[-1]:
+                        for previous, pairs in before
+                    },
+                    reverse=True,
+                )[:2]
+                updates.append((j, extended))
+            for j, extended in updates:
+                index = j + 1
+                while index <= columns:
+                    tree[index] = _merge_top_two_paths(tree[index], extended)
+                    index += index & -index
+        best = empty
+        index = columns
+        while index:
+            best = _merge_top_two_paths(best, tree[index])
+            index -= index & -index
+        for score, pairs in best:
             if pairs and score > alternatives.get(pairs, (-1, 0.0, 0.0)):
                 alternatives[pairs] = score
     if not alternatives:
