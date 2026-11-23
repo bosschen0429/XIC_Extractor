@@ -414,8 +414,15 @@ class PeakTrajectories:
     )
     _raw_linked_owners: frozenset[str] = field(default_factory=frozenset, repr=False)
     _raw_pairs: tuple[tuple[str, str], ...] = field(default=(), repr=False)
+    _order_witnesses: tuple[
+        tuple[str, str, str, tuple[str, ...], tuple[str, ...]], ...
+    ] = field(default=(), repr=False)
+    _owner_samples: Mapping[str, str] = field(default_factory=dict, repr=False)
     _track_by_owner: Mapping[str, int] = field(init=False, repr=False, compare=False)
     _distinct: frozenset[tuple[int, int]] = field(init=False, repr=False, compare=False)
+    _witnesses: Mapping[tuple[int, int], frozenset[_Witness] | None] = field(
+        init=False, repr=False, compare=False
+    )
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -427,25 +434,14 @@ class PeakTrajectories:
                 for owner_id in track.owner_ids
             },
         )
-        distinct: set[tuple[int, int]] = set()
-        later: dict[int, set[int]] = defaultdict(set)
-        for first_owner, second_owner in self.physical_order:
-            first = self._track_by_owner.get(first_owner)
-            second = self._track_by_owner.get(second_owner)
-            if first is not None and second is not None and first != second:
-                distinct.add((min(first, second), max(first, second)))
-                later[first].add(second)
-        for first in range(len(self.tracks)):
-            pending = set(later.get(first, ()))
-            reached = {first}
-            while pending:
-                second = pending.pop()
-                if second in reached:
-                    continue
-                reached.add(second)
-                distinct.add((min(first, second), max(first, second)))
-                pending.update(later.get(second, set()) - reached)
-        object.__setattr__(self, "_distinct", frozenset(distinct))
+        witnesses = _distinct_track_witnesses(
+            self.physical_order,
+            self._order_witnesses,
+            self._track_by_owner,
+            len(self.tracks),
+        )
+        object.__setattr__(self, "_distinct", frozenset(witnesses))
+        object.__setattr__(self, "_witnesses", witnesses)
 
     def trajectory_for(self, owners: Sequence[SampleLocalMS1Owner]) -> PeakTrajectory:
         """Bind a finalized group to its direct and compatible context points.
@@ -533,6 +529,8 @@ class PeakTrajectories:
             physical_order=self.physical_order,
             _raw_linked_owners=self._raw_linked_owners,
             _raw_pairs=self._raw_pairs,
+            _order_witnesses=self._order_witnesses,
+            _owner_samples=self._owner_samples,
         )
 
     def supports_ordered_pair(self, first: str, second: str) -> bool:
@@ -545,8 +543,36 @@ class PeakTrajectories:
         )
 
     def permits_membership(self, owner_ids: Iterable[str]) -> bool:
-        """Unobserved correspondence may extend a track; distinct peaks cannot merge."""
-        return self._compatible(self._indices(owner_ids))
+        """Unobserved correspondence may extend a track; distinct peaks cannot merge.
+
+        Two owners' tracks stay distinct only where an independent sample
+        shows the order: neither owner's sample, and each of its two ordered
+        points linked within its track to some other sample. An order resting
+        only on links to the owners' samples is the correspondence the group
+        decides; grouping cost weighs it instead.
+        """
+        owners = [item for item in owner_ids if item in self._track_by_owner]
+        if self._compatible({self._track_by_owner[item] for item in owners}):
+            return True
+        for position, first in enumerate(owners):
+            for second in owners[position + 1 :]:
+                tracks = self._track_by_owner[first], self._track_by_owner[second]
+                key = (min(tracks), max(tracks))
+                if key not in self._distinct:
+                    continue
+                seen = self._witnesses[key]
+                decided = {
+                    self._owner_samples.get(first),
+                    self._owner_samples.get(second),
+                }
+                if seen is None or any(
+                    sample not in decided
+                    and set(earlier) - decided
+                    and set(later) - decided
+                    for sample, earlier, later in seen
+                ):
+                    return False
+        return True
 
     def _indices(self, owner_ids: Iterable[str]) -> set[int]:
         return {
@@ -636,6 +662,63 @@ class _LocalizationLinks:
             (self.nodes[node].sample, self.nodes[node].landmark.apex_rt)
             for node in sorted(selected - withdrawn)
         )
+
+
+_Witness = tuple[str, tuple[str, ...], tuple[str, ...]]
+
+
+def _join_witnesses(
+    first: frozenset[_Witness] | None, second: frozenset[_Witness] | None
+) -> frozenset[_Witness] | None:
+    """Samples showing an order, each with the samples its two points link to.
+
+    ``None`` marks an order of unrecorded origin.
+    """
+    return None if first is None or second is None else first | second
+
+
+def _distinct_track_witnesses(
+    physical_order: Iterable[tuple[str, str]],
+    order_witnesses: Iterable[tuple[str, str, str, tuple[str, ...], tuple[str, ...]]],
+    track_by_owner: Mapping[str, int],
+    track_count: int,
+) -> dict[tuple[int, int], frozenset[_Witness] | None]:
+    """Distinct track pairs, each with the witnesses along its ordering path.
+
+    A < B < C distinguishes A/C through B, so a chained pair joins its steps'
+    witnesses.
+    """
+    by_order: dict[tuple[str, str], set[_Witness]] = defaultdict(set)
+    for first_owner, second_owner, sample, earlier, later_links in order_witnesses:
+        by_order[(first_owner, second_owner)].add((sample, earlier, later_links))
+    steps: dict[tuple[int, int], frozenset[_Witness] | None] = {}
+    later: dict[int, set[int]] = defaultdict(set)
+    for first_owner, second_owner in physical_order:
+        first = track_by_owner.get(first_owner)
+        second = track_by_owner.get(second_owner)
+        if first is not None and second is not None and first != second:
+            recorded = by_order.get((first_owner, second_owner))
+            steps[(first, second)] = _join_witnesses(
+                steps.get((first, second), frozenset()),
+                frozenset(recorded) if recorded else None,
+            )
+            later[first].add(second)
+    witnesses: dict[tuple[int, int], frozenset[_Witness] | None] = {}
+    for first in range(track_count):
+        pending = [(second, steps[(first, second)]) for second in later[first]]
+        reached = {first}
+        while pending:
+            second, seen = pending.pop()
+            if second in reached:
+                continue
+            reached.add(second)
+            key = (min(first, second), max(first, second))
+            witnesses[key] = _join_witnesses(witnesses.get(key, frozenset()), seen)
+            pending.extend(
+                (after, _join_witnesses(seen, steps[(second, after)]))
+                for after in later[second] - reached
+            )
+    return witnesses
 
 
 def _unique_sample_positions(
@@ -958,10 +1041,20 @@ def resolve_peak_trajectories(
     track_owner_by_node = {
         node: track.owner_ids[0] for track, indices in tracks for node in indices
     }
-    witnessed_order = tuple(
+    linked = [
+        tuple(sorted({nodes[n].sample for n in adjacent if roots[n] == roots[node]}))
+        for node, adjacent in enumerate(neighbors)
+    ]
+    order_witnesses = tuple(
         sorted(
             {
-                (track_owner_by_node[first], track_owner_by_node[second])
+                (
+                    track_owner_by_node[first],
+                    track_owner_by_node[second],
+                    nodes[first].sample,
+                    linked[first],
+                    linked[second],
+                )
                 for first, second in physical_order
                 if first in track_owner_by_node
                 and second in track_owner_by_node
@@ -969,12 +1062,17 @@ def resolve_peak_trajectories(
             }
         )
     )
+    witnessed_order = tuple(sorted({(item[0], item[1]) for item in order_witnesses}))
     owner_by_node = {node: owner_id for owner_id, node in owner_nodes.items()}
     return PeakTrajectories(
         tuple(track for track, _ in tracks),
         comparisons,
         retained_contexts,
         physical_order=witnessed_order,
+        _order_witnesses=order_witnesses,
+        _owner_samples={
+            owner_id: nodes[node].sample for owner_id, node in owner_nodes.items()
+        },
         _localization_links=_LocalizationLinks(
             tuple(nodes),
             owner_nodes,

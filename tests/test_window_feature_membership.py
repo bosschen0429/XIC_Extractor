@@ -230,7 +230,6 @@ def test_partial_region_calibration_keeps_supported_common_apices(
         injection_order=orders,
         rt_frame=frame,
     )
-    assert not trajectories.permits_membership(("a-early", "b-late"))
     result = infer_feature_memberships(
         owners[::-1] if reverse else owners,
         config=AlignmentConfig(),
@@ -250,7 +249,6 @@ def test_partial_region_calibration_keeps_supported_common_apices(
         for d in result.sparse_decisions
         if d.owner_id == "a-early"
     )
-    assert not trajectories.permits_membership(("a-early", "b-late"))
 
 
 @pytest.mark.parametrize("reverse", (False, True))

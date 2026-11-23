@@ -409,8 +409,11 @@ def test_order_survives_height_reversal_and_overlapping_absolute_rts(
     }
 
 
+@pytest.mark.parametrize("independent_witness", [False, True])
 @pytest.mark.parametrize("reverse", [False, True])
-def test_single_peak_samples_cannot_hide_an_informative_doublet(reverse):
+def test_single_peak_samples_cannot_hide_an_informative_doublet(
+    reverse, independent_witness
+):
     from tests.alignment_pipeline_helpers import resolved_elution_context
 
     contexts = [
@@ -423,6 +426,16 @@ def test_single_peak_samples_cannot_hide_an_informative_doublet(reverse):
         _owner("last", "early", 10.1),
     ]
     orders = {"first": 0, "last": 13}
+    if independent_witness:
+        for order, (sample, shift) in enumerate(
+            (("extra-1", 0.15), ("extra-2", 0.2)), start=14
+        ):
+            contexts.append(
+                resolved_elution_context(
+                    sample, ((10.0 + shift, 100.0), (10.6 + shift, 60.0))
+                )
+            )
+            orders[sample] = order
     for i in range(1, 13):
         sample = f"single-{i}"
         contexts.append(_context(sample, ((10.3, 100.0),)))
@@ -435,7 +448,10 @@ def test_single_peak_samples_cannot_hide_an_informative_doublet(reverse):
         owners, contexts, config=AlignmentConfig(), injection_order=orders
     )
     assert result.supports_ordered_pair("first:early", "last:early")
-    assert not result.permits_membership(("first:late", "last:early"))
+    assert (
+        result.permits_membership(("first:late", "last:early"))
+        is not independent_witness
+    )
     assert not any(
         owner.startswith("single-")
         for track in result.tracks
@@ -719,7 +735,7 @@ def test_membership_exclusion_requires_distinct_physical_segments(shared_lobe, r
     prepared = prepare_physical_signal(rt, raw)
     contexts = [
         project_elution_context(prepared, sample_stem=sample, mz=500.0)
-        for sample in ("a", "b", "ms1_only")
+        for sample in ("a", "b", "ms1_only", "ms1_extra")
     ]
     assert all(
         context is not None and len(context.landmarks) == 2 for context in contexts
@@ -737,13 +753,13 @@ def test_membership_exclusion_requires_distinct_physical_segments(shared_lobe, r
     unrelated = prepare_physical_signal(rt, unrelated_signal)
     contexts.extend(
         project_elution_context(unrelated, sample_stem=sample, mz=700.0)
-        for sample in ("a", "b", "ms1_only")
+        for sample in ("a", "b", "ms1_only", "ms1_extra")
     )
     model = resolve_peak_trajectories(
         owners[::-1] if reverse else owners,
         contexts[::-1] if reverse else contexts,
         config=AlignmentConfig(),
-        injection_order={"a": 1, "b": 2, "ms1_only": 3},
+        injection_order={"a": 1, "b": 2, "ms1_only": 3, "ms1_extra": 4},
     )
     assert len(model.tracks) == 2
     assert model.permits_membership(owner.owner_id for owner in owners) is shared_lobe
