@@ -159,6 +159,7 @@ def build_initial_cid_nl_cross_sample_groups(
         CidNlMethodAssessment, tuple[MeasuredPeakHypothesis, ...]
     ]
     | None = None,
+    anchors_calibrate: bool = True,
 ) -> tuple[
     InitialGroupingScope,
     CrossSampleGroupingResult,
@@ -173,6 +174,7 @@ def build_initial_cid_nl_cross_sample_groups(
         elution_contexts=elution_contexts,
         operation_counts_sink=operation_counts_sink,
         retained_hypotheses_by_assessment=retained_hypotheses_by_assessment,
+        anchors_calibrate=anchors_calibrate,
     )
     groups = grouping_scope.groups
     population = tuple(sorted(groups, key=lambda group: group.group_hypothesis_id))
@@ -197,15 +199,13 @@ def regroup_cid_nl_cross_sample_groups(
 ) -> tuple[InitialGroupingScope, CrossSampleGroupingResult]:
     """Reconsider every ordinary owner after the batch anchor warp is known."""
     owners = tuple(owner for group in grouping_scope.groups for owner in group.owners)
-    trajectories = grouping_scope.peak_trajectories
-    if rt_frame.has_coordinates:
-        trajectories = resolve_peak_trajectories(
-            owners,
-            trajectories.source_contexts,
-            config=alignment_config,
-            injection_order=rt_frame.injection_order,
-            rt_frame=rt_frame,
-        )
+    trajectories = resolve_peak_trajectories(
+        owners,
+        grouping_scope.peak_trajectories.source_contexts,
+        config=alignment_config,
+        injection_order=rt_frame.injection_order,
+        rt_frame=rt_frame,
+    )
     groups = group_cid_nl_owners(
         owners,
         config=alignment_config,

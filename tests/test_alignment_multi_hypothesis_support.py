@@ -182,21 +182,7 @@ def test_identity_membership_is_geometry_not_group_center_reclassification(
         if candidate.direct_support_assessment is None
     )
     assert len(direct_ids) == len(observation_ids) == 2
-    assert any(
-        frozenset(group.owner_ids) == direct_ids for group in grouping_scope.groups
-    )
-    assert all(
-        group.destination == "archive"
-        for group in grouping_scope.groups
-        if observation_ids.intersection(group.owner_ids)
-    )
-    assert any(
-        d.owner_id in observation_ids
-        and observation_ids.intersection(d.witness_owner_ids)
-        for group in grouping_scope.groups
-        for d in group.inference_decisions
-    )
-    _, final = regroup_cid_nl_cross_sample_groups(
+    final_scope, final = regroup_cid_nl_cross_sample_groups(
         samples=samples,
         grouping_scope=grouping_scope,
         grouping_result=initial,
@@ -217,6 +203,12 @@ def test_identity_membership_is_geometry_not_group_center_reclassification(
         for owner in group.owners
         if owner.primary_identity_event is not None
     } == direct_ids
+    assert any(
+        d.owner_id in observation_ids
+        and observation_ids.intersection(d.witness_owner_ids)
+        for group in final_scope.groups
+        for d in group.inference_decisions
+    )
 
     reversed_scope, reversed_initial, _ = build_initial_cid_nl_cross_sample_groups(
         samples=samples[::-1],

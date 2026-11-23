@@ -21,6 +21,7 @@ from tests.untargeted_partition_fixtures import (
 )
 from xic_extractor.alignment.cid_nl_initial_grouping import (
     prepare_cid_nl_grouping,
+    regroup_cid_nl_grouping,
 )
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.sample_metadata import SampleMetadata
@@ -131,10 +132,9 @@ def test_owner_decides_membership_and_exact_exclusion_from_acquired_evidence(
         rt_frame=batch.context.rt_frame,
     )
     grouping = prepare_cid_nl_grouping(**arguments)
+    final = regroup_cid_nl_grouping(grouping, rt_frame=grouping.rt_frame)
     groups = tuple(
-        group
-        for workset in grouping.worksets
-        for group in workset.grouping_scope.groups
+        group for workset in final.worksets for group in workset.grouping_scope.groups
     )
     ms1_only_samples = {"S2"} if scenario == "unsearched" else set()
     assert {
@@ -230,9 +230,10 @@ def test_owner_decides_membership_and_exact_exclusion_from_acquired_evidence(
             )
         )
     )
+    variant_final = regroup_cid_nl_grouping(variant, rt_frame=variant.rt_frame)
     assert {frozenset(owner.peak for owner in group.owners) for group in groups} == {
         frozenset(owner.peak for owner in group.owners)
-        for workset in variant.worksets
+        for workset in variant_final.worksets
         for group in workset.grouping_scope.groups
     }
     assert {

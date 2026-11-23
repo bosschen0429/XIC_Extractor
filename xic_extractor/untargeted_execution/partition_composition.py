@@ -369,10 +369,15 @@ def group_acquired_partition(
     *,
     alignment_config: AlignmentConfig,
     bootstrap_only: bool = False,
+    anchors_calibrate: bool = True,
     known_istd_reference: KnownIstdReference | None = None,
     progress_callback: Callable[[Mapping[str, object]], None] | None = None,
 ) -> CidNlGrouping:
-    """Hand acquired in-memory facts to Alignment, retaining no eligibility policy."""
+    """Hand acquired in-memory facts to Alignment, retaining no eligibility policy.
+
+    ``anchors_calibrate`` is False only for a bootstrap whose anchors the batch
+    takes from another population.
+    """
     context_batches = {
         id(
             result.adapter_result.elution_contexts
@@ -402,6 +407,7 @@ def group_acquired_partition(
             context for contexts in context_batches.values() for context in contexts
         ),
         known_istd_reference=known_istd_reference,
+        anchors_calibrate=anchors_calibrate,
     )
     if bootstrap_only:
         return prepared

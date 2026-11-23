@@ -14,7 +14,10 @@ from xic_extractor.alignment.cid_nl_initial_grouping import CidNlBatchGrouping
 from xic_extractor.alignment.feature_membership_inference import (
     FeatureMembershipBasis,
 )
-from xic_extractor.alignment.rt_anchors import rt_anchor_observations
+from xic_extractor.alignment.rt_anchors import (
+    reaches_ordinary_anchor_quorum,
+    rt_anchor_observations,
+)
 from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.alignment.sample_rt_calibration import (
     BatchRtCalibrationAccumulator,
@@ -167,6 +170,29 @@ def test_outside_an_agreed_group_an_observation_does_not_calibrate():
         replace(_observation(s, "G1", 10.0), bootstrap_group_id=None) for s in cohorts
     ]
     assert _knots(observations, cohorts) == ()
+
+
+_COHORTS = {
+    **{f"old{i}": "old" for i in range(8)},
+    **{f"new{i}": "new" for i in range(3)},
+}
+
+
+@pytest.mark.parametrize(
+    "present",
+    [
+        ("old0", "old1", "old2"),
+        ("old0", "old1", "old2", "old3"),
+        ("old0", "old1", "new0", "new1"),
+        ("new0", "new1", "new2"),
+    ],
+)
+def test_quorum_says_whether_the_widest_agreement_could_calibrate(present):
+    frame = SampleRtFrame(sample_cohorts=_COHORTS, sample_universe=frozenset(_COHORTS))
+    widest = [_observation(sample, "G1", 10.0) for sample in present]
+    assert reaches_ordinary_anchor_quorum(present, frame) is bool(
+        _knots(widest, _COHORTS)
+    )
 
 
 def test_multi_channel_and_duplicate_pattern_knots_list_every_channel():

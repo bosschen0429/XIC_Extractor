@@ -171,6 +171,16 @@ def construct_cross_sample_peak_group_hypotheses(
     return tuple(hypotheses)
 
 
+def ungrouped_peak_group_hypotheses(
+    owners: Sequence[SampleLocalMS1Owner],
+) -> tuple[CrossSamplePeakGroupHypothesis, ...]:
+    """One group per owner, for a population whose membership nobody reads."""
+    return tuple(
+        _hypothesis_from_owner_group((owner,), disposition=None, evidence="ungrouped")
+        for owner in owners
+    )
+
+
 def _hypothesis_from_owner_group(
     group: tuple[SampleLocalMS1Owner, ...],
     *,

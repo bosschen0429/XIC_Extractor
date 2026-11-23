@@ -12,6 +12,7 @@ from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSamplePeakGroupHypothesis,
     construct_cross_sample_peak_group_hypotheses,
+    ungrouped_peak_group_hypotheses,
 )
 from xic_extractor.alignment.feature_membership_inference import (
     FeatureInferenceOperationCounts,
@@ -25,6 +26,10 @@ from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 from xic_extractor.alignment.peak_trajectories import (
     PeakTrajectories,
     resolve_peak_trajectories,
+)
+from xic_extractor.alignment.rt_anchors import (
+    places_sample_on_rt_frame,
+    reaches_ordinary_anchor_quorum,
 )
 from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
@@ -108,12 +113,20 @@ def bootstrap_cid_nl_initial_population(
         CidNlMethodAssessment, tuple[MeasuredPeakHypothesis, ...]
     ]
     | None = None,
+    anchors_calibrate: bool = True,
 ) -> tuple[
     InitialGroupingScope,
     tuple[RetainedGroupingCandidate, ...],
     SampleRtFrame,
 ]:
-    """Build initial groups and their physical candidate bindings."""
+    """Build initial groups and their physical candidate bindings.
+
+    Initial groups are inferred only where their anchors can calibrate:
+    ``anchors_calibrate`` is False when the batch calibrates from another
+    population, and a workset short of the anchor quorum calibrates nothing.
+    Otherwise every owner is its own group and only final grouping, which
+    resolves trajectories on the frozen frame, assigns rows.
+    """
 
     if not sample_assessments:
         raise GroupingBootstrapError("sample_assessments must not be empty")
@@ -134,6 +147,7 @@ def bootstrap_cid_nl_initial_population(
     assessment_by_hypothesis: dict[str, CidNlMethodAssessment] = {}
     sample_by_id: dict[str, SampleMetadata] = {}
     owners: list[SampleLocalMS1Owner] = []
+    anchor_samples: set[str] = set()
     retained_by_assessment = dict(retained_hypotheses_by_assessment or {})
     consumed_retained_assessments: set[CidNlMethodAssessment] = set()
     for sample, assessment in sample_assessments:
@@ -174,13 +188,14 @@ def bootstrap_cid_nl_initial_population(
         for hypothesis in hypotheses:
             assessment = assessment_by_hypothesis[hypothesis.hypothesis_id]
             if hypothesis.method == HYPOTHESIS_METHOD_DDA_CID_NL:
-                owners.append(
-                    owner_from_cid_nl_assessment_support(
-                        sample=sample,
-                        assessment=assessment,
-                        hypothesis=hypothesis,
-                    )
+                owner = owner_from_cid_nl_assessment_support(
+                    sample=sample,
+                    assessment=assessment,
+                    hypothesis=hypothesis,
                 )
+                owners.append(owner)
+                if places_sample_on_rt_frame(owner):
+                    anchor_samples.add(owner.sample_stem)
             else:
                 owners.append(
                     owner_from_ms1_observation_hypothesis(
@@ -199,23 +214,27 @@ def bootstrap_cid_nl_initial_population(
     if not owners and not searched_no_observation:
         raise GroupingBootstrapError("bootstrap assessments have no peak observations")
     rt_frame = rt_frame.bind_owners(tuple(owners))
-    correspondence = resolve_peak_trajectories(
-        owners,
-        elution_contexts,
-        config=alignment_config,
-        injection_order=rt_frame.injection_order,
-        rt_frame=rt_frame,
-    )
-    provisional_groups = construct_cross_sample_peak_group_hypotheses(
-        tuple(owners),
-        config=alignment_config,
-        sample_universe=sample_universe,
-        rt_frame=rt_frame,
-        operation_counts_sink=operation_counts_sink,
-        bootstrap=True,
-        peak_trajectories=correspondence,
-        rules=CID_NL_GROUPING_RULES,
-    )
+    if anchors_calibrate and reaches_ordinary_anchor_quorum(anchor_samples, rt_frame):
+        correspondence = resolve_peak_trajectories(
+            owners,
+            elution_contexts,
+            config=alignment_config,
+            injection_order=rt_frame.injection_order,
+            rt_frame=rt_frame,
+        )
+        provisional_groups = construct_cross_sample_peak_group_hypotheses(
+            tuple(owners),
+            config=alignment_config,
+            sample_universe=sample_universe,
+            rt_frame=rt_frame,
+            operation_counts_sink=operation_counts_sink,
+            bootstrap=True,
+            peak_trajectories=correspondence,
+            rules=CID_NL_GROUPING_RULES,
+        )
+    else:
+        correspondence = PeakTrajectories(source_contexts=tuple(elution_contexts))
+        provisional_groups = ungrouped_peak_group_hypotheses(owners)
     if not provisional_groups and not searched_no_observation:
         raise GroupingBootstrapError(
             "bootstrap observations did not produce consumable cross-sample groups"

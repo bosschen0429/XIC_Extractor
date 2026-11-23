@@ -60,7 +60,11 @@ its channels are assessed on that partition's measured regions, related only
 to their own Discovery events and without peaks that carry shoulder review,
 then bootstrapped on their own. A representative window can therefore come
 from any search window of the region, including one planned for a reviewed
-Discovery input.
+Discovery input. Bootstrap groups exist only to calibrate, so they are inferred
+only where they can: not for a population the batch does not calibrate from,
+and not for a workset whose anchors fall short of the correspondence quorum
+below in every cohort. Such owners stay ungrouped until final grouping, and
+their anchors still reach the drift model.
 
 [`sample_rt_calibration`](../../xic_extractor/alignment/sample_rt_calibration.py)
 turns each agreed bootstrap group into one ordinary correspondence and fits the

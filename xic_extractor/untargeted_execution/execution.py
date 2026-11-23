@@ -522,6 +522,7 @@ class UntargetedPartitionPipelineAdapter:
                     known_istd_reference=self._known_istd_reference,
                     progress_callback=progress_callback,
                     bootstrap_only=True,
+                    anchors_calibrate=reference_subjects is None,
                 ),
                 alignment_config=self._alignment_config,
                 initial_only=True,
