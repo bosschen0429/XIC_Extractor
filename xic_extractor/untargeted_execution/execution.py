@@ -16,6 +16,7 @@ from typing import cast
 from xic_extractor.alignment.cid_nl_initial_grouping import (
     CidNlBatchGrouping,
     CidNlGrouping,
+    regroup_cid_nl_grouping,
 )
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.drift_evidence import KnownIstdReference
@@ -23,6 +24,7 @@ from xic_extractor.alignment.result.application_result import (
     FinalizedUntargetBatchApplicationResult,
 )
 from xic_extractor.alignment.rt_anchors import RtAnchorObservation
+from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.configuration.execution_profile import ExecutionProfile
 from xic_extractor.execution.partitions import (
     PartitionAcquisitionOutput,
@@ -74,6 +76,18 @@ from xic_extractor.untargeted_execution.partition_composition import (
 class _GroupingInputs:
     batch: UntargetedPartitionInputs
     prepared: CidNlGrouping
+
+
+def _finalize_partition_grouping(
+    task: tuple[_GroupingInputs, SampleRtFrame],
+) -> tuple[_GroupingInputs, tuple[Mapping[str, object], ...]]:
+    """One partition's final grouping and the progress it reported."""
+    initial, rt_frame = task
+    events: list[Mapping[str, object]] = []
+    prepared = regroup_cid_nl_grouping(
+        initial.prepared, rt_frame=rt_frame, progress_callback=events.append
+    )
+    return _GroupingInputs(initial.batch, prepared), tuple(events)
 
 
 @dataclass(frozen=True, slots=True)
@@ -426,8 +440,9 @@ class UntargetedPartitionPipelineAdapter:
     ) -> None:
         """Finish the frozen-calibration grouping phase before any Backfill.
 
-        Keep only one partition's grouping resident. Both full execution and
-        snapshots consume these answers; neither regroups in the Backfill lane.
+        Partitions regroup independently on the RAW workers, so at most one
+        grouping per worker is resident. Both full execution and snapshots
+        consume these answers; neither regroups in the Backfill lane.
         """
         if len(self._initial_partitions) != self._bootstrap_count:
             raise RuntimeError("initial acquisition phase is incomplete")
@@ -437,7 +452,13 @@ class UntargetedPartitionPipelineAdapter:
             reference.add_anchor_observations(self._reference_anchors[index])
         self._batch_preparation.freeze_calibration(reference=reference)
         self._initial_store = store
-        for partition in self.bootstrap_partitions:
+        rt_frame = self._batch_preparation.frozen_rt_frame
+        assert rt_frame is not None
+        partitions = tuple(self.bootstrap_partitions)
+
+        def task(
+            partition: WorkPartition[tuple[CidNlMethodSubject, ...]],
+        ) -> tuple[_GroupingInputs, SampleRtFrame]:
             check_cancellation()
             initial = cast(
                 _GroupingInputs,
@@ -445,27 +466,62 @@ class UntargetedPartitionPipelineAdapter:
                     self._initial_partitions[partition.index].index, "grouping"
                 ),
             )
-            prepared = self._batch_preparation.finalize_grouping(
-                initial.prepared, progress_callback=progress_callback
-            )
+            return initial, rt_frame
+
+        def seal(
+            completed: int,
+            total: int,
+            partition: WorkPartition[tuple[CidNlMethodSubject, ...]],
+            result: tuple[_GroupingInputs, tuple[Mapping[str, object], ...]],
+        ) -> None:
             check_cancellation()
-            final = _GroupingInputs(initial.batch, prepared)
+            final, events = result
             self._final_groupings[partition.index] = store.append(
                 f"partition-{partition.index:05d}-grouping",
                 _GroupingPartition(final),
             )
-            if self._capture_backfill is not None:
-                self._capture_backfill(
-                    self._backfill_partition(store, partition.index, final)
-                )
             if progress_callback is not None:
+                for event in events:
+                    progress_callback(event)
                 progress_callback(
                     {
                         "event": "partition_progress",
                         "stage": "final_grouping",
-                        "completed": partition.index + 1,
-                        "total": self._bootstrap_count,
+                        "completed": completed,
+                        "total": total,
                     }
+                )
+
+        pool_context: nullcontext[WorkerAdmissionPool] | WorkerAdmissionPool
+        if self._execution.backend == "process":
+            if self._process_pools_closed:
+                raise RuntimeError("process worker pools are already closed")
+            pool_context = nullcontext(self._process_pools[0])
+        else:
+            pool_context = WorkerAdmissionPool(
+                max_workers=self._partition_raw_workers,
+                backend=self._execution.backend,
+                thread_name_prefix="cid-nl-grouping",
+            )
+        with pool_context as pool:
+            pool.run_windowed(
+                partitions,
+                _finalize_partition_grouping,
+                task_arg_fn=task,
+                on_completed=seal,
+            )
+            if pool.first_error is not None:
+                raise pool.first_error
+        if self._capture_backfill is not None:
+            for partition in partitions:
+                final = cast(
+                    _GroupingInputs,
+                    store.read_header_field(
+                        self._final_groupings[partition.index].index, "grouping"
+                    ),
+                )
+                self._capture_backfill(
+                    self._backfill_partition(store, partition.index, final)
                 )
 
     def _backfill_partition(

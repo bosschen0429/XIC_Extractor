@@ -1093,7 +1093,7 @@ def test_final_grouping_failure_stops_before_any_backfill(
     finalized = []
     admitted = []
     acquire = owner.UntargetedPartitionPipelineAdapter.execute_acquisition
-    finalize = owner.CidNlBatchGrouping.finalize_grouping
+    finalize = owner.regroup_cid_nl_grouping
 
     def subject_ids(subjects):
         return frozenset(subject.method_subject_id for subject in subjects)
@@ -1104,7 +1104,7 @@ def test_final_grouping_failure_stops_before_any_backfill(
                 admitted.append(subject_ids(partition.payload))
         return acquire(adapter, partition, **kwargs)
 
-    def finalize_or_abort(preparation, prepared, **kwargs):
+    def finalize_or_abort(prepared, **kwargs):
         subjects = subject_ids(
             tuple(
                 subject for workset in prepared.worksets for subject in workset.subjects
@@ -1112,7 +1112,7 @@ def test_final_grouping_failure_stops_before_any_backfill(
         )
         with lock:
             admitted_first = subjects in admitted
-        result = finalize(preparation, prepared, **kwargs)
+        result = finalize(prepared, **kwargs)
         with lock:
             finalized.append((subjects, admitted_first))
             count = len(finalized)
@@ -1131,9 +1131,7 @@ def test_final_grouping_failure_stops_before_any_backfill(
         "execute_acquisition",
         observed_acquire,
     )
-    monkeypatch.setattr(
-        owner.CidNlBatchGrouping, "finalize_grouping", finalize_or_abort
-    )
+    monkeypatch.setattr(owner, "regroup_cid_nl_grouping", finalize_or_abort)
     monkeypatch.setattr(owner, "CompletedUntargetBatchWorkflowResult", forbid_completed)
     with pytest.raises(
         InterruptedError if cancel_during_grouping else RuntimeError,
