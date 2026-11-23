@@ -592,7 +592,7 @@ def _shared_peak_scenario(tmp_path, mz_separation_ppm, *, observed=("S1", "S2"))
     return paths, raws, peaks, settings
 
 
-@pytest.mark.parametrize("mz_separation_ppm", [0.0, 12.0])
+@pytest.mark.parametrize("mz_separation_ppm", [0.0, 6.0])
 def test_shared_physical_recovery_claim_is_not_assigned_to_two_groups(
     tmp_path, monkeypatch, mz_separation_ppm
 ):
@@ -615,7 +615,7 @@ def test_shared_physical_recovery_claim_is_not_assigned_to_two_groups(
     assert sum(bool(cell["area"]) for cell in missing) == 1
 
 
-@pytest.mark.parametrize("mz_separation_ppm", [0.0, 12.0, 21.1])
+@pytest.mark.parametrize("mz_separation_ppm", [0.0, 6.0, 10.6])
 @pytest.mark.parametrize("reverse", [False, True])
 @pytest.mark.parametrize("sloped_background", [False, True])
 def test_shared_ms1_only_backfill_peak_is_not_written_to_two_rows(

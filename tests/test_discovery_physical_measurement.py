@@ -386,7 +386,7 @@ def test_merged_physical_candidate_publishes_its_capture_conditions(
             parent_batches.append(requests)
             return tuple(
                 Ms1PrecursorObservation(
-                    scan, 7.75, (500.015,) if lower <= 500.015 <= upper else ()
+                    scan, 7.75, (500.009,) if lower <= 500.009 <= upper else ()
                 )
                 for scan, lower, upper in requests
             )
@@ -1174,10 +1174,10 @@ def test_inferred_precursor_is_measured_once_in_the_window_of_its_apex_ion(
     tmp_path: Path,
 ) -> None:
     group, raw, result = _inferred_apex_case(
-        tmp_path, lambda inferred, _rt: inferred * (1 - 18e-6)
+        tmp_path, lambda inferred, _rt: inferred * (1 - 6e-6)
     )
 
-    apex_mz = group.mz * (1 - 18e-6)
+    apex_mz = group.mz * (1 - 6e-6)
     assert result.measurements.reacquisition_request_count == 0
     assert result.measurements.remeasurement_request_count == 1
     assert raw.request_batches[0][0].mz == pytest.approx(group.mz)
@@ -1236,7 +1236,7 @@ def test_pipeline_publishes_inferred_precursor_ms1_ion_from_raw_handle(
 
 
 def _two_ions(inferred: float, rt: float) -> float:
-    return inferred * (1 - 18e-6 if round(rt / 0.04) % 2 else 1 - 6e-6)
+    return inferred * (1 - 8e-6 if round(rt / 0.04) % 2 else 1 - 2e-6)
 
 
 def test_inferred_precursor_meeting_two_ions_reports_no_ms1_ion(
@@ -1256,7 +1256,7 @@ def test_inferred_precursor_meeting_two_ions_reports_no_ms1_ion(
 def test_selected_precursor_reports_no_ms1_ion(tmp_path: Path) -> None:
     group, _raw, result = _inferred_apex_case(
         tmp_path,
-        lambda inferred, _rt: inferred * (1 - 18e-6),
+        lambda inferred, _rt: inferred * (1 - 6e-6),
         basis="scan_precursor",
     )
 

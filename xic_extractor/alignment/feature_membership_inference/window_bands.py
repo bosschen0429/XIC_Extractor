@@ -169,7 +169,7 @@ def _join_window_bands(
             + 0.15
             * min(
                 absolute_ppm_error(max(first[1], second[1]), min(first[1], second[1]))
-                / config.max_ppm,
+                / config.precursor_mz_tolerance_ppm,
                 2.0,
             )
             + 0.15 * min(rules.mass_fraction(first[2], second[2], config), 2.0)
@@ -350,7 +350,9 @@ def _bridge_separated_window_bands(
                 counts["feature_summary_comparisons"] += 1
                 left_mz, right_mz = mz_centers[left], mz_centers[right]
                 if not within_ppm(
-                    max(left_mz, right_mz), min(left_mz, right_mz), config.max_ppm
+                    max(left_mz, right_mz),
+                    min(left_mz, right_mz),
+                    config.precursor_mz_tolerance_ppm,
                 ):
                     continue
                 rt_delta_sec = abs(rt_centers[left] - rt_centers[right]) * 60.0
@@ -372,7 +374,8 @@ def _bridge_separated_window_bands(
                 ):
                     continue
                 precursor_fraction = (
-                    absolute_ppm_error(left_mz, right_mz) / config.max_ppm
+                    absolute_ppm_error(left_mz, right_mz)
+                    / config.precursor_mz_tolerance_ppm
                 )
                 method_fraction = rules.mass_fraction(
                     method_centers[left], method_centers[right], config
@@ -432,7 +435,7 @@ def _window_band_candidate(
         within_ppm(
             max(owner.peak.mz, item.peak.mz),
             min(owner.peak.mz, item.peak.mz),
-            config.max_ppm,
+            config.precursor_mz_tolerance_ppm,
         )
         for item in band
     ):
@@ -469,7 +472,8 @@ def _window_band_candidate(
         return None
     precursor_median = statistics.median(item.peak.mz for item in band)
     precursor_fraction = (
-        absolute_ppm_error(owner.peak.mz, precursor_median) / config.max_ppm
+        absolute_ppm_error(owner.peak.mz, precursor_median)
+        / config.precursor_mz_tolerance_ppm
     )
     method_fraction = rules.mass_fraction(
         rules.mass_center((owner,)), rules.mass_center(band), config

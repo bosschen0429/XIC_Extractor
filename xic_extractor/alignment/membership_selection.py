@@ -452,7 +452,7 @@ class MembershipComparison:
             or not within_ppm(
                 max(left.peak.mz, right.peak.mz),
                 min(left.peak.mz, right.peak.mz),
-                cfg.max_ppm,
+                cfg.precursor_mz_tolerance_ppm,
             )
             or method.identity_failure
             or (
@@ -469,7 +469,7 @@ class MembershipComparison:
                 max(left.peak.mz, right.peak.mz),
                 min(left.peak.mz, right.peak.mz),
             )
-            / cfg.max_ppm
+            / cfg.precursor_mz_tolerance_ppm
         )
         composition = 0.15 * self.rules.pair_mass_fraction(left, right, cfg)
         gap = abs(

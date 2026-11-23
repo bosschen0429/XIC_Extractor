@@ -90,7 +90,7 @@ A Matrix row's m/z is its group's centre: the mean of the members' m/z,
 decided once when the group is built. Backfill searches
 that same centre, and Matrix, Review and the explanation report write it. A
 member's m/z is its peak's own mass (`peak_mz`): the apex MS1 reading for an
-inferred precursor, whose product + loss can sit 15–20 ppm from the MS1 ion,
+inferred precursor, whose product + loss can sit up to 10 ppm from the MS1 ion,
 else the XIC centre. Review XICs replay each
 observation's saved extraction mass and ppm tolerance, not its MS2 evidence key.
 

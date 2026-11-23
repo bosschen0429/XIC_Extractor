@@ -267,7 +267,7 @@ def test_a_fully_detected_row_reviews_its_same_mz_peaks(tmp_path, monkeypatch):
     curves = read_review_curves(report, feature_id="F000001")
 
     assert all(location.physical_peak_key for location in curves.locations)
-    assert (curves.row_mz, curves.row_ppm) == (500.0, 20.0)
+    assert (curves.row_mz, curves.row_ppm) == (500.0, 10.0)
     assert {peak.sample_key for peak in curves.same_mz_peaks} == {
         location.sample_key for location in curves.locations
     }

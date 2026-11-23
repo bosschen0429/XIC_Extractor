@@ -541,7 +541,9 @@ def _is_shoulder_of(
             owner.peak.rt_right_min == neighbour.peak.rt_left_min
             or owner.peak.rt_left_min == neighbour.peak.rt_right_min
         )
-        and within_ppm(owner.peak.mz, neighbour.peak.mz, config.preferred_ppm)
+        and within_ppm(
+            owner.peak.mz, neighbour.peak.mz, config.precursor_mz_tolerance_ppm
+        )
     )
 
 

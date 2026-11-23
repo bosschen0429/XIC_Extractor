@@ -46,6 +46,12 @@ _DATA = json.loads((_FIXTURES / "window_feature_regression_cases.json").read_tex
 _WARP_DATA = json.loads((_FIXTURES / "window_feature_warp_knots.json").read_text())
 
 
+def _captured_case_config(base: AlignmentConfig | None = None) -> AlignmentConfig:
+    """Captured owners carry inferred or header precursor masses, not MS1 apex
+    masses; a 50 ppm window keeps mass out of these RT questions."""
+    return replace(base or AlignmentConfig(), precursor_mz_tolerance_ppm=50.0)
+
+
 def test_batched_shape_evidence_preserves_the_exact_acceptance_threshold():
     from xic_extractor.alignment.grouping_evidence import peak_correspondence_conflict
     from xic_extractor.peak_detection.ms1_shape_identity import (
@@ -338,7 +344,7 @@ def test_retained_m298_configuration_preserves_sample_occupancy(
     )
     result = infer_feature_memberships(
         owners[::-1] if reverse else owners,
-        config=CID_NL_ALIGNMENT_CONFIG,
+        config=_captured_case_config(CID_NL_ALIGNMENT_CONFIG),
         rules=CID_NL_GROUPING_RULES,
         rt_frame=frame,
     )
@@ -1288,7 +1294,7 @@ def test_full85_bands_preserve_coherent_members_and_separate_rt_outlier(
     owners, orders = _owners(case)
     result = infer_feature_memberships(
         tuple(reversed(owners)),
-        config=AlignmentConfig(),
+        config=_captured_case_config(),
         rt_frame=SampleRtFrame(injection_order=(orders or {})).with_warp(_warp()),
         rules=CID_NL_GROUPING_RULES,
     )
@@ -1389,7 +1395,7 @@ def test_nearby_mass_outlier_cannot_cut_a_clean_band() -> None:
     )
     result = infer_feature_memberships(
         (*owners, outlier),
-        config=CID_NL_ALIGNMENT_CONFIG,
+        config=_captured_case_config(CID_NL_ALIGNMENT_CONFIG),
         rt_frame=SampleRtFrame(
             injection_order=({**orders, "mass-window-outlier": 0})
         ).with_warp(_warp()),

@@ -27,6 +27,7 @@ from xic_extractor.configuration.targeted_identification import (
     ion_name,
     parse_delta_mass_payload,
 )
+from xic_extractor.configuration.targeted_strategy import TARGET_MZ_TOLERANCE_PPM
 from xic_extractor.mass_accuracy import mz_tolerance_da
 
 LOGGER = logging.getLogger(__name__)
@@ -206,7 +207,7 @@ def _parse_target_row(
         rt_max=expected_rt,
         ppm_tol=settings.mz_tolerance_ppm
         if identification is not None
-        else policy.precursor_mz_tolerance_ppm,
+        else TARGET_MZ_TOLERANCE_PPM,
         neutral_loss_da=plain_loss,
         nl_ppm_warn=policy.nl_tolerance_ppm if plain_loss is not None else None,
         nl_ppm_max=policy.nl_tolerance_ppm if plain_loss is not None else None,

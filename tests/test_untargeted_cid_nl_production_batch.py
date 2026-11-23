@@ -67,6 +67,7 @@ def test_completed_empty_recovery_preserves_each_compatible_source_subject(
         peaks=peaks,
         settings=settings,
         alignment_config=AlignmentConfig(
+            precursor_mz_tolerance_ppm=30.0,
             anchor_min_seed_events=1,
             product_mz_tolerance_ppm=30.0,
             backfill_enabled=backfill_enabled,

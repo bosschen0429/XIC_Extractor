@@ -1,4 +1,9 @@
-"""Target intent over shared read-only chemistry and mass policy."""
+"""Target intent over shared read-only chemistry and mass policy.
+
+The shared precursor tolerance compares masses observed in one run. A target is
+extracted at its theoretical m/z, so ``TARGET_MZ_TOLERANCE_PPM`` must also
+absorb the run's residual calibration offset.
+"""
 
 from dataclasses import asdict, dataclass
 from functools import lru_cache
@@ -16,6 +21,7 @@ from xic_extractor.configuration.signal_processing_profile import (
 from xic_extractor.settings_schema import TARGETED_STRATEGY
 
 TARGETED_PRECURSOR_REFERENCE: PrecursorReferenceRequirement = "recorded_precursor"
+TARGET_MZ_TOLERANCE_PPM = 20.0
 
 
 @dataclass(frozen=True)
@@ -58,4 +64,5 @@ def strategy_receipt() -> dict:
         ),
         "signal_processing": asdict(DEFAULT_SIGNAL_PROCESSING_PROFILE),
         "cid_nl_mass_policy": asdict(DEFAULT_CID_NL_MASS_POLICY),
+        "target_mz_tolerance_ppm": TARGET_MZ_TOLERANCE_PPM,
     }

@@ -5,9 +5,14 @@ from __future__ import annotations
 from bisect import bisect_left, bisect_right
 from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass, replace
+from statistics import median
 from typing import Protocol
 
-from xic_extractor.acquisition.peak_apex_ion import MS1Centroid, read_peak_apex_ion
+from xic_extractor.acquisition.peak_apex_ion import (
+    APEX_ION_SPREAD_PPM,
+    MS1Centroid,
+    read_peak_apex_ion,
+)
 from xic_extractor.acquisition.physical_capture import (
     PHYSICAL_CAPTURE_BATCH_MAX_REQUESTS,
     same_acquired_signal,
@@ -26,7 +31,7 @@ from xic_extractor.discovery.models import DiscoveryEvent
 from xic_extractor.discovery.same_ion_peaks import group_same_ion_peaks
 from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.discovery.strict_event_receipts import resolve_discovery_scan_events
-from xic_extractor.mass_accuracy import mz_tolerance_da, mz_window
+from xic_extractor.mass_accuracy import mz_tolerance_da, mz_window, signed_ppm_error
 from xic_extractor.peak_detection.cid_nl_candidate_set_relation import (
     DdaCidNlCandidateSetRelation,
 )
@@ -85,13 +90,14 @@ class RegionRawSource(ScanResolvedXICSource, Protocol):
 class DiscoveryMassRegion:
     """A connected union of seed mass windows and the batch event RTs inside it.
 
-    Not a chemical ion identity. Each sample measures the full LC run, but only
-    peaks near some sample's event become observations.
+    Not a chemical ion identity. Each sample reads one XIC per ion in ``ions``,
+    and only peaks near some sample's event become observations.
     """
 
     centers: tuple[float, ...]
     ppm: float
     event_rts: tuple[float, ...]
+    ions: tuple[XICRequest, ...]
 
     def near_event(self, rt: float) -> bool:
         index = bisect_left(self.event_rts, rt)
@@ -141,8 +147,10 @@ def plan_cid_nl_mass_regions(
 ) -> tuple[DiscoveryMassRegion, ...]:
     """Discover the search universe from valid local method events across the batch.
 
-    Overlap defines work co-location, not one wider XIC. Retain each distinct
-    request so two neighboring ions cannot be fused by merely sharing a region.
+    Overlap defines work co-location, not one wider XIC. Event masses within
+    ``APEX_ION_SPREAD_PPM`` of the lowest one are readings of one ion; that ion
+    gets one XIC at the median reading, over its event RTs widened by
+    ``EVENT_NEIGHBORHOOD_MIN``. Two neighboring ions keep separate XICs.
     """
     ppm = settings.precursor_mz_tolerance_ppm
     rts_by_mz: dict[float, set[float]] = {}
@@ -162,9 +170,36 @@ def plan_cid_nl_mass_regions(
         regions[-1][1].update(rts_by_mz[mz])
         right = high
     return tuple(
-        DiscoveryMassRegion(tuple(centers), ppm, tuple(sorted(rts)))
+        DiscoveryMassRegion(
+            tuple(centers),
+            ppm,
+            tuple(sorted(rts)),
+            _ion_requests(centers, rts_by_mz, ppm),
+        )
         for centers, rts in regions
     )
+
+
+def _ion_requests(
+    centers: list[float], rts_by_mz: dict[float, set[float]], ppm: float
+) -> tuple[XICRequest, ...]:
+    groups: list[list[float]] = []
+    for mz in centers:
+        if not groups or signed_ppm_error(mz, groups[-1][0]) > APEX_ION_SPREAD_PPM:
+            groups.append([])
+        groups[-1].append(mz)
+    requests = []
+    for group in groups:
+        rts = [rt for mz in group for rt in rts_by_mz[mz]]
+        requests.append(
+            XICRequest(
+                mz=float(median(mz for mz in group for _ in rts_by_mz[mz])),
+                rt_min=min(rts) - EVENT_NEIGHBORHOOD_MIN,
+                rt_max=max(rts) + EVENT_NEIGHBORHOOD_MIN,
+                ppm_tol=ppm,
+            )
+        )
+    return tuple(requests)
 
 
 def acquire_cid_nl_sample_regions(
@@ -177,27 +212,38 @@ def acquire_cid_nl_sample_regions(
     settings: DiscoverySettings,
     profile: SignalProcessingProfile,
 ) -> tuple[CidNlSampleRegion, ...]:
-    """Search every planned region over this RAW's actual LC run, even without CID."""
+    """Read every planned ion within this RAW's LC run, even without local CID.
+
+    An ion whose event window lies outside this run's LC range is not read.
+    """
     if not regions:
         return ()
     rt_start, rt_end = raw.acquisition_rt_bounds()
-    requests = tuple(
-        XICRequest(mz=mz, rt_min=rt_start, rt_max=rt_end, ppm_tol=region.ppm)
+    per_region = tuple(
+        tuple(
+            replace(
+                ion,
+                rt_min=max(ion.rt_min, rt_start),
+                rt_max=min(ion.rt_max, rt_end),
+            )
+            for ion in region.ions
+            if ion.rt_max > rt_start and ion.rt_min < rt_end
+        )
         for region in regions
-        for mz in region.centers
     )
+    requests = tuple(request for chunk in per_region for request in chunk)
     region_events = _region_event_selector(events, sample=sample, settings=settings)
     capability = mint_trace_acquisition_capability(
         acquisition_source, adapter_namespace=__name__
     )
     captures = _acquire_regions(raw, capability, requests)
     results = []
-    for region in regions:
+    for region, region_requests in zip(regions, per_region, strict=True):
         results.append(
             _measure_region(
                 sample=sample,
                 region=region,
-                acquired=tuple(next(captures) for _ in region.centers),
+                acquired=tuple(next(captures) for _ in region_requests),
                 ms1_centroid=raw.ms1_centroid,
                 acquisition_source=acquisition_source,
                 events=region_events(region),

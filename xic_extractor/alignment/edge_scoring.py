@@ -143,7 +143,10 @@ def _hard_gate_failure(
         return "same_sample", False
     if method_evidence.identity_failure:
         return method_evidence.identity_failure, False
-    if absolute_ppm_error(right.peak.mz, left.peak.mz) > config.max_ppm:
+    if (
+        absolute_ppm_error(right.peak.mz, left.peak.mz)
+        > config.precursor_mz_tolerance_ppm
+    ):
         return "precursor_mz_out_of_tolerance", False
     if (
         peak_correspondence_conflict(

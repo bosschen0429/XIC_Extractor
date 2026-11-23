@@ -63,7 +63,7 @@ def _membership_trajectories(
             if not within_ppm(
                 max(first.peak.mz, second.peak.mz),
                 min(first.peak.mz, second.peak.mz),
-                config.max_ppm,
+                config.precursor_mz_tolerance_ppm,
             ):
                 continue
             first_bounds = _selected_peak_bounds(first)
@@ -144,7 +144,7 @@ def _trajectory_seeds(
             or not within_ppm(
                 max(member.peak.mz for member in members),
                 min(member.peak.mz for member in members),
-                config.max_ppm,
+                config.precursor_mz_tolerance_ppm,
             )
             or any(
                 peak_correspondence_conflict(

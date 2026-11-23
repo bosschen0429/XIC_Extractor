@@ -1141,13 +1141,17 @@ def _local_patterns(
     dict[str, int],
     frozenset[tuple[int, int]],
 ]:
-    contexts = _contexts_within_reach(owners, contexts, config.preferred_ppm)
+    contexts = _contexts_within_reach(
+        owners, contexts, config.precursor_mz_tolerance_ppm
+    )
     by_sample: dict[str, list[SampleElutionContext]] = defaultdict(list)
     for context in contexts:
         if context.landmarks:
             by_sample[context.sample_stem].append(context)
     context_indexes = {
-        sample: _MassIndex([context.mz for context in rows], config.preferred_ppm)
+        sample: _MassIndex(
+            [context.mz for context in rows], config.precursor_mz_tolerance_ppm
+        )
         for sample, rows in by_sample.items()
     }
     nodes: list[_Node] = []
@@ -1179,7 +1183,9 @@ def _local_patterns(
                         for mz in nearby_masses
                         for index in nodes_by_mass[(context.sample_stem, mz)]
                     )
-                    if within_ppm(nodes[index].mz, context.mz, config.preferred_ppm)
+                    if within_ppm(
+                        nodes[index].mz, context.mz, config.precursor_mz_tolerance_ppm
+                    )
                     and abs(nodes[index].landmark.apex_rt - peak.apex_rt)
                     <= config.owner_apex_close_sec / 60.0
                 ),
@@ -1224,7 +1230,7 @@ def _local_patterns(
         available = [
             context
             for context in candidate_contexts
-            if within_ppm(owner.peak.mz, context.mz, config.preferred_ppm)
+            if within_ppm(owner.peak.mz, context.mz, config.precursor_mz_tolerance_ppm)
             and context.rt_start <= owner.peak.rt_apex_min <= context.rt_end
         ]
         if not available:
@@ -1257,7 +1263,9 @@ def _local_patterns(
         owner_nodes[owner.owner_id] = indices[selected - start]
 
     seeds = tuple(patterns.values())
-    seed_index = _MassIndex([seed.mz for seed in seeds], config.preferred_ppm)
+    seed_index = _MassIndex(
+        [seed.mz for seed in seeds], config.precursor_mz_tolerance_ppm
+    )
     seed_centers = [
         _pattern_center(seed.sample, [nodes[i].landmark for i in seed.nodes], rt_frame)
         for seed in seeds
@@ -1276,7 +1284,9 @@ def _local_patterns(
         compatible = [
             index
             for index in seed_index.candidates(context.mz)
-            if within_ppm(seeds[index].mz, context.mz, config.preferred_ppm)
+            if within_ppm(
+                seeds[index].mz, context.mz, config.precursor_mz_tolerance_ppm
+            )
         ]
         if not compatible:
             continue
@@ -1318,7 +1328,9 @@ def _neighbor_pairs(
     rt_frame: RtFrame | None,
 ) -> tuple[tuple[_Pattern, _Pattern], ...]:
     chosen: set[tuple[int, int]] = set()
-    mass_index = _MassIndex([pattern.mz for pattern in patterns], config.preferred_ppm)
+    mass_index = _MassIndex(
+        [pattern.mz for pattern in patterns], config.precursor_mz_tolerance_ppm
+    )
     centers = [
         _pattern_center(
             pattern.sample,
@@ -1335,7 +1347,7 @@ def _neighbor_pairs(
         for other_index in mass_index.candidates(pattern.mz):
             other = patterns[other_index]
             if pattern.sample == other.sample or not within_ppm(
-                pattern.mz, other.mz, config.preferred_ppm
+                pattern.mz, other.mz, config.precursor_mz_tolerance_ppm
             ):
                 continue
             if not center.comparable_to(centers[other_index]):

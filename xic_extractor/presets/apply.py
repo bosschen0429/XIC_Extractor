@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Iterable, Mapping
+from dataclasses import replace
 from typing import TYPE_CHECKING, cast
 
 from xic_extractor.alignment.config import AlignmentConfig
@@ -66,7 +67,11 @@ def bind_cid_nl_recipe(
         preset,
         explicit_tuning_overrides=discovery_overrides or None,
     )
-    alignment_config = apply_to_alignment(preset)
+    alignment_config = replace(
+        apply_to_alignment(preset),
+        precursor_mz_tolerance_ppm=discovery_settings.precursor_mz_tolerance_ppm,
+        product_mz_tolerance_ppm=discovery_settings.product_mz_tolerance_ppm,
+    )
     return BoundCidNlRecipe(
         route=route,
         discovery_settings=discovery_settings,

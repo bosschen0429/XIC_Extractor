@@ -185,7 +185,10 @@ def _feature_hard_reason(
     if identity_failure:
         return identity_failure, math.inf
     mass_fraction = envelope_fraction(
-        track.precursor_min, track.precursor_max, owner.peak.mz, config.max_ppm
+        track.precursor_min,
+        track.precursor_max,
+        owner.peak.mz,
+        config.precursor_mz_tolerance_ppm,
     )
     if mass_fraction > 1.0:
         return "precursor_envelope", mass_fraction

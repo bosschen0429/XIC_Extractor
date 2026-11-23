@@ -701,7 +701,7 @@ def test_mass_neighborhoods_keep_boundary_owners_and_ms1_only_positions(
     result = resolve_peak_trajectories(
         owners[::-1],
         contexts[::-1],
-        config=AlignmentConfig(preferred_ppm=20.0),
+        config=AlignmentConfig(precursor_mz_tolerance_ppm=20.0),
         injection_order={"a": 1, "b": 2, "c": 3},
     )
     assert {track.owner_ids: track.sample_apices for track in result.tracks} == (

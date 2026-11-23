@@ -148,19 +148,21 @@ def _index_query_alternatives(
 ) -> tuple[tuple[IndexQuery, ...], ...]:
     event = owner.primary_identity_event
     if event is None:
-        return (((_PRECURSOR_INDEX, owner.peak.mz, config.max_ppm),),)
+        return (
+            ((_PRECURSOR_INDEX, owner.peak.mz, config.precursor_mz_tolerance_ppm),),
+        )
     tag = event.neutral_loss_tag
     alternatives: tuple[tuple[IndexQuery, ...], ...] = (
         (
-            ((tag, "precursor"), owner.peak.mz, config.max_ppm),
+            ((tag, "precursor"), owner.peak.mz, config.precursor_mz_tolerance_ppm),
             ((tag, "product"), event.product_mz, config.product_mz_tolerance_ppm),
         ),
-        ((_UNOBSERVED_PRECURSOR, owner.peak.mz, config.max_ppm),),
+        ((_UNOBSERVED_PRECURSOR, owner.peak.mz, config.precursor_mz_tolerance_ppm),),
     )
     assessment = owner.cid_nl_composite_assessment
     if assessment is not None:
         key = (assessment.method_subject.method_subject_id, "composition")
-        alternatives += (((key, owner.peak.mz, config.max_ppm),),)
+        alternatives += (((key, owner.peak.mz, config.precursor_mz_tolerance_ppm),),)
     return alternatives
 
 

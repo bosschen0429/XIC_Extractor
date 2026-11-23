@@ -134,7 +134,7 @@ reassignments. See the
 [grouping diagnostic](../../tools/diagnostics/grouping_experiment.py) for
 baseline comparisons and which RT model changes replay covers.
 
-    .venv\Scripts\python.exe -m scripts.run_alignment regroup --inputs output/baseline/grouping-inputs.json.gz --set max_ppm=20 --output-dir output/regroup-trial
+    .venv\Scripts\python.exe -m scripts.run_alignment regroup --inputs output/baseline/grouping-inputs.json.gz --set precursor_mz_tolerance_ppm=20 --output-dir output/regroup-trial
 
 **Replay Backfill or pairing independently.** These examples use captures in
 `output/baseline`. Only Backfill may read RAW: it reuses initial assessments

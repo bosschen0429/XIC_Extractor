@@ -157,7 +157,7 @@ def test_exact_two_scan_alias_from_overlapping_windows_is_one_observation():
 
     assert len(result.coverage) == 2
     assert [peak.mz for peak in result.peaks] == pytest.approx(
-        (500.000, 499.990, 500.011), abs=1e-6
+        (500.000, 500.011), abs=1e-6
     )
     assert [
         (relation.dda_scan_number, relation.peak_observation.mz)
@@ -177,7 +177,7 @@ def test_batch_seed_search_retains_local_competition_without_local_cid(monkeypat
     b_raw = _Raw(((500.001, 3.1, 2.3e5), (499.996, 12.9, 1.7e5)))
     (a,) = _capture("A", a_raw, regions, events)
     (b,) = _capture("B", b_raw, regions, events)
-    assert a_raw.raw_chromatogram_call_count == b_raw.raw_chromatogram_call_count == 1
+    assert a_raw.raw_chromatogram_call_count == b_raw.raw_chromatogram_call_count == 2
     for result, expected in (
         (a, [(3.0, 500.002, 1.1e6), (13.0, 499.997, 3.1e5)]),
         (b, [(3.1, 500.001, 2.3e5), (12.9, 499.996, 1.7e5)]),
@@ -186,7 +186,7 @@ def test_batch_seed_search_retains_local_competition_without_local_cid(monkeypat
             assert observed == pytest.approx(target)
         assert {
             (cover.request.rt_min, cover.request.rt_max) for cover in result.coverage
-        } == {(0.0, 20.0)}
+        } == {(0.0, 6.0), (10.0, 16.0)}
         assert all(
             peak.physical_evaluation.state == "available" for peak in result.peaks
         )
@@ -230,7 +230,7 @@ def test_only_peaks_near_some_batch_event_become_observations():
 
     assert [peak.rt_apex_min for peak in result.peaks] == pytest.approx([3.2, 11.5])
     (coverage,) = result.coverage
-    assert (coverage.request.rt_min, coverage.request.rt_max) == (0.0, 20.0)
+    assert (coverage.request.rt_min, coverage.request.rt_max) == (0.0, 12.0)
 
 
 def test_raw_failure_and_acquired_flat_signal_keep_distinct_coverage():

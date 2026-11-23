@@ -332,7 +332,7 @@ def test_discovery_settings_require_neutral_loss_profile() -> None:
 
     assert settings.neutral_loss_profile == profile
     assert settings.nl_tolerance_ppm == 20.0
-    assert settings.precursor_mz_tolerance_ppm == 20.0
+    assert settings.precursor_mz_tolerance_ppm == 10.0
     assert settings.product_mz_tolerance_ppm == 20.0
     assert settings.product_search_ppm == 50.0
     assert settings.nl_min_intensity_ratio == 0.01

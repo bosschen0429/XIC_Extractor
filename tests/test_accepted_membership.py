@@ -419,7 +419,7 @@ def test_non_equivalent_choice_does_not_depend_on_id_or_input_order():
 
 def test_mass_chain_cannot_escape_full_group_tolerance():
     owners = tuple(
-        cid_nl_owner(str(i), str(i), precursor_mz=500 + 0.02 * i) for i in range(3)
+        cid_nl_owner(str(i), str(i), precursor_mz=500 + 0.004 * i) for i in range(3)
     )
     result = infer(owners)
     assert sorted(len(g.owner_ids) for g in result.groups) == [1, 2]
