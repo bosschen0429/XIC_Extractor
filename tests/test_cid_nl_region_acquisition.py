@@ -262,3 +262,56 @@ def test_overlapping_requests_do_not_merge_two_coeluting_ions():
     assert [item.peak_observation.mz for item in result.individual_relations] == (
         pytest.approx([499.998, 500.018])
     )
+
+
+def test_scan_shared_by_isotope_and_monoisotope_binds_only_the_subject_ion():
+    from xic_extractor.discovery.models import DiscoveryPeak
+    from xic_extractor.peak_detection.cid_nl_method_subject import (
+        mint_untargeted_cid_nl_method_subject,
+    )
+    from xic_extractor.untargeted_execution.partition.cid_nl_sample_acquisition import (
+        assess_sample_regions,
+    )
+
+    monoisotope, isotope = 300.1614, 301.1649
+    events = (
+        *_scan_events("A", 151, 3.0, monoisotope),
+        *_scan_events("A", 151, 3.0, isotope),
+    )
+    raw = _Raw(((monoisotope, 3.0, 1.0e6), (isotope, 3.0, 2.0e5)))
+    subject = mint_untargeted_cid_nl_method_subject(
+        precursor_mz=monoisotope,
+        precursor_tolerance_ppm=20.0,
+        neutral_loss_da=NEUTRAL_LOSS_DA,
+    )
+    candidate = DiscoveryPeak(
+        peak_id="A@monoisotope",
+        sample_stem="A",
+        peak_mz=monoisotope,
+        neutral_loss_tag="DNA_dR",
+        best_ms2_scan_id=151,
+        attached_event_count=1,
+        ms1_apex_rt=3.0,
+        ms1_search_rt_min=2.5,
+        ms1_search_rt_max=3.5,
+        query_rt_min=3.0,
+        status="admitted",
+    )
+    for ordered in (events, tuple(reversed(events))):
+        regions = plan_cid_nl_mass_regions(ordered, settings=SETTINGS)
+        result = assess_sample_regions(
+            regions=_capture("A", raw, regions, ordered),
+            sample=SampleMetadata("A", "A"),
+            acquisition_source=raw.acquisition_source,
+            scopes=((subject, (candidate,)),),
+            processing_attempt_id="attempt",
+            settings=SETTINGS,
+            raw=None,
+            rt_reference_only=False,
+        )[subject.method_subject_id]
+        assert [(cid, peak.mz) for cid, peak in result.candidate_observations] == [
+            ("A@monoisotope", pytest.approx(monoisotope, abs=1e-4))
+        ]
+        assert [
+            peak.mz for peak in result.assessment_input.assessment.candidate_peaks
+        ] == [pytest.approx(monoisotope, abs=1e-4)]

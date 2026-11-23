@@ -97,12 +97,11 @@ def assess_sample_regions(
     supports = tuple(ref for region in regions for ref in region.individual_relations)
     ambiguities = tuple(ref for region in regions for ref in region.ambiguous_relations)
     contexts = tuple(context for region in regions for context in region.contexts)
-    observed_by_scan = {
-        (relation.dda_scan_number, relation.configured_neutral_loss_da): (
-            relation.peak_observation
-        )
-        for relation in supports
-    }
+    observed_by_scan: dict[tuple[int, float], set[PeakObservation]] = {}
+    for relation in supports:
+        observed_by_scan.setdefault(
+            (relation.dda_scan_number, relation.configured_neutral_loss_da), set()
+        ).add(relation.peak_observation)
 
     bindings: dict[str, list[tuple[str, PeakObservation]]] = {}
     lineage_subject_by_peak: dict[PeakObservation, str] = {}
@@ -110,8 +109,17 @@ def assess_sample_regions(
         key = subject.method_subject_id
         for candidate in candidates:
             loss = settings.neutral_loss_by_tag[candidate.neutral_loss_tag]
-            peak = observed_by_scan.get((candidate.best_ms2_scan_id, loss))
-            if peak is None or (rt_reference_only and peak.requires_overlap_review):
+            observed = [
+                peak
+                for peak in observed_by_scan.get((candidate.best_ms2_scan_id, loss), ())
+                if _within_ppm(
+                    peak.mz, subject.precursor_mz, subject.precursor_tolerance_ppm
+                )
+            ]
+            if len(observed) != 1:
+                continue
+            (peak,) = observed
+            if rt_reference_only and peak.requires_overlap_review:
                 continue
             prior = lineage_subject_by_peak.setdefault(peak, key)
             if prior == key:
