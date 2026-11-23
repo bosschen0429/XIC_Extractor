@@ -62,7 +62,9 @@ def test_groups_join_coeluting_known_differences_and_take_their_category():
             _c("dc", 228.0979, 8.70),
             _c("dc_other_rt", 228.0979, 11.0),
             _c("du", 229.0822, 30.0),
-            _c("near", 350.1, 8.80),
+            _c("near", 350.1, 8.74),
+            _c("late_meoh", 260.1241, 8.86),
+            _c("late_unknown", 352.3, 8.86),
             _c("two", 500.1, 25.0, ratio=0.1),
         ),
         DR,
@@ -78,6 +80,8 @@ def test_groups_join_coeluting_known_differences_and_take_their_category():
         "dc_other_rt": "nucleoside_mz",
         "du": "nucleoside_mz",
         "near": "nucleoside_elution",
+        "late_meoh": "nucleoside_elution",
+        "late_unknown": "other",
         "two": "two_sugar",
     }
 

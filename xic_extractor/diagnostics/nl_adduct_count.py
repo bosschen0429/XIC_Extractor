@@ -265,17 +265,28 @@ def group_candidates(
         relations = {
             ordered[i].peak_id: tuple(sorted(set(reached[i]))) for i in found[1:]
         }
-        groups.append(Group(members, relations, _category(members, relations, anchors)))
+        groups.append(
+            Group(members, relations, _category(members, relations, anchors, loss_da))
+        )
     return tuple(sorted(groups, key=lambda g: (g.mz, g.rt)))
 
 
-def _category(members, relations, anchors) -> str:
+def _category(members, relations, anchors, loss_da) -> str:
+    """A group near a nucleoside apex is its ion when it elutes with the apex,
+    or a little later or earlier at a known mass difference from it."""
     light = members[0]
-    seen = [a.rt for a in anchors if a.rt is not None]
-    gap = min((abs(light.rt - rt) for rt in seen), default=float("inf"))
+    seen = [a for a in anchors if a.rt is not None]
+    near = min(seen, key=lambda a: abs(light.rt - a.rt), default=None)
+    gap = abs(light.rt - near.rt) if near else float("inf")
     if any(abs(light.mz - a.mz) < NUCLEOSIDE_TOL_DA for a in anchors):
         return "nucleoside" if gap <= SAME_COMPOUND_RT_MIN else "nucleoside_mz"
-    if gap <= NUCLEOSIDE_ELUTION_RT_MIN:
+    if near is not None and (
+        gap <= SAME_COMPOUND_RT_MIN
+        or (
+            gap <= NUCLEOSIDE_ELUTION_RT_MIN
+            and relation_label(light.mz - near.mz, near.mz, anchors, loss_da)
+        )
+    ):
         return "nucleoside_elution"
     two = any(c.second_loss_ratio >= SECOND_LOSS_MIN_RATIO for c in members)
     two = two or any(n in ("+loss", "+2loss") for v in relations.values() for n in v)
