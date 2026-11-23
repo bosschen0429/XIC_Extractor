@@ -6,36 +6,40 @@ or a peak shape synchronized with another candidate or with a nucleoside of
 another sugar. A compound whose every ion leaves a negative mass defect after
 the loss holds no organic nucleobase: an inorganic cluster or multiply charged
 ion lost the same elemental composition. A compound whose groups each had one
-attached MS2 event is unconfirmed and listed apart. Each derived ion names the
-ion it derives from and, where its mass difference is known, the relation.
-RAW reading lives in ``nl_adduct_count_acquisition``.
+attached MS2 event is unconfirmed and listed apart. Each candidate's fate is
+decided once, with the ion it derives from and, where its mass difference is
+known, the relation; the summary counts those fates. Chromatograms come from
+an injected reader, so RAW access stays in ``nl_adduct_count_acquisition``.
 """
 
 from __future__ import annotations
 
 import statistics
 from collections import Counter, defaultdict
-from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass, replace
 
 import numpy as np
 
 from xic_extractor.mass_accuracy import within_ppm
 from xic_extractor.matrix_curation.same_compound import PROTON
+from xic_extractor.xic_models import XICTrace
 
 NA = 21.981944
-RELATIONS_DA = {
+ISOTOPE_DA = {
     "13C": 1.003355,
     "15N": 0.997035,
     "13C2": 2.00671,
     "13C15N": 2.00039,
+}
+JOINING_DA = {
+    **ISOTOPE_DA,
     "+H2": 2.01565,
     "Na": NA,
     "K": 37.955882,
     "NH4": 17.026549,
     "+H2O": 18.010565,
 }
-ISOTOPES = ("13C", "15N", "13C2", "13C15N")
 ADDUCT_LABEL_DA = {"+H4": 4.0313, "MeOH": 32.026215, "H2O2": 34.005479}
 METAL_LABEL_DA = {
     "Mg-H": 21.969392,
@@ -63,6 +67,14 @@ MATCH_PPM = 10.0
 MATCH_RT_MIN = 0.3
 ANCHOR_SEARCH_RT_MIN = 1.0
 KINDS = ("nucleoside", "nucleoside_mz", "two_sugar", "other")
+COUNTED, UNCONFIRMED, NO_NUCLEOBASE = "counted", "unconfirmed", "no_nucleobase"
+KNOWN_DIFFERENCE = "derived_known_difference"
+NUCLEOSIDE_ELUTION = "derived_nucleoside_elution"
+OTHER_SUGAR = "derived_other_sugar_nucleoside"
+SYNCHRONIZED_SHAPE = "derived_synchronized_shape"
+
+Xic = Callable[[Sequence[tuple[float, float]]], Sequence[XICTrace]]
+"""Chromatograms of (m/z, centre RT) requests, in request order."""
 
 
 @dataclass(frozen=True)
@@ -90,7 +102,6 @@ class Group:
     members: tuple[Candidate, ...]
     relations: Mapping[str, tuple[str, ...]]
     category: str
-    base_mass_defect: float
 
     @property
     def mz(self) -> float:
@@ -107,9 +118,15 @@ class Group:
 
 @dataclass(frozen=True)
 class Unit:
-    """Kept groups whose peak shapes are synchronized: one compound."""
+    """Kept groups whose peak shapes are synchronized: one compound.
+
+    ``other_sugar`` names the nucleoside of another sugar whose peak shape the
+    compound follows; such a compound is that nucleoside's ion.
+    """
 
     groups: tuple[Group, ...]
+    loss_da: float
+    other_sugar: str = ""
 
     @property
     def unit_id(self) -> str:
@@ -130,7 +147,18 @@ class Unit:
     @property
     def no_nucleobase(self) -> bool:
         """Every ion's remainder after the loss has a negative mass defect."""
-        return all(g.base_mass_defect < BASE_MIN_MASS_DEFECT for g in self.groups)
+        return all(
+            (g.mz - self.loss_da) - round(g.mz - self.loss_da) < BASE_MIN_MASS_DEFECT
+            for g in self.groups
+        )
+
+    @property
+    def fate(self) -> str:
+        if self.other_sugar:
+            return OTHER_SUGAR
+        if self.no_nucleobase:
+            return NO_NUCLEOBASE
+        return UNCONFIRMED if self.unconfirmed else COUNTED
 
     @property
     def late(self) -> bool:
@@ -154,35 +182,73 @@ def components(count: int, edges) -> list[list[int]]:
     return list(joined.values())
 
 
-def relation(light: Candidate, heavy: Candidate, loss_da: float) -> str | None:
-    """The known difference taking ``light`` to ``heavy``, if they co-elute."""
-    if abs(light.rt - heavy.rt) > RELATION_RT_MIN:
-        return None
-    if abs(heavy.mz - (2 * light.mz - PROTON)) < DIMER_TOL_DA:
-        return "2M+H"
-    if abs(heavy.mz - (2 * light.mz - PROTON + NA)) < DIMER_TOL_DA:
-        return "2M+Na"
-    deltas = {**RELATIONS_DA, "+loss": loss_da, "+2loss": 2 * loss_da}
-    return next(
-        (
-            n
-            for n, d in deltas.items()
-            if abs(heavy.mz - light.mz - d) < RELATION_TOL_DA
-        ),
-        None,
-    )
+def relation_label(
+    delta: float,
+    parent_mz: float,
+    anchors: Sequence[Anchor],
+    loss_da: float,
+    *,
+    joining: bool = False,
+) -> str:
+    """Name the difference from an ion at ``parent_mz``.
+
+    Joining names (isotopes, common adducts, dimers, extra losses) join ions
+    into one group; the labels add solvent, metal and nucleoside partners, and
+    allow one isotope on top.
+    """
+    dimers = {"2M+H": parent_mz - PROTON, "2M+Na": parent_mz - PROTON + NA}
+    named = {**JOINING_DA, "+loss": loss_da, "+2loss": 2 * loss_da}
+    shifts: list[tuple[str, float]] = [("", 0.0)]
+    if not joining:
+        named |= {
+            **ADDUCT_LABEL_DA,
+            **METAL_LABEL_DA,
+            **{f"M+{a.label}": a.mz - PROTON for a in anchors},
+        }
+        shifts += ISOTOPE_DA.items()
+    for isotope, shift in shifts:
+        found = next(
+            (n for n, d in dimers.items() if abs(delta - shift - d) < DIMER_TOL_DA),
+            None,
+        ) or next(
+            (n for n, d in named.items() if abs(delta - shift - d) < RELATION_TOL_DA),
+            None,
+        )
+        if found:
+            return f"{found};{isotope}" if isotope else found
+    return ""
+
+
+def relation_family(relation: str) -> str:
+    """isotope, adduct, metal, dimer, extra_loss, or unlabeled."""
+    names = [n for n in relation.split(";") if n]
+    chemical = [n for n in names if n not in ISOTOPE_DA]
+    if not names:
+        return "unlabeled"
+    if not chemical:
+        return "isotope"
+    name = chemical[0]
+    if name.startswith(("2M", "M+")):
+        return "dimer"
+    if name in ("+loss", "+2loss"):
+        return "extra_loss"
+    return "metal" if name in METAL_LABEL_DA else "adduct"
 
 
 def group_candidates(
     candidates: Sequence[Candidate], loss_da: float, anchors: Sequence[Anchor]
 ) -> tuple[Group, ...]:
-    """Join related candidates and place each group against same-sugar nucleosides."""
+    """Join co-eluting candidates by joining names; place groups against nucleosides."""
     ordered = sorted(candidates, key=lambda c: (c.mz, c.rt, c.peak_id))
     reached: dict[int, list[str]] = defaultdict(list)
     edges = []
     for i, light in enumerate(ordered):
         for j, heavy in enumerate(ordered):
-            name = relation(light, heavy, loss_da) if i != j else None
+            if i == j or abs(light.rt - heavy.rt) > RELATION_RT_MIN:
+                continue
+            name = relation_label(
+                heavy.mz - light.mz, light.mz, (), loss_da, joining=True
+            )
             if name:
                 edges.append((i, j))
                 reached[j].append(name)
@@ -193,15 +259,7 @@ def group_candidates(
         relations = {
             ordered[i].peak_id: tuple(sorted(set(reached[i]))) for i in found[1:]
         }
-        base = members[0].mz - loss_da
-        groups.append(
-            Group(
-                members,
-                relations,
-                _category(members, relations, anchors),
-                base - round(base),
-            )
-        )
+        groups.append(Group(members, relations, _category(members, relations, anchors)))
     return tuple(sorted(groups, key=lambda g: (g.mz, g.rt)))
 
 
@@ -218,88 +276,73 @@ def _category(members, relations, anchors) -> str:
     return "two_sugar" if two else "other"
 
 
-def relation_label(
-    delta: float, parent_mz: float, anchors: Sequence[Anchor], loss_da: float
-) -> str:
-    """Name a derived ion's difference from its parent, after up to one isotope."""
-    named = {
-        **RELATIONS_DA,
-        **ADDUCT_LABEL_DA,
-        **METAL_LABEL_DA,
-        "+loss": loss_da,
-        "+2loss": 2 * loss_da,
-        "2M+H": parent_mz - PROTON,
-        "2M+Na": parent_mz - PROTON + NA,
-        **{f"M+{a.label}": a.mz - PROTON for a in anchors},
-    }
-    for isotope, shift in (("", 0.0), *((n, RELATIONS_DA[n]) for n in ISOTOPES)):
-        for name, d in named.items():
-            if abs(delta - shift - d) < RELATION_TOL_DA:
-                return f"{name};{isotope}" if isotope else name
-    return ""
+def synced(first: XICTrace, second: XICTrace, *, same_apex: bool = False) -> bool:
+    """Same peak shape (r >= 0.9) on shared scans; optionally the same apex."""
+    a, b = np.asarray(first.intensity, float), np.asarray(second.intensity, float)
+    if len(a) < SHAPE_MIN_POINTS or len(a) != len(b) or a.std() == 0 or b.std() == 0:
+        return False
+    if same_apex and (
+        abs(first.rt[a.argmax()] - second.rt[b.argmax()]) > SHAPE_PAIR_RT_MIN
+    ):
+        return False
+    return float(np.corrcoef(a, b)[0, 1]) >= SHAPE_MIN_R
 
 
-def relation_family(relation: str) -> str:
-    """isotope, adduct, metal, dimer, extra_loss, or unlabeled."""
-    names = [n for n in relation.split(";") if n]
-    chemical = [n for n in names if n not in ISOTOPES]
-    if not names:
-        return "unlabeled"
-    if not chemical:
-        return "isotope"
-    name = chemical[0]
-    if name.startswith(("2M", "M+")):
-        return "dimer"
-    if name in ("+loss", "+2loss"):
-        return "extra_loss"
-    return "metal" if name in METAL_LABEL_DA else "adduct"
+def count_candidates(
+    sample: str,
+    candidates: Sequence[Candidate],
+    loss_da: float,
+    anchors: Sequence[Anchor],
+    other_sugar_anchors: Sequence[Anchor],
+    xic: Xic,
+) -> RunCount:
+    """Group candidates, join synchronized groups, and drop other-sugar ions.
 
-
-def shape_pairs(kept: Sequence[Group]) -> list[tuple[int, int]]:
-    """Kept groups close enough in apex to test for synchronized peak shape."""
-    return [
+    ``anchors`` are nucleosides whose sugar gives this loss; ions of a
+    nucleoside with another sugar keep that sugar and cannot give it, so a
+    compound is removed only when its shape follows such a peak.
+    """
+    groups = group_candidates(candidates, loss_da, anchors)
+    kept = [g for g in groups if g.category != "nucleoside_elution"]
+    pairs = [
         (a, b)
         for a in range(len(kept))
         for b in range(a + 1, len(kept))
         if abs(kept[a].rt - kept[b].rt) <= SHAPE_PAIR_RT_MIN
         and abs(kept[a].mz - kept[b].mz) > SHAPE_MIN_MZ_GAP
     ]
-
-
-def synced(first, second, first_rt=None, second_rt=None) -> bool:
-    """Same peak shape (r >= 0.9) on shared scans; same apex when times are given."""
-    a, b = np.asarray(first, float), np.asarray(second, float)
-    if len(a) < SHAPE_MIN_POINTS or len(a) != len(b) or a.std() == 0 or b.std() == 0:
-        return False
-    if (
-        first_rt is not None
-        and abs(first_rt[a.argmax()] - second_rt[b.argmax()]) > SHAPE_PAIR_RT_MIN
-    ):
-        return False
-    return float(np.corrcoef(a, b)[0, 1]) >= SHAPE_MIN_R
-
-
-def build_units(kept: Sequence[Group], pairs) -> tuple[Unit, ...]:
+    traces = xic(
+        [(kept[i].mz, (kept[a].rt + kept[b].rt) / 2) for a, b in pairs for i in (a, b)]
+    )
+    joined = [
+        p for k, p in enumerate(pairs) if synced(traces[2 * k], traces[2 * k + 1])
+    ]
     units = [
-        Unit(tuple(kept[i] for i in found)) for found in components(len(kept), pairs)
+        Unit(tuple(kept[i] for i in found), loss_da)
+        for found in components(len(kept), joined)
     ]
-    return tuple(sorted(units, key=lambda u: u.members[0]))
-
-
-def other_sugar_checks(units: Sequence[Unit], anchors: Sequence[Anchor]):
-    """(unit, member m/z, member RT, nucleoside) pairs to test for synchronized shape.
-
-    Ions of a nucleoside with another sugar keep that sugar and cannot give this
-    loss, so a unit is removed only when its shape follows such a peak.
-    """
-    return [
-        (unit, group.mz, group.rt, anchor)
-        for unit in units
+    checks = [
+        (u, g.mz, g.rt, a)
+        for u, unit in enumerate(units)
         if unit.kind != "nucleoside"
-        for group in unit.groups
-        for anchor in anchors
-        if anchor.rt is not None and abs(group.rt - anchor.rt) <= COELUTION_RT_MIN
+        for g in unit.groups
+        for a in other_sugar_anchors
+        if a.rt is not None and abs(g.rt - a.rt) <= COELUTION_RT_MIN
     ]
+    traces = xic([(m, rt) for _, mz, rt, a in checks for m in (mz, a.mz)])
+    for k, (u, _, _, anchor) in enumerate(checks):
+        if not units[u].other_sugar and synced(
+            traces[2 * k], traces[2 * k + 1], same_apex=True
+        ):
+            units[u] = replace(units[u], other_sugar=anchor.label)
+    return RunCount(
+        sample,
+        tuple(candidates),
+        groups,
+        tuple(sorted(units, key=lambda u: u.members[0])),
+        tuple(anchors),
+        loss_da,
+    )
 
 
 @dataclass(frozen=True)
@@ -308,93 +351,84 @@ class RunCount:
     candidates: tuple[Candidate, ...]
     groups: tuple[Group, ...]
     units: tuple[Unit, ...]
-    removed: frozenset[str]
     anchors: tuple[Anchor, ...]
     loss_da: float
 
     @property
     def remaining(self) -> list[Unit]:
-        return [
-            u
-            for u in self.units
-            if u.unit_id not in self.removed and not u.no_nucleobase
-        ]
+        return [u for u in self.units if u.fate in (COUNTED, UNCONFIRMED)]
 
     @property
     def counted(self) -> list[Unit]:
-        return [u for u in self.remaining if not u.unconfirmed]
+        return [u for u in self.units if u.fate == COUNTED]
 
     def summary(self) -> dict[str, object]:
-        kept = sum(g.category != "nucleoside_elution" for g in self.groups)
+        rows = self.candidate_rows()
+        fates = Counter(str(row["fate"]) for row in rows)
         kinds = Counter(u.kind for u in self.counted)
         return {
             "sample": self.sample,
-            "detected": len(self.candidates),
-            "derived_known_difference": len(self.candidates) - len(self.groups),
-            "derived_nucleoside": len(self.groups) - kept + len(self.removed),
-            "derived_synchronized_shape": kept - len(self.units),
-            "no_nucleobase": sum(
-                u.no_nucleobase and u.unit_id not in self.removed for u in self.units
-            ),
-            "unconfirmed": len(self.remaining) - len(self.counted),
-            "counted": len(self.counted),
+            "detected": len(rows),
+            "derived_known_difference": fates[KNOWN_DIFFERENCE],
+            "derived_nucleoside": fates[NUCLEOSIDE_ELUTION] + fates[OTHER_SUGAR],
+            "derived_synchronized_shape": fates[SYNCHRONIZED_SHAPE],
+            "no_nucleobase": fates[NO_NUCLEOBASE],
+            "unconfirmed": fates[UNCONFIRMED],
+            "counted": fates[COUNTED],
             "counted_kinds": {k: kinds.get(k, 0) for k in KINDS},
             "counted_late": sum(u.late for u in self.counted),
             "derived_relations": dict(
                 Counter(
                     relation_family(str(row["relation"]))
-                    for row in self.candidate_rows()
+                    for row in rows
                     if str(row["fate"]).startswith("derived")
                 )
             ),
-            "removed_other_sugar": sorted(self.removed),
+            "removed_other_sugar": sorted(
+                u.unit_id for u in self.units if u.fate == OTHER_SUGAR
+            ),
             "anchor_rt": {a.label: round(a.rt, 3) for a in self.anchors if a.rt},
         }
 
     def candidate_rows(self) -> list[dict[str, object]]:
-        """Every candidate and why it counts, is derived, or is unconfirmed."""
-        unit_of = {g.members[0].peak_id: u for u in self.units for g in u.groups}
+        """Every candidate's fate, the ion it derives from, and their relation."""
+        unit_of = {id(g): u for u in self.units for g in u.groups}
         seen = [(a.rt, a) for a in self.anchors if a.rt is not None]
         rows = []
         for group in self.groups:
-            unit = unit_of.get(group.members[0].peak_id)
+            unit = unit_of.get(id(group))
             parent: tuple[str, float] | None = None
             if unit is None:
-                fate = "derived_nucleoside_elution"
+                fate = NUCLEOSIDE_ELUTION
                 if seen:
                     _, anchor = min(seen, key=lambda s: abs(group.rt - s[0]))
                     parent = (anchor.label, anchor.mz)
-            elif unit.unit_id in self.removed:
-                fate = "derived_other_sugar_nucleoside"
-            elif unit.groups[0] is not group:
-                fate = "derived_synchronized_shape"
-                parent = (unit.unit_id, unit.groups[0].mz)
-            elif unit.no_nucleobase:
-                fate = "no_nucleobase"
+            elif unit.fate == OTHER_SUGAR or unit.groups[0] is group:
+                fate = unit.fate
             else:
-                fate = "unconfirmed" if unit.unconfirmed else "counted"
-            head_relation = (
-                relation_label(
-                    group.mz - parent[1], parent[1], self.anchors, self.loss_da
-                )
-                if parent
-                else ""
-            )
+                fate = SYNCHRONIZED_SHAPE
+                parent = (unit.unit_id, unit.groups[0].mz)
             for c in group.members:
                 head = c is group.members[0]
+                if not head:
+                    relation = ";".join(group.relations[c.peak_id])
+                    derived_from = f"{group.mz:.4f}@{group.rt:.2f}"
+                elif parent:
+                    relation = relation_label(
+                        group.mz - parent[1], parent[1], self.anchors, self.loss_da
+                    )
+                    derived_from = parent[0]
+                else:
+                    relation = derived_from = ""
                 rows.append(
                     {
                         "sample": self.sample,
                         "peak_id": c.peak_id,
                         "mz": round(c.mz, 4),
                         "rt": round(c.rt, 3),
-                        "fate": fate if head else "derived_known_difference",
-                        "relation": head_relation
-                        if head
-                        else ";".join(group.relations[c.peak_id]),
-                        "derived_from": (parent[0] if parent else "")
-                        if head
-                        else f"{group.mz:.4f}@{group.rt:.2f}",
+                        "fate": fate if head else KNOWN_DIFFERENCE,
+                        "relation": relation,
+                        "derived_from": derived_from,
                         "group_category": group.category,
                         "unit": unit.unit_id if unit else "",
                         "attached_ms2_events": c.event_count,

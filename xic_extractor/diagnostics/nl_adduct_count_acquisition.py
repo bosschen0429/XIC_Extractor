@@ -12,11 +12,7 @@ from xic_extractor.diagnostics.nl_adduct_count import (
     Anchor,
     Candidate,
     RunCount,
-    build_units,
-    group_candidates,
-    other_sugar_checks,
-    shape_pairs,
-    synced,
+    count_candidates,
 )
 from xic_extractor.discovery.csv_reader import (
     read_discovery_batch_index,
@@ -83,7 +79,7 @@ def count_run(
     recalibration = MassRecalibration.EASY_IC_RESTORE
     with open_raw(raw, dll_dir, mass_recalibration=recalibration) as handle:
         ratios = _second_loss_ratios(handle, scans, loss)
-        candidates = tuple(
+        candidates = [
             Candidate(
                 p.peak_id,
                 p.peak_mz,
@@ -92,44 +88,15 @@ def count_run(
                 ratios.get(p.peak_id, 0.0),
             )
             for p in peaks
+        ]
+        return count_candidates(
+            sample,
+            candidates,
+            loss,
+            _apices(handle, same),
+            _apices(handle, other),
+            lambda requests: _traces(handle, requests),
         )
-        anchors = _apices(handle, same)
-        groups = group_candidates(candidates, loss, anchors)
-        kept = [g for g in groups if g.category != "nucleoside_elution"]
-        pairs = shape_pairs(kept)
-        traces = _traces(
-            handle,
-            [
-                (kept[i].mz, (kept[a].rt + kept[b].rt) / 2)
-                for a, b in pairs
-                for i in (a, b)
-            ],
-        )
-        units = build_units(
-            kept,
-            [
-                p
-                for k, p in enumerate(pairs)
-                if synced(traces[2 * k].intensity, traces[2 * k + 1].intensity)
-            ],
-        )
-        checks = other_sugar_checks(units, _apices(handle, other))
-        traces = _traces(
-            handle, [(m, rt) for _, mz, rt, a in checks for m in (mz, a.mz)]
-        )
-        removed = {
-            unit.unit_id
-            for k, (unit, *_) in enumerate(checks)
-            if synced(
-                traces[2 * k].intensity,
-                traces[2 * k + 1].intensity,
-                np.asarray(traces[2 * k].rt),
-                np.asarray(traces[2 * k + 1].rt),
-            )
-        }
-    return RunCount(
-        sample, candidates, groups, units, frozenset(removed), anchors, loss
-    )
 
 
 def _apices(handle, windows: list[MzRtWindow]) -> tuple[Anchor, ...]:
