@@ -5,6 +5,8 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import replace
 
+import numpy as np
+
 from xic_extractor.acquisition_contract import (
     AcquiredTrace,
     TraceAcquisitionBatch,
@@ -28,7 +30,9 @@ def physical_view_with_context(
     These are comparison samples, not a replacement observation or integral.
     Source, ion and the original measured points bind this adapter projection.
     """
-    original = tuple(zip(view.rt, view.raw, strict=True))
+    rt = np.asarray(view.rt, dtype=float)
+    raw = np.asarray(view.raw, dtype=float)
+    first, last = rt[0], rt[-1]
     candidates = []
     for acquired in contexts:
         coordinate = acquired.coordinate
@@ -37,15 +41,14 @@ def physical_view_with_context(
             coordinate.capability.acquisition_source.acquisition_source_id
             != view.acquisition_source_id
             or (request.mz, request.ppm_tol) != (view.xic_mz, view.xic_ppm_tol)
-            or request.rt_min > original[0][0]
-            or request.rt_max < original[-1][0]
+            or request.rt_min > first
+            or request.rt_max < last
         ):
             continue
-        trace = acquired.trace
-        points = tuple(zip(trace.rt, trace.intensity, strict=True))
-        if (
-            tuple(p for p in points if original[0][0] <= p[0] <= original[-1][0])
-            == original
+        trace_rt = np.asarray(acquired.trace.rt, dtype=float)
+        inside = (trace_rt >= first) & (trace_rt <= last)
+        if np.array_equal(trace_rt[inside], rt) and np.array_equal(
+            np.asarray(acquired.trace.intensity, dtype=float)[inside], raw
         ):
             candidates.append(acquired)
     if not candidates:

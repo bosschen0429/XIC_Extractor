@@ -1014,6 +1014,24 @@ def ordered_pattern_contexts(
     return tuple(sorted(contexts, key=lambda context: (context.rt, context.raw)))
 
 
+def _contexts_within_reach(
+    owners: Sequence[SampleLocalMS1Owner],
+    contexts: Sequence[SampleElutionContext],
+    ppm: float,
+) -> list[SampleElutionContext]:
+    """Contexts an owner can bind directly or through one bound context's mass.
+
+    Each link is a ``ppm`` test, so two links stay inside three tolerances of the
+    owners' masses. Filtering keeps the supplied order, hence every tie.
+    """
+    lower = min(owner.peak.mz for owner in owners)
+    upper = max(owner.peak.mz for owner in owners)
+    reach = 3.0 * (ppm + PPM_BOUNDARY_EPSILON)
+    lower -= mz_tolerance_da(lower, reach)
+    upper += mz_tolerance_da(upper, reach)
+    return [context for context in contexts if lower <= context.mz <= upper]
+
+
 def _local_patterns(
     owners: Sequence[SampleLocalMS1Owner],
     contexts: Sequence[SampleElutionContext],
@@ -1025,6 +1043,7 @@ def _local_patterns(
     dict[str, int],
     frozenset[tuple[int, int]],
 ]:
+    contexts = _contexts_within_reach(owners, contexts, config.preferred_ppm)
     by_sample: dict[str, list[SampleElutionContext]] = defaultdict(list)
     for context in contexts:
         if context.landmarks:
