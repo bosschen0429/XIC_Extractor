@@ -70,7 +70,8 @@ class DriftAnchor:
     ``shape`` is the channel's injection-order trend after removing its
     sample-shift response, scaled to a unit 5-95% range and oriented to rise
     with injection order. ``sample_shift_member`` marks channels whose
-    detrended offsets define M. ``coefficients`` is the channel's own fit
+    detrended offsets define the anchors' M, the starting point that rows
+    then vote from. ``coefficients`` is the channel's own fit
     against its shape and M, used to predict its displacement between samples.
     """
 
