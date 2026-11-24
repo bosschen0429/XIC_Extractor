@@ -49,7 +49,9 @@ published RT map and the [drift model](#drift-beyond-the-map) are both fitted on
 one reference population: channels from Discovery peaks without shoulder review,
 with Alignment measurements that carry shoulder review left out, plus the
 measured ISTDs. Admitted overlap peaks are grouped and quantified but move
-neither the map nor B and M. Removing a peak only after grouping is not
+neither the map, the drift anchors nor B. M is the exception: its
+[row vote](#drift-beyond-the-map) groups the full population's direct-evidence
+peaks, so an admitted overlap peak in a voting row moves M. Removing a peak only after grouping is not
 equivalent: that peak may have set a channel center or changed which bootstrap
 correspondences agreed. Final rows and their coefficients are inferred on the
 full population.
