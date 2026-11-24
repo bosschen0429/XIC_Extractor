@@ -562,7 +562,6 @@ def prepare_matrix_curation(
                 for key, label in REMOVAL_CAUSES
                 if key in extras["removed_by_cause"]
             ]
-            item["review_count"] = extras["review_count"]
         if step is FINITE_FRACTION_STEP:
             denominator = len(result.summary["eligible_matrix_columns"])
             threshold = parameters[step.key]["min_finite_fraction"]

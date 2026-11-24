@@ -166,19 +166,7 @@ export function removalCauses(step) {
   const list = el("ul", undefined, "removal-causes");
   for (const cause of step.causes)
     list.append(el("li", `${cause.label}：${cause.count} 列`));
-  const nodes = [
-    el("p", `${step.label}移除的 ${step.removed} 列，依原因：`),
-    list,
-  ];
-  if (step.review_count)
-    nodes.push(
-      el(
-        "p",
-        `另有 ${step.review_count} 項需要人工檢視，列在 same_compound_review.tsv。`,
-        "subtle",
-      ),
-    );
-  return nodes;
+  return [el("p", `${step.label}移除的 ${step.removed} 列，依原因：`), list];
 }
 function renderPreview(snapshot) {
   const host = $("curation-preview");
