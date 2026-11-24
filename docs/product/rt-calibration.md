@@ -317,9 +317,19 @@ after the general fit and before final grouping:
   scatter, define M. M(s) is the median over families of each family's median
   offset. A sample without such an offset has unknown M, not zero. The zero of
   M is arbitrary: a constant is absorbed by the group center.
+- **Rows vote M**: channels need one peak per sample, so some samples are voted
+  by one or two families. In a batch of at least 20 samples, the peaks with
+  their own method evidence are therefore grouped once on that frozen frame,
+  over the full population. A row seen in at least 20 samples is compared with
+  its eight nearest injection-order neighbours, which cancels its slow trend.
+  It votes when that local offset follows the anchors' M (Theil–Sen response
+  of at least 0.3, Spearman ≥ 0.75), and its vote is the offset divided by its
+  response. A sample with at least three votes takes their median; the others
+  keep the anchors' M. The drift anchors are then fitted against the voted M.
 - **B shapes**: each drift anchor freezes its own shape, the running median
   along injection order of its residual after removing its own M response
-  (a Theil–Sen slope against M without its own family), scaled to a unit
+  (a Theil–Sen slope against the voted M, or against M without its own family
+  when no row voted), scaled to a unit
   5–95% range and oriented to rise with injection order. Shapes are not one
   batch-wide curve: early and late RT drift differently.
 - Without pooled QC, M is measured against the samples' running trend; when

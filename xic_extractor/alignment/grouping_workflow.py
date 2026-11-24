@@ -47,6 +47,7 @@ from xic_extractor.alignment.result.scientific_alignment import (
     ObservedSearchSubject,
     TerminalSearchObservation,
 )
+from xic_extractor.alignment.rt_drift import ROW_MIN_SAMPLES
 from xic_extractor.alignment.rt_frame import RtFrame, SampleRtFrame
 from xic_extractor.mass_accuracy import within_ppm
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
@@ -249,6 +250,50 @@ def group_cid_nl_owners(
         rules=CID_NL_GROUPING_RULES,
     )
     return reject_shoulder_groups(groups, config=config)
+
+
+def direct_evidence_rt_rows(
+    owners: Sequence[SampleLocalMS1Owner],
+    contexts: Sequence[SampleElutionContext],
+    *,
+    config: AlignmentConfig,
+    sample_universe: frozenset[str],
+    rt_frame: SampleRtFrame,
+) -> tuple[dict[str, float], ...]:
+    """Rows of peaks with their own method evidence, as frame RT per sample.
+
+    Only these peaks are grouped, with the batch's frozen frame. The rows vote
+    the batch's sample shift; see ``refine_sample_shift``.
+    """
+    direct = tuple(
+        owner for owner in owners if not CID_NL_GROUPING_RULES.method_unobserved(owner)
+    )
+    if len(direct) < ROW_MIN_SAMPLES:
+        return ()
+    trajectories = resolve_peak_trajectories(
+        direct,
+        contexts,
+        config=config,
+        injection_order=rt_frame.injection_order,
+        rt_frame=rt_frame,
+    )
+    by_id = {owner.owner_id: owner for owner in direct}
+    rows = []
+    for group in group_cid_nl_owners(
+        direct,
+        config=config,
+        sample_universe=sample_universe,
+        rt_frame=rt_frame,
+        peak_trajectories=trajectories,
+    ):
+        row = {
+            by_id[owner_id].sample_stem: estimate.rt_min
+            for owner_id in group.owner_ids
+            if (estimate := rt_frame.membership_coordinate(by_id[owner_id])) is not None
+        }
+        if len(row) >= ROW_MIN_SAMPLES:
+            rows.append(row)
+    return tuple(rows)
 
 
 def admit_cid_nl_group_backfills(

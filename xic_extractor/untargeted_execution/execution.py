@@ -15,6 +15,7 @@ from typing import cast
 from xic_extractor.alignment.cid_nl_initial_grouping import (
     CidNlBatchGrouping,
     CidNlGrouping,
+    direct_evidence_rows,
     regroup_cid_nl_grouping,
 )
 from xic_extractor.alignment.config import AlignmentConfig
@@ -75,6 +76,14 @@ from xic_extractor.untargeted_execution.partition_composition import (
 class _GroupingInputs:
     batch: UntargetedPartitionInputs
     prepared: CidNlGrouping
+
+
+def _direct_evidence_partition_rows(
+    task: tuple[_GroupingInputs, SampleRtFrame],
+) -> tuple[dict[str, float], ...]:
+    """One partition's direct-evidence rows under the frozen calibration."""
+    initial, rt_frame = task
+    return direct_evidence_rows(initial.prepared, rt_frame=rt_frame)
 
 
 def _finalize_partition_grouping(
@@ -444,8 +453,9 @@ class UntargetedPartitionPipelineAdapter:
             reference.add_anchor_observations(self._reference_anchors[index])
         self._batch_preparation.freeze_calibration(reference=reference)
         self._initial_store = store
-        rt_frame = self._batch_preparation.frozen_rt_frame
-        assert rt_frame is not None
+        frozen = self._batch_preparation.frozen_rt_frame
+        assert frozen is not None
+        rt_frame: SampleRtFrame = frozen
         partitions = tuple(self.bootstrap_partitions)
 
         def task(
@@ -496,6 +506,22 @@ class UntargetedPartitionPipelineAdapter:
                 thread_name_prefix="cid-nl-grouping",
             )
         with pool_context as pool:
+            if self._batch_preparation.sample_shift_takes_rows:
+                rows: list[dict[str, float]] = []
+                pool.run_windowed(
+                    partitions,
+                    _direct_evidence_partition_rows,
+                    task_arg_fn=task,
+                    on_completed=lambda _done, _total, _partition, found: rows.extend(
+                        found
+                    ),
+                )
+                if pool.first_error is not None:
+                    raise pool.first_error
+                self._batch_preparation.vote_sample_shift(rows)
+                refined = self._batch_preparation.frozen_rt_frame
+                assert refined is not None
+                rt_frame = refined
             pool.run_windowed(
                 partitions,
                 _finalize_partition_grouping,

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 
 from xic_extractor.alignment.cid_nl_completion import CidNlWorksetGrouping
@@ -15,6 +15,7 @@ from xic_extractor.alignment.feature_membership_inference import (
 )
 from xic_extractor.alignment.grouping_workflow import (
     build_initial_cid_nl_cross_sample_groups,
+    direct_evidence_rt_rows,
     regroup_cid_nl_cross_sample_groups,
 )
 from xic_extractor.alignment.hypothesis_owner_adapter import (
@@ -30,6 +31,7 @@ from xic_extractor.alignment.rt_anchors import (
     fit_batch_rt_model,
     rt_anchor_observations,
 )
+from xic_extractor.alignment.rt_drift import ROW_MIN_SAMPLES
 from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.discovery.models import DiscoveryPeak
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
@@ -120,6 +122,24 @@ class CidNlBatchGrouping:
         )
         self._rt_frame = self._bootstrap_frame.with_sample_calibration(
             *fit_batch_rt_model(self._rt_model_inputs)
+        )
+
+    @property
+    def sample_shift_takes_rows(self) -> bool:
+        """Whether rows can vote the frozen sample shift in this batch."""
+        frame = self._rt_frame
+        return (
+            frame is not None
+            and frame.drift_model is not None
+            and bool(frame.drift_model.sample_shift_min)
+            and len(frame.injection_order) >= ROW_MIN_SAMPLES
+        )
+
+    def vote_sample_shift(self, rows: Iterable[Mapping[str, float]]) -> None:
+        """Refit the drift model with the direct-evidence rows voting M."""
+        assert self._rt_model_inputs is not None
+        self._rt_frame = self._bootstrap_frame.with_sample_calibration(
+            *fit_batch_rt_model(self._rt_model_inputs, shift_rows=rows)
         )
 
     @property
@@ -399,6 +419,30 @@ def prepare_cid_nl_grouping(
         alignment_config=alignment_config,
         known_istd_reference=requested_reference,
         rt_frame=rt_frame,
+    )
+
+
+def direct_evidence_rows(
+    prepared: CidNlGrouping, *, rt_frame: SampleRtFrame
+) -> tuple[dict[str, float], ...]:
+    """One workset collection's direct-evidence rows under the frozen calibration."""
+    sample_universe = frozenset(
+        sample.raw_stem for sample in prepared.request.scope.samples
+    )
+    return tuple(
+        row
+        for workset in prepared.worksets
+        for row in direct_evidence_rt_rows(
+            tuple(
+                owner
+                for group in workset.grouping_scope.groups
+                for owner in group.owners
+            ),
+            workset.grouping_scope.peak_trajectories.source_contexts,
+            config=prepared.alignment_config,
+            sample_universe=sample_universe,
+            rt_frame=workset.grouping_result.rt_frame.with_calibration(rt_frame),
+        )
     )
 
 

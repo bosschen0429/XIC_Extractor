@@ -26,6 +26,7 @@ from xic_extractor.alignment.rt_drift import (
     DriftCoefficients,
     RtDriftModel,
     _drift_model,
+    _row_voted_shift,
     candidate_coefficients,
 )
 from xic_extractor.alignment.rt_frame import SampleRtFrame
@@ -589,3 +590,60 @@ def test_one_pair_rejection_bound_is_inclusive_like_full_scoring():
     assert math.isinf(
         comparison._evaluate(key, coefficients, bound=at_witness).evidence
     )
+
+
+_ROW_SAMPLES = [f"S{index:02d}" for index in range(30)]
+_ROW_ORDER = {sample: index for index, sample in enumerate(_ROW_SAMPLES)}
+_TRUE_SHIFT = {
+    sample: math.sin(1.7 * index) + 0.4 * math.cos(0.9 * index)
+    for index, sample in enumerate(_ROW_SAMPLES)
+}
+
+
+def _shift_rows(responses):
+    return [
+        {
+            sample: 10.0 + index + response * _TRUE_SHIFT[sample]
+            for sample in _ROW_SAMPLES
+        }
+        for index, response in enumerate(responses)
+    ]
+
+
+def test_rows_correct_a_sample_shift_the_anchors_got_wrong():
+    anchors = {**_TRUE_SHIFT, "S12": _TRUE_SHIFT["S12"] + 1.5}
+    rows = _shift_rows((0.5, 0.8, 1.0, 1.2, 1.5))
+
+    voted = _row_voted_shift(anchors, rows, _ROW_ORDER)
+
+    assert voted == pytest.approx(_TRUE_SHIFT, abs=0.02)
+    assert _row_voted_shift(anchors, rows[::-1], _ROW_ORDER) == voted
+
+
+@pytest.mark.parametrize(
+    "rows",
+    [
+        pytest.param(_shift_rows((0.8, 1.2)), id="fewer rows than votes needed"),
+        pytest.param(
+            [
+                {s: rt for s, rt in row.items() if _ROW_ORDER[s] < 15}
+                for row in _shift_rows((0.5, 0.8, 1.0, 1.2, 1.5))
+            ],
+            id="rows observed in too few samples",
+        ),
+        pytest.param(
+            [
+                {
+                    s: 10.0 + 0.05 * math.sin(3.1 * i + k)
+                    for i, s in enumerate(_ROW_SAMPLES)
+                }
+                for k in range(5)
+            ],
+            id="rows that do not follow the shift",
+        ),
+    ],
+)
+def test_sample_shift_stays_with_the_anchors_without_enough_following_rows(rows):
+    wrong = {**_TRUE_SHIFT, "S12": _TRUE_SHIFT["S12"] + 1.5}
+
+    assert _row_voted_shift(wrong, rows, _ROW_ORDER) == wrong
