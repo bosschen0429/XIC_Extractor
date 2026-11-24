@@ -111,6 +111,9 @@ def review_kinds(result):
         ("[M+Mg+CH3COO]+", 300.0, 381.990521, 0.3, CONFIRMED_MH),
         ("[M+Ca+HCOO]+", 300.0, 383.952420, 0.3, CONFIRMED_MH),
         ("[M+Ca+CH3COO]+", 300.0, 397.968070, 0.3, CONFIRMED_MH),
+        ("[M+Fe+CH3COO]+", 300.0, 413.940417, 0.3, CONFIRMED_MH),
+        ("[M+K]+/[M+Na]+", 322.0, 337.973938, 0.3, UNCONFIRMED),
+        ("[M+Mg+CH3COO]+/[M+Na]+", 322.0, 382.008577, 0.3, UNCONFIRMED),
     ],
 )
 def test_each_folding_relation_removes_the_heavier_row(
@@ -209,7 +212,7 @@ def test_1998_pairs_without_potassium_ratio_are_reviewed_not_folded(ratios):
     assert review_kinds(result) == [("unexplained_1998_not_41K", "H")]
 
 
-@pytest.mark.parametrize("light_heavy", [7.27, 8.68, 3.19, 2.97, 6.93])
+@pytest.mark.parametrize("light_heavy", [7.27, 8.68, 3.19, 2.97, 6.93, 1.91, 1.48])
 def test_unassigned_m_plus_2_is_removed_without_claiming_an_element(light_heavy):
     decisions, result = decide(
         row("L", 343.118794),
@@ -393,7 +396,7 @@ def test_supported_ion_family_excludes_non_mh_without_requiring_a_protonated_row
         assert decisions[name][0] is False
         assert decisions[name][2] == ("MH" if protonated else None)
     assert decisions["WeakComplex"][0] is True
-    assert decisions["BiologicalH2"][0] is True
+    assert decisions["BiologicalH2"][0] is False
     if protonated:
         assert decisions["MH"][0] is True
     assert any(
@@ -425,7 +428,7 @@ def test_a_family_member_does_not_confirm_its_previous_adduct_root():
 @pytest.mark.parametrize(
     ("carrier", "kept"),
     [
-        ("MgFA", ("Na", "MgFA", "MgAc", "DimerH", "MetalDimer")),
+        ("MgFA", ("Na", "MgFA", "DimerH", "MetalDimer")),
         ("MetalDimer", ("MetalDimer",)),
     ],
 )
@@ -565,9 +568,8 @@ def test_parallel_metal_multimers_can_support_a_variable_adduct_ratio(
     decisions, _ = decide(*rows)
     assert decisions["MH"][0] is True
     assert decisions["MgTrimer"][0] is (not qualified)
-    assert decisions["CaTrimer"][0] is (not qualified)
+    assert decisions["CaTrimer"][2] == ("MH" if qualified else "MgTrimer")
     if qualified:
-        assert decisions["CaTrimer"][2] == "MH"
         assert decisions["MgTrimer_M2"][2] == "MH"
 
 
@@ -719,16 +721,14 @@ def test_coelution_needs_most_shared_direct_samples():
     assert outcome(result, "[M+Na]+") == {"coelution_insufficient"}
 
 
-def test_unstable_isotope_ratio_and_review_only_relations_are_reviewed():
+def test_unstable_isotope_ratio_is_reviewed_and_a_coeluting_methylene_is_removed():
     unstable = row("U", 301.003355, ratios=(0.05, 0.2, 0.05, 0.2, 0.05, 0.2))
     methylated = row("M", 314.01565, scale=0.5)
     decisions, result = decide(row("L", 300.0), unstable, methylated)
 
-    assert decisions["U"][0] is decisions["M"][0] is True
-    assert sorted(review_kinds(result)) == [
-        ("review_only_relation", "M"),
-        ("unstable_ratio", "U"),
-    ]
+    assert decisions["U"][0] is True
+    assert decisions["M"][:4] == (False, "derived_from_representative", "L", ("+CH2",))
+    assert sorted(review_kinds(result)) == [("unstable_ratio", "U")]
 
 
 @pytest.mark.parametrize(
@@ -785,7 +785,7 @@ def test_representative_much_weaker_than_removed_member_is_reviewed():
     assert review_kinds(result) == [("representative_weaker_than_member", "L")]
 
 
-def test_recurring_unexplained_difference_is_listed_by_frequency():
+def test_recurring_unexplained_difference_folds_the_weaker_row():
     rows = [
         member
         for index, base_rt in enumerate((10.0, 20.0, 30.0))
@@ -794,12 +794,37 @@ def test_recurring_unexplained_difference_is_listed_by_frequency():
             row(f"H{index}", 310.0 + 50 * index, base_rt=base_rt, scale=0.5),
         )
     ]
-    _, result = decide(*rows)
+    decisions, result = decide(*rows)
 
-    assert [
-        (row["review_kind"], row["relation"], row["detail"])
-        for row in result.review_rows
-    ] == [("recurring_unexplained_mass_difference", "delta_mz=10.0000", "pair_count=3")]
+    for index in range(3):
+        assert decisions[f"H{index}"][:4] == (
+            False,
+            "recurring_mass_difference",
+            f"L{index}",
+            ("delta_mz=10.0000",),
+        )
+        assert decisions[f"L{index}"][0] is True
+    assert result.review_rows == ()
+
+
+def test_recurring_difference_keeps_the_stronger_row_even_when_it_is_heavier():
+    rows = [
+        member
+        for index, base_rt in enumerate((10.0, 20.0, 30.0))
+        for member in (
+            row(f"L{index}", 300.0 + 50 * index, base_rt=base_rt, scale=0.5),
+            row(f"H{index}", 310.0 + 50 * index, base_rt=base_rt),
+        )
+    ]
+    decisions, _ = decide(*rows)
+
+    for index in range(3):
+        assert decisions[f"L{index}"][:3] == (
+            False,
+            "recurring_mass_difference",
+            f"H{index}",
+        )
+        assert decisions[f"H{index}"][0] is True
 
 
 def _scenario():
@@ -1026,6 +1051,29 @@ def _export(tmp_path, name, steps, istd=None, *, nucleoside_list=None):
     )
 
 
+def test_a_row_that_absorbed_a_listed_nucleoside_leaves_with_it(
+    tmp_path, synthetic_cells
+):
+    _curation_folder(tmp_path / "alignment")
+    _samples(tmp_path / "samples.tsv")
+    listing = tmp_path / "windows.tsv"
+    listing.write_text(
+        "label\tmz\texpected_rt_min\nfolded\t321.981944\t10\n", encoding="utf-8"
+    )
+    _, decisions, _ = _export(
+        tmp_path,
+        "linked",
+        {"same_compound": {}, "known_nucleosides": {}},
+        nucleoside_list=listing,
+    )
+
+    assert decisions["F000002"]["same_compound_representative_feature_id"] == "F000001"
+    assert decisions["F000001"]["decision"] == "drop"
+    assert decisions["F000001"]["known_nucleosides_label"] == "folded"
+    assert decisions["F000001"]["known_nucleosides_reason"] == "member_window_match"
+    assert decisions["F000003"]["decision"] == "keep"
+
+
 def test_nucleoside_removal_is_attributed_only_to_rows_entering_the_step(
     tmp_path, synthetic_cells
 ):
@@ -1156,6 +1204,7 @@ def test_derivatives_are_removed_before_feature_filtering_and_istd_is_protected(
         "finite_fraction",
     ]
     assert [step["input_feature_count"] for step in summary["steps"]] == [4, 3]
+    assert summary["steps"][0]["removed_by_cause"] == {"cation_adduct": 1}
     assert both["F000001"]["same_compound_ion_form"] == CONFIRMED_MH
     assert [both[f"F00000{index}"]["decision"] for index in range(1, 5)] == [
         "drop",
@@ -1243,7 +1292,7 @@ def test_machine_output_without_backfill_ledger_is_curated(tmp_path, monkeypatch
     assert summary["inputs"]["explanation"].endswith("alignment_explanation.sqlite")
 
 
-def test_frequency_table_counts_a_pair_once_whichever_row_elutes_first():
+def test_recurring_difference_counts_a_pair_once_whichever_row_elutes_first():
     flip = (1.0, 1.0, 1.0, -1.0, -1.0, -1.0)
     rows = [
         member
@@ -1253,9 +1302,11 @@ def test_frequency_table_counts_a_pair_once_whichever_row_elutes_first():
             row(f"H{index}", 310.0 + 50 * index, base_rt=base_rt, shifts=flip),
         )
     ]
-    _, result = decide(*rows)
+    decisions, _ = decide(*rows)
 
-    assert [row["detail"] for row in result.review_rows] == ["pair_count=3"]
+    assert [decisions[f"H{index}"][1] for index in range(3)] == [
+        "recurring_mass_difference"
+    ] * 3
 
 
 def test_removed_ions_neither_repeat_differences_nor_review_pairs():
@@ -1278,10 +1329,8 @@ def test_removed_ions_neither_repeat_differences_nor_review_pairs():
 
     assert {fid for fid, value in decisions.items() if not value[0]} == {
         f"{name}{index}_13C" for name in "XY" for index in range(3)
-    }
-    assert sorted(review_kinds(result)) == [
-        ("review_only_relation", f"Y{index}") for index in range(3)
-    ]
+    } | {f"Y{index}" for index in range(3)}
+    assert review_kinds(result) == []
 
 
 def test_frequency_table_needs_most_shared_direct_samples_to_coelute():
@@ -1304,3 +1353,22 @@ def test_frequency_table_needs_most_shared_direct_samples_to_coelute():
     _, result = decide(*rows)
 
     assert result.review_rows == ()
+
+
+@pytest.mark.parametrize(
+    ("relations", "cause"),
+    [
+        ("13C_M+1", "isotope"),
+        ("[M+Na]+", "cation_adduct"),
+        ("ion_family:[M+K]+", "cation_adduct"),
+        ("13C_M+1|[M+Na]+", "several"),
+        ("[M+Fe+CH3COO]+", "metal_complex"),
+        ("+CH3OH", "solvent"),
+        ("delta_mz=10.9910", "recurring"),
+        ("", "ion_family"),
+    ],
+)
+def test_a_removed_row_is_counted_under_the_relation_that_removed_it(relations, cause):
+    from xic_extractor.matrix_curation.same_compound import removal_cause
+
+    assert removal_cause(relations) == cause

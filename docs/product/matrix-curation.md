@@ -45,7 +45,10 @@ A complete range takes precedence. An enabled step with a missing, empty or
 invalid list cannot export. A list alone does not enable the CLI step.
 
 The bound Review's `group_center_mz` must be within 10 ppm of a reference
-**and** its `group_center_rt` inside the inclusive window. No prevalence or
+**and** its `group_center_rt` inside the inclusive window. A remaining row
+also leaves when a row `same_compound` folded into it lies in a window
+(`member_window_match`), so a listed nucleoside cannot stay in the Matrix under
+another row. No prevalence or
 sample metadata is required. A label means a window match, not confirmed
 identity or internal-standard status. With `same_compound` off, no related
 rows are removed by association.
@@ -142,7 +145,7 @@ The single-pair rules remove the heavier row when it relates to the lighter one 
 | `13C2_M+2` | +2.006710 |
 | `13C_z2` | +0.501678 (z=2) |
 | `41K` | +1.998119, with light/heavy median 11–18 and ≥80% of samples within 0.5–2× of 13.857 |
-| `M+2_unassigned` | +1.997551; intensity-compatible with one/two Mg or two K, without assigning the element |
+| `M+2_unassigned` | +1.997551; intensity-compatible with one/two Mg, two K or Zn, without assigning the element |
 | `[M+Na]+` | +21.981944 |
 | `[M+K]+` | +37.955882 |
 | `[M+NH4]+` | +17.026549 |
@@ -155,16 +158,27 @@ The single-pair rules remove the heavier row when it relates to the lighter one 
 | `[M+Mg+CH3COO]+` | +81.990521 |
 | `[M+Ca+HCOO]+` | +83.952420 |
 | `[M+Ca+CH3COO]+` | +97.968070 |
+| `[M+Fe+CH3COO]+` | +113.940417 |
+| `+CH2` | +14.015650 |
+| `+H2` | +2.015650 |
+| `+CH2O` | +30.010565 |
+| `+CH3OH` | +32.026215 (methanol, mobile phase B) |
+| `+H2O2` | +34.005479 |
+| `delta_mz=<value>` | A difference no relation names that recurs in at least 3 co-eluting pairs of kept rows (within 0.005 Da); the weaker row of each pair folds into the stronger one |
+| `[M+K]+/[M+Na]+` | +15.973938; the lighter row is itself an adduct |
+| `Ca/Mg` | +15.977549; the same complex with Ca in place of Mg |
+| `[M+Mg+CH3COO]+/[M+Na]+` | +60.008577 |
 
 `M+2_unassigned` requires the isotope MAD limit above plus a light/heavy
-median within 0.8–1.3× one of 7.1744 (one Mg), 3.5872 (two Mg) or 6.9285
-(two K), and ≥80% of ratio samples within 0.5–2× that **same** model.
+median within 0.8–1.3× one of 7.1744 (one Mg), 3.5872 (two Mg), 6.9285
+(two K), 1.7732 (64Zn/66Zn) or 1.5030 (66Zn/68Zn), and ≥80% of ratio samples within 0.5–2× that **same** model.
 The ratios use [NIST Mg](https://physics.nist.gov/cgi-bin/Compositions/stand_alone.pl?ele=Mg)
 and [K](https://physics.nist.gov/cgi-bin/Compositions/stand_alone.pl?ele=K)
 abundances. This is an intensity- and mass-compatible isotope classification,
 not an elemental identification; overlapping envelopes or other elements may
 give the same evidence. Its relation is always marked undetermined. These
-thresholds have local 8RAW evidence, not cross-batch validation. Mg/Ca relation
+thresholds have local 8RAW evidence, not cross-batch validation. The Zn ratios
+come from one 85RAW batch whose removed rows were checked against RAW. Mg/Ca relation
 names likewise describe compatible mass models, not confirmed chemical identities.
 Neutral sodium formate/acetate can attach to an already charged ion. Their
 derivatives are excluded by the single-pair checks, but they do not establish
@@ -309,7 +323,7 @@ the source folder.
 | `analysis_matrix.tsv` | Kept rows in original order with original tokens and all sample columns |
 | `feature_decisions.tsv` | Every source row: `source_matrix_row_index`, `feature_id`, `Mz`, `RT`, `istd_label`, each enabled step's columns, the final `decision` and `decision_reason` (`kept_by_all_steps`, `dropped_by:<steps>` or `istd_protected`) |
 | `same_compound_relations.tsv` | Each mass-related row pair that co-elutes in some sample: relation, `e_ppm`, both-direct samples, supporting samples (backfilled ones only when direct co-elution is insufficient), the backfilled share of them, backfilled samples without an apex, largest apex difference, median light/heavy ratio, log-ratio MAD, outcome and whether it contributed to excluding the heavier row; an excluded row need not have a unique parent |
-| `same_compound_review.tsv` | Pairs and groups to review: unstable isotope ratio, ≈1.998 unexplained by the isotope rules, review-only relation, representative ≥10× weaker than a removed member, excluded derivatives with unassigned parent (`decision=drop`), supported non-[M+H]⁺ families (neutral mass, models and witnesses), an ion family removed by a later feature filter, and recurring unexplained mass differences between rows this step keeps, most frequent first. A pair already inside one group, or between two removed ions, is not reviewed again |
+| `same_compound_review.tsv` | Pairs and groups to review: unstable isotope ratio, ≈1.998 unexplained by the isotope rules, review-only relation, representative ≥10× weaker than a removed member, excluded derivatives with unassigned parent (`decision=drop`), supported non-[M+H]⁺ families (neutral mass, models and witnesses), and an ion family removed by a later feature filter. A pair already inside one group, or between two removed ions, is not reviewed again |
 | `sample_metadata.tsv` | Matrix column → sample identity, role, group, order and exclusion |
 | `matrix_curation_summary.json` | Enabled steps and parameters, input paths, sample data source and counts |
 
@@ -329,7 +343,8 @@ unassigned parent),
 how many rows were removed into it, a note rather than a threshold). Its two
 tables are written only when it runs. The summary records each step's
 parameters and counts, including the `same_compound` thresholds, removals by
-relation, removals through the group, `removed_representative_undetermined_count`,
+relation, removals through the group, `removed_by_cause` (removed rows per
+kind of relation), `removed_representative_undetermined_count`,
 `removed_non_protonated_family_count`,
 review counts and `empty_group_count` (uniquely assigned groups with no row left), and
 the internal standard source and protected count.

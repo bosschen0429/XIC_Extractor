@@ -5,7 +5,7 @@ from __future__ import annotations
 import csv
 import json
 import math
-from collections import Counter
+from collections import Counter, defaultdict
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass, replace
 from datetime import datetime
@@ -30,11 +30,13 @@ from xic_extractor.matrix_curation.published import (
     SUMMARY_NAME,
 )
 from xic_extractor.matrix_curation.same_compound import (
-    REVIEW_NAME as SAME_COMPOUND_REVIEW_NAME,
-)
-from xic_extractor.matrix_curation.same_compound import (
+    REMOVAL_CAUSES,
     SAME_COMPOUND_STEP,
     group_outcome_review,
+    removal_cause,
+)
+from xic_extractor.matrix_curation.same_compound import (
+    REVIEW_NAME as SAME_COMPOUND_REVIEW_NAME,
 )
 from xic_extractor.matrix_curation.source import (
     CurationSource,
@@ -384,12 +386,15 @@ def prepare_matrix_curation(
     final_keep = [True] * len(features)
     results = {}
     stage_counts = {}
+    position = {feature.feature_id: index for index, feature in enumerate(features)}
+    folded_into: dict[int, list[FeatureIdentity]] = defaultdict(list)
     for step in enabled:
         indexes = [index for index, keep in enumerate(final_keep) if keep]
         remaining = replace(
             matrix,
             values=matrix.values[indexes],
             features=tuple(features[index] for index in indexes),
+            members=tuple(tuple(folded_into[index]) for index in indexes),
             cells=tuple(matrix.cells[index] for index in indexes)
             if matrix.cells is not None
             else None,
@@ -407,6 +412,9 @@ def prepare_matrix_curation(
             step_rows[index] = step_row
             keep_rows[index] = keep
             final_keep[index] = bool(istd_labels[index]) or keep
+            representative = step_row.get("same_compound_representative_feature_id")
+            if representative and not final_keep[index]:
+                folded_into[position[str(representative)]].append(features[index])
         results[step.key] = StepResult(
             result.columns,
             tuple(step_rows),
@@ -434,7 +442,19 @@ def prepare_matrix_curation(
         review = tables[SAME_COMPOUND_REVIEW_NAME]
         review_rows_all = (*review.rows, *group_review)
         tables[SAME_COMPOUND_REVIEW_NAME] = StepTable(review.columns, review_rows_all)
+        removed_causes = Counter(
+            removal_cause(str(row["same_compound_relation"]))
+            for row, keep, label in zip(
+                same_compound.rows, same_compound.keep, istd_labels, strict=True
+            )
+            if not keep and not label
+        )
         step_extras[SAME_COMPOUND_STEP.key] = {
+            "removed_by_cause": {
+                key: removed_causes[key]
+                for key, _ in REMOVAL_CAUSES
+                if removed_causes[key]
+            },
             "empty_group_count": empty_groups,
             "review_count": len(review_rows_all),
             "review_by_kind": dict(
@@ -541,6 +561,13 @@ def prepare_matrix_curation(
                 for row in result.rows
             ),
         }
+        extras = step_extras.get(step.key, {})
+        if "removed_by_cause" in extras:
+            item["causes"] = [
+                {"label": label, "count": extras["removed_by_cause"][key]}
+                for key, label in REMOVAL_CAUSES
+                if key in extras["removed_by_cause"]
+            ]
         if step is FINITE_FRACTION_STEP:
             denominator = len(result.summary["eligible_matrix_columns"])
             threshold = parameters[step.key]["min_finite_fraction"]

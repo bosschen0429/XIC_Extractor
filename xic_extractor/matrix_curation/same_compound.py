@@ -39,7 +39,15 @@ ISOTOPE_MAX_LOG_MAD = 0.1
 K41_MEDIAN_RANGE = (11.0, 18.0)
 ISOTOPE_RATIO_SAMPLE_FACTOR = 2.0
 ISOTOPE_RATIO_SAMPLE_FRACTION = 0.8
-UNASSIGNED_ISOTOPE_RATIOS = (0.7899 / 0.1101, 0.7899 / (2 * 0.1101), K39_PER_K41 / 2)
+UNASSIGNED_ISOTOPE_RATIOS = (
+    0.7899 / 0.1101,
+    0.7899 / (2 * 0.1101),
+    K39_PER_K41 / 2,
+    0.4917 / 0.2773,
+    0.2773 / 0.1845,
+)
+"""Light/heavy ratios an unassigned M+2 may show: one or two Mg, two K, and
+64Zn/66Zn or 66Zn/68Zn."""
 METAL_M1_ALLOWANCE = 2 * 0.1000 / 0.7899
 UNASSIGNED_ISOTOPE_MEDIAN_FACTORS = (0.8, 1.3)
 WEAK_REPRESENTATIVE_RATIO = 0.1
@@ -127,13 +135,57 @@ RELATIONS: tuple[Relation, ...] = (
     Relation("[M+Mg+CH3COO]+", "adduct", 81.990521),
     Relation("[M+Ca+HCOO]+", "adduct", 83.952420),
     Relation("[M+Ca+CH3COO]+", "adduct", 97.968070),
-    Relation("+CH2", "review", 14.015650),
-    Relation("+H2", "review", 2.015650),
-    Relation("+CH2O", "review", 30.010565),
-    Relation("+CH3OH", "review", 32.026215),
+    Relation("[M+Fe+CH3COO]+", "adduct", 113.940417),
+    Relation("[M+K]+/[M+Na]+", "adduct", 15.973938, confirms_mh=False),
+    Relation("Ca/Mg", "adduct", 15.977549, confirms_mh=False),
+    Relation("[M+Mg+CH3COO]+/[M+Na]+", "adduct", 60.008577, confirms_mh=False),
+    Relation("+CH2", "adduct", 14.015650, confirms_mh=False),
+    Relation("+H2", "adduct", 2.015650, confirms_mh=False),
+    Relation("+CH2O", "adduct", 30.010565, confirms_mh=False),
+    Relation("+CH3OH", "adduct", 32.026215, confirms_mh=False),
+    Relation("+H2O2", "adduct", 34.005479, confirms_mh=False),
     Relation("H2O_loss", "review", 18.010565),
     Relation("+116.047_dR", "annotation", 116.04734),
 )
+
+
+REMOVAL_CAUSES = (
+    ("isotope", "同位素峰"),
+    ("cation_adduct", "鈉、鉀或銨加成"),
+    ("metal_complex", "鎂、鈣或鐵錯合物"),
+    ("salt_cluster", "鈉鹽簇"),
+    ("solvent", "溶劑造成的加成或還原"),
+    ("multimer", "聚集離子"),
+    ("recurring", "重複出現的質量差"),
+    ("several", "同時符合多種關係"),
+    ("ion_family", "沒有質子化離子的離子家族"),
+)
+"""Why a row was removed, each row counted once, in display order."""
+
+
+def removal_cause(relations: str) -> str:
+    """The cause shared by a removed row's ``|``-joined relations."""
+    isotopes = {r.key for r in RELATIONS if r.kind == "isotope"}
+    causes = set()
+    for relation in filter(None, relations.split("|")):
+        key = relation.removeprefix("ion_family:")
+        if key in isotopes:
+            causes.add("isotope")
+        elif key.startswith("delta_mz="):
+            causes.add("recurring")
+        elif key.startswith(("[2M", "[3M")):
+            causes.add("multimer")
+        elif key.startswith("+Na"):
+            causes.add("salt_cluster")
+        elif key.startswith("+"):
+            causes.add("solvent")
+        elif any(metal in key for metal in ("Mg", "Ca", "Fe")):
+            causes.add("metal_complex")
+        else:
+            causes.add("cation_adduct")
+    if not causes:
+        return "ion_family"
+    return causes.pop() if len(causes) == 1 else "several"
 
 
 @dataclass(frozen=True)
@@ -426,6 +478,7 @@ def collapse_same_compound(
     decisions, family_reviews = _ion_family_decisions(
         features, cells, decisions, evidence, metal_isotope_pairs
     )
+    decisions = _recurring_difference_decisions(features, cells, decisions, matches)
     removed = {index for index, decision in enumerate(decisions) if not decision.keep}
     representative = {
         index: decision.representative
@@ -812,7 +865,8 @@ def _review_rows(
             elif outcome == "review_only":
                 add("review_only_relation", heavy, [light], **detail)
     for heavy, root in representative.items():
-        ratio = evidence[(root, heavy)].median_ratio
+        root_pair = evidence.get((root, heavy))
+        ratio = None if root_pair is None else root_pair.median_ratio
         if ratio is not None and ratio <= WEAK_REPRESENTATIVE_RATIO:
             add(
                 "representative_weaker_than_member",
@@ -836,16 +890,72 @@ def _review_rows(
             str(row["relation"]),
         )
     )
-    rows.extend(_recurring_differences(features, cells, matches, removed))
     return tuple(rows)
 
 
-def _recurring_differences(
+def _recurring_difference_decisions(
+    features: Sequence[FeatureIdentity],
+    cells: Sequence[Mapping[str, CellEvidence]],
+    decisions: Sequence[RowDecision],
+    matches: Mapping[tuple[int, int], Mapping[str, float]],
+) -> list[RowDecision]:
+    """Fold the weaker row of each co-eluting pair whose mass difference recurs.
+
+    No relation names the difference, so nothing says which row is the
+    molecule; the stronger one stands for the pair.
+    """
+    removed = {index for index, decision in enumerate(decisions) if not decision.keep}
+    mz = [feature.matrix_mz for feature in features]
+    stronger: dict[int, dict[int, str]] = defaultdict(dict)
+    for cluster in _recurring_clusters(features, cells, matches, removed):
+        label = f"delta_mz={_median_delta(cluster):.4f}"
+        for _, light, heavy in cluster:
+            ratio = pair_evidence(cells[light], cells[heavy]).median_ratio
+            weak, strong = (
+                (heavy, light) if ratio is None or ratio >= 1.0 else (light, heavy)
+            )
+            stronger[weak][strong] = label
+
+    def root_of(index: int) -> int | None:
+        seen = {index}
+        while index in stronger:
+            index = min(stronger[index], key=lambda other: (mz[other], other))
+            if index in seen:
+                return None
+            seen.add(index)
+        return index
+
+    roots = {weak: root_of(weak) for weak in stronger}
+    folded = {weak: root for weak, root in roots.items() if root is not None}
+    result = list(decisions)
+    for weak, root in folded.items():
+        result[weak] = RowDecision(
+            keep=False,
+            reason="recurring_mass_difference",
+            representative=root,
+            relations=tuple(sorted(set(stronger[weak].values()))),
+            via=tuple(sorted(set(stronger[weak]) - {root})),
+            undetermined=True,
+        )
+    for index, decision in enumerate(result):
+        old_root = decision.representative
+        if index not in folded and old_root in folded:
+            result[index] = replace(
+                decision,
+                representative=folded[old_root],
+                reason="derived_through_group",
+                via=tuple(sorted(set(decision.via) | {old_root})),
+                undetermined=True,
+            )
+    return result
+
+
+def _recurring_clusters(
     features: Sequence[FeatureIdentity],
     cells: Sequence[Mapping[str, CellEvidence]],
     matches: Mapping[tuple[int, int], Mapping[str, float]],
     removed: Container[int],
-) -> list[dict[str, object]]:
+) -> list[list[tuple[float, int, int]]]:
     """Mass differences between co-eluting kept rows that no relation explains.
 
     Removed rows are left out: their differences to other rows follow from
@@ -873,7 +983,7 @@ def _recurring_differences(
                     break
                 together[(min(index, other), max(index, other))] += 1
     mz = [feature.matrix_mz for feature in features]
-    deltas: list[tuple[float, str]] = []
+    deltas: list[tuple[float, int, int]] = []
     for (first, second), support in together.items():
         if support < MIN_SUPPORT_SAMPLES:
             continue
@@ -885,10 +995,15 @@ def _recurring_differences(
         both_direct = (direct_mask[light] & direct_mask[heavy]).bit_count()
         if support < MIN_SUPPORT_FRACTION * both_direct:
             continue
-        pair_name = f"{features[light].feature_id}~{features[heavy].feature_id}"
-        deltas.append((mz[heavy] - mz[light], pair_name))
-    deltas.sort()
-    clusters: list[list[tuple[float, str]]] = []
+        deltas.append((mz[heavy] - mz[light], light, heavy))
+    deltas.sort(
+        key=lambda item: (
+            item[0],
+            features[item[1]].feature_id,
+            features[item[2]].feature_id,
+        )
+    )
+    clusters: list[list[tuple[float, int, int]]] = []
     start = 0
     while start < len(deltas):
         end = start
@@ -901,20 +1016,11 @@ def _recurring_differences(
             clusters.append(deltas[start:end])
         start = end
     clusters.sort(key=lambda cluster: (-len(cluster), _median_delta(cluster)))
-    return [
-        {
-            "review_kind": "recurring_unexplained_mass_difference",
-            "feature_id": "",
-            "related_feature_ids": ";".join(sorted(name for _, name in cluster)),
-            "relation": f"delta_mz={_median_delta(cluster):.4f}",
-            "detail": f"pair_count={len(cluster)}",
-        }
-        for cluster in clusters
-    ]
+    return clusters
 
 
-def _median_delta(cluster: Sequence[tuple[float, str]]) -> float:
-    return statistics.median(delta for delta, _ in cluster)
+def _median_delta(cluster: Sequence[tuple[float, int, int]]) -> float:
+    return statistics.median(delta for delta, *_ in cluster)
 
 
 def review_row(

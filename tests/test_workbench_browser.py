@@ -4976,7 +4976,11 @@ def test_matrix_curation_from_a_run_and_from_an_existing_folder(
     def slow_preview(*args, **kwargs):
         entered.set()
         assert released.wait(HANDSHAKE_TIMEOUT_S)
-        return preview(*args, **kwargs)
+        result = preview(*args, **kwargs)
+        result["steps"][0] |= {
+            "causes": [{"label": "同位素峰", "count": 2}],
+        }
+        return result
 
     monkeypatch.setattr(matrix_curation, "preview_curation", slow_preview)
     page.locator("#curation-finite_fraction-min_finite_fraction").fill("0.6")
@@ -4993,6 +4997,7 @@ def test_matrix_curation_from_a_run_and_from_an_existing_folder(
     expect(page.locator("#curation-preview")).to_contain_text("保留 2 列、移除 2 列")
     expect(page.locator("#curation-preview")).to_contain_text("至少 2/3 個研究樣本有值")
     expect(page.locator("#curation-preview")).to_contain_text("本次沒有 ISTD 保護")
+    expect(page.locator("#curation-preview")).to_contain_text("同位素峰：2 列")
     page.locator("button[form=curation-form][type=submit]").click()
     _wait_for_analysis_status(page, "已完成")
     result = page.locator("#curation-result")

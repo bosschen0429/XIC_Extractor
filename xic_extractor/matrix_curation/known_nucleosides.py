@@ -15,6 +15,7 @@ from xic_extractor.matrix_curation.mass_rt_windows import (
 from xic_extractor.matrix_curation.steps import (
     CurationInputs,
     CurationMatrix,
+    FeatureIdentity,
     NucleosideList,
     StepParameter,
     StepResult,
@@ -81,7 +82,10 @@ def read_nucleoside_list(path: Path) -> tuple[MzRtWindow, ...]:
 class KnownNucleosidesStep:
     key = "known_nucleosides"
     label = "排除清單核苷"
-    description = "移除 m/z 與 RT 同時落在清單視窗的列；命中不代表身分確證。"
+    description = (
+        "移除 m/z 與 RT 同時落在清單視窗的列，以及已把這種列收斂進來的列；"
+        "命中不代表身分確證。"
+    )
     parameters: tuple[StepParameter, ...] = ()
     needs_cell_evidence = False
 
@@ -95,9 +99,16 @@ class KnownNucleosidesStep:
     def evaluate(
         self, matrix: CurationMatrix, parameters: Mapping[str, float]
     ) -> StepResult:
+        def label_of(feature: FeatureIdentity) -> str:
+            return match_labels(
+                feature.matrix_mz, feature.matrix_rt, matrix.nucleoside_windows
+            )
+
+        members = matrix.members or ((),) * len(matrix.features)
+        own = tuple(label_of(feature) for feature in matrix.features)
         labels = tuple(
-            match_labels(f.matrix_mz, f.matrix_rt, matrix.nucleoside_windows)
-            for f in matrix.features
+            label or next(filter(None, map(label_of, folded)), "")
+            for label, folded in zip(own, members, strict=True)
         )
         return StepResult(
             columns=(
@@ -110,10 +121,12 @@ class KnownNucleosidesStep:
                     "known_nucleosides_label": label,
                     "known_nucleosides_decision": "drop" if label else "keep",
                     "known_nucleosides_reason": "window_match"
+                    if direct
+                    else "member_window_match"
                     if label
                     else "no_window_match",
                 }
-                for label in labels
+                for label, direct in zip(labels, own, strict=True)
             ),
             keep=tuple(not label for label in labels),
         )

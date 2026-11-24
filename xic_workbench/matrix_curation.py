@@ -125,6 +125,7 @@ def run_curation(config_dir: Path, values: dict[str, Any]) -> dict[str, Any]:
         "matrix_tsv": str(output_dir / CURATED_MATRIX_NAME),
         "feature_count": evaluation.summary["feature_count"],
         "kept_feature_count": evaluation.summary["kept_feature_count"],
+        "steps": evaluation.preview["steps"],
         "published_paths": [
             *(str(output_dir / name) for name in evaluation.tables),
             str(summary),
