@@ -156,6 +156,11 @@ The single-pair rules remove the heavier row when it relates to the lighter one 
 | `[M+Ca+HCOO]+` | +83.952420 |
 | `[M+Ca+CH3COO]+` | +97.968070 |
 | `[M+Fe+CH3COO]+` | +113.940417 |
+| `+CH2` | +14.015650 |
+| `+H2` | +2.015650 |
+| `+CH2O` | +30.010565 |
+| `+CH3OH` | +32.026215 (methanol, mobile phase B) |
+| `+H2O2` | +34.005479 |
 | `[M+K]+/[M+Na]+` | +15.973938; the lighter row is itself an adduct |
 | `Ca/Mg` | +15.977549; the same complex with Ca in place of Mg |
 | `[M+Mg+CH3COO]+/[M+Na]+` | +60.008577 |

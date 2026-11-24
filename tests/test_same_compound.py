@@ -396,7 +396,7 @@ def test_supported_ion_family_excludes_non_mh_without_requiring_a_protonated_row
         assert decisions[name][0] is False
         assert decisions[name][2] == ("MH" if protonated else None)
     assert decisions["WeakComplex"][0] is True
-    assert decisions["BiologicalH2"][0] is True
+    assert decisions["BiologicalH2"][0] is False
     if protonated:
         assert decisions["MH"][0] is True
     assert any(
@@ -721,16 +721,14 @@ def test_coelution_needs_most_shared_direct_samples():
     assert outcome(result, "[M+Na]+") == {"coelution_insufficient"}
 
 
-def test_unstable_isotope_ratio_and_review_only_relations_are_reviewed():
+def test_unstable_isotope_ratio_is_reviewed_and_a_coeluting_methylene_is_removed():
     unstable = row("U", 301.003355, ratios=(0.05, 0.2, 0.05, 0.2, 0.05, 0.2))
     methylated = row("M", 314.01565, scale=0.5)
     decisions, result = decide(row("L", 300.0), unstable, methylated)
 
-    assert decisions["U"][0] is decisions["M"][0] is True
-    assert sorted(review_kinds(result)) == [
-        ("review_only_relation", "M"),
-        ("unstable_ratio", "U"),
-    ]
+    assert decisions["U"][0] is True
+    assert decisions["M"][:4] == (False, "derived_from_representative", "L", ("+CH2",))
+    assert sorted(review_kinds(result)) == [("unstable_ratio", "U")]
 
 
 @pytest.mark.parametrize(
@@ -1281,10 +1279,8 @@ def test_removed_ions_neither_repeat_differences_nor_review_pairs():
 
     assert {fid for fid, value in decisions.items() if not value[0]} == {
         f"{name}{index}_13C" for name in "XY" for index in range(3)
-    }
-    assert sorted(review_kinds(result)) == [
-        ("review_only_relation", f"Y{index}") for index in range(3)
-    ]
+    } | {f"Y{index}" for index in range(3)}
+    assert review_kinds(result) == []
 
 
 def test_frequency_table_needs_most_shared_direct_samples_to_coelute():
@@ -1329,6 +1325,7 @@ def test_a_coeluting_row_outside_the_mass_tolerance_is_not_an_adduct(ppm, kept):
         ("ion_family:[M+K]+", "cation_adduct"),
         ("13C_M+1|[M+Na]+", "several"),
         ("[M+Fe+CH3COO]+", "metal_complex"),
+        ("+CH3OH", "solvent"),
         ("", "ion_family"),
     ],
 )
