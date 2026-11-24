@@ -144,6 +144,39 @@ RELATIONS: tuple[Relation, ...] = (
 )
 
 
+REMOVAL_CAUSES = (
+    ("isotope", "同位素峰"),
+    ("cation_adduct", "鈉、鉀或銨加成"),
+    ("metal_complex", "鎂或鈣錯合物"),
+    ("salt_cluster", "鈉鹽簇"),
+    ("multimer", "聚集離子"),
+    ("several", "同時符合多種關係"),
+    ("ion_family", "沒有質子化離子的離子家族"),
+)
+"""Why a row was removed, each row counted once, in display order."""
+
+
+def removal_cause(relations: str) -> str:
+    """The cause shared by a removed row's ``|``-joined relations."""
+    isotopes = {r.key for r in RELATIONS if r.kind == "isotope"}
+    causes = set()
+    for relation in filter(None, relations.split("|")):
+        key = relation.removeprefix("ion_family:")
+        if key in isotopes:
+            causes.add("isotope")
+        elif key.startswith(("[2M", "[3M")):
+            causes.add("multimer")
+        elif key.startswith("+Na"):
+            causes.add("salt_cluster")
+        elif "Mg" in key or "Ca" in key:
+            causes.add("metal_complex")
+        else:
+            causes.add("cation_adduct")
+    if not causes:
+        return "ion_family"
+    return causes.pop() if len(causes) == 1 else "several"
+
+
 @dataclass(frozen=True)
 class PairEvidence:
     both_direct: int

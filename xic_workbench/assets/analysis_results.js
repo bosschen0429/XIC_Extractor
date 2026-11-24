@@ -1,4 +1,8 @@
-import { openCuration, showCurationResult } from "./analysis_curation.js";
+import {
+  openCuration,
+  removalCauses,
+  showCurationResult,
+} from "./analysis_curation.js";
 import { analysis } from "./analysis_state.js";
 import { $, act, api, button, el, ui } from "./analysis_ui.js";
 import { openReview } from "./workspace.js";
@@ -195,7 +199,10 @@ export function renderResults() {
     const metrics = el("div", undefined, "result-metrics");
     metric(metrics, curated.kept_feature_count, "保留 feature");
     metric(metrics, curated.feature_count, "原始 feature");
-    container.append(metrics, downloads, details);
+    container.append(metrics);
+    for (const step of curated.steps || [])
+      container.append(...removalCauses(step));
+    container.append(downloads, details);
     details.append(el("p", `來源：${curated.source_dir}`, "subtle mono"));
     showCurationResult();
   }

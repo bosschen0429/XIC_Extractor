@@ -112,7 +112,7 @@ direct detections leave insufficient:
   below include those samples and guard it, but never overturn sufficient
   direct evidence.
 - **Mass relation:** `e_ppm = 1e6 × (observed − predicted) / predicted` with
-  `|e_ppm| ≤ 10`, where the predicted heavier m/z comes from the lighter row.
+  `|e_ppm| ≤ 7`, where the predicted heavier m/z comes from the lighter row.
   Both use the Review's `group_center_mz` (the group's centre m/z, the mean
   of its members' m/z); this is not per-sample mass evidence. `precursor_mz` is
   never used as MS1 m/z.
@@ -142,7 +142,7 @@ The single-pair rules remove the heavier row when it relates to the lighter one 
 | `13C2_M+2` | +2.006710 |
 | `13C_z2` | +0.501678 (z=2) |
 | `41K` | +1.998119, with light/heavy median 11–18 and ≥80% of samples within 0.5–2× of 13.857 |
-| `M+2_unassigned` | +1.997551; intensity-compatible with one/two Mg or two K, without assigning the element |
+| `M+2_unassigned` | +1.997551; intensity-compatible with one/two Mg, two K or Zn, without assigning the element |
 | `[M+Na]+` | +21.981944 |
 | `[M+K]+` | +37.955882 |
 | `[M+NH4]+` | +17.026549 |
@@ -157,14 +157,17 @@ The single-pair rules remove the heavier row when it relates to the lighter one 
 | `[M+Ca+CH3COO]+` | +97.968070 |
 
 `M+2_unassigned` requires the isotope MAD limit above plus a light/heavy
-median within 0.8–1.3× one of 7.1744 (one Mg), 3.5872 (two Mg) or 6.9285
-(two K), and ≥80% of ratio samples within 0.5–2× that **same** model.
+median within 0.8–1.3× one of 7.1744 (one Mg), 3.5872 (two Mg), 6.9285
+(two K), 1.7732 (64Zn/66Zn) or 1.5030 (66Zn/68Zn), and ≥80% of ratio samples within 0.5–2× that **same** model.
 The ratios use [NIST Mg](https://physics.nist.gov/cgi-bin/Compositions/stand_alone.pl?ele=Mg)
 and [K](https://physics.nist.gov/cgi-bin/Compositions/stand_alone.pl?ele=K)
 abundances. This is an intensity- and mass-compatible isotope classification,
 not an elemental identification; overlapping envelopes or other elements may
 give the same evidence. Its relation is always marked undetermined. These
-thresholds have local 8RAW evidence, not cross-batch validation. Mg/Ca relation
+thresholds have local 8RAW evidence, not cross-batch validation. The 7 ppm
+mass limit and the Zn ratios come from checking one 85RAW batch's removed rows
+against RAW: every confirmed relation lay within 7 ppm, and the rows removed in
+error lay at 8–10 ppm. Mg/Ca relation
 names likewise describe compatible mass models, not confirmed chemical identities.
 Neutral sodium formate/acetate can attach to an already charged ion. Their
 derivatives are excluded by the single-pair checks, but they do not establish
@@ -329,7 +332,8 @@ unassigned parent),
 how many rows were removed into it, a note rather than a threshold). Its two
 tables are written only when it runs. The summary records each step's
 parameters and counts, including the `same_compound` thresholds, removals by
-relation, removals through the group, `removed_representative_undetermined_count`,
+relation, removals through the group, `removed_by_cause` (removed rows per
+kind of relation), `removed_representative_undetermined_count`,
 `removed_non_protonated_family_count`,
 review counts and `empty_group_count` (uniquely assigned groups with no row left), and
 the internal standard source and protected count.

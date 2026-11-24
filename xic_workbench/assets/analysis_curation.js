@@ -161,6 +161,25 @@ function renderCuration(snapshot) {
     container.append(block);
   }
 }
+export function removalCauses(step) {
+  if (!step.causes?.length) return [];
+  const list = el("ul", undefined, "removal-causes");
+  for (const cause of step.causes)
+    list.append(el("li", `${cause.label}：${cause.count} 列`));
+  const nodes = [
+    el("p", `${step.label}移除的 ${step.removed} 列，依原因：`),
+    list,
+  ];
+  if (step.review_count)
+    nodes.push(
+      el(
+        "p",
+        `另有 ${step.review_count} 項證據不足、未移除，列在 same_compound_review.tsv。`,
+        "subtle",
+      ),
+    );
+  return nodes;
+}
 function renderPreview(snapshot) {
   const host = $("curation-preview");
   const preview = snapshot.preview;
@@ -208,6 +227,7 @@ function renderPreview(snapshot) {
       );
   }
   host.append(table);
+  for (const step of preview.steps) host.append(...removalCauses(step));
   for (const step of snapshot.detection.steps.filter(
     (step) => step.unavailable_reason,
   ))

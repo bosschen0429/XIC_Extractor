@@ -1156,6 +1156,7 @@ def test_derivatives_are_removed_before_feature_filtering_and_istd_is_protected(
         "finite_fraction",
     ]
     assert [step["input_feature_count"] for step in summary["steps"]] == [4, 3]
+    assert summary["steps"][0]["removed_by_cause"] == {"cation_adduct": 1}
     assert both["F000001"]["same_compound_ion_form"] == CONFIRMED_MH
     assert [both[f"F00000{index}"]["decision"] for index in range(1, 5)] == [
         "drop",
@@ -1316,3 +1317,19 @@ def test_a_coeluting_row_outside_the_mass_tolerance_is_not_an_adduct(ppm, kept):
     )
 
     assert decisions["H"][0] is kept
+
+
+@pytest.mark.parametrize(
+    ("relations", "cause"),
+    [
+        ("13C_M+1", "isotope"),
+        ("[M+Na]+", "cation_adduct"),
+        ("ion_family:[M+K]+", "cation_adduct"),
+        ("13C_M+1|[M+Na]+", "several"),
+        ("", "ion_family"),
+    ],
+)
+def test_a_removed_row_is_counted_under_the_relation_that_removed_it(relations, cause):
+    from xic_extractor.matrix_curation.same_compound import removal_cause
+
+    assert removal_cause(relations) == cause
