@@ -209,7 +209,7 @@ def test_1998_pairs_without_potassium_ratio_are_reviewed_not_folded(ratios):
     assert review_kinds(result) == [("unexplained_1998_not_41K", "H")]
 
 
-@pytest.mark.parametrize("light_heavy", [7.27, 8.68, 3.19, 2.97, 6.93])
+@pytest.mark.parametrize("light_heavy", [7.27, 8.68, 3.19, 2.97, 6.93, 1.91, 1.48])
 def test_unassigned_m_plus_2_is_removed_without_claiming_an_element(light_heavy):
     decisions, result = decide(
         row("L", 343.118794),
@@ -1304,3 +1304,15 @@ def test_frequency_table_needs_most_shared_direct_samples_to_coelute():
     _, result = decide(*rows)
 
     assert result.review_rows == ()
+
+
+@pytest.mark.parametrize(("ppm", "kept"), [(5.0, False), (8.5, True)])
+def test_a_coeluting_row_outside_the_mass_tolerance_is_not_an_adduct(ppm, kept):
+    """85RAW adducts confirmed in raw MS1 sat within 6.0 ppm of the predicted
+    mass (430 relations); co-eluting rows 8.4-9.6 ppm away were other compounds."""
+    heavy = 325.0891 + 82.003073617830
+    decisions, _ = decide(
+        row("L", 325.0891), row("H", heavy * (1 - ppm * 1e-6), scale=0.9)
+    )
+
+    assert decisions["H"][0] is kept
