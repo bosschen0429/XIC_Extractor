@@ -111,6 +111,8 @@ def review_kinds(result):
         ("[M+Mg+CH3COO]+", 300.0, 381.990521, 0.3, CONFIRMED_MH),
         ("[M+Ca+HCOO]+", 300.0, 383.952420, 0.3, CONFIRMED_MH),
         ("[M+Ca+CH3COO]+", 300.0, 397.968070, 0.3, CONFIRMED_MH),
+        ("[M+K]+/[M+Na]+", 322.0, 337.973938, 0.3, UNCONFIRMED),
+        ("[M+Mg+CH3COO]+/[M+Na]+", 322.0, 382.008577, 0.3, UNCONFIRMED),
     ],
 )
 def test_each_folding_relation_removes_the_heavier_row(
@@ -425,7 +427,7 @@ def test_a_family_member_does_not_confirm_its_previous_adduct_root():
 @pytest.mark.parametrize(
     ("carrier", "kept"),
     [
-        ("MgFA", ("Na", "MgFA", "MgAc", "DimerH", "MetalDimer")),
+        ("MgFA", ("Na", "MgFA", "DimerH", "MetalDimer")),
         ("MetalDimer", ("MetalDimer",)),
     ],
 )
@@ -565,9 +567,8 @@ def test_parallel_metal_multimers_can_support_a_variable_adduct_ratio(
     decisions, _ = decide(*rows)
     assert decisions["MH"][0] is True
     assert decisions["MgTrimer"][0] is (not qualified)
-    assert decisions["CaTrimer"][0] is (not qualified)
+    assert decisions["CaTrimer"][2] == ("MH" if qualified else "MgTrimer")
     if qualified:
-        assert decisions["CaTrimer"][2] == "MH"
         assert decisions["MgTrimer_M2"][2] == "MH"
 
 

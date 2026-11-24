@@ -155,6 +155,9 @@ The single-pair rules remove the heavier row when it relates to the lighter one 
 | `[M+Mg+CH3COO]+` | +81.990521 |
 | `[M+Ca+HCOO]+` | +83.952420 |
 | `[M+Ca+CH3COO]+` | +97.968070 |
+| `[M+K]+/[M+Na]+` | +15.973938; the lighter row is itself an adduct |
+| `Ca/Mg` | +15.977549; the same complex with Ca in place of Mg |
+| `[M+Mg+CH3COO]+/[M+Na]+` | +60.008577 |
 
 `M+2_unassigned` requires the isotope MAD limit above plus a light/heavy
 median within 0.8–1.3× one of 7.1744 (one Mg), 3.5872 (two Mg), 6.9285
