@@ -417,6 +417,11 @@ replayed with `ddacf394` code, no RAW except three ions read for MS2.
   quorum of four carried 61,658 (60%). All 74 drift anchors (2,037 owners) were
   direct. 245 windows below the quorum held established rows of two or three
   direct members, whose other cells first-pass peaks no longer fill.
+- Repeats under one peak (85RAW MS2, peaks fragmented at least twice): the
+  loss recurs in 65% of peaks from ions seen in four or more samples and in
+  15-18% from ions seen in one to three, at every peak-height quartile. Those
+  recurring sparse cases, about 79 ions, are why a repeat keeps a region read.
+  Only the four-sample line was tested, not neighbouring thresholds.
 
 Rerun when the row cost, the direct-first ordering or the first-pass peak
 population changes.

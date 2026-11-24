@@ -162,7 +162,10 @@ for each ion planned from the batch's qualifying events. A mass region with
 events in fewer than `K` samples, the direct-support quorum that
 [Backfill](backfill.md) also uses, is read only in the samples that carry an
 event there: peaks from other samples could not complete a row whose direct
-evidence is too sparse to be published, so they are not collected. Event masses within
+evidence is too sparse to be published, so they are not collected. A region
+stays read in every sample when one of its peaks shows the loss in two or more
+scans, since a repeat under one peak is a reproducible signal that sparse DDA
+sampling alone would hide. Event masses within
 5 ppm of each other are readings of one ion; each sample reads one XIC at
 their median mass with the shared precursor tolerance (10 ppm), over the
 ion's event RTs widened by 3 min, and measures it once. A peak becomes an

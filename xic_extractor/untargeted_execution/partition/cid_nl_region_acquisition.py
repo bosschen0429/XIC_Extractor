@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from bisect import bisect_left, bisect_right
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import dataclass, replace
 from statistics import median
 from typing import Protocol
@@ -152,6 +152,7 @@ def plan_cid_nl_mass_regions(
     *,
     settings: DiscoverySettings,
     minimum_event_samples: int = 1,
+    peak_events: Iterable[Sequence[DiscoveryEvent]] = (),
 ) -> tuple[DiscoveryMassRegion, ...]:
     """Discover the search universe from valid local method events across the batch.
 
@@ -162,16 +163,29 @@ def plan_cid_nl_mass_regions(
 
     A region with events in fewer than ``minimum_event_samples`` samples is
     read only in those samples: the others' peaks there could not complete a
-    row that direct evidence is too sparse to establish.
+    row that direct evidence is too sparse to establish. A region stays read
+    everywhere when one peak, given by its events in ``peak_events``, shows the
+    loss in two or more scans: a repeat under one peak is a reproducible signal
+    that sparse sampling alone would hide.
     """
     ppm = settings.precursor_mz_tolerance_ppm
     rts_by_mz: dict[float, set[float]] = {}
     samples_by_mz: dict[float, set[str]] = {}
-    for event in events:
-        if (
+
+    def qualifies(event: DiscoveryEvent) -> bool:
+        return (
             event.neutral_loss_tag in settings.selected_tag_names
             and event.assess_precursor_loss(settings.nl_tolerance_ppm).supports_nl
-        ):
+        )
+
+    repeated = {
+        event_ion_mz(event)
+        for located in peak_events
+        if len(supporting := [event for event in located if qualifies(event)]) > 1
+        for event in supporting
+    }
+    for event in events:
+        if qualifies(event):
             mz = event_ion_mz(event)
             rts_by_mz.setdefault(mz, set()).add(float(event.rt))
             samples_by_mz.setdefault(mz, set()).add(event.sample_stem)
@@ -191,7 +205,9 @@ def plan_cid_nl_mass_regions(
             ppm,
             tuple(sorted(rts)),
             _ion_requests(centers, rts_by_mz, ppm),
-            frozenset(samples) if len(samples) < minimum_event_samples else None,
+            frozenset(samples)
+            if len(samples) < minimum_event_samples and repeated.isdisjoint(centers)
+            else None,
         )
         for centers, rts, samples in regions
     )

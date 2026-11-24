@@ -140,6 +140,11 @@ def _prepare_runtime_work(
                 for event in candidate.located_events
             ),
             settings=jobs[0].settings,
+            peak_events=(
+                candidate.located_events
+                for group in sample_groups
+                for candidate in group[0].job.candidates
+            ),
             minimum_event_samples=minimum_direct_support_count(
                 sum(
                     is_backfill_eligible_sample(group[0].job.sample)

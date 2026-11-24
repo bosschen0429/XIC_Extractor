@@ -422,3 +422,24 @@ def test_region_below_the_event_quorum_is_read_only_where_its_events_are():
     )
     (elsewhere,) = _capture("C", _Raw(peak), shared, ())
     assert len(elsewhere.peaks) == 1
+
+
+def test_repeated_loss_under_one_peak_keeps_a_sparse_region_read_everywhere():
+    """Two scans of one peak both showing the loss mark a reproducible signal,
+    so the region is read in every sample although only one carries events."""
+    first = _scan_events("A", 100, 3.0, 500.0)
+    second = _scan_events("A", 101, 3.02, 500.0)
+    peak = ((500.0, 3.0, 2.0e5),)
+
+    def read_elsewhere(peak_events):
+        regions = plan_cid_nl_mass_regions(
+            (*first, *second),
+            settings=SETTINGS,
+            minimum_event_samples=2,
+            peak_events=peak_events,
+        )
+        (result,) = _capture("C", _Raw(peak), regions, ())
+        return len(result.peaks)
+
+    assert read_elsewhere(((*first, *second),)) == 1
+    assert read_elsewhere((first, second)) == 0
