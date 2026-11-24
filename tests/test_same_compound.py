@@ -111,6 +111,7 @@ def review_kinds(result):
         ("[M+Mg+CH3COO]+", 300.0, 381.990521, 0.3, CONFIRMED_MH),
         ("[M+Ca+HCOO]+", 300.0, 383.952420, 0.3, CONFIRMED_MH),
         ("[M+Ca+CH3COO]+", 300.0, 397.968070, 0.3, CONFIRMED_MH),
+        ("[M+Fe+CH3COO]+", 300.0, 413.940417, 0.3, CONFIRMED_MH),
         ("[M+K]+/[M+Na]+", 322.0, 337.973938, 0.3, UNCONFIRMED),
         ("[M+Mg+CH3COO]+/[M+Na]+", 322.0, 382.008577, 0.3, UNCONFIRMED),
     ],
@@ -1327,6 +1328,7 @@ def test_a_coeluting_row_outside_the_mass_tolerance_is_not_an_adduct(ppm, kept):
         ("[M+Na]+", "cation_adduct"),
         ("ion_family:[M+K]+", "cation_adduct"),
         ("13C_M+1|[M+Na]+", "several"),
+        ("[M+Fe+CH3COO]+", "metal_complex"),
         ("", "ion_family"),
     ],
 )

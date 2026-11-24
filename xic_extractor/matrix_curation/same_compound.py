@@ -135,6 +135,7 @@ RELATIONS: tuple[Relation, ...] = (
     Relation("[M+Mg+CH3COO]+", "adduct", 81.990521),
     Relation("[M+Ca+HCOO]+", "adduct", 83.952420),
     Relation("[M+Ca+CH3COO]+", "adduct", 97.968070),
+    Relation("[M+Fe+CH3COO]+", "adduct", 113.940417),
     Relation("[M+K]+/[M+Na]+", "adduct", 15.973938, confirms_mh=False),
     Relation("Ca/Mg", "adduct", 15.977549, confirms_mh=False),
     Relation("[M+Mg+CH3COO]+/[M+Na]+", "adduct", 60.008577, confirms_mh=False),
@@ -150,7 +151,7 @@ RELATIONS: tuple[Relation, ...] = (
 REMOVAL_CAUSES = (
     ("isotope", "同位素峰"),
     ("cation_adduct", "鈉、鉀或銨加成"),
-    ("metal_complex", "鎂或鈣錯合物"),
+    ("metal_complex", "鎂、鈣或鐵錯合物"),
     ("salt_cluster", "鈉鹽簇"),
     ("multimer", "聚集離子"),
     ("several", "同時符合多種關係"),
@@ -171,7 +172,7 @@ def removal_cause(relations: str) -> str:
             causes.add("multimer")
         elif key.startswith("+Na"):
             causes.add("salt_cluster")
-        elif "Mg" in key or "Ca" in key:
+        elif any(metal in key for metal in ("Mg", "Ca", "Fe")):
             causes.add("metal_complex")
         else:
             causes.add("cation_adduct")
