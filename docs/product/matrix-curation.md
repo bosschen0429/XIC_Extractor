@@ -45,7 +45,10 @@ A complete range takes precedence. An enabled step with a missing, empty or
 invalid list cannot export. A list alone does not enable the CLI step.
 
 The bound Review's `group_center_mz` must be within 10 ppm of a reference
-**and** its `group_center_rt` inside the inclusive window. No prevalence or
+**and** its `group_center_rt` inside the inclusive window. A remaining row
+also leaves when a row `same_compound` folded into it lies in a window
+(`member_window_match`), so a listed nucleoside cannot stay in the Matrix under
+another row. No prevalence or
 sample metadata is required. A label means a window match, not confirmed
 identity or internal-standard status. With `same_compound` off, no related
 rows are removed by association.

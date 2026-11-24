@@ -73,6 +73,8 @@ class CurationMatrix:
     features: tuple[FeatureIdentity, ...] = ()
     cells: tuple[Mapping[str, CellEvidence], ...] | None = None
     nucleoside_windows: tuple[MzRtWindow, ...] = ()
+    members: tuple[tuple[FeatureIdentity, ...], ...] = ()
+    """Per remaining row, the rows an earlier step folded into it."""
 
 
 @dataclass(frozen=True)

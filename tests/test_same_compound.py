@@ -1051,6 +1051,29 @@ def _export(tmp_path, name, steps, istd=None, *, nucleoside_list=None):
     )
 
 
+def test_a_row_that_absorbed_a_listed_nucleoside_leaves_with_it(
+    tmp_path, synthetic_cells
+):
+    _curation_folder(tmp_path / "alignment")
+    _samples(tmp_path / "samples.tsv")
+    listing = tmp_path / "windows.tsv"
+    listing.write_text(
+        "label\tmz\texpected_rt_min\nfolded\t321.981944\t10\n", encoding="utf-8"
+    )
+    _, decisions, _ = _export(
+        tmp_path,
+        "linked",
+        {"same_compound": {}, "known_nucleosides": {}},
+        nucleoside_list=listing,
+    )
+
+    assert decisions["F000002"]["same_compound_representative_feature_id"] == "F000001"
+    assert decisions["F000001"]["decision"] == "drop"
+    assert decisions["F000001"]["known_nucleosides_label"] == "folded"
+    assert decisions["F000001"]["known_nucleosides_reason"] == "member_window_match"
+    assert decisions["F000003"]["decision"] == "keep"
+
+
 def test_nucleoside_removal_is_attributed_only_to_rows_entering_the_step(
     tmp_path, synthetic_cells
 ):

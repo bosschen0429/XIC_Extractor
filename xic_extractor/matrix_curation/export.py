@@ -5,7 +5,7 @@ from __future__ import annotations
 import csv
 import json
 import math
-from collections import Counter
+from collections import Counter, defaultdict
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass, replace
 from datetime import datetime
@@ -386,12 +386,15 @@ def prepare_matrix_curation(
     final_keep = [True] * len(features)
     results = {}
     stage_counts = {}
+    position = {feature.feature_id: index for index, feature in enumerate(features)}
+    folded_into: dict[int, list[FeatureIdentity]] = defaultdict(list)
     for step in enabled:
         indexes = [index for index, keep in enumerate(final_keep) if keep]
         remaining = replace(
             matrix,
             values=matrix.values[indexes],
             features=tuple(features[index] for index in indexes),
+            members=tuple(tuple(folded_into[index]) for index in indexes),
             cells=tuple(matrix.cells[index] for index in indexes)
             if matrix.cells is not None
             else None,
@@ -409,6 +412,9 @@ def prepare_matrix_curation(
             step_rows[index] = step_row
             keep_rows[index] = keep
             final_keep[index] = bool(istd_labels[index]) or keep
+            representative = step_row.get("same_compound_representative_feature_id")
+            if representative and not final_keep[index]:
+                folded_into[position[str(representative)]].append(features[index])
         results[step.key] = StepResult(
             result.columns,
             tuple(step_rows),
