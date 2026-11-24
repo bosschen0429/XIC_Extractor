@@ -6,6 +6,10 @@ import importlib
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
+from xic_extractor.alignment.backfill.conservative import (
+    is_backfill_eligible_sample,
+    minimum_direct_support_count,
+)
 from xic_extractor.alignment.cid_nl_initial_grouping import CidNlGrouping
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.execution.workers import WorkerAdmissionPool
@@ -136,6 +140,12 @@ def _prepare_runtime_work(
                 for event in candidate.located_events
             ),
             settings=jobs[0].settings,
+            minimum_event_samples=minimum_direct_support_count(
+                sum(
+                    is_backfill_eligible_sample(group[0].job.sample)
+                    for group in sample_groups
+                )
+            ),
         )
         if jobs and initial_results is None
         else ()

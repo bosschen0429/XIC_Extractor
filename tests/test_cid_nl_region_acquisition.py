@@ -401,3 +401,24 @@ def test_reference_relates_only_its_own_events_to_the_first_pass_peaks():
     assert reference.peaks == full[0].peaks
     assert [r.dda_scan_number for r in full[0].individual_relations] == [300, 800]
     assert [r.dda_scan_number for r in reference.individual_relations] == [800]
+
+
+def test_region_below_the_event_quorum_is_read_only_where_its_events_are():
+    """An ion with events in fewer samples than the quorum cannot become a
+    published row, so a sample without its own event does not read it."""
+    a = _scan_events("A", 100, 3.0, 500.0)
+    b = _scan_events("B", 200, 3.0, 500.0)
+    peak = ((500.0, 3.0, 2.0e5),)
+
+    sparse = plan_cid_nl_mass_regions(a, settings=SETTINGS, minimum_event_samples=2)
+    (own,) = _capture("A", _Raw(peak), sparse, a)
+    assert len(own.peaks) == 1
+    (elsewhere,) = _capture("C", _Raw(peak), sparse, ())
+    assert elsewhere.peaks == ()
+    assert elsewhere.coverage == ()
+
+    shared = plan_cid_nl_mass_regions(
+        (*a, *b), settings=SETTINGS, minimum_event_samples=2
+    )
+    (elsewhere,) = _capture("C", _Raw(peak), shared, ())
+    assert len(elsewhere.peaks) == 1

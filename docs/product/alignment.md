@@ -158,7 +158,11 @@ table. Scheduling partitions pack worksets for execution only; they do not
 restrict scientific comparison or RT calibration.
 
 The first pass searches every sample, with or without its own CID-NL events,
-for each ion planned from the batch's qualifying events. Event masses within
+for each ion planned from the batch's qualifying events. A mass region with
+events in fewer than `K` samples, the direct-support quorum that
+[Backfill](backfill.md) also uses, is read only in the samples that carry an
+event there: peaks from other samples could not complete a row whose direct
+evidence is too sparse to be published, so they are not collected. Event masses within
 5 ppm of each other are readings of one ion; each sample reads one XIC at
 their median mass with the shared precursor tolerance (10 ppm), over the
 ion's event RTs widened by 3 min, and measures it once. A peak becomes an

@@ -411,6 +411,13 @@ replayed with `ddacf394` code, no RAW except three ions read for MS2.
   separate rows in 282.15, 293.17 or 406.22); windows with fewer than 20 such
   peaks; any batch outside development.
 
+- Collection: 801 of 1,891 mass windows had direct owners in one sample
+  only and 307 in two or three. None of the 801 held an established row, yet
+  they carried 44,557 of the unconfirmed owners; windows below the 85RAW
+  quorum of four carried 61,658 (60%). All 74 drift anchors (2,037 owners) were
+  direct. 245 windows below the quorum held established rows of two or three
+  direct members, whose other cells first-pass peaks no longer fill.
+
 Rerun when the row cost, the direct-first ordering or the first-pass peak
 population changes.
 
