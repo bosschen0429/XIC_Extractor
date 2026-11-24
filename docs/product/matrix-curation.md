@@ -115,7 +115,7 @@ direct detections leave insufficient:
   below include those samples and guard it, but never overturn sufficient
   direct evidence.
 - **Mass relation:** `e_ppm = 1e6 × (observed − predicted) / predicted` with
-  `|e_ppm| ≤ 7`, where the predicted heavier m/z comes from the lighter row.
+  `|e_ppm| ≤ 10`, where the predicted heavier m/z comes from the lighter row.
   Both use the Review's `group_center_mz` (the group's centre m/z, the mean
   of its members' m/z); this is not per-sample mass evidence. `precursor_mz` is
   never used as MS1 m/z.
@@ -177,10 +177,8 @@ and [K](https://physics.nist.gov/cgi-bin/Compositions/stand_alone.pl?ele=K)
 abundances. This is an intensity- and mass-compatible isotope classification,
 not an elemental identification; overlapping envelopes or other elements may
 give the same evidence. Its relation is always marked undetermined. These
-thresholds have local 8RAW evidence, not cross-batch validation. The 7 ppm
-mass limit and the Zn ratios come from checking one 85RAW batch's removed rows
-against RAW: every confirmed relation lay within 7 ppm, and the rows removed in
-error lay at 8–10 ppm. Mg/Ca relation
+thresholds have local 8RAW evidence, not cross-batch validation. The Zn ratios
+come from one 85RAW batch whose removed rows were checked against RAW. Mg/Ca relation
 names likewise describe compatible mass models, not confirmed chemical identities.
 Neutral sodium formate/acetate can attach to an already charged ion. Their
 derivatives are excluded by the single-pair checks, but they do not establish

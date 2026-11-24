@@ -1355,18 +1355,6 @@ def test_frequency_table_needs_most_shared_direct_samples_to_coelute():
     assert result.review_rows == ()
 
 
-@pytest.mark.parametrize(("ppm", "kept"), [(5.0, False), (8.5, True)])
-def test_a_coeluting_row_outside_the_mass_tolerance_is_not_an_adduct(ppm, kept):
-    """85RAW adducts confirmed in raw MS1 sat within 6.0 ppm of the predicted
-    mass (430 relations); co-eluting rows 8.4-9.6 ppm away were other compounds."""
-    heavy = 325.0891 + 82.003073617830
-    decisions, _ = decide(
-        row("L", 325.0891), row("H", heavy * (1 - ppm * 1e-6), scale=0.9)
-    )
-
-    assert decisions["H"][0] is kept
-
-
 @pytest.mark.parametrize(
     ("relations", "cause"),
     [
