@@ -166,6 +166,54 @@ def test_exact_two_scan_alias_from_overlapping_windows_is_one_observation():
     assert not result.ambiguous_relations
 
 
+def test_peak_seen_as_segment_and_as_overlap_lobe_is_one_observation():
+    """TumorBC2292 m/z 312.145 in 85RAW, shifted to 500 with the shared scans.
+
+    Both ion windows hold the crest; one scan's centroid falls only inside
+    the lower window, which then reads one overlap with a lobe where the
+    upper window reads a separate segment of the same bounds.
+    """
+    local_rt = np.fromstring(
+        "16.8859 16.8959 16.9027 16.9147 16.9235 16.9356 16.9414 16.9576 16.9726 "
+        "16.9815 16.9945 17.0024 17.0195 17.0305 17.0414 17.0504 17.0624 17.0744 "
+        "17.0812 17.0901 17.0948 17.1017 17.1127 17.1216 17.1336 17.1385 17.1567 "
+        "17.1699 17.1850 17.1961 17.2144 17.2265 17.2427 17.2547 17.2669 17.2841 "
+        "17.2920 17.3082 17.3203 17.3303 17.3475 17.3575 17.3756 17.3806 17.3998",
+        sep=" ",
+    )
+    shared = 1000.0 * np.fromstring(
+        "0 0 12.2 8.2 11.6 16.2 18.3 24.3 0 20.4 47.1 29.7 50.0 43.6 54.0 50.5 "
+        "47.7 41.1 33.7 48.3 36.3 40.3 43.1 30.8 27.4 29.9 17.6 21.1 26.9 25.1 "
+        "41.9 49.4 56.9 60.7 53.4 67.9 58.6 70.7 57.9 55.1 81.8 53.0 56.2 49.4 52.7",
+        sep=" ",
+    )
+    before = np.arange(14.0, 16.88, 0.01)
+    after = np.arange(17.41, 20.01, 0.01)
+    lower_only = np.zeros_like(local_rt)
+    lower_only[8] = 27_800.0
+    raw = _Raw()
+    raw.rt = np.concatenate((before, local_rt, after))
+    raw.ions = [
+        (500.006, np.pad(shared, (len(before), len(after)))),
+        (499.995, np.pad(lower_only, (len(before), len(after)))),
+    ]
+    events = (
+        *_scan_events("A", 1, 17.0, 500.000),
+        *_scan_events("A", 2, 17.0, 500.012),
+    )
+    regions = plan_cid_nl_mass_regions(events, settings=SETTINGS)
+    assert [ion.mz for region in regions for ion in region.ions] == pytest.approx(
+        [500.000, 500.012]
+    )
+
+    (result,) = _capture("A", raw, regions, events)
+
+    crest = [peak for peak in result.peaks if peak.rt_apex_min == 17.0414]
+    (kept,) = crest
+    assert kept.source_trace.mz == pytest.approx(500.000)
+    assert np.count_nonzero(kept.intensity) == np.count_nonzero(shared[1:27]) + 1
+
+
 def test_batch_seed_search_retains_local_competition_without_local_cid(monkeypatch):
     early = _scan_events("A", 301, 3.0, 500.000)
     late = _scan_events("A", 1301, 13.0, 499.995)

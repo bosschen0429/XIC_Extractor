@@ -8,6 +8,8 @@ from dataclasses import dataclass, replace
 from statistics import median
 from typing import Protocol
 
+import numpy as np
+
 from xic_extractor.acquisition.peak_apex_ion import (
     APEX_ION_SPREAD_PPM,
     MS1Centroid,
@@ -348,6 +350,10 @@ def _measure_region(
 
     A compact peak may have fewer hits than the partial-overlap test needs.
     Identical selected scans of the same measured ion still observe one peak.
+    Overlapping ion windows can also mint one physical peak twice, e.g. as one
+    trace's segment and another trace's localized lobe that differ only where
+    a centroid falls outside one window; the measurement that observes more
+    scans is kept under the peak identity downstream assessment requires.
     """
     coverage = []
     measured: list[RegionSegment] = []
@@ -393,7 +399,7 @@ def _measure_region(
                 measured.append(RegionSegment(trace, evaluation))
 
     traces: dict[XICRequest, Trace] = {}
-    peaks: dict[tuple[str, tuple[float, ...], tuple[float, ...]], PeakObservation] = {}
+    peaks: dict[str, PeakObservation] = {}
     for same_ion in group_same_ion_peaks(measured):
         kept = same_ion[0]
         trace = kept.acquired_trace
@@ -436,7 +442,11 @@ def _measure_region(
                     signal_processing_profile=profile,
                     resolver_mode=settings.resolver_mode,
                 )
-            peaks.setdefault((peak.physical_peak_key, peak.rt, peak.intensity), peak)
+            held = peaks.get(peak.physical_peak_key)
+            if held is None or np.count_nonzero(peak.intensity) > np.count_nonzero(
+                held.intensity
+            ):
+                peaks[peak.physical_peak_key] = peak
     observations = tuple(
         sorted(peaks.values(), key=lambda peak: peak.measured_order_key)
     )
