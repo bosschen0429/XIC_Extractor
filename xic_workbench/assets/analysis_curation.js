@@ -174,7 +174,7 @@ export function removalCauses(step) {
     nodes.push(
       el(
         "p",
-        `另有 ${step.review_count} 項證據不足、未移除，列在 same_compound_review.tsv。`,
+        `另有 ${step.review_count} 項需要人工檢視，列在 same_compound_review.tsv。`,
         "subtle",
       ),
     );
