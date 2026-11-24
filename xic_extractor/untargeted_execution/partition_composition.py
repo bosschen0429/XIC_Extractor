@@ -78,12 +78,11 @@ from xic_extractor.untargeted_execution.physical_comparison_context import (
 
 @dataclass(frozen=True, slots=True)
 class UntargetedPartitionInputs:
-    """Partition inputs, executable jobs, and optional sparse backfill templates."""
+    """Partition inputs and executable sample/subject jobs."""
 
     subject_batch: UntargetedCidNlMethodSubjectBatch
     context: UntargetedPartitionContext
     jobs: tuple[UntargetedPartitionJob, ...]
-    sample_job_templates: tuple[UntargetedPartitionJob, ...] = ()
     prepared_grouping: CidNlGrouping | None = None
 
 
@@ -370,10 +369,15 @@ def group_acquired_partition(
     *,
     alignment_config: AlignmentConfig,
     bootstrap_only: bool = False,
+    anchors_calibrate: bool = True,
     known_istd_reference: KnownIstdReference | None = None,
     progress_callback: Callable[[Mapping[str, object]], None] | None = None,
 ) -> CidNlGrouping:
-    """Hand acquired in-memory facts to Alignment, retaining no eligibility policy."""
+    """Hand acquired in-memory facts to Alignment, retaining no eligibility policy.
+
+    ``anchors_calibrate`` is False only for a bootstrap whose anchors the batch
+    takes from another population.
+    """
     context_batches = {
         id(
             result.adapter_result.elution_contexts
@@ -403,6 +407,7 @@ def group_acquired_partition(
             context for contexts in context_batches.values() for context in contexts
         ),
         known_istd_reference=known_istd_reference,
+        anchors_calibrate=anchors_calibrate,
     )
     if bootstrap_only:
         return prepared
@@ -434,29 +439,17 @@ def _build_production_composition_inputs(
     subject_ids = {
         subject.method_subject_id for subject in batch.subject_batch.subjects
     }
-    templates_by_stem = {job.sample.raw_stem: job for job in batch.sample_job_templates}
-    extra_keys = set(result_by_key) - set(jobs_by_key)
-    dense_keys = (
-        {
-            (sample.raw_stem, subject.method_subject_id)
-            for sample in batch.context.samples
-            for subject in batch.subject_batch.subjects
-        }
-        if not batch.sample_job_templates
-        else set(jobs_by_key)
-    )
+    dense_keys = {
+        (sample.raw_stem, subject_id)
+        for sample in batch.context.samples
+        for subject_id in subject_ids
+    }
     if (
         len(result_by_key) != len(sample_results)
         or len(jobs_by_key) != len(batch.jobs)
         or set(jobs_by_key) != dense_keys
-        or not set(jobs_by_key) <= set(result_by_key)
+        or set(jobs_by_key) != set(result_by_key)
         or any(result_by_key[key].job is not job for key, job in jobs_by_key.items())
-        or any(
-            key[0] not in templates_by_stem
-            or key[1] not in subject_ids
-            or result_by_key[key].job.sample is not templates_by_stem[key[0]].sample
-            for key in extra_keys
-        )
     ):
         raise RuntimeError(
             "CID-NL production runtime lost exact sample/subject results"
@@ -473,7 +466,8 @@ def _build_production_composition_inputs(
         assessment
         for result in sample_results
         for assessment in result.effective_assessments
-        if not is_unsearched_cid_nl_discovery_assessment(assessment)
+        if assessment.candidate_peaks
+        or not is_unsearched_cid_nl_discovery_assessment(assessment)
     ]
 
     prepared = batch.prepared_grouping or group_acquired_partition(
@@ -498,7 +492,8 @@ def _build_production_composition_inputs(
             for subject in subject_workset
             for result in results_by_subject.get(subject.method_subject_id, ())
             for assessment in result.effective_assessments
-            if not is_unsearched_cid_nl_discovery_assessment(assessment)
+            if assessment.candidate_peaks
+            or not is_unsearched_cid_nl_discovery_assessment(assessment)
         )
         subject_order = {
             subject.method_subject_id: index
@@ -518,7 +513,8 @@ def _build_production_composition_inputs(
             for subject in subject_workset
             for result in results_by_subject.get(subject.method_subject_id, ())
             for assessment in (result.adapter_result.assessment_input.assessment,)
-            if not is_unsearched_cid_nl_discovery_assessment(assessment)
+            if assessment.candidate_peaks
+            or not is_unsearched_cid_nl_discovery_assessment(assessment)
         )
         group_backfills = {
             (
@@ -542,10 +538,7 @@ def _build_production_composition_inputs(
             for subject in subject_workset
             for result in results_by_subject.get(subject.method_subject_id, ())
             for assessment, acquisition in (
-                (
-                    result.adapter_result.assessment_input.assessment,
-                    result.adapter_result.acquisition,
-                ),
+                (result.adapter_result.assessment_input.assessment, None),
                 *(
                     (attempt.assessment, attempt.acquisition)
                     for attempt in result.backfill_attempts

@@ -12,7 +12,10 @@ from xic_extractor.alignment.grouping_evidence import (
     owner_uncertainty_reason,
     peak_correspondence_conflict,
 )
-from xic_extractor.alignment.grouping_rules import GroupingRules
+from xic_extractor.alignment.grouping_rules import (
+    GroupingRules,
+    compatible_method_members,
+)
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 from xic_extractor.alignment.peak_trajectories import PeakTrajectories
 from xic_extractor.alignment.rt_frame import RtFrame
@@ -60,7 +63,7 @@ def _membership_trajectories(
             if not within_ppm(
                 max(first.peak.mz, second.peak.mz),
                 min(first.peak.mz, second.peak.mz),
-                config.max_ppm,
+                config.precursor_mz_tolerance_ppm,
             ):
                 continue
             first_bounds = _selected_peak_bounds(first)
@@ -114,8 +117,7 @@ def _membership_trajectories(
 
 
 def _selected_peak_bounds(owner: SampleLocalMS1Owner) -> tuple[float, float]:
-    integration = owner.peak.integration
-    return integration.rt_left_min, integration.rt_right_min
+    return owner.peak.rt_left_min, owner.peak.rt_right_min
 
 
 def _trajectory_seeds(
@@ -137,12 +139,12 @@ def _trajectory_seeds(
         if not members:
             continue
         if (
-            len({rules.chemistry_key(member) for member in members}) != 1
+            not compatible_method_members(members, rules)
             or len({member.sample_stem for member in members}) != len(members)
             or not within_ppm(
                 max(member.peak.mz for member in members),
                 min(member.peak.mz for member in members),
-                config.max_ppm,
+                config.precursor_mz_tolerance_ppm,
             )
             or any(
                 peak_correspondence_conflict(

@@ -1,46 +1,34 @@
-"""Reacquire Discovery sample observations for Untargeted CID-NL assessment."""
+"""Bind a sample region population to its declared CID-NL method subjects."""
 
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, replace
+from collections.abc import Iterator, Mapping
+from dataclasses import dataclass
 from dataclasses import field as dataclass_field
+from pathlib import Path
 
-from xic_extractor.acquisition_contract import (
-    NATIVE_SCAN_COORDINATE_KIND,
-    AcquiredTrace,
-    TraceAcquisitionBatch,
-    mint_trace_acquisition_capability,
-)
+from xic_extractor.alignment.backfill.conservative import is_backfill_eligible_sample
 from xic_extractor.alignment.cid_nl_inputs import (
-    CID_NL_ALIGNMENT_CONFIG,
     UntargetedCidNlAssessmentInput,
 )
-from xic_extractor.configuration.signal_processing_profile import (
-    SignalProcessingProfile,
-)
+from xic_extractor.discovery.ion_grouping import event_ion_mz
 from xic_extractor.discovery.models import (
-    DiscoveryEvent,
     DiscoveryPeak,
 )
 from xic_extractor.discovery.settings import DiscoverySettings
-from xic_extractor.discovery.strict_event_receipts import (
-    resolve_discovery_scan_events,
-)
 from xic_extractor.mass_accuracy import mz_tolerance_da
 from xic_extractor.peak_detection.cid_nl_candidate_set_relation import (
     DdaCidNlCandidateSetRelation,
 )
 from xic_extractor.peak_detection.cid_nl_evidence import (
     CidNlEvidenceObservation,
-    cid_nl_evidence_observation,
 )
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlEvaluationReceipt,
     CidNlMethodAssessmentContractError,
     CidNlTechnicalState,
     mint_cid_nl_method_assessment,
-    resolve_cid_nl_method_relations,
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CidNlMethodSubject,
@@ -51,39 +39,24 @@ from xic_extractor.peak_detection.cid_nl_peak_support import (
 )
 from xic_extractor.peak_detection.elution_context import (
     SampleElutionContext,
-    project_elution_context,
 )
 from xic_extractor.peak_detection.observations import (
     PeakObservation,
     RetainedCaptureEvidence,
-    mint_physical_peak_observations,
 )
-from xic_extractor.peak_detection.physical_peak_evaluation import (
-    prepare_physical_signal,
-)
-from xic_extractor.peak_detection.physical_peak_models import PhysicalPeakEvaluation
-from xic_extractor.peak_detection.physical_peak_population import (
-    PhysicalPeakPopulation,
-    measure_physical_peak_population,
-)
-from xic_extractor.peak_detection.traces import trace_from_xic_request
 from xic_extractor.processing_identity import AcquisitionSourceIdentity
 from xic_extractor.sample_metadata import SampleMetadata
-from xic_extractor.untargeted_execution.acquisition_cache import (
-    acquire_untargeted_trace_batch,
-)
 from xic_extractor.untargeted_execution.partition.cid_nl_raw_source import (
-    _ADAPTER_NAMESPACE,
     CidNlAcquisitionError,
     CidNlRawSource,
-    _freeze_acquisition,
     _within_ppm,
+    read_direct_cid_nl_seeds,
 )
-from xic_extractor.xic_models import XICRequest
+from xic_extractor.untargeted_execution.partition.cid_nl_region_acquisition import (
+    CidNlSampleRegion,
+    attach_cid_nl_events,
+)
 
-UNTARGETED_CID_NL_CAPTURE_TRACE_SOURCE = (
-    f"{_ADAPTER_NAMESPACE}:{NATIVE_SCAN_COORDINATE_KIND}"
-)
 _WRITER_ROUNDING_REL_TOL = 5e-6
 _WRITER_ROUNDING_ABS_TOL = 5e-6
 
@@ -91,7 +64,6 @@ _WRITER_ROUNDING_ABS_TOL = 5e-6
 @dataclass(frozen=True, slots=True)
 class CidNlAcquisitionResult:
     assessment_input: UntargetedCidNlAssessmentInput
-    acquisition: TraceAcquisitionBatch | None
     candidate_observations: tuple[tuple[str, PeakObservation], ...]
     source_candidate_ids: tuple[str, ...]
     strict_scan_count: int
@@ -101,452 +73,294 @@ class CidNlAcquisitionResult:
     elution_contexts: tuple[SampleElutionContext, ...] = ()
 
 
-@dataclass(frozen=True, slots=True)
-class UntargetedCidNlSampleTraceBatch:
-    """One sample-local XIC batch keyed by exact Discovery peak identity."""
-
-    sample_key: str
-    acquisition_source_id: str
-    candidate_ids: tuple[str, ...]
-    acquisition: TraceAcquisitionBatch
-    candidate_trace_indices: tuple[int, ...] | None = None
-    context_trace_indices: tuple[int, ...] = ()
-    elution_contexts: tuple[SampleElutionContext, ...] = ()
-    candidate_evaluations: tuple[PhysicalPeakEvaluation, ...] = ()
-
-    def __post_init__(self) -> None:
-        if self.candidate_trace_indices is None:
-            object.__setattr__(
-                self,
-                "candidate_trace_indices",
-                tuple(range(len(self.candidate_ids))),
-            )
-
-    def acquired_trace(self, candidate_id: str) -> AcquiredTrace:
-        try:
-            index = self.candidate_ids.index(candidate_id)
-        except ValueError as exc:
-            raise CidNlAcquisitionError(
-                f"sample trace batch has no peak {candidate_id!r}"
-            ) from exc
-        assert self.candidate_trace_indices is not None
-        return self.acquisition.traces[self.candidate_trace_indices[index]]
-
-    def evaluation(self, candidate_id: str) -> PhysicalPeakEvaluation:
-        return self.candidate_evaluations[self.candidate_ids.index(candidate_id)]
-
-
-def _sample_capture_requests(
+def assess_sample_regions(
     *,
-    peaks: tuple[DiscoveryPeak, ...],
-    settings: DiscoverySettings,
-) -> tuple[tuple[XICRequest, ...], tuple[int, ...]]:
-    """Each peak's XIC exactly as Discovery measured it, read once per window.
-
-    Discovery measures every peak in the window centred on its ``peak_mz``;
-    the peak table keeps that window.
-    """
-    unique: dict[XICRequest, int] = {}
-    indices = []
-    for item in peaks:
-        request = XICRequest(
-            mz=item.peak_mz,
-            rt_min=item.ms1_search_rt_min,
-            rt_max=item.ms1_search_rt_max,
-            ppm_tol=settings.precursor_mz_tolerance_ppm,
-        )
-        indices.append(unique.setdefault(request, len(unique)))
-    return tuple(unique), tuple(indices)
-
-
-def _measure_peaks(
-    peaks: tuple[DiscoveryPeak, ...],
-    acquired_traces: tuple[AcquiredTrace, ...],
-    profile: SignalProcessingProfile,
-) -> tuple[PhysicalPeakEvaluation, ...]:
-    """Measure each peak the way Discovery did, from the reread XIC.
-
-    A window is prepared once for all its peaks; each peak is the segment its
-    query RT selects. Equal RAW, window, query RT and settings give Discovery's
-    measurement; this one is the published value.
-    """
-    populations: dict[XICRequest, PhysicalPeakPopulation] = {}
-    evaluations = []
-    for peak, acquired in zip(peaks, acquired_traces, strict=True):
-        request = acquired.coordinate.request
-        population = populations.get(request)
-        if population is None:
-            population = populations[request] = measure_physical_peak_population(
-                acquired.trace.rt,
-                acquired.trace.intensity,
-                context_rt_start_min=request.rt_min,
-                context_rt_end_min=request.rt_max,
-                profile=profile,
-            )
-        evaluations.append(population.evaluate(peak.query_rt_min))
-    return tuple(evaluations)
-
-
-def acquire_untargeted_cid_nl_sample_trace_batch(
-    *,
+    regions: tuple[CidNlSampleRegion, ...],
     sample: SampleMetadata,
     acquisition_source: AcquisitionSourceIdentity,
-    peaks: tuple[DiscoveryPeak, ...],
-    settings: DiscoverySettings,
-    raw: CidNlRawSource,
-    signal_processing_profile: SignalProcessingProfile,
-) -> UntargetedCidNlSampleTraceBatch | None:
-    """Acquire all eligible peak XICs for one sample in one adapter call."""
-
-    capture_candidates = tuple(peak for peak in peaks if peak.is_clean_peak)
-    if not capture_candidates:
-        return None
-    source = acquisition_source
-    capability = mint_trace_acquisition_capability(
-        source,
-        adapter_namespace=f"{_ADAPTER_NAMESPACE}.sample_batch",
-    )
-    requests, indices = _sample_capture_requests(
-        peaks=capture_candidates, settings=settings
-    )
-    context_requests = _elution_context_requests(
-        requests, padding_min=CID_NL_ALIGNMENT_CONFIG.preferred_rt_sec / 60.0
-    )
-    context_indices = tuple(range(len(requests), len(requests) + len(context_requests)))
-    acquisition = _freeze_acquisition(
-        acquire_untargeted_trace_batch(capability, (*requests, *context_requests), raw)
-    )
-    contexts = []
-    for index in context_indices:
-        acquired = acquisition.traces[index]
-        context = project_elution_context(
-            prepare_physical_signal(
-                acquired.trace.rt,
-                acquired.trace.intensity,
-                profile=signal_processing_profile,
-            ),
-            sample_stem=sample.raw_stem,
-            mz=acquired.coordinate.request.mz,
-        )
-        if context is not None:
-            contexts.append(context)
-    return UntargetedCidNlSampleTraceBatch(
-        sample_key=sample.sample_name,
-        acquisition_source_id=source.acquisition_source_id,
-        candidate_ids=tuple(peak.peak_id for peak in capture_candidates),
-        acquisition=acquisition,
-        candidate_trace_indices=indices,
-        context_trace_indices=context_indices,
-        elution_contexts=tuple(contexts),
-        candidate_evaluations=_measure_peaks(
-            capture_candidates,
-            tuple(acquisition.traces[index] for index in indices),
-            signal_processing_profile,
-        ),
-    )
-
-
-def _elution_context_requests(
-    requests: tuple[XICRequest, ...], *, padding_min: float
-) -> tuple[XICRequest, ...]:
-    """Share neighboring context reads without widening integration requests."""
-    merged: list[XICRequest] = []
-    for request in sorted(
-        requests, key=lambda item: (item.mz, item.ppm_tol, item.rt_min, item.rt_max)
-    ):
-        expanded = replace(
-            request,
-            rt_min=max(0.0, request.rt_min - padding_min),
-            rt_max=request.rt_max + padding_min,
-        )
-        if (
-            merged
-            and (merged[-1].mz, merged[-1].ppm_tol) == (expanded.mz, expanded.ppm_tol)
-            and expanded.rt_min <= merged[-1].rt_max
-        ):
-            merged[-1] = replace(
-                merged[-1], rt_max=max(merged[-1].rt_max, expanded.rt_max)
-            )
-        else:
-            merged.append(expanded)
-    return tuple(merged)
-
-
-def adapt_current_discovery_sample_subject(
-    *,
+    scopes: tuple[tuple[CidNlMethodSubject, tuple[DiscoveryPeak, ...]], ...],
     processing_attempt_id: str,
-    sample: SampleMetadata,
-    acquisition_source: AcquisitionSourceIdentity,
-    method_subject: CidNlMethodSubject,
-    peaks: tuple[DiscoveryPeak, ...],
-    support_candidates: tuple[DiscoveryPeak, ...] = (),
-    rt_reference_only: bool = False,
     settings: DiscoverySettings,
     raw: CidNlRawSource | None,
-    _preacquired_traces: UntargetedCidNlSampleTraceBatch | None = None,
-    signal_processing_profile: SignalProcessingProfile,
-) -> CidNlAcquisitionResult:
-    """Reacquire a subject and mint its complete CellObservation input."""
+    rt_reference_only: bool,
+) -> dict[str, CidNlAcquisitionResult]:
+    """Bind a sample's measured peaks and separate scan relations to subjects.
 
-    bounded = _bounded_subject_candidates(
-        peaks,
-        method_subject=method_subject,
-        settings=settings,
-    )
-    support_bounded = _bounded_subject_candidates(
-        support_candidates,
-        method_subject=method_subject,
-        settings=settings,
-    )
-    if {peak.peak_id for peak in bounded} & {peak.peak_id for peak in support_bounded}:
-        raise CidNlAcquisitionError("support peaks must be distinct from feature peaks")
-    support_policy = DdaCidNlPeakSupportPolicy(
-        precursor_tolerance_da=mz_tolerance_da(
-            method_subject.precursor_mz,
-            method_subject.precursor_tolerance_ppm,
-            minimum_da=_WRITER_ROUNDING_ABS_TOL,
-        ),
-        neutral_loss_tolerance_ppm=settings.nl_tolerance_ppm,
-    )
-    seed_candidates = tuple(
-        peak
-        for peak in bounded
-        if peak.precursor_mz_basis in {"scan_precursor", "scan_monoisotopic", "mixed"}
-        or peak.is_clean_peak
-    )
-    peak_candidates = tuple(peak for peak in bounded if peak.is_clean_peak)
-    support_seed_candidates = tuple(
-        peak
-        for peak in support_bounded
-        if peak.precursor_mz_basis in {"scan_precursor", "scan_monoisotopic", "mixed"}
-    )
-    if not seed_candidates and not peak_candidates:
+    A Discovery row supplies lineage only if its recorded representative
+    scan resolves to an independently measured physical peak.
+    """
+    evidence = tuple(ref for region in regions for ref in region.evidence)
+    supports = tuple(ref for region in regions for ref in region.individual_relations)
+    ambiguities = tuple(ref for region in regions for ref in region.ambiguous_relations)
+    contexts = tuple(context for region in regions for context in region.contexts)
+    observed_by_scan: dict[tuple[int, float], set[PeakObservation]] = {}
+    for relation in supports:
+        observed_by_scan.setdefault(
+            (relation.dda_scan_number, relation.configured_neutral_loss_da), set()
+        ).add(relation.peak_observation)
+
+    bindings: dict[str, list[tuple[str, PeakObservation]]] = {}
+    lineage_subject_by_peak: dict[PeakObservation, str] = {}
+    for subject, candidates in scopes:
+        key = subject.method_subject_id
+        for candidate in candidates:
+            loss = settings.neutral_loss_by_tag[candidate.neutral_loss_tag]
+            observed = [
+                peak
+                for peak in observed_by_scan.get((candidate.best_ms2_scan_id, loss), ())
+                if _within_ppm(
+                    peak.mz, subject.precursor_mz, subject.precursor_tolerance_ppm
+                )
+            ]
+            if len(observed) != 1:
+                continue
+            (peak,) = observed
+            if rt_reference_only and peak.requires_overlap_review:
+                continue
+            prior = lineage_subject_by_peak.setdefault(peak, key)
+            if prior == key:
+                bindings.setdefault(key, []).append((candidate.peak_id, peak))
+
+    peaks_by_subject: dict[str, list[PeakObservation]] = {}
+    for region in regions:
+        for peak in region.peaks:
+            if rt_reference_only and peak.requires_overlap_review:
+                continue
+            compatible = tuple(
+                subject
+                for subject, _ in scopes
+                if _within_ppm(
+                    peak.mz, subject.precursor_mz, subject.precursor_tolerance_ppm
+                )
+            )
+            selected_key = lineage_subject_by_peak.get(peak)
+            if selected_key is None:
+                if not compatible:
+                    continue
+                subject = min(
+                    compatible,
+                    key=lambda item: (
+                        abs(peak.mz - item.precursor_mz),
+                        item.precursor_mz,
+                    ),
+                )
+                selected_key = subject.method_subject_id
+            peaks_by_subject.setdefault(selected_key, []).append(peak)
+
+    additional_refs: frozenset[CidNlEvidenceObservation] = frozenset()
+    if (
+        raw is not None
+        and settings.tag_combine_mode == "intersection"
+        and is_backfill_eligible_sample(sample)
+    ):
+        pending = _unresolved_intersection_peaks(scopes, peaks_by_subject, supports)
+        if pending:
+            declared = frozenset(
+                (ref.scan_number, ref.configured_neutral_loss_da) for ref in evidence
+            )
+            new_refs, new_support, new_sets = _acquire_intersection_relations(
+                raw,
+                sample=sample,
+                acquisition_source=acquisition_source,
+                settings=settings,
+                pending=pending,
+                regions=regions,
+                declared=declared,
+            )
+            additional_refs = frozenset(new_refs)
+            evidence += new_refs
+            supports += new_support
+            ambiguities += new_sets
+
+    by_subject = {}
+    for subject, candidates in scopes:
+        key = subject.method_subject_id
+        peaks = tuple(peaks_by_subject.get(key, ()))
+        own = frozenset(peaks)
+
+        policy = DdaCidNlPeakSupportPolicy(
+            precursor_tolerance_da=mz_tolerance_da(
+                subject.precursor_mz,
+                subject.precursor_tolerance_ppm,
+                minimum_da=_WRITER_ROUNDING_ABS_TOL,
+            ),
+            neutral_loss_tolerance_ppm=settings.nl_tolerance_ppm,
+        )
+
+        individual = tuple(
+            item
+            for item in supports
+            if item.peak_observation in own
+            and item.configured_neutral_loss_da in subject.configured_losses
+        )
+        ambiguous = tuple(
+            item
+            for item in ambiguities
+            if item.evidence.configured_neutral_loss_da in subject.configured_losses
+            and any(p in own for p in item.matched_candidates)
+        )
+        linked = {item.evidence for item in individual} | {
+            item.evidence for item in ambiguous
+        }
+        refs = tuple(
+            item
+            for item in evidence
+            if item in linked
+            or (
+                item.configured_neutral_loss_da in subject.configured_losses
+                and _within_ppm(
+                    item.assess_precursor_loss(settings.nl_tolerance_ppm).reference_mz
+                    or item.precursor_mz,
+                    subject.precursor_mz,
+                    subject.precursor_tolerance_ppm,
+                )
+            )
+        )
         assessment = _mint_assessment(
             sample=sample,
             acquisition_source=acquisition_source,
-            method_subject=method_subject,
+            method_subject=subject,
             settings=settings,
-            raw=None,
-            support_policy=support_policy,
-            technical_state="not_evaluated",
-            technical_reason_code="no_search_eligible_discovery_input",
-        )
-        return CidNlAcquisitionResult(
-            assessment_input=UntargetedCidNlAssessmentInput(
-                sample=sample,
-                assessment=assessment,
-            ),
-            acquisition=None,
-            candidate_observations=(),
-            elution_contexts=(
-                _preacquired_traces.elution_contexts
-                if _preacquired_traces is not None
-                else ()
-            ),
-            source_candidate_ids=tuple(item.peak_id for item in bounded),
-            strict_scan_count=0,
-        )
-    if raw is None:
-        raise CidNlAcquisitionError(
-            "bounded subject universe requires an owner-opened RAW adapter"
-        )
-    source = acquisition_source
-    scan_seeds = _located_discovery_events(seed_candidates + support_seed_candidates)
-    capture_evidence: list[RetainedCaptureEvidence] = []
-    acquisition, candidate_observations = _adopt_peak_observations(
-        processing_attempt_id=processing_attempt_id,
-        sample=sample,
-        method_subject=method_subject,
-        peaks=peak_candidates,
-        settings=settings,
-        raw=raw,
-        source=source,
-        signal_processing_profile=signal_processing_profile,
-        evidence_sink=capture_evidence,
-        rt_reference_only=rt_reference_only,
-        _preacquired_traces=_preacquired_traces,
-    )
-    evidence_refs: list[CidNlEvidenceObservation] = []
-    individual_refs: list[DdaCidNlPeakSupport] = []
-    set_refs: list[DdaCidNlCandidateSetRelation] = []
-    candidate_universe = tuple(
-        sorted(
-            (observation for _, observation in candidate_observations),
-            key=lambda item: item.measured_order_key,
-        )
-    )
-    for raw_seed in resolve_discovery_scan_events(
-        scan_seeds,
-        settings=settings,
-        preserve_configured_losses=method_subject.composition is not None,
-    ):
-        seed = replace(raw_seed, acquisition_source_id=source.acquisition_source_id)
-        evidence = cid_nl_evidence_observation(
-            sample=sample,
-            acquisition_source=source,
-            scan_number=seed.scan_number,
-            precursor_mz=seed.precursor_mz,
-            product_mz=seed.product_mz,
-            configured_neutral_loss_da=seed.configured_neutral_loss_da,
-            observed_neutral_loss_da=seed.observed_neutral_loss_da,
-            observed_loss_error_ppm=seed.observed_loss_error_ppm,
-            scan_rt_min=seed.rt,
-            product_intensity=seed.product_intensity,
-            precursor_mz_basis=seed.precursor_mz_basis,
-            scan_precursor_mz=seed.scan_precursor_mz,
-            precursor_metadata=seed.precursor_metadata,
-            ms1_precursor_observation=seed.ms1_precursor_observation,
-            precursor_inference_tolerance_da=(
-                settings.ms2_precursor_tol_da
-                if seed.precursor_mz_basis == "product_plus_neutral_loss"
-                else None
-            ),
-        )
-        evidence_refs.append(evidence)
-        resolved_support, resolved_sets = resolve_cid_nl_method_relations(
-            sample=sample,
-            evidence_refs=(evidence,),
-            candidate_peaks=candidate_universe,
-            policy=support_policy,
-        )
-        individual_refs.extend(resolved_support)
-        set_refs.extend(resolved_sets)
-
-    assessment = _mint_assessment(
-        sample=sample,
-        acquisition_source=source,
-        method_subject=method_subject,
-        settings=settings,
-        raw=raw,
-        support_policy=support_policy,
-        candidate_peaks=candidate_universe,
-        evidence_refs=tuple(evidence_refs),
-        individual_support_refs=tuple(individual_refs),
-        set_relation_refs=tuple(set_refs),
-    )
-    return CidNlAcquisitionResult(
-        assessment_input=UntargetedCidNlAssessmentInput(
-            sample=sample,
-            assessment=assessment,
-        ),
-        acquisition=acquisition,
-        candidate_observations=candidate_observations,
-        elution_contexts=(
-            _preacquired_traces.elution_contexts
-            if _preacquired_traces is not None
-            else ()
-        ),
-        source_candidate_ids=tuple(item.peak_id for item in bounded),
-        strict_scan_count=len(
-            {
-                ref.scan_number
-                for ref in evidence_refs
-                if ref.assess_precursor_loss(settings.nl_tolerance_ppm).supports_nl
-            }
-        ),
-        capture_evidence=tuple(capture_evidence),
-    )
-
-
-def _located_discovery_events(
-    peaks: tuple[DiscoveryPeak, ...],
-) -> tuple[DiscoveryEvent, ...]:
-    """Every event the Discovery event table locates on these peaks.
-
-    The table, not RAW, carries each event's precursor and parent-MS1 facts.
-    """
-    events: dict[tuple[object, ...], DiscoveryEvent] = {}
-    for peak in peaks:
-        for event in peak.located_events:
-            events.setdefault(
-                (
-                    event.scan_number,
-                    event.neutral_loss_tag,
-                    event.precursor_mz,
-                    event.product_mz,
-                    event.precursor_mz_basis,
-                ),
-                event,
-            )
-    return tuple(events[key] for key in sorted(events))
-
-
-def _adopt_peak_observations(
-    *,
-    processing_attempt_id: str,
-    sample: SampleMetadata,
-    method_subject: CidNlMethodSubject,
-    peaks: tuple[DiscoveryPeak, ...],
-    settings: DiscoverySettings,
-    raw: CidNlRawSource,
-    source,
-    signal_processing_profile: SignalProcessingProfile,
-    evidence_sink: list[RetainedCaptureEvidence] | None = None,
-    rt_reference_only: bool = False,
-    _preacquired_traces: UntargetedCidNlSampleTraceBatch | None = None,
-) -> tuple[TraceAcquisitionBatch | None, tuple[tuple[str, PeakObservation], ...]]:
-    if not peaks:
-        return None, ()
-    if _preacquired_traces is None:
-        requests, indices = _sample_capture_requests(peaks=peaks, settings=settings)
-        capability = mint_trace_acquisition_capability(
-            source,
-            adapter_namespace=_ADAPTER_NAMESPACE,
-        )
-        acquisition = _freeze_acquisition(
-            acquire_untargeted_trace_batch(capability, requests, raw)
-        )
-        acquired_traces = tuple(acquisition.traces[index] for index in indices)
-        evaluations = _measure_peaks(peaks, acquired_traces, signal_processing_profile)
-    else:
-        acquired_traces = tuple(
-            _preacquired_traces.acquired_trace(peak.peak_id) for peak in peaks
-        )
-        evaluations = tuple(
-            _preacquired_traces.evaluation(peak.peak_id) for peak in peaks
-        )
-        acquisition = _preacquired_traces.acquisition
-    admitted = tuple(
-        (peak, acquired, evaluation)
-        for peak, acquired, evaluation in zip(
-            peaks, acquired_traces, evaluations, strict=True
-        )
-        if evaluation.state == "available"
-        and not (rt_reference_only and evaluation.requires_overlap_review)
-    )
-    observations: list[tuple[str, PeakObservation]] = []
-    for peak, acquired, evaluation in admitted:
-        trace = trace_from_xic_request(
-            sample_name=sample.sample_name,
-            request=acquired.coordinate.request,
-            xic_trace=acquired.trace,
-            source=UNTARGETED_CID_NL_CAPTURE_TRACE_SOURCE,
-            acquisition_source_id=source.acquisition_source_id,
-        )
-        observation = mint_physical_peak_observations(
-            sample=sample,
-            trace=trace,
-            evaluations=(evaluation,),
-            signal_processing_profile=signal_processing_profile,
-            resolver_mode=settings.resolver_mode,
-        )[0]
-        observations.append((peak.peak_id, observation))
-        if evidence_sink is not None:
-            evidence_sink.append(
-                RetainedCaptureEvidence(
-                    sample_key=sample.sample_name,
-                    processing_attempt_id=processing_attempt_id,
-                    method_subject_id=method_subject.method_subject_id,
-                    candidate_id=peak.peak_id,
-                    capture_stage="initial_capture",
-                    trace=trace,
-                    physical_evaluation=evaluation,
-                    observation_ref=observation,
+            raw=raw,
+            support_policy=policy,
+            candidate_peaks=peaks,
+            evidence_refs=refs,
+            individual_support_refs=individual,
+            set_relation_refs=ambiguous,
+            technical_state="evaluated" if refs else "not_evaluated",
+            supplemental_scan_keys=tuple(
+                sorted(
+                    (ref.scan_number, ref.configured_neutral_loss_da)
+                    for ref in refs
+                    if ref in additional_refs
                 )
+            ),
+            technical_reason_code=None
+            if refs
+            else "no_search_eligible_discovery_input",
+        )
+        bound = tuple(bindings.get(key, ()))
+        candidate_by_peak = {p: cid for cid, p in bound}
+        captures = tuple(
+            RetainedCaptureEvidence(
+                sample_key=sample.sample_name,
+                processing_attempt_id=processing_attempt_id,
+                method_subject_id=key,
+                candidate_id=candidate_by_peak.get(peak),
+                capture_stage="initial_capture",
+                trace=peak.source_trace,
+                physical_evaluation=peak.physical_evaluation,
+                observation_ref=peak,
             )
-    if len({observation for _, observation in observations}) != len(observations):
-        raise CidNlAcquisitionError("Discovery delivered one physical peak twice")
-    return acquisition, tuple(observations)
+            for peak in peaks
+        )
+        by_subject[key] = CidNlAcquisitionResult(
+            assessment_input=UntargetedCidNlAssessmentInput(sample, assessment),
+            candidate_observations=bound,
+            source_candidate_ids=tuple(p.peak_id for p in candidates),
+            strict_scan_count=len(
+                {
+                    item.scan_number
+                    for item in refs
+                    if item.assess_precursor_loss(settings.nl_tolerance_ppm).supports_nl
+                }
+            ),
+            capture_evidence=captures,
+            elution_contexts=contexts,
+        )
+    return by_subject
+
+
+def _unresolved_intersection_peaks(
+    scopes: tuple[tuple[CidNlMethodSubject, tuple[DiscoveryPeak, ...]], ...],
+    peaks_by_subject: Mapping[str, list[PeakObservation]],
+    supports: tuple[DdaCidNlPeakSupport, ...],
+) -> frozenset[PeakObservation]:
+    support_losses: dict[PeakObservation, set[float]] = {}
+    for support in supports:
+        support_losses.setdefault(support.peak_observation, set()).add(
+            support.configured_neutral_loss_da
+        )
+    return frozenset(
+        peak
+        for subject, _ in scopes
+        if subject.composition is not None
+        and subject.composition.combine_mode == "intersection"
+        for peak in peaks_by_subject.get(subject.method_subject_id, ())
+        if not set(subject.configured_losses).issubset(support_losses.get(peak, ()))
+    )
+
+
+def _merged_peak_windows(
+    peaks: frozenset[PeakObservation],
+) -> Iterator[tuple[float, float]]:
+    start, end = 0.0, -1.0
+    for low, high in sorted((peak.rt_left_min, peak.rt_right_min) for peak in peaks):
+        if low > end:
+            if end >= start:
+                yield start, end
+            start, end = low, high
+        else:
+            end = max(end, high)
+    if end >= start:
+        yield start, end
+
+
+def _acquire_intersection_relations(
+    raw: CidNlRawSource,
+    *,
+    sample: SampleMetadata,
+    acquisition_source: AcquisitionSourceIdentity,
+    settings: DiscoverySettings,
+    pending: frozenset[PeakObservation],
+    regions: tuple[CidNlSampleRegion, ...],
+    declared: frozenset[tuple[int, float]],
+) -> tuple[
+    tuple[CidNlEvidenceObservation, ...],
+    tuple[DdaCidNlPeakSupport, ...],
+    tuple[DdaCidNlCandidateSetRelation, ...],
+]:
+    """Resolve unreported local ranks without searching beyond measured lobes."""
+    seeds = tuple(
+        seed
+        for rt_min, rt_max in _merged_peak_windows(pending)
+        for seed in read_direct_cid_nl_seeds(
+            raw,
+            raw_file=Path(sample.raw_stem),
+            settings=settings,
+            rt_min=rt_min,
+            rt_max=rt_max,
+        )
+        if (seed.scan_number, seed.configured_neutral_loss_da) not in declared
+    )
+    evidence: list[CidNlEvidenceObservation] = []
+    supports: list[DdaCidNlPeakSupport] = []
+    ambiguities: list[DdaCidNlCandidateSetRelation] = []
+    for region in regions:
+        if pending.isdisjoint(region.peaks):
+            continue
+        low, high = region.region.mz_bounds
+        events = tuple(seed for seed in seeds if low <= event_ion_mz(seed) <= high)
+        local_evidence, local_support, local_sets = attach_cid_nl_events(
+            sample=sample,
+            acquisition_source=acquisition_source,
+            peaks=region.peaks,
+            events=events,
+            settings=settings,
+        )
+        kept_support = tuple(
+            ref for ref in local_support if ref.peak_observation in pending
+        )
+        kept_sets = tuple(
+            ref for ref in local_sets if not pending.isdisjoint(ref.matched_candidates)
+        )
+        supports.extend(kept_support)
+        ambiguities.extend(kept_sets)
+        related = {ref.evidence for ref in kept_support} | {
+            ref.evidence for ref in kept_sets
+        }
+        evidence.extend(ref for ref in local_evidence if ref in related)
+    return tuple(evidence), tuple(supports), tuple(ambiguities)
 
 
 def _mint_assessment(
@@ -562,6 +376,7 @@ def _mint_assessment(
     individual_support_refs: tuple[DdaCidNlPeakSupport, ...] = (),
     set_relation_refs: tuple[DdaCidNlCandidateSetRelation, ...] = (),
     technical_state: CidNlTechnicalState = "evaluated",
+    supplemental_scan_keys: tuple[tuple[int, float], ...] = (),
     technical_reason_code: str | None = None,
 ):
     search_completed = technical_state == "evaluated"
@@ -605,7 +420,10 @@ def _mint_assessment(
                 acquisition_supported=technical_state != "unsupported",
                 search_completed=search_completed,
                 reason_code=technical_reason_code,
-                evidence_scope="declared_scans",
+                evidence_scope="subject_window"
+                if supplemental_scan_keys
+                else "declared_scans",
+                supplemental_scan_keys=supplemental_scan_keys,
             ),
             candidate_peaks=candidate_peaks,
             evidence_refs=evidence_refs,
@@ -647,12 +465,3 @@ def _bounded_subject_candidates(
             key=lambda item: item.peak_id,
         )
     )
-
-
-__all__ = [
-    "CidNlAcquisitionResult",
-    "UntargetedCidNlSampleTraceBatch",
-    "acquire_untargeted_cid_nl_sample_trace_batch",
-    "adapt_current_discovery_sample_subject",
-    "UNTARGETED_CID_NL_CAPTURE_TRACE_SOURCE",
-]

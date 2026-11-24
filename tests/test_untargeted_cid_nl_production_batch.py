@@ -38,8 +38,8 @@ def test_completed_empty_recovery_preserves_each_compatible_source_subject(
     monkeypatch: pytest.MonkeyPatch,
     backfill_enabled: bool,
 ) -> None:
-    """Missing has no Discovery peak: only Backfill has a reason to read it. Both 21
-    ppm-apart source subjects support one row.
+    """An empty initial search leaves the cell blank with or without Backfill.
+    The 21 ppm-apart source subjects retain their own ions and support one row.
     """
     stems = ("SupportA1", "SupportA2", "SupportB1", "SupportB2", "Missing")
     settings = replace(SETTINGS, precursor_mz_tolerance_ppm=20.0)
@@ -51,8 +51,10 @@ def test_completed_empty_recovery_preserves_each_compatible_source_subject(
         raws[stem] = _FakeRaw(
             (7.98,), scan_precursor_mz=precursor_mz, neutral_loss_das=(116.0474,)
         )
+        raws[stem].additional_ms1_ions = {}
         peaks[stem] = discover(raws[stem], paths[stem], settings)[:1]
     raws["Missing"] = _FakeRaw((7.98,))
+    raws["Missing"].additional_ms1_ions = {}
     raws["Missing"].intensity[:] = 0.0
     peaks["Missing"] = ()
     opened: set[str] = set()
@@ -65,6 +67,7 @@ def test_completed_empty_recovery_preserves_each_compatible_source_subject(
         peaks=peaks,
         settings=settings,
         alignment_config=AlignmentConfig(
+            precursor_mz_tolerance_ppm=30.0,
             anchor_min_seed_events=1,
             product_mz_tolerance_ppm=30.0,
             backfill_enabled=backfill_enabled,
@@ -72,7 +75,7 @@ def test_completed_empty_recovery_preserves_each_compatible_source_subject(
         opened_samples=opened,
     )
 
-    assert ("Missing" in opened) is backfill_enabled
+    assert "Missing" in opened
 
     (row,) = read_tsv(output / "alignment_matrix.tsv")
     assert row["Missing"] == ""
@@ -128,9 +131,8 @@ def test_one_raw_serves_two_nearby_subjects_as_separate_rows(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """One RAW and one sample's settings serve two 8 ppm-apart subjects: each group
-    keeps its own precursor and candidate and is integrated from that shared trace. A
-    one-sample group is reviewed, not published to the Matrix.
+    """The two 8 ppm-apart ions have separate XICs and a known 0.7 area ratio;
+    each keeps its own mass and CID, and singletons stay out of the Matrix.
     """
     settings, paths, source_raw, candidates = _nearby_subjects(tmp_path)
     assert len(candidates) == 2
@@ -167,10 +169,14 @@ def test_one_raw_serves_two_nearby_subjects_as_separate_rows(
         feature: candidate_by_mz[round(float(row["group_center_mz"]), 4)]
         for feature, row in review.items()
     }
-    areas = [float(cell["area"]) for cell in cells.values()]
-    assert len(areas) == 2
-    assert areas[0] > 0
-    assert areas == pytest.approx([areas[0]] * 2, rel=1e-6)
+    lower, higher = (
+        float(cells[(feature, "S1")]["area"])
+        for feature in sorted(
+            review, key=lambda key: float(review[key]["group_center_mz"])
+        )
+    )
+    assert lower > 0
+    assert higher == pytest.approx(0.7 * lower, rel=1e-5)
 
 
 def test_sample_metadata_sets_matrix_order_and_backfill_eligibility(
@@ -179,9 +185,8 @@ def test_sample_metadata_sets_matrix_order_and_backfill_eligibility(
 ) -> None:
     """Request sample metadata reaches Alignment planning unchanged.
 
-    Matrix columns follow the requested injection order. Backfill needs two eligible
-    direct supports; a blank or excluded Support2 leaves only Support1, and Hold,
-    without a Discovery peak, is then never read.
+    Matrix columns follow injection order. An MS1-only peak is measured in
+    every case, but a blank or excluded Support2 cannot vote to publish it.
     """
 
     stems = ("Support1", "Support2", "Hold")
@@ -237,6 +242,8 @@ def test_sample_metadata_sets_matrix_order_and_backfill_eligibility(
             for (_f, stem), cell in published_cells(output).items()
             if stem == "Hold"
         )
+        assert row["Support1"] != "" and row["Support2"] != ""
+        assert hold["source_candidate_id"] == ""
         outcomes[(role, excluded)] = (
             row["Hold"] != "",
             hold["status"],
@@ -244,9 +251,9 @@ def test_sample_metadata_sets_matrix_order_and_backfill_eligibility(
         )
 
     assert outcomes == {
-        ("sample", False): (True, "backfilled", True),
-        ("blank", False): (False, "not_searched", False),
-        ("sample", True): (False, "not_searched", False),
+        ("sample", False): (True, "ms1_only", True),
+        ("blank", False): (False, "unresolved", True),
+        ("sample", True): (False, "unresolved", True),
     }
 
 
@@ -269,8 +276,8 @@ def test_discovery_review_rows_cannot_become_alignment_roots(
     monkeypatch: pytest.MonkeyPatch,
     scenario: str,
 ) -> None:
-    """Only admitted peaks start Alignment work. With two admitted supports, Backfill
-    also reads Hold.
+    """Only admitted peaks seed Alignment; the batch seed reaches other injections
+    without turning their review-only Discovery candidates into row roots.
     """
     above_threshold = scenario == "ambiguous_hold_above_threshold"
     ambiguous = scenario.startswith("ambiguous_hold_")
@@ -360,9 +367,7 @@ def test_discovery_review_rows_cannot_become_alignment_roots(
         opened_samples=opened,
     )
 
-    assert opened == {
-        stem for stem, values in peaks.items() if any(c.admitted for c in values)
-    } | ({"Hold"} if above_threshold else set())
+    assert opened == (set(stems) if admitted else set())
     assert tsv_header(output / "alignment_matrix.tsv")[2:] == list(stems)
     written = cell_sources(output)
     assert written <= admitted
@@ -514,7 +519,7 @@ def test_backfill_recovers_sample_without_discovery_peak(
     recovery_case: str,
 ) -> None:
     """Unequal heights separate the owner-mean RT from an area-weighted RT. One direct
-    support is below K = 2: no row, Hold is not searched.
+    support is below K = 2: no row and no residual Backfill for Hold.
     """
     stems = (
         ("Support1", "Hold")
@@ -557,7 +562,7 @@ def test_backfill_recovers_sample_without_discovery_peak(
         assert all(float(row[stem]) > 0 for stem in supports)
         return
 
-    assert hold["status"] == "backfilled"
+    assert hold["status"] == "ms1_only"
     assert hold["source_candidate_id"] == ""
     assert float(row["Hold"]) > 0
     areas = {stem: float(row[stem]) for stem in stems}
@@ -582,7 +587,7 @@ def test_backfill_recovers_sample_without_discovery_peak(
 
 
 @pytest.mark.parametrize("output_level", ("machine", "validation-minimal", "debug"))
-def test_atomic_publication_preserves_ms1_only_backfill_and_no_peak(
+def test_atomic_publication_preserves_ms1_only_and_no_peak(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     output_level: str,
@@ -633,12 +638,12 @@ def test_atomic_publication_preserves_ms1_only_backfill_and_no_peak(
         )
     assert matrix_row["NoPeak"] == cells["NoPeak"]["area"] == ""
     assert review_row["detected_count"] == "3"
-    assert review_row["accepted_backfill_count"] == "1"
+    assert review_row["accepted_backfill_count"] == "0"
     assert review_row["accepted_cell_count"] == "4"
     for stem in stems[:3]:
         assert cells[stem]["status"] == "detected"
         assert cells[stem]["source_candidate_id"] == peaks[stem][0].peak_id
-    assert cells["MS1Only"]["status"] == "backfilled"
+    assert cells["MS1Only"]["status"] == "ms1_only"
     assert cells["MS1Only"]["source_candidate_id"] == ""
     assert cells["NoPeak"]["status"] == "unavailable"
     assert cells["NoPeak"]["source_candidate_id"] == ""

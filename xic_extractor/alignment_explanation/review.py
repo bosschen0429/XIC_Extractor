@@ -158,6 +158,7 @@ def review_cell(decision: ProductionCellDecision) -> dict[str, Any]:
         if "backfill_observation" in stages or "method_backfill" in stages
         else "discovery_support"
         if "initial_capture" in stages
+        and "ms1_only_group_observation" not in evidence.evidence_states
         else "unavailable"
     )
     qualities = {}
@@ -165,7 +166,8 @@ def review_cell(decision: ProductionCellDecision) -> dict[str, Any]:
         observation = cell.peak_observation
         if observation is None:
             continue
-        quality = observation.integration.signal_quality
+        integration = observation.integration
+        quality = integration.signal_quality if integration is not None else None
         qualities[observation.physical_peak_key] = {
             "observation_id": observation.physical_peak_key,
             **(asdict(quality) if quality is not None else {"status": "not_recorded"}),

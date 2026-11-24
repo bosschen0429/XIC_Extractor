@@ -75,7 +75,7 @@ def _window_candidate_edges(
             if not within_ppm(
                 max(left.peak.mz, right.peak.mz),
                 min(left.peak.mz, right.peak.mz),
-                config.max_ppm,
+                config.precursor_mz_tolerance_ppm,
             ):
                 continue
             same_track = left.owner_id in track_indices and track_indices[
@@ -100,6 +100,8 @@ def _window_candidate_edges(
             if rt_delta_sec > rt_limit_sec:
                 continue
             counts["owner_edge_evaluations"] += 1
+            if rules.pair_evidence(left, right, config).identity_failure:
+                continue
             if peak_correspondence_conflict(
                 (left,),
                 (right,),
@@ -115,7 +117,7 @@ def _window_candidate_edges(
                     max(left.peak.mz, right.peak.mz),
                     min(left.peak.mz, right.peak.mz),
                 )
-                / config.max_ppm
+                / config.precursor_mz_tolerance_ppm
             )
             method_fraction = rules.pair_mass_fraction(left, right, config)
             non_rt_cost = (

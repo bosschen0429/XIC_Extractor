@@ -33,7 +33,7 @@ reported observed-loss error in ppm remains a descriptive measurement.
 ### MS1-only target intent
 
 Blank `cid_nl_loss_da` and `delta_mass_mz` declare an MS1-only target. Intake
-retains the shared 20 ppm precursor tolerance and leaves neutral loss and its
+uses the 20 ppm target mass tolerance and leaves neutral loss and its
 tolerances unconfigured. Missing MS2 is not chemical identity evidence.
 
 ### Per-target specificity
@@ -267,7 +267,7 @@ A recorded vendor monoisotopic reference can support CID-NL even when the
 monoisotopic m/z lies outside the nominal isolation window: the selected ion
 must be inside that window, have recorded charge 1, and match a positive integer
 carbon-isotope offset from the vendor monoisotopic m/z within the shared
-precursor mass policy (20 ppm). Missing geometry or charge, an unrelated mass
+precursor mass policy (10 ppm). Missing geometry or charge, an unrelated mass
 offset, and a product-plus-loss inference do not qualify for this route. The
 reported monoisotopic isolation membership remains `outside_nominal`; eligibility
 does not rewrite geometry or prove exclusive fragment parentage. Existing

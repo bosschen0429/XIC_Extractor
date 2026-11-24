@@ -1,4 +1,4 @@
-"""A crowded MS1 doublet crosses acquisition, grouping and missing-cell lookup."""
+"""Co-acquired peaks retain their own MS1 and CID-NL evidence."""
 
 from dataclasses import replace
 
@@ -36,9 +36,9 @@ from xic_extractor.untargeted_execution.execution import (
 )
 
 
-@pytest.mark.parametrize("missing_pattern_location", [False, True])
-def test_crowded_doublet_uses_context_before_grouping_and_preserves_query_lineage(
-    tmp_path, monkeypatch, missing_pattern_location
+@pytest.mark.parametrize("staggered", [False, True])
+def test_crowded_doublet_keeps_both_physical_peaks_and_local_cid_lineage(
+    tmp_path, monkeypatch, staggered
 ):
     fixture = build_untargeted_cid_nl_no_raw_fixture(
         tmp_path,
@@ -55,10 +55,10 @@ def test_crowded_doublet_uses_context_before_grouping_and_preserves_query_lineag
     profile = SignalProcessingProfile()
     raws, candidates = {}, {}
     expected_initial = {}
-    expected_query = {}
+    expected_apices = {}
     shifts = (
         ((0.0, 0), (0.3, 1), (0.6, 0), (0.9, 1))
-        if missing_pattern_location
+        if staggered
         else ((0.0, 0), (0.05, 1), (0.6, 0), (0.65, 1))
     )
     for index, (shift, selected) in enumerate(shifts):
@@ -66,7 +66,7 @@ def test_crowded_doublet_uses_context_before_grouping_and_preserves_query_lineag
         path = fixture.source_paths[sample]
         apices = (7.8 + shift, 8.4 + shift)
         expected_initial[sample] = apices[selected]
-        expected_query[sample] = apices[1 - selected]
+        expected_apices[sample] = apices
         source = _FakeRaw((apices[selected],))
         source.rt = np.linspace(7.0, 10.0, 601)
         source.intensity = sum(
@@ -131,53 +131,15 @@ def test_crowded_doublet_uses_context_before_grouping_and_preserves_query_lineag
     initial_grouping = initial.result[1].prepared_grouping
     assert initial_grouping is not None
     assert initial_grouping.rt_anchor_observations
-    if missing_pattern_location:
-        initial_grouping = replace(
-            initial_grouping,
-            worksets=tuple(
-                replace(
-                    workset,
-                    grouping_scope=replace(
-                        workset.grouping_scope,
-                        peak_trajectories=replace(
-                            workset.grouping_scope.peak_trajectories,
-                            tracks=tuple(
-                                replace(
-                                    track,
-                                    sample_apices=tuple(
-                                        (sample, apex)
-                                        for sample, apex in track.sample_apices
-                                        if sample != "S3"
-                                    ),
-                                )
-                                for track in (
-                                    workset.grouping_scope.peak_trajectories.tracks
-                                )
-                            ),
-                        ),
-                    ),
-                )
-                for workset in initial_grouping.worksets
-            ),
-        )
-    states = [
-        workers._RuntimeJobState(
-            job=result.job,
-            initial_requires_raw=False,
-            adapter_result=result.adapter_result,
-        )
-        for result in initial.result[1].sample_results
-    ]
-    workers._prepare_group_authorized_backfills(
-        states,
-        prepared=initial_grouping,
-    )
-    for state in states:
-        (target,) = state.backfill_targets
-        if not missing_pattern_location:
-            assert target.query_rt_basis == "trajectory_observed"
-        assert target.query_rt == pytest.approx(
-            expected_query[state.job.sample.raw_stem], abs=0.005
+    for result in initial.result[1].sample_results:
+        sample = result.job.sample.raw_stem
+        assessment = result.adapter_result.assessment_input.assessment
+        assert [
+            peak.integration.rt_apex_min for peak in assessment.candidate_peaks
+        ] == pytest.approx(expected_apices[sample], abs=0.005)
+        (relation,) = assessment.individual_support_refs
+        assert relation.peak_observation.integration.rt_apex_min == pytest.approx(
+            expected_initial[sample], abs=0.005
         )
     initial_composed = adapter.execute_composition(initial_partition, initial, store)
     assert grouping_phase.prepare_before is not None
@@ -193,29 +155,18 @@ def test_crowded_doublet_uses_context_before_grouping_and_preserves_query_lineag
         for workset in prepared.worksets
         for group in workset.grouping_scope.groups
     )
-    assert {
-        frozenset(owner.sample_stem for owner in group.owners) for group in groups
-    } == {frozenset(("S0", "S2")), frozenset(("S1", "S3"))}
-    assert {
-        owner.sample_stem: owner.peak.integration.rt_apex_min
-        for group in groups
-        for owner in group.owners
-    } == pytest.approx(expected_initial, abs=0.005)
+    assert len(groups) == 2
+    groups = sorted(groups, key=lambda group: group.group_center_rt)
+    for lobe, group in enumerate(groups):
+        assert {
+            owner.sample_stem: owner.peak.integration.rt_apex_min
+            for owner in group.owners
+        } == pytest.approx(
+            {sample: apices[lobe] for sample, apices in expected_apices.items()},
+            abs=0.005,
+        )
     group_ids = {group.group_hypothesis_id for group in groups}
-    observed_queries = {}
-    for result in leaf.sample_results:
-        sample = result.job.sample.raw_stem
-        assert result.adapter_result.elution_contexts
-        assert len(result.backfill_attempts) == 1
-        attempt = result.backfill_attempts[0]
-        assert attempt.group_hypothesis_id in group_ids
-        assert attempt.query_rt_basis == "trajectory_observed"
-        assert attempt.query_rt == pytest.approx(expected_query[sample], abs=0.005)
-        assert attempt.assessment.method_result == "HOLD"
-        assert not attempt.assessment.individual_support_refs
-        (peak,) = attempt.assessment.candidate_peaks
-        observed_queries[sample] = peak.integration.rt_apex_min
-    assert observed_queries == pytest.approx(expected_query, abs=0.005)
+    assert all(not result.backfill_attempts for result in leaf.sample_results)
     composed = adapter.execute_composition(
         partition, acquisition, store, retain_memory=True
     )
@@ -233,23 +184,20 @@ def test_crowded_doublet_uses_context_before_grouping_and_preserves_query_lineag
     writer = completed
     cells = tuple(written_cells(writer))
     assert len(cells) == 8
-    direct_samples = {
-        group.group_hypothesis_id: {owner.sample_stem for owner in group.owners}
-        for group in groups
-    }
+    group_lobes = {group.group_hypothesis_id: lobe for lobe, group in enumerate(groups)}
     for row, sample_stem, cell in cells:
-        direct = sample_stem in direct_samples[row.group_hypothesis_id]
-        expected_apex = (
-            expected_initial[sample_stem] if direct else expected_query[sample_stem]
-        )
-        assert cell_status(cell) == ("detected" if direct else "backfilled")
+        expected_apex = expected_apices[sample_stem][
+            group_lobes[row.group_hypothesis_id]
+        ]
+        direct = expected_apex == expected_initial[sample_stem]
+        assert cell_status(cell) == ("detected" if direct else "ms1_only")
         assert cell.selected_integration.rt_apex_min == pytest.approx(
             expected_apex, abs=0.005
         )
         assert cell.value is not None and cell.value > 0
 
 
-def test_review_only_input_leaves_each_group_cell_for_independent_backfill(
+def test_review_only_input_supplies_each_physical_member_without_cid(
     tmp_path, monkeypatch
 ):
     group_apices = (7.80, 8.25, 8.70)
@@ -335,10 +283,15 @@ def test_review_only_input_leaves_each_group_cell_for_independent_backfill(
     initial_partition = initial_phase.partitions[0]
     initial = adapter.execute_acquisition(initial_partition)
     assert initial.succeeded
-    assert not any(
-        result.job.sample.raw_stem == "S6"
+    (s6_initial,) = (
+        result.adapter_result.assessment_input.assessment
         for result in initial.result[1].sample_results
+        if result.job.sample.raw_stem == "S6"
     )
+    assert [
+        peak.integration.rt_apex_min for peak in s6_initial.candidate_peaks
+    ] == pytest.approx(group_apices, abs=0.005)
+    assert not s6_initial.individual_support_refs
     initial_composed = adapter.execute_composition(initial_partition, initial, store)
     assert grouping_phase.prepare_before is not None
     grouping_phase.prepare_before(store, lambda: None)
@@ -363,9 +316,7 @@ def test_review_only_input_leaves_each_group_cell_for_independent_backfill(
     (s6,) = (
         result for result in leaf.sample_results if result.job.sample.raw_stem == "S6"
     )
-    assert sorted(
-        group_apex[attempt.group_hypothesis_id] for attempt in s6.backfill_attempts
-    ) == list(group_apices)
+    assert not s6.backfill_attempts
     composed = adapter.execute_composition(
         partition, acquisition, store, retain_memory=True
     )
@@ -380,6 +331,6 @@ def test_review_only_input_leaves_each_group_cell_for_independent_backfill(
         if sample_stem == "S6":
             assert not sources[row.group_hypothesis_id, sample_stem]
         direct = sample_stem in samples[2 * group_apices.index(apex) :][:2]
-        assert cell_status(cell) == ("detected" if direct else "backfilled")
+        assert cell_status(cell) == ("detected" if direct else "ms1_only")
         assert cell.selected_integration.rt_apex_min == pytest.approx(apex, abs=0.005)
         assert cell.value is not None and cell.value > 0

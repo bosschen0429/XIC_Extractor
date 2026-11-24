@@ -8,6 +8,7 @@ from xic_extractor.configuration.hashing import compute_target_config_hash
 from xic_extractor.configuration.loader import load_config_snapshot
 from xic_extractor.configuration.models import ConfigError
 from xic_extractor.configuration.settings import fill_setting_defaults, resolve_settings
+from xic_extractor.configuration.targeted_strategy import TARGET_MZ_TOLERANCE_PPM
 from xic_extractor.configuration.targets import (
     parse_target_rows,
     read_istd_targets,
@@ -114,7 +115,7 @@ def test_target_cid_nl_loss_is_a_number_under_the_shared_policy(loss):
     target = parse_target_rows([_target_row(cid_nl_loss_da=loss)])[0]
     policy = DEFAULT_CID_NL_MASS_POLICY
     assert target.neutral_loss_da == float(loss)
-    assert target.ppm_tol == policy.precursor_mz_tolerance_ppm
+    assert target.ppm_tol == TARGET_MZ_TOLERANCE_PPM
     assert target.nl_ppm_max == policy.nl_tolerance_ppm
 
 
@@ -131,7 +132,7 @@ def test_blank_tag_admits_ms1_only_without_imposing_a_neutral_loss_mass():
     assert target.identification is None
     assert target.neutral_loss_da is None
     assert target.nl_ppm_warn is None and target.nl_ppm_max is None
-    assert target.ppm_tol == 20.0
+    assert target.ppm_tol == TARGET_MZ_TOLERANCE_PPM
     assert target.expected_rt_min == target.rt_min == target.rt_max == 9.0
     assert not target.is_istd and target.istd_pair == ""
 

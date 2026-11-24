@@ -1,24 +1,16 @@
-"""Source-bound native scan acquisition and its persisted trace codec."""
+"""Source-bound native scan acquisition."""
 
 from __future__ import annotations
 
-import json
-from collections.abc import Mapping, Sequence
-from dataclasses import asdict, dataclass
+from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import Protocol
 
 import numpy as np
 
 from xic_extractor.processing_identity import AcquisitionSourceIdentity
 from xic_extractor.validation_primitives import (
-    canonical_float_hex,
-    canonical_json_bytes,
-    make_unique_mapping_hook,
-    parse_canonical_float_hex,
     require_integer,
-    require_keys,
-    require_list,
-    require_mapping,
     require_owner_normalized_text,
 )
 from xic_extractor.xic_models import XICRequest, XICTrace
@@ -120,166 +112,6 @@ class AcquiredTrace:
             and np.array_equal(self.trace.rt, other.trace.rt)
             and np.array_equal(self.trace.intensity, other.trace.intensity)
         )
-
-
-_ACQUIRED_TRACE_SCHEMA_VERSION = "acquired_trace"
-_ACQUIRED_TRACE_KEYS = (
-    "schema_version",
-    "coordinate",
-    "trace",
-)
-_TRACE_COORDINATE_KEYS = (
-    "capability",
-    "request",
-    "first_scan",
-    "last_scan",
-    "trace_point_count",
-)
-_XIC_REQUEST_KEYS = ("mz", "rt_min", "rt_max", "ppm_tol")
-_TRACE_ARRAY_KEYS = ("rt", "intensity")
-
-
-def serialize_acquired_trace(
-    acquired_trace: AcquiredTrace, *, with_capability: bool = True
-) -> bytes:
-    """Canonically encode a complete acquired trace without owner recomputation.
-
-    A caller that stores the acquisition capability once for many traces
-    omits it here and supplies it again to ``deserialize_acquired_trace``.
-    """
-
-    content = _acquired_trace_content(acquired_trace, with_capability=with_capability)
-    return _canonical_json_bytes(
-        {
-            "schema_version": _ACQUIRED_TRACE_SCHEMA_VERSION,
-            **content,
-        }
-    )
-
-
-def deserialize_acquired_trace(
-    payload: bytes | str,
-    *,
-    expected_acquisition_source: AcquisitionSourceIdentity | None = None,
-    capability: TraceAcquisitionCapability | None = None,
-) -> AcquiredTrace:
-    """Strictly reconstitute an acquired trace through acquisition-owner types.
-
-    ``capability`` is the stored-once capability of a payload encoded without it.
-    """
-
-    raw = payload.encode("utf-8") if isinstance(payload, str) else payload
-    if not isinstance(raw, bytes):
-        raise TypeError("acquired trace payload must be bytes or str")
-    try:
-        value = json.loads(raw.decode("utf-8"), object_pairs_hook=_unique_mapping)
-    except UnicodeDecodeError as exc:
-        raise AcquisitionContractError("acquired trace payload must be UTF-8") from exc
-    except json.JSONDecodeError as exc:
-        raise AcquisitionContractError(
-            "acquired trace payload must be valid JSON"
-        ) from exc
-    root = _required_mapping(value, label="acquired trace")
-    _require_keys(root, _ACQUIRED_TRACE_KEYS, label="acquired trace")
-    if root["schema_version"] != _ACQUIRED_TRACE_SCHEMA_VERSION:
-        raise AcquisitionContractError("unsupported acquired trace schema_version")
-
-    coordinate_value = _required_mapping(root["coordinate"], label="coordinate")
-    _require_keys(
-        coordinate_value,
-        _TRACE_COORDINATE_KEYS if capability is None else _TRACE_COORDINATE_KEYS[1:],
-        label="coordinate",
-    )
-    request_value = _required_mapping(
-        coordinate_value["request"], label="coordinate request"
-    )
-    _require_keys(request_value, _XIC_REQUEST_KEYS, label="coordinate request")
-    request = XICRequest(
-        mz=_float_from_text(request_value["mz"], field="request.mz"),
-        rt_min=_float_from_text(request_value["rt_min"], field="request.rt_min"),
-        rt_max=_float_from_text(request_value["rt_max"], field="request.rt_max"),
-        ppm_tol=_float_from_text(request_value["ppm_tol"], field="request.ppm_tol"),
-    )
-    if capability is None:
-        capability = _capability_from_payload(coordinate_value["capability"])
-    elif not isinstance(capability, TraceAcquisitionCapability):
-        raise AcquisitionContractError(
-            "capability must be a TraceAcquisitionCapability"
-        )
-    if (
-        expected_acquisition_source is not None
-        and capability.acquisition_source != expected_acquisition_source
-    ):
-        raise AcquisitionContractError(
-            "acquired trace crosses expected acquisition source"
-        )
-    coordinate = TraceCoordinate(
-        capability=capability,
-        request=request,
-        first_scan=_nonnegative_integer(coordinate_value["first_scan"], "first_scan"),
-        last_scan=_nonnegative_integer(coordinate_value["last_scan"], "last_scan"),
-        trace_point_count=_nonnegative_integer(
-            coordinate_value["trace_point_count"], "trace_point_count"
-        ),
-    )
-    trace_value = _required_mapping(root["trace"], label="trace")
-    _require_keys(trace_value, _TRACE_ARRAY_KEYS, label="trace")
-    trace = XICTrace.from_arrays(
-        tuple(
-            _float_from_text(item, field="trace.rt")
-            for item in _required_list(trace_value["rt"], label="trace.rt")
-        ),
-        tuple(
-            _float_from_text(item, field="trace.intensity")
-            for item in _required_list(
-                trace_value["intensity"], label="trace.intensity"
-            )
-        ),
-    )
-    acquired = AcquiredTrace(coordinate=coordinate, trace=trace)
-    content = _acquired_trace_content(
-        acquired, with_capability="capability" in coordinate_value
-    )
-    canonical = _canonical_json_bytes(
-        {"schema_version": _ACQUIRED_TRACE_SCHEMA_VERSION, **content}
-    )
-    if canonical != raw:
-        raise AcquisitionContractError("acquired trace payload is not canonical")
-    return acquired
-
-
-def _acquired_trace_content(
-    acquired_trace: AcquiredTrace, *, with_capability: bool = True
-) -> dict[str, object]:
-    if not isinstance(acquired_trace, AcquiredTrace):
-        raise TypeError("acquired_trace must be an AcquiredTrace")
-    coordinate = acquired_trace.coordinate
-    request = coordinate.request
-    capability = (
-        {"capability": _capability_content(coordinate.capability)}
-        if with_capability
-        else {}
-    )
-    return {
-        "coordinate": {
-            **capability,
-            "request": {
-                "mz": _float_text(request.mz),
-                "rt_min": _float_text(request.rt_min),
-                "rt_max": _float_text(request.rt_max),
-                "ppm_tol": _float_text(request.ppm_tol),
-            },
-            "first_scan": coordinate.first_scan,
-            "last_scan": coordinate.last_scan,
-            "trace_point_count": coordinate.trace_point_count,
-        },
-        "trace": {
-            "rt": [_float_text(value) for value in acquired_trace.trace.rt],
-            "intensity": [
-                _float_text(value) for value in acquired_trace.trace.intensity
-            ],
-        },
-    }
 
 
 @dataclass(frozen=True, slots=True)
@@ -386,122 +218,6 @@ def acquire_trace_batch(
     )
 
 
-def _capability_content(capability: TraceAcquisitionCapability) -> dict[str, object]:
-    return {
-        "acquisition_source": asdict(capability.acquisition_source),
-        "adapter_namespace": capability.adapter_namespace,
-        "coordinate_kind": NATIVE_SCAN_COORDINATE_KIND,
-    }
-
-
-def _capability_from_payload(value: object) -> TraceAcquisitionCapability:
-    capability = _required_mapping(value, label="capability")
-    _require_keys(
-        capability,
-        ("acquisition_source", "adapter_namespace", "coordinate_kind"),
-        label="capability",
-    )
-    source = _required_mapping(
-        capability["acquisition_source"], label="acquisition source"
-    )
-    _require_keys(
-        source,
-        (
-            "content_sha256",
-            "byte_size",
-            "acquisition_format",
-            "observation_namespace",
-            "local_file_revision",
-        ),
-        label="acquisition source",
-    )
-    revision_value = source["local_file_revision"]
-    revision = None
-    if revision_value is not None:
-        revision_values = _required_list(revision_value, label="local_file_revision")
-        if len(revision_values) != 5:
-            raise AcquisitionContractError(
-                "local_file_revision must contain five integers"
-            )
-        revision = tuple(
-            require_integer(
-                item,
-                field="local_file_revision",
-                error_factory=AcquisitionContractError,
-                type_error_factory=AcquisitionContractError,
-            )
-            for item in revision_values
-        )
-    content_sha256 = source["content_sha256"]
-    acquisition_source = AcquisitionSourceIdentity(
-        content_sha256=None
-        if content_sha256 is None
-        else _required_text(content_sha256, "content_sha256"),
-        byte_size=_nonnegative_integer(source["byte_size"], "byte_size"),
-        acquisition_format=_required_text(
-            source["acquisition_format"], "acquisition_format"
-        ),
-        observation_namespace=_required_text(
-            source["observation_namespace"], "observation_namespace"
-        ),
-        local_file_revision=None
-        if revision is None
-        else (revision[0], revision[1], revision[2], revision[3], revision[4]),
-    )
-    if capability["coordinate_kind"] != NATIVE_SCAN_COORDINATE_KIND:
-        raise AcquisitionContractError("unsupported trace coordinate kind")
-    return TraceAcquisitionCapability(
-        acquisition_source=acquisition_source,
-        adapter_namespace=_required_text(
-            capability["adapter_namespace"], "adapter_namespace"
-        ),
-    )
-
-
-_canonical_json_bytes = canonical_json_bytes
-
-
-def _float_text(value: object) -> str:
-    return canonical_float_hex(
-        value,
-        label="trace numeric values",
-        error_factory=AcquisitionContractError,
-        type_error_factory=AcquisitionContractError,
-    )
-
-
-def _float_from_text(value: object, *, field: str) -> float:
-    return parse_canonical_float_hex(
-        value,
-        field=field,
-        error_factory=AcquisitionContractError,
-        type_error_factory=AcquisitionContractError,
-    )
-
-
-_unique_mapping = make_unique_mapping_hook(
-    label="acquired trace payload",
-    error_factory=AcquisitionContractError,
-)
-
-
-def _required_mapping(value: object, *, label: str) -> dict[str, object]:
-    return require_mapping(value, label=label, error_factory=AcquisitionContractError)
-
-
-def _required_list(value: object, *, label: str) -> list[object]:
-    return require_list(value, label=label, error_factory=AcquisitionContractError)
-
-
-def _require_keys(
-    value: Mapping[str, object],
-    keys: tuple[str, ...],
-    *,
-    label: str,
-) -> None:
-    require_keys(value, keys, label=label, error_factory=AcquisitionContractError)
-
-
 def _required_text(value: object, field: str) -> str:
     return require_owner_normalized_text(
         value, field=field, error_factory=AcquisitionContractError
@@ -536,7 +252,5 @@ __all__ = [
     "TraceAcquisitionCapability",
     "TraceCoordinate",
     "acquire_trace_batch",
-    "deserialize_acquired_trace",
     "mint_trace_acquisition_capability",
-    "serialize_acquired_trace",
 ]

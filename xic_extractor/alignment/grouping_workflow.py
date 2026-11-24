@@ -10,10 +10,7 @@ from typing import cast
 from xic_extractor.alignment.backfill.membership_selection import (
     select_backfill_memberships,
 )
-from xic_extractor.alignment.cid_nl_grouping import (
-    CID_NL_GROUPING_RULES,
-    cid_nl_backfill_comparison_rules,
-)
+from xic_extractor.alignment.cid_nl_grouping import CID_NL_GROUPING_RULES
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample.grouping_result import (
     CrossSampleGroupingContractError,
@@ -37,7 +34,6 @@ from xic_extractor.alignment.grouping_bootstrap import (
 )
 from xic_extractor.alignment.hypothesis_owner_adapter import (
     compose_peak_hypotheses_from_assessment_universe,
-    owner_from_cid_nl_assessment_observation,
     owner_from_cid_nl_assessment_support,
     owner_from_ms1_observation_hypothesis,
 )
@@ -116,17 +112,9 @@ def build_targeted_cross_sample_groups(
                 hypothesis=selected,
             )
         elif selected.method == HYPOTHESIS_METHOD_MS1_OBSERVATION:
-            owner = (
-                owner_from_cid_nl_assessment_observation(
-                    sample=sample,
-                    assessment=assessment,
-                    hypothesis=selected,
-                )
-                if assessment is not None
-                else owner_from_ms1_observation_hypothesis(
-                    sample=sample,
-                    hypothesis=selected,
-                )
+            owner = owner_from_ms1_observation_hypothesis(
+                sample=sample,
+                hypothesis=selected,
             )
         else:
             raise CrossSampleGroupingContractError(
@@ -171,6 +159,7 @@ def build_initial_cid_nl_cross_sample_groups(
         CidNlMethodAssessment, tuple[MeasuredPeakHypothesis, ...]
     ]
     | None = None,
+    anchors_calibrate: bool = True,
 ) -> tuple[
     InitialGroupingScope,
     CrossSampleGroupingResult,
@@ -182,10 +171,10 @@ def build_initial_cid_nl_cross_sample_groups(
         alignment_config=alignment_config,
         sample_universe=frozenset(sample.raw_stem for sample in samples),
         rt_frame=rt_frame,
-        retain_observation_only_candidates=True,
         elution_contexts=elution_contexts,
         operation_counts_sink=operation_counts_sink,
         retained_hypotheses_by_assessment=retained_hypotheses_by_assessment,
+        anchors_calibrate=anchors_calibrate,
     )
     groups = grouping_scope.groups
     population = tuple(sorted(groups, key=lambda group: group.group_hypothesis_id))
@@ -210,15 +199,13 @@ def regroup_cid_nl_cross_sample_groups(
 ) -> tuple[InitialGroupingScope, CrossSampleGroupingResult]:
     """Reconsider every ordinary owner after the batch anchor warp is known."""
     owners = tuple(owner for group in grouping_scope.groups for owner in group.owners)
-    trajectories = grouping_scope.peak_trajectories
-    if rt_frame.has_coordinates:
-        trajectories = resolve_peak_trajectories(
-            owners,
-            trajectories.source_contexts,
-            config=alignment_config,
-            injection_order=rt_frame.injection_order,
-            rt_frame=rt_frame,
-        )
+    trajectories = resolve_peak_trajectories(
+        owners,
+        grouping_scope.peak_trajectories.source_contexts,
+        config=alignment_config,
+        injection_order=rt_frame.injection_order,
+        rt_frame=rt_frame,
+    )
     groups = group_cid_nl_owners(
         owners,
         config=alignment_config,
@@ -316,9 +303,8 @@ def admit_cid_nl_group_backfills(
                 hypothesis=hypothesis,
             )
             if assessment.method_result == "SUPPORT"
-            else owner_from_cid_nl_assessment_observation(
+            else owner_from_ms1_observation_hypothesis(
                 sample=sample,
-                assessment=assessment,
                 hypothesis=hypothesis,
             )
         )
@@ -383,14 +369,7 @@ def admit_cid_nl_group_backfills(
                 )
             }.values()
         ),
-        rules=cid_nl_backfill_comparison_rules(
-            frozenset(
-                owner.owner_id
-                for _, _, owner, _, assessment in eligible
-                if assessment.method_result != "SUPPORT"
-                and assessment.method_subject.composition is not None
-            )
-        ),
+        rules=CID_NL_GROUPING_RULES,
         config=alignment_config,
         rt_frame=result.rt_frame,
         trajectories=peak_trajectories or PeakTrajectories(),
@@ -552,16 +531,19 @@ def _is_shoulder_of(
     *,
     config: AlignmentConfig,
 ) -> bool:
+    owner_area = owner.peak.area_raw_counts_seconds
+    neighbour_area = neighbour.peak.area_raw_counts_seconds
     return (
-        owner.peak.integration.area_raw_counts_seconds
-        < neighbour.peak.integration.area_raw_counts_seconds
+        owner_area is not None
+        and neighbour_area is not None
+        and owner_area < neighbour_area
         and (
-            owner.peak.integration.rt_right_min
-            == neighbour.peak.integration.rt_left_min
-            or owner.peak.integration.rt_left_min
-            == neighbour.peak.integration.rt_right_min
+            owner.peak.rt_right_min == neighbour.peak.rt_left_min
+            or owner.peak.rt_left_min == neighbour.peak.rt_right_min
         )
-        and within_ppm(owner.peak.mz, neighbour.peak.mz, config.preferred_ppm)
+        and within_ppm(
+            owner.peak.mz, neighbour.peak.mz, config.precursor_mz_tolerance_ppm
+        )
     )
 
 

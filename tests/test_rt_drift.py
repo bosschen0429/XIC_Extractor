@@ -456,13 +456,8 @@ def test_borrowed_batch_state_is_shared_only_by_queries_without_an_own_anchor():
 
 
 @pytest.mark.parametrize("missing", (False, True))
-def test_drift_models_rejected_by_one_pair_match_full_scoring(missing):
-    """Early rejection keeps every model's value, before and after settling.
-
-    The reference scores each model without the zero model's worst pair. Some
-    models are rejected by that pair alone, some only by another pair, and
-    some survive; a population-gap group has no finite bound to reject by.
-    """
+def test_group_decisions_match_full_drift_scoring(missing):
+    """Compare both group objectives and the selected fit with all models scored."""
     jitter = (0.1, 0.08, -0.02, -0.07, 0.0, -0.03, 0.09, -0.06, -0.01, 0.03, 0.12, 0.0)
     noise = (
         0.05,
@@ -532,43 +527,33 @@ def test_drift_models_rejected_by_one_pair_match_full_scoring(missing):
             drift[:11] + flat[11:],
         )
     ]
-    outcomes = set()
-
-    def expected_models(key):
-        zero = reference._evaluate(key, DriftCoefficients())
-        models = [zero]
-        if not math.isfinite(zero.evidence):
-            return tuple(models)
-        bound = math.inf if zero.population_gap else zero.evidence
-        worst = max(combinations(key, 2), key=lambda pair: reference.pair(*pair)[0])
-        for coefficients in reference._candidate_coefficients(key):
-            model = reference._evaluate(key, coefficients, bound=bound)
-            models.append(model)
-            if math.isinf(bound):
-                outcomes.add("no_bound")
-                continue
-            offsets, unknown = reference._frame(
-                reference._sample_offsets(coefficients, key), key
-            )
-            witness = reference._compose(*worst, offsets, unknown)[0]
-            penalty = reference._coefficient_cost * coefficients.nonzero_count
-            if 1.0 + witness + penalty >= bound:
-                outcomes.add("rejected_by_worst_zero_pair")
-            elif math.isinf(model.evidence):
-                outcomes.add("rejected_by_another_pair")
-            else:
-                outcomes.add("kept")
-        return tuple(models)
-
     for settled in ((), (drift, flat, noisy)):
         actual.settle(settled)
         reference.settle(settled)
         for key in groups:
-            assert actual._group_models(key) == expected_models(key)
-    expected_outcomes = {"rejected_by_worst_zero_pair", "kept", "no_bound"}
-    if not missing:
-        expected_outcomes.add("rejected_by_another_pair")
-    assert outcomes >= expected_outcomes
+            models = [
+                reference._evaluate(key, coefficients)
+                for coefficients in (
+                    DriftCoefficients(),
+                    *reference._candidate_coefficients(key),
+                )
+                if not reference._breaks_sequence(key, coefficients.sample_shift)
+            ]
+            assert actual._group_evidence_cost(key) == min(
+                (model.evidence for model in models), default=math.inf
+            )
+            feasible = [
+                m for m in models if not m.population_gap and math.isfinite(m.evidence)
+            ]
+            best = min(
+                feasible,
+                key=lambda m: (m.evidence, m.coefficients.nonzero_count),
+                default=None,
+            )
+            assert actual.group_cost(key) == (best.evidence if best else math.inf)
+            assert actual.coefficients(key) == (
+                best.coefficients if best else DriftCoefficients()
+            )
 
 
 def test_one_pair_rejection_bound_is_inclusive_like_full_scoring():

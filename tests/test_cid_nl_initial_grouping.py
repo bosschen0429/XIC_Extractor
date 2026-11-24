@@ -21,6 +21,7 @@ from tests.untargeted_partition_fixtures import (
 )
 from xic_extractor.alignment.cid_nl_initial_grouping import (
     prepare_cid_nl_grouping,
+    regroup_cid_nl_grouping,
 )
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.sample_metadata import SampleMetadata
@@ -72,6 +73,8 @@ def test_owner_decides_membership_and_exact_exclusion_from_acquired_evidence(
             if index == 1 and "unsearched" in scenario
             else _current_candidates(raw, raw_file=path, settings=settings)
         )
+        if index == 1 and "unsearched" in scenario:
+            raw.scans = ()
         if scenario in {"unsupported", "unsupported_unsearched"}:
             raw.intensity = np.roll(raw.intensity, 60)
         if scenario == "rejected" or scenario == "missing_capture" and index == 1:
@@ -129,15 +132,39 @@ def test_owner_decides_membership_and_exact_exclusion_from_acquired_evidence(
         rt_frame=batch.context.rt_frame,
     )
     grouping = prepare_cid_nl_grouping(**arguments)
+    final = regroup_cid_nl_grouping(grouping, rt_frame=grouping.rt_frame)
     groups = tuple(
-        group
-        for workset in grouping.worksets
-        for group in workset.grouping_scope.groups
+        group for workset in final.worksets for group in workset.grouping_scope.groups
     )
-    assert {owner.sample_stem for group in groups for owner in group.owners} == (
-        retained_samples
-    )
-    assert len(groups) == bool(retained_samples)
+    ms1_only_samples = {"S2"} if scenario == "unsearched" else set()
+    assert {
+        owner.sample_stem
+        for group in groups
+        for owner in group.owners
+        if owner.primary_identity_event is not None
+    } == retained_samples
+    assert {
+        owner.sample_stem
+        for group in groups
+        for owner in group.owners
+        if owner.primary_identity_event is None
+    } == ms1_only_samples
+    if scenario == "unsearched":
+        owners = {
+            owner.sample_stem: owner for group in groups for owner in group.owners
+        }
+        assert {
+            (owner.peak.mz, owner.peak.integration.rt_apex_min)
+            for owner in owners.values()
+        } == {(500.0, 8.0)}
+        assert any(
+            decision.owner_id == owners["S2"].owner_id
+            and owners["S1"].owner_id in decision.witness_owner_ids
+            for group in groups
+            for decision in group.inference_decisions
+        )
+    else:
+        assert len(groups) == bool(retained_samples)
     assert {
         binding.sample_key for binding in grouping.request.scope.capture_bindings
     } == retained_samples
@@ -203,9 +230,10 @@ def test_owner_decides_membership_and_exact_exclusion_from_acquired_evidence(
             )
         )
     )
+    variant_final = regroup_cid_nl_grouping(variant, rt_frame=variant.rt_frame)
     assert {frozenset(owner.peak for owner in group.owners) for group in groups} == {
         frozenset(owner.peak for owner in group.owners)
-        for workset in variant.worksets
+        for workset in variant_final.worksets
         for group in workset.grouping_scope.groups
     }
     assert {

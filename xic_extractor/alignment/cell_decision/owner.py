@@ -6,6 +6,9 @@ import math
 from dataclasses import dataclass, fields
 from typing import Literal, TypeAlias, cast
 
+from xic_extractor.alignment.backfill.conservative import (
+    samples_eligible_for_group_extension,
+)
 from xic_extractor.alignment.cell_observation.observations import (
     FinalGroupCellObservation,
 )
@@ -57,7 +60,7 @@ _NO_WRITE_STATES = frozenset(
         "unavailable",
     }
 )
-_GROUP_VALUE_STATES = frozenset({"direct_observation"})
+_GROUP_VALUE_STATES = frozenset({"direct_observation", "ms1_only_group_observation"})
 _GROUP_TERMINAL_COMPANION_STATES = frozenset(
     {"not_searched", "searched_no_observation", "unavailable"}
 )
@@ -161,11 +164,17 @@ def decide_group_cell_population(
         }
         for group in finalized_alignment.final_population
     }
+    group_extension_eligible = samples_eligible_for_group_extension(
+        finalized_alignment.final_population,
+        sample_population=finalized_alignment.canonical_samples,
+    )
     return {
         observation.key: _decide_group(
             observation,
             is_member=observation.sample_key
             in member_samples[observation.group_hypothesis_id],
+            group_extension_eligible=observation.sample_key
+            in group_extension_eligible.get(observation.group, ()),
         )
         for observation in finalized_alignment.cell_observations
     }
@@ -223,7 +232,9 @@ def _decide_target(
         )
     hypothesis = terminal.hypothesis
     integration = hypothesis.peak.integration
-    if _target_has_fragmented_low_signal(integration, hypothesis.peak.intensity):
+    if integration is None or _target_has_fragmented_low_signal(
+        integration, hypothesis.peak.intensity
+    ):
         return NoWriteCellDecision("not_quantifiable"), integration
     return _payload_from_integration(integration), integration
 
@@ -258,6 +269,7 @@ def _decide_group(
     observation: FinalGroupCellObservation,
     *,
     is_member: bool,
+    group_extension_eligible: bool = False,
 ) -> tuple[CellDecisionPayload, IntegrationResult | None]:
     state = observation.evidence_state
     states = observation.evidence_states
@@ -265,12 +277,24 @@ def _decide_group(
     if is_member:
         allowed_states = _GROUP_VALUE_STATES | _GROUP_TERMINAL_COMPANION_STATES
         if value_state_count == 1 and all(item in allowed_states for item in states):
-            integrations = observation.integrations
-            if len(integrations) != 1:
+            peaks = observation.value_peaks
+            if len(peaks) != 1:
                 raise CellDecisionContractError(
                     "Group numeric decision requires exactly one integration"
                 )
-            integration = integrations[0]
+            integration = peaks[0].integration
+            if integration is None:
+                return NoWriteCellDecision("not_quantifiable"), None
+            if "ms1_only_group_observation" in states and (
+                not group_extension_eligible
+                or observation.ms1_only_group_has_local_method_relation
+            ):
+                return NoWriteCellDecision("unresolved"), None
+            if (
+                not group_extension_eligible
+                and observation.direct_observation_requires_supplement
+            ):
+                return NoWriteCellDecision("unresolved"), None
             return _payload_from_integration(integration), integration
         if value_state_count > 1:
             raise CellDecisionContractError(
@@ -284,9 +308,12 @@ def _decide_group(
             "Group nonmember cannot use observation evidence"
         )
     if "ms1_only_backfill_observation" in states:
-        integrations = observation.integrations
-        if state == "ms1_only_backfill_observation" and len(integrations) == 1:
-            integration = integrations[0]
+        peaks = observation.value_peaks
+        if (
+            state == "ms1_only_backfill_observation"
+            and len(peaks) == 1
+            and (integration := peaks[0].integration) is not None
+        ):
             return _payload_from_integration(integration), integration
         return NoWriteCellDecision("unresolved"), None
     if state == "mixed":

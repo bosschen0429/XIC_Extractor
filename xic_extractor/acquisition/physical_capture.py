@@ -125,7 +125,7 @@ class PhysicalPeakCapture:
                     for previous in probed_components
                     if previous.ppm_tol == request.ppm_tol
                     and within_ppm(previous.mz, request.mz, request.ppm_tol)
-                    and _same_acquired_signal(traces[previous], traces[request])
+                    and same_acquired_signal(traces[previous], traces[request])
                 ),
                 None,
             )
@@ -165,7 +165,7 @@ class PhysicalPeakCapture:
                         within_ppm(request.mz, member.mz, request.ppm_tol)
                         for member in mass_windows
                     )
-                    and _same_acquired_signal(traces[request], traces[owner])
+                    and same_acquired_signal(traces[request], traces[owner])
                 ):
                     signal_owners[request] = owner
                     mass_windows.append(request)
@@ -334,7 +334,7 @@ def _shared_contexts(
     return contexts
 
 
-def _same_acquired_signal(left: AcquiredTrace, right: AcquiredTrace) -> bool:
+def same_acquired_signal(left: AcquiredTrace, right: AcquiredTrace) -> bool:
     """Exact observed signal equality, not chemical identity or area similarity."""
     return (
         bool(np.any(left.trace.intensity > 0.0))

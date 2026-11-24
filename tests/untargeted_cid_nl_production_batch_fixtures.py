@@ -58,13 +58,6 @@ from xic_extractor.untargeted_execution.partition.models import (
 def _assert_jobs_match_direct_construction(batch) -> None:
 
     context = batch.context
-    memberships = dict(batch.subject_batch.candidate_memberships)
-    candidate_keys = {
-        (sample.sample_name, memberships[candidate.peak_id])
-        for sample in context.samples
-        for candidate in context.peaks_by_sample[sample.raw_stem]
-        if candidate.peak_id in memberships
-    }
     expected = tuple(
         UntargetedPartitionJob(
             processing_attempt_id=context.processing_attempt_id,
@@ -84,12 +77,9 @@ def _assert_jobs_match_direct_construction(batch) -> None:
             acquisition_source_expectation=context.acquisition_sources_by_sample[
                 sample.raw_stem
             ],
-            acquisition_cache_dir=batch.jobs[0].acquisition_cache_dir,
         )
         for sample in context.samples
         for subject in batch.subject_batch.subjects
-        if not batch.sample_job_templates
-        or (sample.sample_name, subject.method_subject_id) in candidate_keys
     )
     assert batch.jobs == expected
     assert tuple(job._request_subjects for job in batch.jobs) == tuple(
@@ -407,6 +397,12 @@ def profile_replay(tmp_path, monkeypatch, request):
                 )
                 for index in scan_indexes
             )
+        if family_precursor_delta:
+            raw.additional_ms1_ions = (
+                {precursor_mz + 0.00615: raw.intensity * 0.75}
+                if sample_index == 3
+                else {}
+            )
         source_raws[path] = raw
         with partition_workers.open_raw(
             path, tmp_path, expected_acquisition_source=source.acquisition_source
@@ -675,30 +671,29 @@ def profile_replay(tmp_path, monkeypatch, request):
                         and candidate.is_clean_peak
                     )
                 }
-                expected_trace_count = 1 if expected_capture_candidate_ids else 0
-                if expected_trace_count:
-                    assert adapter.acquisition is not None
-                    assert len(adapter.elution_contexts) == 1
-                    expected_acquisition_count = expected_trace_count + 1
-                    assert len(adapter.acquisition.traces) == expected_acquisition_count
-                    assert adapter.acquisition.adapter_chromatogram_call_count == 1
-                else:
-                    assert adapter.acquisition is None
-                assert (
-                    len(adapter.assessment_input.assessment.candidate_peaks)
-                    == expected_trace_count
-                )
-                from xic_extractor.alignment.hypothesis_owner_adapter import (
-                    compose_peak_hypotheses_from_assessment_universe,
-                )
-
-                hypotheses = compose_peak_hypotheses_from_assessment_universe(
-                    sample=sample_result.job.sample,
-                    assessment=adapter.assessment_input.assessment,
-                )
-                assert len(hypotheses) == expected_trace_count
+                assessment = adapter.assessment_input.assessment
+                if assessment.candidate_peaks:
+                    assert all(
+                        peak.source_trace.sample_name
+                        == sample_result.job.sample.sample_name
+                        for peak in assessment.candidate_peaks
+                    )
                 observations = dict(adapter.candidate_observations)
-                assert set(observations) == expected_capture_candidate_ids
+                if set(observations) != expected_capture_candidate_ids:
+                    raise AssertionError(
+                        (
+                            stem,
+                            sample_result.job.method_subject.method_subject_id,
+                            sorted(observations),
+                            sorted(expected_capture_candidate_ids),
+                            assessment.method_result,
+                            assessment.reason_codes,
+                            tuple(
+                                (peak.mz, peak.integration.rt_apex_min)
+                                for peak in assessment.candidate_peaks
+                            ),
+                        )
+                    )
                 for candidate_id, observation in observations.items():
                     expected = family_evaluations[candidate_id]
                     measured = observation.physical_evaluation
@@ -707,7 +702,9 @@ def profile_replay(tmp_path, monkeypatch, request):
                         assert expected.answer.selected_segment is not None
                         assert (
                             measured.answer.selected_segment.apex_rt_min
-                            == expected.answer.selected_segment.apex_rt_min
+                            == pytest.approx(
+                                expected.answer.selected_segment.apex_rt_min, abs=0.003
+                            )
                         )
                     else:
                         assert (

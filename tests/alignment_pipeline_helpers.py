@@ -191,8 +191,12 @@ class WriterPeak:
         return self.physical_peak_key
 
     @property
+    def rt_apex_min(self) -> float:
+        return self.rt
+
+    @property
     def integration(self) -> SimpleNamespace:
-        return SimpleNamespace(rt_apex_min=self.rt)
+        return SimpleNamespace(rt_apex_min=self.rt_apex_min)
 
 
 @dataclass(frozen=True)
@@ -200,6 +204,7 @@ class WriterEvidence:
     """The ``FinalGroupCellObservation`` facts the Alignment writers read."""
 
     direct_observations: tuple[object, ...] = ()
+    ms1_only_group_observations: tuple[object, ...] = ()
     ms1_only_backfill_observations: tuple[object, ...] = ()
     method_assessments: tuple[object, ...] = ()
     direct_hypotheses: tuple[object, ...] = ()

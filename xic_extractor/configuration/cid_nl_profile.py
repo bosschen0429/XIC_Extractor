@@ -15,7 +15,7 @@ class NeutralLossProfile:
 @dataclass(frozen=True)
 class CidNlMassPolicy:
     nl_tolerance_ppm: float = 20.0
-    precursor_mz_tolerance_ppm: float = 20.0
+    precursor_mz_tolerance_ppm: float = 10.0
     product_mz_tolerance_ppm: float = 20.0
     product_search_ppm: float = 50.0
     ms2_precursor_tol_da: float = 0.8

@@ -23,6 +23,7 @@ from xic_extractor.peak_detection.chrom_peak_segments import (
     enumerate_chrom_peak_segments,
     local_apex_prominence,
     measure_chrom_peak_component,
+    supported_contour_apices,
 )
 from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_extractor.peak_detection.ms1_morphology import (
@@ -392,10 +393,7 @@ def discovery_raw_peak_components(
         acquired_intensity_values=raw,
     )
     peaks = enumeration.segments
-    valleys = tuple(
-        left.apex_index + int(np.argmin(raw[left.apex_index : right.apex_index + 1]))
-        for left, right in zip(peaks, peaks[1:], strict=False)
-    )
+    valleys = enumeration.component_cut_indices
     return tuple(
         RawPeakComponent(
             start_index=valleys[index - 1] if index else 0,
@@ -806,25 +804,8 @@ def _physical_segment_support_failure(
     left, right, apex = (selected.start_index, selected.end_index, selected.apex_index)
     signal = np.asarray(prepared.positive_signal[left:right], dtype=float)
     apex_offset = apex - left
-    prominence = float(signal[apex_offset]) - max(
-        float(np.min(signal[: apex_offset + 1])),
-        float(np.min(signal[apex_offset:])),
-    )
-    top_level = float(signal[apex_offset]) - 0.5 * prominence
-    top_left = top_right = apex_offset
-    while top_left > 0 and signal[top_left - 1] >= top_level:
-        top_left -= 1
-    while top_right + 1 < len(signal) and signal[top_right + 1] >= top_level:
-        top_right += 1
-    original = original[top_left : top_right + 1]
-    original = np.where(original >= top_level, original, 0.0)
-    if sum(value > 0.0 for value in original) < 2:
-        return "insufficient_original_xic_support"
-    if not any(
-        left > 0.0 and right > 0.0
-        for left, right in zip(original, original[1:], strict=False)
-    ):
-        return "insufficient_original_xic_continuity"
+    if failure := _original_top_support_failure(original, signal, apex_offset):
+        return failure
     prominence = local_apex_prominence(signal, apex_offset)
     rt = np.asarray(prepared.rt[left:right], dtype=float)
     noise_sigma = short_scale_noise_sigma(rt, acquired) or 0.0
@@ -846,6 +827,90 @@ def _physical_segment_support_failure(
     ):
         return "overlap_not_above_surroundings"
     return ""
+
+
+def _original_top_support_failure(
+    original: np.ndarray, signal: np.ndarray, apex_offset: int
+) -> str:
+    prominence = float(signal[apex_offset]) - max(
+        float(np.min(signal[: apex_offset + 1])),
+        float(np.min(signal[apex_offset:])),
+    )
+    top_level = float(signal[apex_offset]) - 0.5 * prominence
+    top_left = top_right = apex_offset
+    while top_left > 0 and signal[top_left - 1] >= top_level:
+        top_left -= 1
+    while top_right + 1 < len(signal) and signal[top_right + 1] >= top_level:
+        top_right += 1
+    original = original[top_left : top_right + 1]
+    original = np.where(original >= top_level, original, 0.0)
+    if sum(value > 0.0 for value in original) < 2:
+        return "insufficient_original_xic_support"
+    if not any(
+        left > 0.0 and right > 0.0
+        for left, right in zip(original, original[1:], strict=False)
+    ):
+        return "insufficient_original_xic_continuity"
+    return ""
+
+
+def localize_overlap_peak_lobes(
+    evaluation: PhysicalPeakEvaluation,
+) -> tuple[RawPeakComponent, ...]:
+    """Locate acquired crests in one overlap without claiming separable areas.
+
+    Each canonical maximum needs continuous original top support and a raw
+    crest. Intervening relief must also exist in positive acquired scans: a
+    dropout alone cannot manufacture two peak positions.
+    """
+    segment = evaluation.answer.selected_segment
+    prepared = evaluation.retained_prepared_signal
+    if segment is None or prepared is None or not segment.requires_overlap_review:
+        return ()
+    left, right = segment.start_index, segment.end_index
+    raw = np.asarray(prepared.raw[left:right])
+    baseline = np.asarray(prepared.baseline[left:right])
+    signal = np.asarray(prepared.positive_signal[left:right])
+    peaks = supported_contour_apices(
+        signal, prepared.profile.segment_min_prominence_fraction
+    )
+    if len(peaks) < 2:
+        return ()
+    cuts = tuple(
+        int(a + np.argmin(signal[a : b + 1]))
+        for a, b in zip(peaks, peaks[1:], strict=False)
+    )
+    lobes = []
+    crests = []
+    for i, apex in enumerate(peaks):
+        start = cuts[i - 1] if i else 0
+        stop = cuts[i] + 1 if i < len(cuts) else len(raw)
+        crest = int(start + np.argmax(raw[start:stop]))
+        if not start < crest < stop - 1 or not (
+            0 < raw[crest - 1] < raw[crest] and 0 < raw[crest + 1] < raw[crest]
+        ):
+            return ()
+        if _original_top_support_failure(
+            np.maximum(raw[start:stop] - baseline[start:stop], 0.0),
+            signal[start:stop],
+            int(apex - start),
+        ):
+            return ()
+        crests.append(crest)
+        lobes.append(
+            RawPeakComponent(left + start, left + stop, left + crest, False, False)
+        )
+    clear_valley_fraction = _physical_segment_policy(
+        prepared.profile
+    ).clear_valley_max_fraction
+    for a, b in zip(crests, crests[1:], strict=False):
+        acquired_valley = raw[a + 1 : b]
+        detected = acquired_valley[acquired_valley > 0.0]
+        if not len(detected) or float(np.min(detected)) > (
+            clear_valley_fraction * min(raw[a], raw[b])
+        ):
+            return ()
+    return tuple(lobes)
 
 
 def _surrounding_level_fraction(

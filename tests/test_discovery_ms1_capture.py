@@ -277,7 +277,7 @@ def test_capture_clamps_ms1_search_rt_min_to_zero() -> None:
         ms1_centroid=lambda *_: None,
     )
 
-    assert raw.requests == [(group.mz, 0.0, pytest.approx(0.65), 20.0)]
+    assert raw.requests == [(group.mz, 0.0, pytest.approx(0.65), 10.0)]
     assert result.peaks == ()
 
 

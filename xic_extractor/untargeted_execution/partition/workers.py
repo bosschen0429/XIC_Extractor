@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import importlib
-from copy import copy
 from dataclasses import dataclass, replace
 
 from xic_extractor.alignment.backfill.cid_nl_planning import (
@@ -25,14 +24,8 @@ from xic_extractor.peak_detection.cid_nl_peak_support_models import (
     DdaCidNlPeakSupportPolicy,
 )
 from xic_extractor.raw_reader import RawFileHandle, ensure_assemblies_loaded, open_raw
-from xic_extractor.raw_source_binding import bind_expected_path_identity
-from xic_extractor.untargeted_execution.acquisition_cache import (
-    CachedUntargetedRaw,
-    bind_untargeted_acquisition_cache,
-)
 from xic_extractor.untargeted_execution.partition import (
     cid_nl_backfill_acquisition,
-    cid_nl_sample_acquisition,
 )
 from xic_extractor.untargeted_execution.partition.cid_nl_backfill_acquisition import (
     UntargetedCidNlBackfillAttemptResult,
@@ -41,10 +34,15 @@ from xic_extractor.untargeted_execution.partition.cid_nl_backfill_acquisition im
     backfill_untargeted_cid_nl_sample_subject,
     reuse_cid_nl_backfill_peak,
 )
+from xic_extractor.untargeted_execution.partition.cid_nl_region_acquisition import (
+    CidNlSampleRegion,
+    DiscoveryMassRegion,
+    acquire_cid_nl_sample_regions,
+    relate_region_events,
+)
 from xic_extractor.untargeted_execution.partition.cid_nl_sample_acquisition import (
     CidNlAcquisitionResult,
-    UntargetedCidNlSampleTraceBatch,
-    adapt_current_discovery_sample_subject,
+    assess_sample_regions,
 )
 from xic_extractor.untargeted_execution.partition.models import (
     BACKFILL_HALF_WINDOW_MIN,
@@ -57,7 +55,6 @@ from xic_extractor.untargeted_execution.partition.models import (
 @dataclass(slots=True)
 class _RuntimeJobState:
     job: UntargetedPartitionJob
-    initial_requires_raw: bool
     error: Exception | None = None
     adapter_result: CidNlAcquisitionResult | None = None
     backfill_support: _BackfillSupportContext | None = None
@@ -130,12 +127,12 @@ class _BatchSamplePhaseState:
     states: tuple[_RuntimeJobState, ...]
     initial_resource_key: str | None
     backfill_resource_key: str | None
-    sample_template: UntargetedPartitionJob | None = None
+    regions: tuple[DiscoveryMassRegion, ...] = ()
+    reference_jobs: tuple[UntargetedPartitionJob, ...] = ()
+    reference_results: tuple[CidNlAcquisitionResult, ...] = ()
 
     @property
     def job(self) -> UntargetedPartitionJob:
-        if self.sample_template is not None:
-            return self.sample_template
         return self.states[0].job
 
     def isolated_worker_state(self) -> _BatchSamplePhaseState:
@@ -150,116 +147,122 @@ class _BatchSamplePhaseState:
         )
 
 
-def _open_job_raw(
-    job: UntargetedPartitionJob,
-) -> RawFileHandle | CachedUntargetedRaw:
-    active_open = open_raw
+def _open_job_raw(job: UntargetedPartitionJob) -> RawFileHandle:
     expectation = job.acquisition_source_expectation
-    source = expectation.source
-
-    mass_recalibration = job.settings.mass_recalibration
-
-    def open_native():
-        return active_open(
-            job.raw_path,
-            job.dll_dir,
-            mass_recalibration=mass_recalibration,
-            expected_acquisition_source=source,
-            _expected_path_identity=expectation.path_identity,
-            prepared_mass_recalibration=job.prepared_mass_recalibration,
-        )
-
-    if job.acquisition_cache_dir is not None:
-        bind_expected_path_identity(job.raw_path, source, expectation.path_identity)
-        return CachedUntargetedRaw(
-            open_native,
-            source=source,
-            cache_dir=job.acquisition_cache_dir,
-            mass_recalibration=mass_recalibration,
-        )
-    raw = open_native()
-    return bind_untargeted_acquisition_cache(
-        raw,
-        source=source,
-        cache_dir=job.acquisition_cache_dir,
+    return open_raw(
+        job.raw_path,
+        job.dll_dir,
+        mass_recalibration=job.settings.mass_recalibration,
+        expected_acquisition_source=expectation.source,
+        _expected_path_identity=expectation.path_identity,
+        prepared_mass_recalibration=job.prepared_mass_recalibration,
     )
-
-
-def _execute_initial_assessment(state: _RuntimeJobState) -> None:
-    """Assess a newly authorized no-input subject before its Backfill search."""
-    job = state.job
-    try:
-        if state.error is None:
-            state.adapter_result = adapt_current_discovery_sample_subject(
-                processing_attempt_id=job.processing_attempt_id,
-                sample=job.sample,
-                acquisition_source=job.acquisition_source_expectation.source,
-                method_subject=job.method_subject,
-                peaks=_request_subject_candidates(job),
-                support_candidates=job.support_candidates,
-                settings=job.settings,
-                raw=None,
-                rt_reference_only=job.rt_reference_only,
-                signal_processing_profile=job.signal_processing_profile,
-            )
-    except Exception as exc:
-        state.error = exc
 
 
 def _execute_initial_assessment_batch(
     phase: _BatchSamplePhaseState,
 ) -> None:
     states = phase.states
-    leader = states[0]
-    job = leader.job
+    job = phase.job
     raw = None
-    trace_batch: UntargetedCidNlSampleTraceBatch | None = None
     try:
-        if any(state.initial_requires_raw and state.error is None for state in states):
+        regions: tuple[CidNlSampleRegion, ...] = ()
+        if phase.regions and any(state.error is None for state in states):
             if phase.initial_resource_key is None:
                 raise UntargetedPartitionError(
                     "sample batch is missing its acquisition reservation"
                 )
             raw = _open_job_raw(job)
-            selected_candidates = {
-                candidate.peak_id: candidate
-                for state in states
-                if state.error is None
-                for candidate in _request_subject_candidates(state.job)
-            }
-            candidates = tuple(
-                sorted(
-                    selected_candidates.values(),
-                    key=lambda candidate: job._candidate_order[candidate.peak_id],
-                )
-            )
-            active_acquire = (
-                cid_nl_sample_acquisition.acquire_untargeted_cid_nl_sample_trace_batch
-            )
-            trace_batch = active_acquire(
+            regions = acquire_cid_nl_sample_regions(
+                raw,
                 sample=job.sample,
                 acquisition_source=job.acquisition_source_expectation.source,
-                peaks=candidates,
+                regions=phase.regions,
+                events=(
+                    event
+                    for candidate in (*job.candidates, *job.support_candidates)
+                    for event in candidate.located_events
+                ),
                 settings=job.settings,
-                raw=raw,
-                signal_processing_profile=job.signal_processing_profile,
+                profile=job.signal_processing_profile,
+            )
+            for region in regions:
+                for coverage in region.coverage:
+                    if coverage.scan_bounds is None:
+                        raise UntargetedPartitionError(
+                            f"{job.sample.raw_stem}: MS1 acquisition at "
+                            f"{coverage.request.mz}: {coverage.reason}"
+                        )
+        results = assess_sample_regions(
+            regions=regions,
+            sample=job.sample,
+            acquisition_source=job.acquisition_source_expectation.source,
+            scopes=tuple(
+                (state.job.method_subject, _request_subject_candidates(state.job))
+                for state in states
+                if state.error is None
+            ),
+            processing_attempt_id=job.processing_attempt_id,
+            settings=job.settings,
+            raw=raw,
+            rt_reference_only=False,
+        )
+        ref_jobs = phase.reference_jobs
+        if ref_jobs:
+            same_view = (
+                len(ref_jobs) == len(states)
+                and all(
+                    ref is state.job and state.error is None
+                    for ref, state in zip(ref_jobs, states, strict=True)
+                )
+                and not any(
+                    peak.requires_overlap_review
+                    for region in regions
+                    for peak in region.peaks
+                )
+            )
+            answers = (
+                results
+                if same_view
+                else assess_sample_regions(
+                    regions=relate_region_events(
+                        regions,
+                        sample=job.sample,
+                        acquisition_source=job.acquisition_source_expectation.source,
+                        events=(
+                            event
+                            for candidate in (
+                                *ref_jobs[0].candidates,
+                                *ref_jobs[0].support_candidates,
+                            )
+                            for event in candidate.located_events
+                        ),
+                        settings=job.settings,
+                    ),
+                    sample=job.sample,
+                    acquisition_source=job.acquisition_source_expectation.source,
+                    scopes=tuple(
+                        (j.method_subject, _request_subject_candidates(j))
+                        for j in ref_jobs
+                    ),
+                    processing_attempt_id=job.processing_attempt_id,
+                    settings=job.settings,
+                    raw=raw,
+                    rt_reference_only=True,
+                )
+            )
+            phase.reference_results = tuple(
+                replace(
+                    answers[j.method_subject.method_subject_id],
+                    capture_evidence=(),
+                )
+                for j in ref_jobs
             )
         for state in states:
-            if state.error is not None:
-                continue
-            state.adapter_result = adapt_current_discovery_sample_subject(
-                processing_attempt_id=state.job.processing_attempt_id,
-                sample=state.job.sample,
-                acquisition_source=state.job.acquisition_source_expectation.source,
-                method_subject=state.job.method_subject,
-                peaks=_request_subject_candidates(state.job),
-                support_candidates=state.job.support_candidates,
-                settings=state.job.settings,
-                raw=raw,
-                _preacquired_traces=trace_batch,
-                rt_reference_only=state.job.rt_reference_only,
-                signal_processing_profile=state.job.signal_processing_profile,
-            )
+            if state.error is None:
+                state.adapter_result = results[
+                    state.job.method_subject.method_subject_id
+                ]
     except Exception as exc:
         for state in states:
             if state.error is None:
@@ -276,7 +279,6 @@ def _execute_initial_assessment_batch(
 
 def _apply_backfill_questions(
     states: list[_RuntimeJobState],
-    templates: dict[str, UntargetedPartitionJob],
     questions: tuple[CidNlBackfillQuestion, ...],
 ) -> None:
     by_key = {
@@ -288,22 +290,6 @@ def _apply_backfill_questions(
     }
     for question in questions:
         key = (question.sample_key, question.method_subject.method_subject_id)
-        if key not in by_key:
-            job = copy(templates[question.sample_key])
-            object.__setattr__(job, "method_subject", question.method_subject)
-            object.__setattr__(
-                job,
-                "work_unit_key",
-                f"untargeted-cid-nl:{job.sample.raw_stem}:"
-                f"{question.method_subject.method_subject_id}",
-            )
-            state = _RuntimeJobState(
-                job=job,
-                initial_requires_raw=False,
-            )
-            _execute_initial_assessment(state)
-            states.append(state)
-            by_key[key] = state
         state = by_key[key]
         if state.error is not None or state.adapter_result is None:
             continue
@@ -316,27 +302,22 @@ def _prepare_group_authorized_backfills(
     states: list[_RuntimeJobState],
     *,
     prepared: CidNlGrouping,
-    sample_templates: tuple[UntargetedPartitionJob, ...] = (),
 ) -> None:
-    templates = {
-        job.sample.sample_name: job
-        for job in sample_templates or tuple(state.job for state in states)
-    }
+    samples = {state.job.sample.sample_name: state.job.sample for state in states}
     questions = plan_grouped_cid_nl_backfills(
         prepared.worksets,
-        sample_population=tuple(job.sample for job in templates.values()),
+        sample_population=tuple(samples.values()),
         alignment_config=prepared.alignment_config,
         rt_frame=prepared.rt_frame,
         backfill_half_window_min=BACKFILL_HALF_WINDOW_MIN,
     )
-    _apply_backfill_questions(states, templates, questions)
+    _apply_backfill_questions(states, questions)
 
 
 def _prepare_owner_authorized_backfills(
     states: list[_RuntimeJobState],
     *,
     alignment_config: AlignmentConfig,
-    sample_templates: tuple[UntargetedPartitionJob, ...] = (),
 ) -> None:
     by_subject: dict[str, list[_RuntimeJobState]] = {}
     for state in states:
@@ -345,12 +326,8 @@ def _prepare_owner_authorized_backfills(
             [],
         ).append(state)
     for method_subject_id in sorted(by_subject):
-        states.extend(
-            _prepare_subject_authorized_backfills(
-                tuple(by_subject[method_subject_id]),
-                alignment_config=alignment_config,
-                sample_templates=sample_templates,
-            )
+        _prepare_subject_authorized_backfills(
+            tuple(by_subject[method_subject_id]), alignment_config=alignment_config
         )
 
 
@@ -358,16 +335,12 @@ def _prepare_subject_authorized_backfills(
     states: tuple[_RuntimeJobState, ...],
     *,
     alignment_config: AlignmentConfig,
-    sample_templates: tuple[UntargetedPartitionJob, ...] = (),
-) -> tuple[_RuntimeJobState, ...]:
+) -> None:
     if not states or any(
         state.error is not None or state.adapter_result is None for state in states
     ):
-        return ()
-    templates = {
-        job.sample.sample_name: job
-        for job in sample_templates or tuple(state.job for state in states)
-    }
+        return
+    samples = {state.job.sample.sample_name: state.job.sample for state in states}
     questions = plan_subject_cid_nl_backfills(
         tuple(
             (state.job.sample, state.adapter_result.assessment_input.assessment)
@@ -375,12 +348,10 @@ def _prepare_subject_authorized_backfills(
             if state.adapter_result is not None
         ),
         method_subject=states[0].job.method_subject,
-        sample_population=tuple(job.sample for job in templates.values()),
+        sample_population=tuple(samples.values()),
         alignment_config=alignment_config,
     )
-    prepared_states = list(states)
-    _apply_backfill_questions(prepared_states, templates, questions)
-    return tuple(prepared_states[len(states) :])
+    _apply_backfill_questions(list(states), questions)
 
 
 def _execute_backfill_batch(phase: _BatchSamplePhaseState) -> None:
@@ -465,6 +436,8 @@ def _execute_backfill_batch(phase: _BatchSamplePhaseState) -> None:
 class _SampleInitialWorkerRequest:
     jobs: tuple[UntargetedPartitionJob, ...]
     initial_resource_key: str | None
+    regions: tuple[DiscoveryMassRegion, ...]
+    reference_jobs: tuple[UntargetedPartitionJob, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -477,6 +450,7 @@ class _InitialJobOutcome:
 @dataclass(frozen=True, slots=True)
 class _SampleInitialWorkerResponse:
     job_outcomes: tuple[_InitialJobOutcome, ...]
+    reference_results: tuple[CidNlAcquisitionResult, ...] = ()
 
     def _outcomes_by_key(
         self, work_unit_keys: tuple[str, ...]
@@ -487,6 +461,7 @@ class _SampleInitialWorkerResponse:
         return {item.work_unit_key: item for item in self.job_outcomes}
 
     def apply_to(self, phase: _BatchSamplePhaseState) -> None:
+        phase.reference_results = self.reference_results
         outcomes = self._outcomes_by_key(
             tuple(state.job.work_unit_key for state in phase.states)
         )
@@ -510,6 +485,7 @@ def _execute_initial_sample_phase(
     local = phase.isolated_worker_state()
     _execute_initial_assessment_batch(local)
     return _SampleInitialWorkerResponse(
+        reference_results=local.reference_results,
         job_outcomes=tuple(
             _InitialJobOutcome(
                 work_unit_key=state.job.work_unit_key,
@@ -529,7 +505,6 @@ def _execute_sample_initial_worker(
     states = tuple(
         _RuntimeJobState(
             job=job,
-            initial_requires_raw=bool(_request_subject_candidates(job)),
         )
         for job in request.jobs
     )
@@ -537,6 +512,8 @@ def _execute_sample_initial_worker(
         states=states,
         initial_resource_key=request.initial_resource_key,
         backfill_resource_key=None,
+        regions=request.regions,
+        reference_jobs=request.reference_jobs,
     )
     return _execute_initial_sample_phase(phase)
 
@@ -608,7 +585,6 @@ def _execute_sample_backfill_worker(
     states = tuple(
         _RuntimeJobState(
             job=job,
-            initial_requires_raw=False,
             backfill_support=request.backfill_support_by_key.get(job.work_unit_key),
             backfill_targets=request.backfill_targets_by_key.get(job.work_unit_key, ()),
         )
@@ -629,7 +605,6 @@ __all__ = [
     "_SampleInitialWorkerResponse",
     "_SampleBackfillWorkerRequest",
     "_SampleBackfillWorkerResponse",
-    "_execute_initial_assessment",
     "_execute_initial_assessment_batch",
     "_execute_initial_sample_phase",
     "_execute_backfill_batch",

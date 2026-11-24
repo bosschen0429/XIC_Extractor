@@ -45,7 +45,6 @@ the public template.
 | XIC_RAW_VALIDATION_DIR | lane-specified validation subset |
 | THERMO_RAWFILE_READER_DLL_DIR | RawFileReader 8.0.42 DLL directory (not Xcalibur) |
 | XIC_MANUAL_2RAW_ROOT | manual-truth calibration inputs |
-| XIC_ACQUISITION_CACHE_DIR | shared Alignment RAW acquisition cache; keep it on a fast local disk |
 
 Stable accepted-input paths and hashes live in
 [Stable Inputs](diagnostic-ledger.md#stable-inputs). The runner validates the selected inputs;
@@ -135,7 +134,7 @@ reassignments. See the
 [grouping diagnostic](../../tools/diagnostics/grouping_experiment.py) for
 baseline comparisons and which RT model changes replay covers.
 
-    .venv\Scripts\python.exe -m scripts.run_alignment regroup --inputs output/baseline/grouping-inputs.json.gz --set max_ppm=20 --output-dir output/regroup-trial
+    .venv\Scripts\python.exe -m scripts.run_alignment regroup --inputs output/baseline/grouping-inputs.json.gz --set precursor_mz_tolerance_ppm=20 --output-dir output/regroup-trial
 
 **Replay Backfill or pairing independently.** These examples use captures in
 `output/baseline`. Only Backfill may read RAW: it reuses initial assessments

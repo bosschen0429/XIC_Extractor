@@ -39,7 +39,7 @@ def _accepted_final_memberships(
     windows: list[list[SampleLocalMS1Owner]] = []
     for owner in sorted(owners, key=lambda o: (o.peak.mz, measured_owner_key(o))):
         if not windows or not within_ppm(
-            owner.peak.mz, windows[-1][-1].peak.mz, config.max_ppm
+            owner.peak.mz, windows[-1][-1].peak.mz, config.precursor_mz_tolerance_ppm
         ):
             windows.append([])
         windows[-1].append(owner)

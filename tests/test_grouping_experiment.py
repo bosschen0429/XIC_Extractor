@@ -310,7 +310,7 @@ def test_application_outputs_formal_groups_with_an_optional_snapshot(
         )
     with (output / "members.tsv").open(encoding="utf-8", newline="") as stream:
         formal_members = list(csv.DictReader(stream, delimiter="\t"))
-    assert {row["sample_stem"] for row in formal_members} == {"S0", "S1"}
+    assert {row["sample_stem"] for row in formal_members} == {"S0", "S1", "S2", "S3"}
     assert len({row["group_id"] for row in formal_members}) == 1
     assert len(scheduled) == 1
     assert [phase.name for phase in scheduled[0]["phases"]] == [
@@ -318,7 +318,7 @@ def test_application_outputs_formal_groups_with_an_optional_snapshot(
         "final-grouping",
     ]
     summary = json.loads((output / "summary.json").read_text())
-    assert summary["source"]["initial_job_count"] == 2
+    assert summary["source"]["initial_job_count"] == 8
     assert summary["group_count"] == 1
     assert not (output / "alignment_matrix.tsv").exists()
     snapshot = output / "grouping-inputs.json.gz"
@@ -329,9 +329,14 @@ def test_application_outputs_formal_groups_with_an_optional_snapshot(
     groups = replay_grouping(inputs)
     assert len(groups) == 1
     assert inputs.sample_stems == ("S0", "S1", "S2", "S3")
-    assert {owner.sample_stem for group in groups for owner in group.owners} == {
-        "S0",
-        "S1",
+    (group,) = groups
+    assert group.disposition == "established"
+    assert {
+        owner.sample_stem: owner.primary_identity_event is not None
+        for owner in group.owners
+    } == {"S0": True, "S1": True, "S2": False, "S3": False}
+    assert {owner.owner_id for owner in group.owners} == {
+        row["owner_id"] for row in formal_members
     }
     restored, provenance = read_grouping_inputs(snapshot)
     original_shapes = {
@@ -953,7 +958,7 @@ def test_replay_only_recomputes_when_grouping_inputs_change(tmp_path, monkeypatc
 
     baseline = run("baseline")
     assert counted_replay.call_count == 1
-    assert membership(baseline) == {frozenset((a, b))}
+    assert membership(baseline) == {frozenset((a,)), frozenset((b,))}
 
     backfill_only = run("no-backfill", "--set", "backfill_enabled=false")
     assert counted_replay.call_count == 1
@@ -962,22 +967,30 @@ def test_replay_only_recomputes_when_grouping_inputs_change(tmp_path, monkeypatc
     ).read_bytes()
     assert rows(backfill_only, "changes.tsv") == []
 
-    replayed_baseline = run("replayed-baseline", "--set", "max_ppm=20")
+    replayed_baseline = run(
+        "replayed-baseline", "--set", "precursor_mz_tolerance_ppm=40"
+    )
     assert counted_replay.call_count == 2
-    variant = run("variant", "--set", "max_ppm=20", "--compare-to", str(baseline))
+    variant = run(
+        "variant",
+        "--set",
+        "precursor_mz_tolerance_ppm=40",
+        "--compare-to",
+        str(baseline),
+    )
     assert counted_replay.call_count == 1
-    assert membership(variant) == {frozenset((a,)), frozenset((b,))}
+    assert membership(variant) == {frozenset((a, b))}
     assert {
         (row["owner_id"], row["before_members"], row["after_members"])
         for row in rows(variant, "changes.tsv")
-    } == {(a, "2", "1"), (b, "2", "1")}
+    } == {(a, "1", "2"), (b, "1", "2")}
     assert (variant / "changes.tsv").read_bytes() == (
         replayed_baseline / "changes.tsv"
     ).read_bytes()
     summary = json.loads((variant / "summary.json").read_text())
     assert summary["changed_observation_count"] == 2
-    assert summary["membership_diff"]["split_count"] == 1
-    assert summary["membership_diff"]["merge_count"] == 0
+    assert summary["membership_diff"]["split_count"] == 0
+    assert summary["membership_diff"]["merge_count"] == 1
 
 
 def test_parallel_regroup_writes_the_sequential_tables(tmp_path, monkeypatch):
@@ -1171,6 +1184,14 @@ def test_regroup_cannot_overwrite_previous_results(tmp_path):
     assert main(args) == 0
     before = {p: p.read_bytes() for p in output.iterdir()}
     with pytest.raises(SystemExit) as error:
-        main([*args, "--set", "max_ppm=20", "--compare-to", str(tmp_path / "missing")])
+        main(
+            [
+                *args,
+                "--set",
+                "precursor_mz_tolerance_ppm=20",
+                "--compare-to",
+                str(tmp_path / "missing"),
+            ]
+        )
     assert error.value.code == 2
     assert before == {p: p.read_bytes() for p in output.iterdir()}

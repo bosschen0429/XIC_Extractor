@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import statistics
 from collections.abc import Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from typing import Literal
 
 from xic_extractor.alignment.config import AlignmentConfig
@@ -25,6 +25,7 @@ from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 from xic_extractor.mass_accuracy import absolute_ppm_error, mz_window
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessment,
+    cid_nl_support_requires_supplement,
     supported_cid_nl_peaks,
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import (
@@ -71,20 +72,29 @@ def cid_nl_pair_failures(
 ) -> tuple[CidNlPairFailure | None, CidNlPairFailure | None]:
     """Resolve identity and measurement gates once, keeping their precedence."""
     first, second = left.primary_identity_event, right.primary_identity_event
-    composite = compatible_composite_owners(left, right)
-    if (first is None) != (second is None) or (
-        not composite and left.neutral_loss_tag != right.neutral_loss_tag
-    ):
-        return "neutral_loss_tag_mismatch", None
-    if first is None or composite:
+    if first is None or second is None or compatible_composite_owners(left, right):
         return None, None
-    assert second is not None
+    if left.neutral_loss_tag != right.neutral_loss_tag:
+        return "neutral_loss_tag_mismatch", None
     if (
         absolute_ppm_error(second.product_mz, first.product_mz)
         > config.product_mz_tolerance_ppm
     ):
         return None, "product_mz_out_of_tolerance"
     return None, None
+
+
+def has_cid_nl_activation_support(owner: SampleLocalMS1Owner) -> bool:
+    """Row activation needs independently measured area and direct CID-NL."""
+    assessment = owner.cid_nl_composite_assessment
+    return (
+        owner.peak.integration is not None
+        and owner.primary_identity_event is not None
+        and (
+            assessment is None
+            or not cid_nl_support_requires_supplement(assessment, owner.peak)
+        )
+    )
 
 
 def has_cid_nl_composition(owner: SampleLocalMS1Owner) -> bool:
@@ -129,68 +139,79 @@ def cid_nl_pair_mass_fraction(
     )
 
 
-def cid_nl_index_queries(
+_PRECURSOR_INDEX = ("", "precursor")
+_UNOBSERVED_PRECURSOR = ("", "unobserved_method")
+
+
+def _index_query_alternatives(
     owner: SampleLocalMS1Owner, config: AlignmentConfig
-) -> tuple[tuple[tuple[str, str], float, float], ...]:
+) -> tuple[tuple[IndexQuery, ...], ...]:
     event = owner.primary_identity_event
-    axes = [("precursor", owner.peak.mz, config.max_ppm)]
-    if event is not None:
-        axes.append(("product", event.product_mz, config.product_mz_tolerance_ppm))
-    return tuple(
-        ((owner.neutral_loss_tag, axis), value, tolerance)
-        for axis, value, tolerance in axes
+    if event is None:
+        return (
+            ((_PRECURSOR_INDEX, owner.peak.mz, config.precursor_mz_tolerance_ppm),),
+        )
+    tag = event.neutral_loss_tag
+    alternatives: tuple[tuple[IndexQuery, ...], ...] = (
+        (
+            ((tag, "precursor"), owner.peak.mz, config.precursor_mz_tolerance_ppm),
+            ((tag, "product"), event.product_mz, config.product_mz_tolerance_ppm),
+        ),
+        ((_UNOBSERVED_PRECURSOR, owner.peak.mz, config.precursor_mz_tolerance_ppm),),
     )
-
-
-def cid_nl_composition_index_key(owner: SampleLocalMS1Owner) -> tuple[str, str] | None:
     assessment = owner.cid_nl_composite_assessment
-    return (
-        None
-        if assessment is None
-        else (assessment.method_subject.method_subject_id, "composition")
-    )
+    if assessment is not None:
+        key = (assessment.method_subject.method_subject_id, "composition")
+        alternatives += (((key, owner.peak.mz, config.precursor_mz_tolerance_ppm),),)
+    return alternatives
 
 
 @dataclass(slots=True)
 class CidNlFeatureEnvelope:
     """Method-only group extrema; common grouping owns physical extrema."""
 
-    seed: SampleLocalMS1Owner
-    product_min: float
-    product_max: float
-    composite_subject_id: str | None
+    seed: SampleLocalMS1Owner | None = None
+    product_min: float = 0.0
+    product_max: float = 0.0
+    composite_subject_id: str | None = None
 
     @classmethod
     def from_owner(cls, owner: SampleLocalMS1Owner) -> CidNlFeatureEnvelope:
-        event = owner.primary_identity_event
-        product = 0.0 if event is None else event.product_mz
-        return cls(owner, product, product, owner_composite_subject_id(owner))
+        envelope = cls()
+        envelope.add(owner)
+        return envelope
 
     def add(self, owner: SampleLocalMS1Owner) -> None:
+        event = owner.primary_identity_event
+        if event is None:
+            return
+        if self.seed is None:
+            self.seed = owner
+            self.product_min = self.product_max = event.product_mz
+            self.composite_subject_id = owner_composite_subject_id(owner)
+            return
         if self.composite_subject_id is not None and not compatible_composite_owners(
             owner, self.seed
         ):
             self.composite_subject_id = None
-        event = owner.primary_identity_event
-        if event is not None:
-            self.product_min = min(self.product_min, event.product_mz)
-            self.product_max = max(self.product_max, event.product_mz)
+        self.product_min = min(self.product_min, event.product_mz)
+        self.product_max = max(self.product_max, event.product_mz)
 
     def failures(
         self, owner: SampleLocalMS1Owner, config: AlignmentConfig
     ) -> tuple[str, str]:
-        """Resolve identity and whole-group envelopes, not just the joining edge."""
+        """Only observed method evidence can contradict a feature."""
         event = owner.primary_identity_event
-        if (event is None) != (self.seed.primary_identity_event is None):
-            return "identity_evidence_type_mismatch", ""
+        if event is None or self.seed is None:
+            return "", ""
         composite = (
             self.composite_subject_id is not None
             and compatible_composite_owners(owner, self.seed)
         )
-        if not composite and owner.neutral_loss_tag != self.seed.neutral_loss_tag:
-            return "neutral_loss_tag_mismatch", ""
-        if event is None or composite:
+        if composite:
             return "", ""
+        if owner.neutral_loss_tag != self.seed.neutral_loss_tag:
+            return "neutral_loss_tag_mismatch", ""
         if (
             envelope_fraction(
                 self.product_min,
@@ -206,11 +227,15 @@ class CidNlFeatureEnvelope:
     def index_entries(
         self, precursor_min: float
     ) -> tuple[tuple[tuple[str, str], float], ...]:
-        values = [("precursor", precursor_min)]
-        if self.seed.primary_identity_event is not None:
-            values.append(("product", self.product_min))
-        entries = tuple(
-            ((self.seed.neutral_loss_tag, axis), value) for axis, value in values
+        entries: tuple[tuple[tuple[str, str], float], ...] = (
+            (_PRECURSOR_INDEX, precursor_min),
+        )
+        if self.seed is None:
+            return (*entries, (_UNOBSERVED_PRECURSOR, precursor_min))
+        tag = self.seed.neutral_loss_tag
+        entries += (
+            ((tag, "precursor"), precursor_min),
+            ((tag, "product"), self.product_min),
         )
         if self.composite_subject_id is not None:
             entries += (((self.composite_subject_id, "composition"), precursor_min),)
@@ -307,7 +332,7 @@ def _duplicate_context(
     if any(
         owner.assignment_reason == "owner_tail_assignment"
         or any(
-            abs(event.seed_rt - owner.peak.integration.rt_apex_min) * 60.0
+            abs(event.seed_rt - owner.peak.rt_apex_min) * 60.0
             > config.owner_apex_close_sec
             for event in owner.supporting_events
         )
@@ -334,17 +359,6 @@ def _pair_evidence(
     )
 
 
-def _index_query_alternatives(
-    owner: SampleLocalMS1Owner, config: AlignmentConfig
-) -> tuple[tuple[IndexQuery, ...], ...]:
-    alternatives: tuple[tuple[IndexQuery, ...], ...] = (
-        cid_nl_index_queries(owner, config),
-    )
-    if key := cid_nl_composition_index_key(owner):
-        alternatives += (((key, owner.peak.mz, config.max_ppm),),)
-    return alternatives
-
-
 def _requires_directional_membership(owners: Sequence[SampleLocalMS1Owner]) -> bool:
     return any(has_cid_nl_composition(owner) for owner in owners)
 
@@ -357,35 +371,9 @@ CID_NL_GROUPING_RULES = GroupingRules(
     requires_directional_membership=_requires_directional_membership,
     trajectory_witness_eligible=has_scalar_cid_nl_identity,
     chemistry_key=grouping_chemistry_key,
+    method_unobserved=lambda owner: owner.primary_identity_event is None,
+    establishes_group=has_cid_nl_activation_support,
     mass_center=cid_nl_mass_center,
     mass_fraction=cid_nl_mass_fraction,
     pair_mass_fraction=cid_nl_pair_mass_fraction,
 )
-
-
-def cid_nl_backfill_comparison_rules(
-    composite_observation_ids: frozenset[str],
-) -> GroupingRules:
-    """Compare authorized composite MS1-only observations without inventing CID-NL.
-
-    These candidates are already bound to a fixed group by the Backfill owner.
-    A composite subject has no scalar neutral loss to project as an identity
-    event. Its absence is not a new identity conflict, and acceptance grants no
-    direct SUPPORT. Initial grouping keeps the ordinary CID-NL rules.
-    """
-    if not composite_observation_ids:
-        return CID_NL_GROUPING_RULES
-
-    def pair_evidence(
-        left: SampleLocalMS1Owner,
-        right: SampleLocalMS1Owner,
-        config: AlignmentConfig,
-    ) -> MethodPairEvidence:
-        if (
-            left.owner_id in composite_observation_ids
-            or right.owner_id in composite_observation_ids
-        ):
-            return MethodPairEvidence(None, None, "weak", "none")
-        return _pair_evidence(left, right, config)
-
-    return replace(CID_NL_GROUPING_RULES, pair_evidence=pair_evidence)

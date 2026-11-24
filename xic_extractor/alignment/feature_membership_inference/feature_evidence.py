@@ -73,13 +73,7 @@ def _feature_rt_may_support(
 ) -> bool:
     """Exclude only tracks whose seed AND last cannot support either RT basis."""
     for witness in track.witness_owners:
-        raw_delta = (
-            abs(
-                owner.peak.integration.rt_apex_min
-                - witness.peak.integration.rt_apex_min
-            )
-            * 60.0
-        )
+        raw_delta = abs(owner.peak.rt_apex_min - witness.peak.rt_apex_min) * 60.0
         if not math.isfinite(raw_delta) or raw_delta <= config.preferred_rt_sec:
             return True
         if rt_frame.has_drift:
@@ -191,7 +185,10 @@ def _feature_hard_reason(
     if identity_failure:
         return identity_failure, math.inf
     mass_fraction = envelope_fraction(
-        track.precursor_min, track.precursor_max, owner.peak.mz, config.max_ppm
+        track.precursor_min,
+        track.precursor_max,
+        owner.peak.mz,
+        config.precursor_mz_tolerance_ppm,
     )
     if mass_fraction > 1.0:
         return "precursor_envelope", mass_fraction

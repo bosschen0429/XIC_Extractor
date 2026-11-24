@@ -217,7 +217,7 @@ def test_pipeline_retains_each_seeded_physical_peak_from_one_rt_group(
     (
         ("discovery_normal_single_peak", (18.4,), 14067),
         ("discovery_same_peak_seeds", (38.2,), None),
-        ("discovery_true_double_peak", (), None),
+        ("discovery_true_double_peak", (15.255241,), 12327),
         ("discovery_non_peak_background", (), None),
     ),
 )
@@ -300,7 +300,11 @@ def test_discovery_retained_physical_peak_cardinality(
         assert {event.peak_id for event in result.attachments if event.peak_id} <= {
             peak.peak_id
         }
-    if fixture_name in {"discovery_true_double_peak", "discovery_non_peak_background"}:
+    if fixture_name == "discovery_true_double_peak":
+        assert {
+            item.event.scan_number for item in result.attachments if item.peak_id
+        } == {12327}
+    if fixture_name == "discovery_non_peak_background":
         assert all(not event.peak_id for event in result.attachments)
     if representative_scan is not None:
         assert [c.best_ms2_scan_id for c in valid] == [representative_scan]
@@ -382,7 +386,7 @@ def test_merged_physical_candidate_publishes_its_capture_conditions(
             parent_batches.append(requests)
             return tuple(
                 Ms1PrecursorObservation(
-                    scan, 7.75, (500.015,) if lower <= 500.015 <= upper else ()
+                    scan, 7.75, (500.009,) if lower <= 500.009 <= upper else ()
                 )
                 for scan, lower, upper in requests
             )
@@ -1170,10 +1174,10 @@ def test_inferred_precursor_is_measured_once_in_the_window_of_its_apex_ion(
     tmp_path: Path,
 ) -> None:
     group, raw, result = _inferred_apex_case(
-        tmp_path, lambda inferred, _rt: inferred * (1 - 18e-6)
+        tmp_path, lambda inferred, _rt: inferred * (1 - 6e-6)
     )
 
-    apex_mz = group.mz * (1 - 18e-6)
+    apex_mz = group.mz * (1 - 6e-6)
     assert result.measurements.reacquisition_request_count == 0
     assert result.measurements.remeasurement_request_count == 1
     assert raw.request_batches[0][0].mz == pytest.approx(group.mz)
@@ -1232,7 +1236,7 @@ def test_pipeline_publishes_inferred_precursor_ms1_ion_from_raw_handle(
 
 
 def _two_ions(inferred: float, rt: float) -> float:
-    return inferred * (1 - 18e-6 if round(rt / 0.04) % 2 else 1 - 6e-6)
+    return inferred * (1 - 8e-6 if round(rt / 0.04) % 2 else 1 - 2e-6)
 
 
 def test_inferred_precursor_meeting_two_ions_reports_no_ms1_ion(
@@ -1252,7 +1256,7 @@ def test_inferred_precursor_meeting_two_ions_reports_no_ms1_ion(
 def test_selected_precursor_reports_no_ms1_ion(tmp_path: Path) -> None:
     group, _raw, result = _inferred_apex_case(
         tmp_path,
-        lambda inferred, _rt: inferred * (1 - 18e-6),
+        lambda inferred, _rt: inferred * (1 - 6e-6),
         basis="scan_precursor",
     )
 

@@ -665,19 +665,49 @@ def test_backfill_containing_peak_closes_assessment_outside_apex_window(
 def test_reused_hold_peak_needs_its_own_group_window(
     tmp_path, centers, held_apexes, query, reused_apex
 ):
-    from tests.untargeted_cid_nl_real_data_adapter_fixtures import (
-        build_sample_adapter_scenario,
-    )
+    from tests.cid_nl_raw_fixture import _settings
+    from xic_extractor.discovery.ms2_events import discovery_events_from_scan
     from xic_extractor.peak_detection.cid_nl_method_assessment import (
         is_ms1_only_cid_nl_backfill_assessment,
     )
+    from xic_extractor.untargeted_execution.partition.cid_nl_region_acquisition import (
+        acquire_cid_nl_sample_regions,
+        plan_cid_nl_mass_regions,
+    )
+    from xic_extractor.untargeted_execution.partition.cid_nl_sample_acquisition import (
+        assess_sample_regions,
+    )
 
-    scenario = build_sample_adapter_scenario(tmp_path)
+    fixture = build_sample_adapter_fixture(tmp_path)
+    settings = _settings()
     source = _FakeRaw(centers)
-    source.scans = tuple(replace(scan, precursor_mz=500.5) for scan in source.scans)
-    peaks = scenario.discover(source)
-    raw, _ = scenario.open_raw(source)
-    capture = scenario.adapt(peaks, raw=raw)
+    event_rt = 7.55
+    source.scans = (replace(source.scans[0], rt=event_rt, scan_number=61),)
+    (scan,) = source.scans
+    events = discovery_events_from_scan(
+        scan, raw_file=fixture.source_paths["S1"], settings=settings
+    )
+    sample, acquisition_source = fixture.sample("S1"), fixture.source("S1")
+    raw, _ = _open_bound_raw(fixture, "S1", source, tmp_path=tmp_path)
+    regions = acquire_cid_nl_sample_regions(
+        raw,
+        sample=sample,
+        acquisition_source=acquisition_source,
+        regions=plan_cid_nl_mass_regions(events, settings=settings),
+        settings=settings,
+        events=events,
+        profile=TEST_PROFILE,
+    )
+    capture = assess_sample_regions(
+        regions=regions,
+        sample=sample,
+        acquisition_source=acquisition_source,
+        scopes=((fixture.method_subject, ()),),
+        processing_attempt_id=fixture.processing_attempt_id,
+        settings=settings,
+        raw=raw,
+        rt_reference_only=False,
+    )[fixture.method_subject.method_subject_id]
     original = capture.assessment_input.assessment
     assert original.method_result == "HOLD" and original.evidence_observations
     attempt = reuse_cid_nl_backfill_peak(
@@ -691,7 +721,7 @@ def test_reused_hold_peak_needs_its_own_group_window(
             query_rt_tolerance_sec=6.0,
         ),
         capture=capture,
-        source=scenario.fixture.source(scenario.fixture.sample("S1")),
+        source=acquisition_source,
     )
     assert [
         peak.integration.rt_apex_min for peak in original.candidate_peaks
@@ -704,7 +734,6 @@ def test_reused_hold_peak_needs_its_own_group_window(
             if peak.integration.rt_apex_min == pytest.approx(reused_apex, abs=0.005)
         )
         assert attempt.group_hypothesis_id == "bounded-group"
-        assert attempt.acquisition is capture.acquisition
         assert is_ms1_only_cid_nl_backfill_assessment(attempt.assessment)
         assert attempt.assessment.candidate_peaks[0].integration == (
             measured.integration

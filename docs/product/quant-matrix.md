@@ -39,14 +39,21 @@ delivery seam as if they were already final.
   Matrix projection then assigns output identities and wraps the unchanged
   value/no-write payload and selected integration in `ProductionCellDecision`.
   The Alignment TSV writers render those decisions directly; a cell `status`
-  is `detected`, `backfilled`, or the cell's no-write reason.
+  is `detected`, `backfilled`, `ms1_only`, or the cell's no-write reason.
+  `ms1_only` identifies an initial physical group member without local CID-NL.
+  It can supply an area in an established row; it does not establish the row
+  or count as direct CID-NL support.
 - Inclusion and counting consume those completed answers, not raw cells.
 
-An owner whose apex is not strictly inside its left/right bounds (the selected
-integration's when present) has `quantification_eligible` set to false. That
-flag only keeps the owner out of the RT-calibration anchors. Cell decision and
-Backfill do not read it: a group member's cell takes its value from its peak
-integration, and Backfill counts direct support by sample.
+An acquired lobe of an unresolved overlap may have its own peak position and
+local CID-NL events without a separately measured area. It may compete for a
+group, but has no integration, cannot count toward row or Backfill activation,
+and gives its selected cell the no-write reason `not_quantifiable`. It already
+occupies that sample's cell; Backfill cannot remeasure the overlap into a value.
+
+Owners without an integration or with an apex on an integration boundary do
+not train the RT calibration. Cell decisions take values from peak
+integrations, not the anchor-eligibility flag.
 
 ### Matrix publication
 
@@ -83,7 +90,7 @@ A Matrix row's m/z is its group's centre: the mean of the members' m/z,
 decided once when the group is built. Backfill searches
 that same centre, and Matrix, Review and the explanation report write it. A
 member's m/z is its peak's own mass (`peak_mz`): the apex MS1 reading for an
-inferred precursor, whose product + loss can sit 15–20 ppm from the MS1 ion,
+inferred precursor, whose product + loss can sit up to 10 ppm from the MS1 ion,
 else the XIC centre. Review XICs replay each
 observation's saved extraction mass and ppm tolerance, not its MS2 evidence key.
 

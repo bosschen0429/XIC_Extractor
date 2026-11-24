@@ -19,6 +19,7 @@ from xic_extractor.peak_detection.physical_peak_evaluation import (
 )
 from xic_extractor.peak_detection.physical_peak_models import (
     PhysicalSegment,
+    PhysicalSegmentUniverse,
     PreparedSignalResult,
 )
 
@@ -88,6 +89,7 @@ def project_elution_context(
     *,
     sample_stem: str,
     mz: float,
+    universe: PhysicalSegmentUniverse | None = None,
 ) -> SampleElutionContext | None:
     """Retain interior maxima without changing the integration universe.
 
@@ -113,7 +115,8 @@ def project_elution_context(
     _, _, left, right = peak_widths(signal, peaks)
     positions = np.arange(len(rt))
     widths = np.interp(right, positions, rt) - np.interp(left, positions, rt)
-    universe = enumerate_physical_segment_universe(prepared_result)
+    if universe is None:
+        universe = enumerate_physical_segment_universe(prepared_result)
     landmarks = tuple(
         ElutionLandmark(
             float(rt[index]),

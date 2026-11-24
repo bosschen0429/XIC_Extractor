@@ -158,6 +158,21 @@ class _GroupInputs:
         self._neighbors: tuple[np.ndarray, np.ndarray] | None | bool = False
         self.witness: tuple[str, str] | None = None
 
+    def drift_floor(self) -> float:
+        """Perfect RT agreement still pays the fixed evidence and one coefficient."""
+        floor = 1.0
+        if self.witness is not None:
+            terms = self._comparison._terms(*self.witness)
+            assert terms is not None
+            floor += (
+                terms.mass
+                + terms.composition
+                + terms.neighborhood
+                + (terms.shape or 0.0)
+                + terms.weak
+            )
+        return floor + self._comparison._coefficient_cost
+
     def pairs(self) -> _PairArrays:
         if self._pairs is None:
             self._pairs = _PairArrays.of(self._comparison, self._key)
@@ -200,11 +215,11 @@ def measured_owner_key(owner: SampleLocalMS1Owner) -> tuple[object, ...]:
     """Physical measurements decide non-equivalent ties, never display IDs."""
     return (
         owner.peak.mz,
-        owner.peak.integration.rt_apex_min,
-        owner.peak.integration.rt_left_min,
-        owner.peak.integration.rt_right_min,
-        owner.peak.integration.height_raw,
-        owner.peak.integration.area_raw_counts_seconds,
+        owner.peak.rt_apex_min,
+        owner.peak.rt_left_min,
+        owner.peak.rt_right_min,
+        owner.peak.height_raw,
+        () if (area := owner.peak.area_raw_counts_seconds) is None else (area,),
         tuple(
             sorted(
                 (
@@ -232,7 +247,7 @@ def owner_facts(
         owner = owners[owner_id]
         member = owner.cross_sample_member_subject
         sample = owner.sample_stem if member is None else member.sample_key
-        facts.append((sample, owner.peak.mz, owner.peak.integration.rt_apex_min))
+        facts.append((sample, owner.peak.mz, owner.peak.rt_apex_min))
     if len(set(facts)) != len(facts):
         raise ValueError("distinct recorded owners share sample, m/z and apex RT")
     return tuple(sorted(facts))
@@ -292,7 +307,7 @@ class MembershipComparison:
                 if coordinate is not None
             }
             if common
-            else {o.owner_id: o.peak.integration.rt_apex_min for o in owners}
+            else {o.owner_id: o.peak.rt_apex_min for o in owners}
         )
         self.rt_estimates = coordinates if common else dict.fromkeys(coordinates)
         self.rt_weights = {
@@ -308,9 +323,9 @@ class MembershipComparison:
             )
             if common
             else (
-                o.peak.integration.rt_left_min,
-                o.peak.integration.rt_apex_min,
-                o.peak.integration.rt_right_min,
+                o.peak.rt_left_min,
+                o.peak.rt_apex_min,
+                o.peak.rt_right_min,
             )
             for o in owners
         }
@@ -318,7 +333,8 @@ class MembershipComparison:
         self.quality = {}
         self.weak = set()
         for owner in owners:
-            quality = owner.peak.integration.signal_quality
+            integration = owner.peak.integration
+            quality = integration.signal_quality if integration is not None else None
             self.quality[owner.owner_id] = (
                 0.75
                 if quality is None
@@ -417,25 +433,27 @@ class MembershipComparison:
     def _prepare_pair_values(self) -> np.ndarray:
         """Materialize numeric pair evidence once a drift fit needs it.
 
-        Subsequent pair evaluations fill the same table. Uncomputed zero-model
-        costs stay NaN so the scalar path retains its original short circuit.
+        Subsequent pair evaluations fill the same table.
         """
         if self._pair_values is None:
             size = len(self.owners)
             count = size * (size - 1) // 2
             self._pair_values = np.empty((count, 6))
-            self._pair_cost_values = np.full(count, np.nan)
             for (a, b), terms in self._pair_terms.items():
                 if terms is not None:
                     self._pair_values[
                         self._pair_row_offsets[a] + self._pair_positions[b]
                     ] = terms
-            for (a, b), (cost, _) in self.pairs.items():
-                if a != b:
-                    self._pair_cost_values[
-                        self._pair_row_offsets[a] + self._pair_positions[b]
-                    ] = cost
         return self._pair_values
+
+    def _prepare_pair_costs(self) -> None:
+        """Reuse measured pairs when scoring unions; unknown pairs stay lazy."""
+        size = len(self.owners)
+        costs = np.full(size * (size - 1) // 2, np.nan)
+        for (a, b), (cost, _) in self.pairs.items():
+            if a != b:
+                costs[self._pair_row_offsets[a] + self._pair_positions[b]] = cost
+        self._pair_cost_values = costs
 
     def _terms(self, first: str, second: str) -> _PairTerms | None:
         """RT-independent pair evidence, computed once per pair."""
@@ -451,7 +469,7 @@ class MembershipComparison:
             or not within_ppm(
                 max(left.peak.mz, right.peak.mz),
                 min(left.peak.mz, right.peak.mz),
-                cfg.max_ppm,
+                cfg.precursor_mz_tolerance_ppm,
             )
             or method.identity_failure
             or (
@@ -468,7 +486,7 @@ class MembershipComparison:
                 max(left.peak.mz, right.peak.mz),
                 min(left.peak.mz, right.peak.mz),
             )
-            / cfg.max_ppm
+            / cfg.precursor_mz_tolerance_ppm
         )
         composition = 0.15 * self.rules.pair_mass_fraction(left, right, cfg)
         gap = abs(
@@ -623,22 +641,22 @@ class MembershipComparison:
             models = [
                 _GroupModel(zero.coefficients, math.inf, False) if jumps else zero
             ]
-            candidates = (
-                self._candidate_coefficients(key)
-                if math.isfinite(zero.evidence)
-                else ()
-            )
-            if candidates:
-                bound = math.inf if zero.population_gap or jumps else zero.evidence
-                for coefficients in candidates:
-                    model = self._evaluate(
-                        key, coefficients, bound=bound, inputs=inputs
-                    )
-                    if math.isfinite(model.evidence) and self._breaks_sequence(
-                        key, coefficients.sample_shift
-                    ):
-                        model = _GroupModel(coefficients, math.inf, False)
-                    models.append(model)
+            bound = math.inf if zero.population_gap or jumps else zero.evidence
+            candidates: tuple[DriftCoefficients, ...] = ()
+            if math.isfinite(zero.evidence) and inputs.drift_floor() < bound:
+                candidates = self._candidate_coefficients(key)
+            for coefficients in candidates:
+                breaks = (
+                    self._breaks_sequence(key, coefficients.sample_shift)
+                    if coefficients.sample_shift
+                    else jumps
+                )
+                if breaks:
+                    continue
+                model = self._evaluate(key, coefficients, bound=bound, inputs=inputs)
+                models.append(model)
+                if not model.population_gap and model.evidence < bound:
+                    bound = math.nextafter(model.evidence, math.inf)
             self._models[key] = tuple(models)
             self.group_costs[key] = models[0].evidence
             self.population_gaps[key] = models[0].population_gap
@@ -1164,6 +1182,8 @@ class MembershipComparison:
 
         for left, right in combinations(partition, 2):
             propose(left, right)
+        if moves and len(partition) > 2 and self._pair_cost_values is None:
+            self._prepare_pair_costs()
         while moves:
             _, _, left, right = heapq.heappop(moves)
             if left not in active or right not in active:

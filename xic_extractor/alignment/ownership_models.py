@@ -17,6 +17,9 @@ if TYPE_CHECKING:
 OwnerAssignmentStatus = Literal["primary", "supporting", "ambiguous", "unresolved"]
 
 
+MS1_OBSERVATION_ASSIGNMENT = "ms1_observation_hypothesis"
+
+
 @dataclass(frozen=True)
 class IdentityEvent:
     candidate_id: str
@@ -29,6 +32,7 @@ class IdentityEvent:
     seed_rt: float
     evidence_score: int
     seed_event_count: int
+    source_scans: tuple[tuple[int, float], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -47,16 +51,18 @@ class SampleLocalMS1Owner:
     peak_shape: LocalPeakShape | None = None
 
     def __post_init__(self) -> None:
-        integration = self.peak.integration
-        if not (
-            integration.rt_left_min < integration.rt_apex_min < integration.rt_right_min
+        peak = self.peak
+        if peak.integration is None or not (
+            peak.rt_left_min < peak.rt_apex_min < peak.rt_right_min
         ):
             object.__setattr__(self, "quantification_eligible", False)
             if not self.quantification_exclusion_reason:
                 object.__setattr__(
                     self,
                     "quantification_exclusion_reason",
-                    "owner_apex_on_integration_boundary",
+                    "unresolved_component_area"
+                    if peak.integration is None
+                    else "owner_apex_on_integration_boundary",
                 )
 
     @property

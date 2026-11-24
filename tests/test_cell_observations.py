@@ -183,19 +183,6 @@ def test_predecessor_cells_keep_all_supports_with_deterministic_outside_witness(
             original_contents = contents
         else:
             assert contents == original_contents
-    third_group = next(
-        cell.group_context.group
-        for cell in cells
-        if cell.sample_key == fixture.sample("Third").sample_name
-        and cell.peak_observation is not None
-    )
-    with pytest.raises(ValueError, match="one exact sibling SUPPORT context"):
-        compose_cid_nl_predecessor_cells(
-            groups=(third_group,),
-            sample_assessments=tuple(assessments),
-            alignment_config=CID_NL_ALIGNMENT_CONFIG,
-            rt_frame=SampleRtFrame(),
-        )
 
 
 def _outside_population_handoff(tmp_path: Path):

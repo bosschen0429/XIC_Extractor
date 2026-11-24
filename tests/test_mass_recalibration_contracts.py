@@ -75,28 +75,6 @@ def test_receipt_roundtrip_preserves_each_raw_result_and_legacy_none(tmp_path, o
         assert legacy.mass_recalibration_result.outcome == "none"
 
 
-def test_fact_cache_policy_namespace_separates_numeric_facts(tmp_path):
-    from xic_extractor.untargeted_execution.acquisition_cache import _FactCache
-
-    legacy = _FactCache(tmp_path, "same-source")
-    legacy.write("xic", b"same-query", b"vendor masses")
-    probe = _FactCache(tmp_path, "same-source", MassRecalibration.EASY_IC_PROBE)
-    assert probe.read("xic", b"same-query") is None
-    probe.write("xic", b"same-query", b"corrected masses")
-    assert (
-        _FactCache(tmp_path, "same-source", MassRecalibration.NONE).read(
-            "xic", b"same-query"
-        )
-        == b"vendor masses"
-    )
-    assert probe.read("xic", b"same-query") == b"corrected masses"
-    restored = _FactCache(tmp_path, "same-source", MassRecalibration.EASY_IC_RESTORE)
-    assert restored.read("xic", b"same-query") is None
-    restored.write("xic", b"same-query", b"baseline masses")
-    assert probe.read("xic", b"same-query") == b"corrected masses"
-    assert restored.read("xic", b"same-query") == b"baseline masses"
-
-
 def test_alignment_metadata_keeps_two_samples_probe_results(tmp_path, monkeypatch):
     import csv
 

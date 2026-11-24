@@ -33,10 +33,14 @@ from xic_extractor.alignment.cross_sample.peak_groups import (
 )
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessment,
+    cid_nl_support_requires_supplement,
 )
 from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_extractor.peak_detection.observations import PeakObservation
-from xic_extractor.peak_detection.peak_hypothesis_identity import MeasuredPeakHypothesis
+from xic_extractor.peak_detection.peak_hypothesis_identity import (
+    HYPOTHESIS_METHOD_MS1_OBSERVATION,
+    MeasuredPeakHypothesis,
+)
 from xic_extractor.sample_metadata import SampleMetadata
 
 TerminalObservationVariant: TypeAlias = Literal[
@@ -108,6 +112,10 @@ class FinalGroupCellObservation:
             cell.peak_observation
             for cell in self.effective_cells
             if cell.peak_observation is not None
+            and (
+                cell.peak_hypothesis is None
+                or cell.peak_hypothesis.method != HYPOTHESIS_METHOD_MS1_OBSERVATION
+            )
         )
 
     @property
@@ -116,6 +124,7 @@ class FinalGroupCellObservation:
             cell.peak_hypothesis
             for cell in self.effective_cells
             if cell.peak_hypothesis is not None
+            and cell.peak_hypothesis.method != HYPOTHESIS_METHOD_MS1_OBSERVATION
         )
 
     @property
@@ -124,11 +133,54 @@ class FinalGroupCellObservation:
         return (
             *(hypothesis.peak for hypothesis in self.direct_hypotheses),
             *self.ms1_only_backfill_observations,
+            *self.ms1_only_group_observations,
         )
 
     @property
     def integrations(self) -> tuple[IntegrationResult, ...]:
-        return tuple(peak.integration for peak in self.value_peaks)
+        return tuple(
+            result
+            for peak in self.value_peaks
+            if (result := peak.integration) is not None
+        )
+
+    @property
+    def ms1_only_group_observations(self) -> tuple[PeakObservation, ...]:
+        if "ms1_only_group_observation" not in self.evidence_states:
+            return ()
+        return tuple(
+            cell.peak_hypothesis.peak
+            for cell in self.effective_cells
+            if cell.peak_hypothesis is not None
+            and cell.peak_hypothesis.method == HYPOTHESIS_METHOD_MS1_OBSERVATION
+        )
+
+    @property
+    def ms1_only_group_has_local_method_relation(self) -> bool:
+        peaks = frozenset(self.ms1_only_group_observations)
+        return bool(peaks) and any(
+            any(
+                ref.peak_observation in peaks
+                for ref in assessment.individual_support_refs
+            )
+            or any(
+                peaks.intersection(ref.matched_candidates)
+                for ref in assessment.set_relation_refs
+            )
+            for assessment in self.method_assessments
+        )
+
+    @property
+    def direct_observation_requires_supplement(self) -> bool:
+        return any(
+            cell.peak_observation is not None
+            and cell.peak_hypothesis is not None
+            and cell.peak_hypothesis.method != HYPOTHESIS_METHOD_MS1_OBSERVATION
+            and cid_nl_support_requires_supplement(
+                cell.method_assessment, cell.peak_observation
+            )
+            for cell in self.effective_cells
+        )
 
     @property
     def ms1_only_backfill_observations(self) -> tuple[PeakObservation, ...]:
@@ -354,6 +406,16 @@ def _derive_lane_evidence_state(
         raise CellObservationContractError(
             "CrossSample successor dropped the exact source member evidence"
         )
+    hypothesis = source_cell.peak_hypothesis
+    if (
+        hypothesis is not None
+        and hypothesis.method == HYPOTHESIS_METHOD_MS1_OBSERVATION
+    ):
+        if final_member is None or final_member.subject_id != hypothesis.hypothesis_id:
+            raise CellObservationContractError(
+                "MS1-only group cell lost its exact member"
+            )
+        return "ms1_only_group_observation"
     if source_cell.unassigned_support:
         if final_member is not None:
             raise CellObservationContractError(

@@ -7,7 +7,11 @@ import math
 from xic_extractor.alignment.cross_sample.peak_groups import (
     group_member_subject_from_peak_hypothesis,
 )
-from xic_extractor.alignment.ownership_models import IdentityEvent, SampleLocalMS1Owner
+from xic_extractor.alignment.ownership_models import (
+    MS1_OBSERVATION_ASSIGNMENT,
+    IdentityEvent,
+    SampleLocalMS1Owner,
+)
 from xic_extractor.peak_detection.cid_nl_chromatographic_support import (
     CidNlChromatographicSupport,
     compose_cid_nl_chromatographic_support,
@@ -123,7 +127,6 @@ def owner_from_cid_nl_assessment_support(
     aggregate_observed_loss = math.fsum(
         relation.precursor_mz - relation.observed_product_mz for relation in measured
     ) / len(measured)
-    integration = observation.integration
     neutral_loss_tag = (
         assessment.method_subject.method_subject_id
         if assessment.method_subject.composition
@@ -137,9 +140,17 @@ def owner_from_cid_nl_assessment_support(
         precursor_mz=aggregate_precursor_mz,
         product_mz=aggregate_product_mz,
         observed_neutral_loss_da=aggregate_observed_loss,
-        seed_rt=integration.rt_apex_min,
+        seed_rt=observation.rt_apex_min,
         evidence_score=100,
         seed_event_count=support.strict_nl_scan_count,
+        source_scans=tuple(
+            sorted(
+                {
+                    (relation.dda_scan_number, relation.scan_rt_min)
+                    for relation in measured
+                }
+            )
+        ),
     )
     return SampleLocalMS1Owner(
         owner_id=hypothesis.hypothesis_id,
@@ -155,58 +166,7 @@ def owner_from_cid_nl_assessment_support(
         peak_shape=prepare_local_peak_shape(
             observation.rt,
             observation.intensity,
-            apex_rt_min=integration.rt_apex_min,
-        ),
-        cross_sample_member_subject=group_member_subject_from_peak_hypothesis(
-            sample=sample,
-            hypothesis=hypothesis,
-        ),
-    )
-
-
-def owner_from_cid_nl_assessment_observation(
-    *,
-    sample: SampleMetadata,
-    assessment: CidNlMethodAssessment,
-    hypothesis: MeasuredPeakHypothesis,
-) -> SampleLocalMS1Owner:
-    """Project one non-training physical observation into provisional grouping."""
-
-    if hypothesis.method != HYPOTHESIS_METHOD_MS1_OBSERVATION:
-        raise HypothesisOwnerAdapterError(
-            "observation projection requires an MS1-only MeasuredPeakHypothesis"
-        )
-    observation = hypothesis.peak
-    integration = observation.integration
-    neutral_loss = assessment.method_subject.neutral_loss_da
-    event = (
-        None
-        if neutral_loss is None
-        else IdentityEvent(
-            candidate_id=hypothesis.hypothesis_id,
-            sample_stem=sample.raw_stem,
-            raw_file=observation.generation_provenance.acquisition_source_id,
-            neutral_loss_tag=(f"{assessment.method_id}:{neutral_loss:.12g}"),
-            precursor_mz=observation.mz,
-            product_mz=observation.mz - neutral_loss,
-            observed_neutral_loss_da=neutral_loss,
-            seed_rt=integration.rt_apex_min,
-            evidence_score=100,
-            seed_event_count=1,
-        )
-    )
-    return SampleLocalMS1Owner(
-        owner_id=hypothesis.hypothesis_id,
-        sample_stem=sample.raw_stem,
-        raw_file=observation.generation_provenance.acquisition_source_id,
-        peak=observation,
-        primary_identity_event=event,
-        supporting_events=(),
-        assignment_reason="cid_nl_method_assessment_observation_only",
-        peak_shape=prepare_local_peak_shape(
-            observation.rt,
-            observation.intensity,
-            apex_rt_min=integration.rt_apex_min,
+            apex_rt_min=observation.rt_apex_min,
         ),
         cross_sample_member_subject=group_member_subject_from_peak_hypothesis(
             sample=sample,
@@ -227,7 +187,6 @@ def owner_from_ms1_observation_hypothesis(
             "MS1 owner projection requires an MS1 observation MeasuredPeakHypothesis"
         )
     observation = hypothesis.peak
-    integration = observation.integration
     return SampleLocalMS1Owner(
         owner_id=hypothesis.hypothesis_id,
         sample_stem=sample.raw_stem,
@@ -235,11 +194,11 @@ def owner_from_ms1_observation_hypothesis(
         peak=observation,
         primary_identity_event=None,
         supporting_events=(),
-        assignment_reason="ms1_observation_hypothesis",
+        assignment_reason=MS1_OBSERVATION_ASSIGNMENT,
         peak_shape=prepare_local_peak_shape(
             observation.rt,
             observation.intensity,
-            apex_rt_min=integration.rt_apex_min,
+            apex_rt_min=observation.rt_apex_min,
         ),
         cross_sample_member_subject=group_member_subject_from_peak_hypothesis(
             sample=sample,
@@ -284,7 +243,6 @@ __all__ = [
     "HypothesisOwnerAdapterError",
     "compose_cid_nl_peak_hypotheses_from_assessment",
     "compose_peak_hypotheses_from_assessment_universe",
-    "owner_from_cid_nl_assessment_observation",
     "owner_from_cid_nl_assessment_support",
     "owner_from_ms1_observation_hypothesis",
 ]

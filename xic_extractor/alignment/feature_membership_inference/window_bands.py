@@ -13,7 +13,10 @@ from typing import cast
 
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.grouping_evidence import peak_correspondence_conflict
-from xic_extractor.alignment.grouping_rules import GroupingRules
+from xic_extractor.alignment.grouping_rules import (
+    GroupingRules,
+    compatible_method_members,
+)
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 from xic_extractor.alignment.peak_trajectories import PeakTrajectories
 from xic_extractor.alignment.rt_frame import RtFrame
@@ -96,7 +99,7 @@ class _NearestInjectionMedians:
         return statistics.median(
             self.corrected_rt[owner.owner_id]
             if self.corrected_rt is not None
-            else owner.peak.integration.rt_apex_min
+            else owner.peak.rt_apex_min
             for owner in nearest
         )
 
@@ -166,7 +169,7 @@ def _join_window_bands(
             + 0.15
             * min(
                 absolute_ppm_error(max(first[1], second[1]), min(first[1], second[1]))
-                / config.max_ppm,
+                / config.precursor_mz_tolerance_ppm,
                 2.0,
             )
             + 0.15 * min(rules.mass_fraction(first[2], second[2], config), 2.0)
@@ -225,6 +228,8 @@ def _join_window_bands(
         del links[left][right]
         del links[right][left]
         left_members, right_members = members[left], members[right]
+        if not compatible_method_members((*left_members, *right_members), rules):
+            continue
         if not trajectories.permits_membership(
             owner.owner_id for owner in (*left_members, *right_members)
         ):
@@ -340,10 +345,14 @@ def _bridge_separated_window_bands(
                     owner.owner_id for owner in (*bands[left], *bands[right])
                 ):
                     continue
+                if not compatible_method_members((*bands[left], *bands[right]), rules):
+                    continue
                 counts["feature_summary_comparisons"] += 1
                 left_mz, right_mz = mz_centers[left], mz_centers[right]
                 if not within_ppm(
-                    max(left_mz, right_mz), min(left_mz, right_mz), config.max_ppm
+                    max(left_mz, right_mz),
+                    min(left_mz, right_mz),
+                    config.precursor_mz_tolerance_ppm,
                 ):
                     continue
                 rt_delta_sec = abs(rt_centers[left] - rt_centers[right]) * 60.0
@@ -365,7 +374,8 @@ def _bridge_separated_window_bands(
                 ):
                     continue
                 precursor_fraction = (
-                    absolute_ppm_error(left_mz, right_mz) / config.max_ppm
+                    absolute_ppm_error(left_mz, right_mz)
+                    / config.precursor_mz_tolerance_ppm
                 )
                 method_fraction = rules.mass_fraction(
                     method_centers[left], method_centers[right], config
@@ -419,11 +429,13 @@ def _window_band_candidate(
         (owner.owner_id, *(item.owner_id for item in band))
     ):
         return None
+    if not compatible_method_members((owner, *band), rules):
+        return None
     if not any(
         within_ppm(
             max(owner.peak.mz, item.peak.mz),
             min(owner.peak.mz, item.peak.mz),
-            config.max_ppm,
+            config.precursor_mz_tolerance_ppm,
         )
         for item in band
     ):
@@ -460,7 +472,8 @@ def _window_band_candidate(
         return None
     precursor_median = statistics.median(item.peak.mz for item in band)
     precursor_fraction = (
-        absolute_ppm_error(owner.peak.mz, precursor_median) / config.max_ppm
+        absolute_ppm_error(owner.peak.mz, precursor_median)
+        / config.precursor_mz_tolerance_ppm
     )
     method_fraction = rules.mass_fraction(
         rules.mass_center((owner,)), rules.mass_center(band), config
@@ -545,6 +558,10 @@ def _assign_window_singletons(
         for owner in by_sample[sample]:
             remaining = []
             for candidate in candidates_by_owner[owner.owner_id]:
+                if not compatible_method_members(
+                    (owner, *members[candidate.feature_key]), rules
+                ):
+                    continue
                 conflict = peak_correspondence_conflict(
                     (owner,),
                     members[candidate.feature_key],

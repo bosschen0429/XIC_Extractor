@@ -113,12 +113,12 @@ def test_channels_never_chain_masses_beyond_the_tolerance(order) -> None:
 def test_coeluting_ions_within_the_tolerance_share_one_channel() -> None:
     seeds = (
         _seed(scan_number=10, rt=8.0, precursor_mz=500.0000, product_intensity=5e3),
-        _seed(scan_number=11, rt=8.0, precursor_mz=500.0080, product_intensity=9e3),
+        _seed(scan_number=11, rt=8.0, precursor_mz=500.0040, product_intensity=9e3),
     )
 
     (channel,) = build_discovery_ions(seeds, settings=_settings())
 
-    assert channel.mz == 500.0080
+    assert channel.mz == 500.0040
 
 
 def test_an_event_on_a_shared_valley_attaches_to_the_earlier_peak() -> None:

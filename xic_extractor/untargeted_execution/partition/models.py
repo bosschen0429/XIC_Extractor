@@ -89,8 +89,6 @@ class UntargetedPartitionJob:
     acquisition_source_expectation: AcquisitionSourceExpectation = field(compare=False)
     subject_partition: UntargetedCidNlMethodSubjectBatch | None = None
     support_candidates: tuple[DiscoveryPeak, ...] = ()
-    rt_reference_only: bool = False
-    acquisition_cache_dir: Path | None = field(default=None, compare=False)
     prepared_mass_recalibration: PreparedRawMassRecalibration | None = field(
         default=None, compare=False
     )
@@ -142,9 +140,7 @@ def build_sample_jobs(
     acquisition_source_expectation: AcquisitionSourceExpectation,
     subject_partition: UntargetedCidNlMethodSubjectBatch | None = None,
     support_candidates: tuple[DiscoveryPeak, ...] = (),
-    acquisition_cache_dir: Path | None = None,
     prepared_mass_recalibration: PreparedRawMassRecalibration | None = None,
-    rt_reference_only: bool = False,
 ) -> tuple[UntargetedPartitionJob, ...]:
     """Bind each subject of one sample to that sample's shared inputs."""
 
@@ -164,10 +160,8 @@ def build_sample_jobs(
         work_unit_key=first_key,
         subject_partition=subject_partition,
         support_candidates=support_candidates,
-        rt_reference_only=rt_reference_only,
         signal_processing_profile=signal_processing_profile,
         acquisition_source_expectation=acquisition_source_expectation,
-        acquisition_cache_dir=acquisition_cache_dir,
         prepared_mass_recalibration=prepared_mass_recalibration,
     )
     jobs = [first]
@@ -278,6 +272,7 @@ def _project_completed_backfill(
         or not receipt.search_completed
         or not receipt.acquisition_supported
         or backfill.backfill_input is not None
+        or backfill.acquisition is None
     ):
         raise UntargetedPartitionError("backfill is not a completed empty epoch")
     query_rt = center if backfill.query_rt is None else backfill.query_rt
@@ -315,6 +310,7 @@ class UntargetedPartitionResult:
     sample_results: tuple[UntargetedSampleResult, ...]
     failure: Exception | None = None
     prepared_grouping: CidNlGrouping | None = None
+    reference_results: tuple[UntargetedInitialSampleResult, ...] = ()
 
     @property
     def succeeded(self) -> bool:

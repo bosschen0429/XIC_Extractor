@@ -398,6 +398,17 @@ of profiled time there. One window timed 31 and 40 s in two runs.
 Reopen when membership search, pattern matching or window density changes.
 Artifacts: `output/perf_probe/run83/` in the `feat/replay-rt-calibration` worktree.
 
+**85-injection window replay (2026-11-24, `diagnostic_only`).** On the
+frozen m/z 268.1184 workset (286 owners, six rows), rejecting losing drift
+models before scoring and sharing measured pair costs across merges took
+24.50 to 18.06 s (three interleaved runs per version). The 72-owner 272.1358
+control exposed a dependency: skipping a drift fit also disabled bulk reads
+of already computed pair costs. With the two separated it took 0.63 to 0.48 s.
+Seven windows from the 85-injection run and the earlier 8-injection 474.2933
+window retained the same memberships and decision records. Not a cohort
+timing or evidence that the selected rows are chemically correct.
+Artifacts: `output/grouping-cost/` in the `perf/1270-grouping-cost` worktree.
+
 ### Accepted Alignment optimizations
 
 All `exact_safe` with byte-identical public outputs; local gains, not cohort

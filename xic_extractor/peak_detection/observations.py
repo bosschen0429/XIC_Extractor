@@ -18,6 +18,7 @@ from xic_extractor.configuration.signal_processing_profile import (
 from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_extractor.peak_detection.physical_peak_models import (
     PhysicalPeakEvaluation,
+    RawPeakComponent,
 )
 from xic_extractor.peak_detection.traces import Trace
 from xic_extractor.sample_metadata import SampleMetadata
@@ -43,7 +44,7 @@ class PeakObservationGenerationProvenance:
 
 @dataclass(frozen=True, slots=True)
 class PeakObservation:
-    """One sample-local selected MS1 signal, its integration, and its context.
+    """One sample-local MS1 signal, with an area only if it was resolved.
 
     Equality uses the measured signal only.  The generation provenance, source
     trace and evaluation are the context that produced it; the source trace is
@@ -55,7 +56,7 @@ class PeakObservation:
     mz: float
     rt: tuple[float, ...]
     intensity: tuple[float, ...]
-    integration: IntegrationResult
+    integration: IntegrationResult | None
     generation_provenance: PeakObservationGenerationProvenance = field(compare=False)
     source_trace: Trace = field(compare=False)
     physical_evaluation: PhysicalPeakEvaluation | None = field(
@@ -66,6 +67,7 @@ class PeakObservation:
         default=None, compare=False
     )
     retained_overlap_review: bool = field(default=False, compare=False)
+    localized_apex_rt_min: float | None = None
 
     def __post_init__(self) -> None:
         mz = _finite_float(self.mz, field="mz")
@@ -81,7 +83,9 @@ class PeakObservation:
             raise PeakObservationContractError(
                 "selected rt values must be strictly increasing"
             )
-        if self.integration.raw_scan_indices != tuple(range(len(rt))):
+        if self.integration is not None and self.integration.raw_scan_indices != tuple(
+            range(len(rt))
+        ):
             raise PeakObservationContractError(
                 "content integration indices must address the selected subtrace"
             )
@@ -93,6 +97,8 @@ class PeakObservation:
     @property
     def requires_overlap_review(self) -> bool:
         """Whether this peak was measured on an unresolved shoulder or overlap."""
+        if self.integration is None:
+            return True
         if self.physical_evaluation is not None:
             return self.physical_evaluation.requires_overlap_review
         return self.retained_overlap_review
@@ -101,9 +107,46 @@ class PeakObservation:
     def physical_identity(self) -> PeakObservation:
         """This peak without advisory measurement quality, for in-process joins."""
 
-        if self.integration.signal_quality is None:
+        if self.integration is None or self.integration.signal_quality is None:
             return self
         return replace(self, integration=replace(self.integration, signal_quality=None))
+
+    @property
+    def rt_apex_min(self) -> float:
+        if self.integration is not None:
+            return self.integration.rt_apex_min
+        assert self.localized_apex_rt_min is not None
+        return self.localized_apex_rt_min
+
+    @property
+    def rt_left_min(self) -> float:
+        return (
+            self.integration.rt_left_min if self.integration is not None else self.rt[0]
+        )
+
+    @property
+    def rt_right_min(self) -> float:
+        return (
+            self.integration.rt_right_min
+            if self.integration is not None
+            else self.rt[-1]
+        )
+
+    @property
+    def height_raw(self) -> float:
+        return (
+            self.integration.height_raw
+            if self.integration is not None
+            else self.intensity[self.rt.index(self.rt_apex_min)]
+        )
+
+    @property
+    def area_raw_counts_seconds(self) -> float | None:
+        return (
+            self.integration.area_raw_counts_seconds
+            if self.integration is not None
+            else None
+        )
 
     @property
     def physical_peak_key(self) -> str:
@@ -116,8 +159,8 @@ class PeakObservation:
                 repr(self.rt[0]),
                 repr(self.rt[-1]),
                 str(len(self.rt)),
-                repr(self.integration.rt_apex_min),
-                repr(self.integration.height_raw),
+                repr(self.rt_apex_min),
+                repr(self.height_raw),
             )
         )
 
@@ -127,7 +170,7 @@ class PeakObservation:
     ) -> tuple[float, float, tuple[float, ...], tuple[float, ...]]:
         """Total order over distinct selected signals from raw measured values."""
 
-        return (self.integration.rt_apex_min, self.mz, self.rt, self.intensity)
+        return (self.rt_apex_min, self.mz, self.rt, self.intensity)
 
 
 @dataclass(frozen=True, slots=True)
@@ -154,6 +197,7 @@ def mint_physical_peak_observations(
     capture_stage: str = "initial_capture",
     trace_observation: PeakObservation | None = None,
     acquired_trace_provenance: PeakObservationGenerationProvenance | None = None,
+    measured_mz: tuple[float, ...] | None = None,
 ) -> tuple[PeakObservation, ...]:
     """Project retained physical-owner answers for one trace without re-solving it.
 
@@ -170,11 +214,13 @@ def mint_physical_peak_observations(
             proposal_sources=("canonical_physical_segment",),
         )
     observations: list[PeakObservation] = []
-    for evaluation in evaluations:
+    masses = (trace.mz,) * len(evaluations) if measured_mz is None else measured_mz
+    for evaluation, mz in zip(evaluations, masses, strict=True):
         integration = physical_peak_observation_integration(evaluation)
         observation = _project_peak_observation(
             sample_key=sample.sample_name,
             trace=trace,
+            mz=mz,
             integration=integration,
             selected_indices=integration.raw_scan_indices,
             resolver_mode=resolver_mode,
@@ -193,7 +239,8 @@ def _project_peak_observation(
     *,
     sample_key: str,
     trace: Trace,
-    integration: IntegrationResult,
+    mz: float,
+    integration: IntegrationResult | None,
     selected_indices: tuple[int, ...],
     resolver_mode: str,
     proposal_sources: tuple[str, ...],
@@ -201,6 +248,7 @@ def _project_peak_observation(
     physical_evaluation: PhysicalPeakEvaluation | None = None,
     signal_processing_profile: SignalProcessingProfile | None = None,
     capture_stage: str = "initial_capture",
+    localized_apex_rt_min: float | None = None,
 ) -> PeakObservation:
     """Project signals and integration already validated by their input owner."""
     selected_rt = tuple(
@@ -211,9 +259,10 @@ def _project_peak_observation(
         _finite_float(float(trace.intensity[index]), field="selected_intensity")
         for index in selected_indices
     )
-    normalized_integration = replace(
-        integration,
-        raw_scan_indices=tuple(range(len(selected_indices))),
+    normalized_integration = (
+        replace(integration, raw_scan_indices=tuple(range(len(selected_indices))))
+        if integration is not None
+        else None
     )
     provenance = (
         replace(
@@ -232,7 +281,7 @@ def _project_peak_observation(
     )
     return _owner_minted_peak_observation(
         sample_key=sample_key,
-        mz=float(trace.mz),
+        mz=float(mz),
         rt=selected_rt,
         intensity=selected_intensity,
         integration=normalized_integration,
@@ -241,6 +290,30 @@ def _project_peak_observation(
         physical_evaluation=physical_evaluation,
         signal_processing_profile=signal_processing_profile,
         capture_stage=capture_stage,
+        localized_apex_rt_min=localized_apex_rt_min,
+    )
+
+
+def mint_localized_peak_observation(
+    *,
+    sample: SampleMetadata,
+    trace: Trace,
+    component: RawPeakComponent,
+    measured_mz: float,
+    signal_processing_profile: SignalProcessingProfile,
+    resolver_mode: str,
+) -> PeakObservation:
+    """Project a localized lobe without issuing an integration result."""
+    return _project_peak_observation(
+        sample_key=sample.sample_name,
+        trace=trace,
+        mz=measured_mz,
+        integration=None,
+        selected_indices=tuple(range(component.start_index, component.end_index)),
+        resolver_mode=resolver_mode,
+        proposal_sources=("unresolved_overlap_lobe",),
+        signal_processing_profile=signal_processing_profile,
+        localized_apex_rt_min=float(trace.rt[component.apex_index]),
     )
 
 
@@ -270,12 +343,13 @@ def _owner_minted_peak_observation(
     mz: float,
     rt: tuple[float, ...],
     intensity: tuple[float, ...],
-    integration: IntegrationResult,
+    integration: IntegrationResult | None,
     generation_provenance: PeakObservationGenerationProvenance,
     source_trace: Trace,
     physical_evaluation: PhysicalPeakEvaluation | None,
     signal_processing_profile: SignalProcessingProfile | None,
     capture_stage: str,
+    localized_apex_rt_min: float | None,
 ) -> PeakObservation:
     """Issue an observation from values normalized by the observation owner once."""
 
@@ -285,6 +359,7 @@ def _owner_minted_peak_observation(
     object.__setattr__(observation, "rt", rt)
     object.__setattr__(observation, "intensity", intensity)
     object.__setattr__(observation, "integration", integration)
+    object.__setattr__(observation, "localized_apex_rt_min", localized_apex_rt_min)
     object.__setattr__(observation, "generation_provenance", generation_provenance)
     object.__setattr__(observation, "source_trace", source_trace)
     object.__setattr__(observation, "physical_evaluation", physical_evaluation)
@@ -297,10 +372,12 @@ def _owner_minted_peak_observation(
 
 
 def _validate_integration(
-    integration: IntegrationResult,
+    integration: IntegrationResult | None,
     *,
     selected_rt: tuple[float, ...],
 ) -> None:
+    if integration is None:
+        return
     if not (
         integration.rt_left_min <= integration.rt_apex_min <= integration.rt_right_min
     ):
@@ -365,13 +442,11 @@ def index_physical_peaks(
 def same_selected_peak(left: PeakObservation, right: PeakObservation) -> bool:
     """Whether two observations selected the same integrated MS1 peak."""
 
-    a = left.integration
-    b = right.integration
     return (
-        a.rt_apex_min == b.rt_apex_min
-        and a.rt_left_min == b.rt_left_min
-        and a.rt_right_min == b.rt_right_min
-        and a.height_raw == b.height_raw
+        left.rt_apex_min == right.rt_apex_min
+        and left.rt_left_min == right.rt_left_min
+        and left.rt_right_min == right.rt_right_min
+        and left.height_raw == right.height_raw
     )
 
 

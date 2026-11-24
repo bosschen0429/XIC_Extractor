@@ -102,8 +102,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         execution = UntargetedExecutionPolicy(
             profile=execution_profile,
-            retain_acquisition_cache=args.retain_acquisition_cache,
-            acquisition_cache_dir=args.acquisition_cache_dir,
             max_partition_jobs=args.max_partition_jobs,
         )
         validate_retained_processing_profile(signal_processing_profile)
@@ -659,24 +657,6 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         help="Save finalized Matrix inputs and, for multiple batches, the frozen join.",
     )
     parser.add_argument("--emit-alignment-cells", action="store_true")
-    parser.add_argument(
-        "--retain-acquisition-cache",
-        action="store_true",
-        help=(
-            "keep .cid_nl_acquisition_cache after a successful run so a repeat "
-            "run skips rereading the RAW files; a failed attempt keeps it "
-            "either way"
-        ),
-    )
-    parser.add_argument(
-        "--acquisition-cache-dir",
-        type=Path,
-        help=(
-            "keep the RAW acquisition cache in this directory instead of the "
-            "output directory; runs share it and it is never removed, so a "
-            "repeat run into a new output directory skips rereading the RAW files"
-        ),
-    )
     parser.add_argument(
         "--emit-alignment-explanation",
         action="store_true",

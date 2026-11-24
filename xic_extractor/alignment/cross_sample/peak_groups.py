@@ -146,11 +146,18 @@ def construct_cross_sample_peak_group_hypotheses(
                 "known identity has conflicting sample observations; "
                 "selection is unresolved and identity cannot be split"
             )
+        activation_support = tuple(
+            owner for owner in group if rules.establishes_group(owner)
+        )
         hypotheses.append(
             _hypothesis_from_owner_group(
                 group,
                 disposition=(
-                    "unresolved" if basis.disposition == "undecided" else None
+                    "unresolved"
+                    if basis.disposition == "undecided"
+                    else "provisional"
+                    if not _settled_members(activation_support)
+                    else None
                 ),
                 evidence=f"owner_feature_inference;{basis.disposition};{basis.reason}",
                 inference_basis=basis,
@@ -162,6 +169,16 @@ def construct_cross_sample_peak_group_hypotheses(
             )
         )
     return tuple(hypotheses)
+
+
+def ungrouped_peak_group_hypotheses(
+    owners: Sequence[SampleLocalMS1Owner],
+) -> tuple[CrossSamplePeakGroupHypothesis, ...]:
+    """One group per owner, for a population whose membership nobody reads."""
+    return tuple(
+        _hypothesis_from_owner_group((owner,), disposition=None, evidence="ungrouped")
+        for owner in owners
+    )
 
 
 def _hypothesis_from_owner_group(
@@ -184,7 +201,7 @@ def _hypothesis_from_owner_group(
     if center is None:
         center = (
             sum(owner.peak.mz for owner in group) / len(group),
-            sum(owner.peak.integration.rt_apex_min for owner in group) / len(group),
+            sum(owner.peak.rt_apex_min for owner in group) / len(group),
         )
     events = tuple(
         owner.primary_identity_event
@@ -199,22 +216,26 @@ def _hypothesis_from_owner_group(
         if not events
         else sum(event.observed_neutral_loss_da for event in events) / len(events)
     )
-    settled = len(members) >= 2 and not all(
-        owner.peak.requires_overlap_review for owner in group
-    )
+    settled = _settled_members(group)
     return CrossSamplePeakGroupHypothesis(
         member_subjects=members,
         disposition=disposition or ("established" if settled else "provisional"),
         owners=group,
         group_center_mz=center[0],
         group_center_rt=center[1],
-        neutral_loss_tag=group[0].neutral_loss_tag,
+        neutral_loss_tag=events[0].neutral_loss_tag if events else "",
         group_product_mz=center_product_mz,
         group_observed_neutral_loss_da=center_loss,
         has_anchor=True,
         evidence=evidence,
         inference_basis=inference_basis,
         inference_decisions=inference_decisions,
+    )
+
+
+def _settled_members(group: Sequence[SampleLocalMS1Owner]) -> bool:
+    return len(group) >= 2 and not all(
+        owner.peak.requires_overlap_review for owner in group
     )
 
 

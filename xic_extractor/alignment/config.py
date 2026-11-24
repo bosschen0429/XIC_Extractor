@@ -4,13 +4,25 @@ import math
 from dataclasses import dataclass
 from typing import Literal
 
+from xic_extractor.configuration.cid_nl_profile import DEFAULT_CID_NL_MASS_POLICY
+
 
 @dataclass(frozen=True)
 class AlignmentConfig:
-    preferred_ppm: float = 20.0
-    max_ppm: float = 50.0
+    """Correspondence settings; mass tolerances are the CID-NL mass policy's.
+
+    A bound CID-NL recipe copies its Discovery mass tolerances here, so one
+    setting decides both which events belong to an ion and which peaks one row
+    may hold.
+    """
+
+    precursor_mz_tolerance_ppm: float = (
+        DEFAULT_CID_NL_MASS_POLICY.precursor_mz_tolerance_ppm
+    )
     preferred_rt_sec: float = 60.0
-    product_mz_tolerance_ppm: float = 20.0
+    product_mz_tolerance_ppm: float = (
+        DEFAULT_CID_NL_MASS_POLICY.product_mz_tolerance_ppm
+    )
     min_peak_shape_similarity: float = 0.80
     anchor_min_evidence_score: int = 60
     anchor_min_seed_events: int = 2
@@ -22,9 +34,7 @@ class AlignmentConfig:
     def __post_init__(self) -> None:
         if type(self.backfill_enabled) is not bool:
             raise ValueError("backfill_enabled must be a boolean")
-        _require_positive("preferred_ppm", self.preferred_ppm)
-        _require_positive("max_ppm", self.max_ppm)
-        _require_at_most("preferred_ppm", self.preferred_ppm, "max_ppm", self.max_ppm)
+        _require_positive("precursor_mz_tolerance_ppm", self.precursor_mz_tolerance_ppm)
         _require_positive("preferred_rt_sec", self.preferred_rt_sec)
         _require_positive("product_mz_tolerance_ppm", self.product_mz_tolerance_ppm)
         _require_numeric_range(
@@ -82,13 +92,3 @@ def _require_numeric_range(
         raise ValueError(
             f"{name} must be finite numeric between {minimum} and {maximum}",
         )
-
-
-def _require_at_most(
-    preferred_name: str,
-    preferred_value: float,
-    max_name: str,
-    max_value: float,
-) -> None:
-    if preferred_value > max_value:
-        raise ValueError(f"{preferred_name} must be <= {max_name}")

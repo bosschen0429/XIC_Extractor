@@ -25,9 +25,7 @@ from tests.alignment_pipeline_helpers import (
 from tests.cid_nl_raw_fixture import (
     _FakeRaw,
     _FakeThermoRaw,
-)
-from tests.cid_nl_runtime_fixtures import (
-    load_plan_inputs,
+    unresolved_overlap_trace,
 )
 from tests.discovery_csv_fixtures import representative_event
 from tests.untargeted_alignment_entry_fixtures import (
@@ -46,7 +44,6 @@ from tests.untargeted_cid_nl_bounded_runtime_fixtures import (
 )
 from tests.untargeted_partition_fixtures import (
     children_of,
-    execute_dense_partition,
     physical_peak_keys,
     project_composed_child,
 )
@@ -55,11 +52,18 @@ from xic_extractor.configuration.execution_profile import (
     ExecutionProfile,
     in_process_execution,
 )
+from xic_extractor.peak_detection.cid_nl_method_subject import (
+    mint_untargeted_cid_nl_method_subject,
+)
 from xic_extractor.untargeted_execution.execution import (
     materialize_untargeted_partition,
 )
 from xic_extractor.untargeted_execution.execution_result import (
     CompletedUntargetBatchWorkflowResult,
+)
+from xic_extractor.untargeted_execution.input_planning import (
+    PreparedUntargetedAlignmentWorksets,
+    pack_subject_partitions,
 )
 
 
@@ -104,6 +108,11 @@ def _shifted_feature_raws(tmp_path, *, samples, features, shifts, spacing):
             )
             for feature, scan in enumerate(raw.scans)
         )
+        raw.additional_ms1_ions = {
+            scan.precursor_mz: raw.intensity * (1 + feature / 10)
+            for feature, scan in enumerate(raw.scans)
+            if feature != 0
+        }
         raws[stem] = raw
         peaks[stem] = discover(raw, paths[stem], settings)
         assert len(peaks[stem]) == features
@@ -170,7 +179,7 @@ def test_partition_capacity_keeps_batch_calibration_and_grouping(tmp_path, monke
     assert apexes["S12"] - apexes["S00"] == pytest.approx(0.1, abs=0.01)
 
 
-def test_backfill_is_partition_invariant_and_never_supplies_ms2_support(
+def test_batch_ms1_only_members_are_partition_invariant_and_do_not_supply_cid(
     tmp_path, monkeypatch
 ):
     """S20 and S21 have no Discovery peak for the heavier subject; S21 also has no CID-
@@ -219,7 +228,7 @@ def test_backfill_is_partition_invariant_and_never_supplies_ms2_support(
     cells = published_cells(together)
     for stem, apex in (("S20", 8.1), ("S21", 7.9)):
         cell = cells[(heavy, stem)]
-        assert cell["status"] == "backfilled"
+        assert cell["status"] == "ms1_only"
         assert cell["source_candidate_id"] == ""
         assert float(cell["apex_rt"]) == pytest.approx(apex, abs=0.005)
 
@@ -270,9 +279,9 @@ def test_execution_profile_does_not_change_published_alignment(
             cell["status"]
             for (_f, stem), cell in published_cells(baseline).items()
             if stem == "S3"
-        } <= {"backfilled", "unavailable", "unresolved"}
+        } <= {"ms1_only", "backfilled", "unavailable", "unresolved"}
         assert any(
-            cell["status"] == "backfilled"
+            cell["status"] == "ms1_only"
             for (_f, stem), cell in published_cells(baseline).items()
             if stem == "S3"
         )
@@ -348,6 +357,53 @@ def test_bounded_runtime_failure_never_publishes_completed_batch(
             **inputs,
         )
     assert not any((tmp_path / "failed" / name).exists() for name in PUBLISHED_TABLES)
+
+
+def test_reference_workset_joining_two_worksets_packs_them_together():
+    subjects = tuple(
+        mint_untargeted_cid_nl_method_subject(
+            precursor_mz=mz,
+            precursor_tolerance_ppm=20.0,
+            neutral_loss_da=116.0474,
+            composition=None,
+        )
+        for mz in (300.0, 300.5, 301.0)
+    )
+    first, middle, last = subjects
+    main = PreparedUntargetedAlignmentWorksets(
+        worksets=((first,), (middle,), (last,)),
+        memberships_by_subject={
+            subject.method_subject_id: ((f"c{index}", subject.method_subject_id),)
+            for index, subject in enumerate(subjects)
+        },
+    )
+    bridge = mint_untargeted_cid_nl_method_subject(
+        precursor_mz=300.0,
+        precursor_tolerance_ppm=20.0,
+        neutral_loss_da=116.0474,
+        composition=None,
+    )
+    reference = PreparedUntargetedAlignmentWorksets(
+        worksets=((bridge,),),
+        memberships_by_subject={
+            bridge.method_subject_id: (
+                ("c0", bridge.method_subject_id),
+                ("c2", bridge.method_subject_id),
+            )
+        },
+    )
+
+    packed = pack_subject_partitions(
+        main, reference, max_partition_jobs=2, sample_count=1
+    )
+
+    by_id = {subject.method_subject_id: subject for subject in subjects}
+    assert [
+        ({s.precursor_mz for s in partition}, refs) for partition, refs in packed
+    ] == [
+        ({300.0, 301.0}, (bridge,)),
+        ({by_id[middle.method_subject_id].precursor_mz}, ()),
+    ]
 
 
 def test_bounded_partition_keeps_alignment_workset_atomic(
@@ -653,19 +709,12 @@ def test_bounded_partition_real_entry_mints_interleaved_worksets_canonically(
         _plan,
         subject_batch,
         *,
-        acquisition_cache_dir=None,
-        sparse=False,
-        rt_reference_only=False,
         mass_recalibration_by_sample=None,
     ):
-        assert sparse is True
         captured_batches.append(subject_batch)
         return original_materialize_partition(
             _plan,
             subject_batch,
-            acquisition_cache_dir=acquisition_cache_dir,
-            sparse=sparse,
-            rt_reference_only=rt_reference_only,
             mass_recalibration_by_sample=mass_recalibration_by_sample,
         )
 
@@ -721,20 +770,11 @@ def test_bounded_partition_real_entry_mints_interleaved_worksets_canonically(
     } == {subject.method_subject_id for subject in subjects}
 
 
-def test_failed_attempt_retry_reuses_completed_raw_facts_and_recomposes(
+def test_failed_attempt_retry_recomposes_the_same_result(
     tmp_path: Path, monkeypatch
 ) -> None:
     import xic_extractor.untargeted_execution.execution as owner
 
-    ms2_reads: dict[int, int] = {}
-    original_filter = _FakeThermoRaw.GetFilterForScanNumber
-
-    def count_filter(vendor, scan_number):
-        key = id(vendor)
-        ms2_reads[key] = ms2_reads.get(key, 0) + 1
-        return original_filter(vendor, scan_number)
-
-    monkeypatch.setattr(_FakeThermoRaw, "GetFilterForScanNumber", count_filter)
     baseline_plan, _ = _plan(tmp_path, monkeypatch)
     baseline = owner.execute_untargeted_plan(
         baseline_plan,
@@ -747,8 +787,7 @@ def test_failed_attempt_retry_reuses_completed_raw_facts_and_recomposes(
         project_child=project_composed_child,
     )
     baseline_writer = baseline.application_result
-    opened_runs = []
-    plan, _ = _plan(tmp_path, monkeypatch, opened_sink=opened_runs)
+    plan, _ = _plan(tmp_path, monkeypatch)
     output_dir = tmp_path / "retry-output"
     original_append = owner.StreamedResultStore.append_child_outputs
     append_calls = 0
@@ -777,7 +816,7 @@ def test_failed_attempt_retry_reuses_completed_raw_facts_and_recomposes(
     monkeypatch.setattr(
         owner.StreamedResultStore, "append_child_outputs", original_append
     )
-    retry_plan, _ = _plan(tmp_path, monkeypatch, opened_sink=opened_runs)
+    retry_plan, _ = _plan(tmp_path, monkeypatch)
     completed = owner.execute_untargeted_plan(
         retry_plan,
         output_dir=output_dir,
@@ -818,23 +857,6 @@ def test_failed_attempt_retry_reuses_completed_raw_facts_and_recomposes(
     assert {
         sample.raw_stem for sample in completed.application_result.canonical_samples
     } == {path.stem for path in retry_plan.context.raw_paths_by_sample.values()}
-
-    retry_vendors = tuple(
-        vendor for vendors in opened_runs[1].values() for vendor in vendors
-    )
-    failed_vendors = tuple(
-        vendor for vendors in opened_runs[0].values() for vendor in vendors
-    )
-    failed_queries = sum(
-        sum(vendor.chromatogram_request_counts) for vendor in failed_vendors
-    )
-    retry_queries = sum(
-        sum(vendor.chromatogram_request_counts) for vendor in retry_vendors
-    )
-    assert retry_queries < failed_queries
-    assert sum(ms2_reads.get(id(vendor), 0) for vendor in retry_vendors) < sum(
-        ms2_reads.get(id(vendor), 0) for vendor in failed_vendors
-    )
 
 
 def test_partition_acquisitions_overlap_with_shared_worker_budget_and_ordered_output(
@@ -1045,7 +1067,7 @@ def test_final_grouping_failure_stops_before_any_backfill(
     finalized = []
     admitted = []
     acquire = owner.UntargetedPartitionPipelineAdapter.execute_acquisition
-    finalize = owner.CidNlBatchGrouping.finalize_grouping
+    finalize = owner.regroup_cid_nl_grouping
 
     def subject_ids(subjects):
         return frozenset(subject.method_subject_id for subject in subjects)
@@ -1056,7 +1078,7 @@ def test_final_grouping_failure_stops_before_any_backfill(
                 admitted.append(subject_ids(partition.payload))
         return acquire(adapter, partition, **kwargs)
 
-    def finalize_or_abort(preparation, prepared, **kwargs):
+    def finalize_or_abort(prepared, **kwargs):
         subjects = subject_ids(
             tuple(
                 subject for workset in prepared.worksets for subject in workset.subjects
@@ -1064,7 +1086,7 @@ def test_final_grouping_failure_stops_before_any_backfill(
         )
         with lock:
             admitted_first = subjects in admitted
-        result = finalize(preparation, prepared, **kwargs)
+        result = finalize(prepared, **kwargs)
         with lock:
             finalized.append((subjects, admitted_first))
             count = len(finalized)
@@ -1083,9 +1105,7 @@ def test_final_grouping_failure_stops_before_any_backfill(
         "execute_acquisition",
         observed_acquire,
     )
-    monkeypatch.setattr(
-        owner.CidNlBatchGrouping, "finalize_grouping", finalize_or_abort
-    )
+    monkeypatch.setattr(owner, "regroup_cid_nl_grouping", finalize_or_abort)
     monkeypatch.setattr(owner, "CompletedUntargetBatchWorkflowResult", forbid_completed)
     with pytest.raises(
         InterruptedError if cancel_during_grouping else RuntimeError,
@@ -1109,7 +1129,7 @@ def test_final_grouping_failure_stops_before_any_backfill(
             ),
             project_child=project_composed_child,
         )
-    assert len(finalized) >= 2
+    assert len(finalized) >= 2, repr(error.value.__cause__ or error.value)
     assert not admitted
     assert not any(admitted_first for _, admitted_first in finalized)
     assert len({subjects for subjects, _ in finalized}) == len(finalized)
@@ -1192,19 +1212,12 @@ def test_sample_parallelism_keeps_partition_and_acquisition_counts_fixed(
         nonlocal live_jobs
         assert get_ident() == coordinator and live_jobs == 0
         batch = original_materialize(*args, **kwargs)
-        from xic_extractor.untargeted_execution.partition.models import (
-            _request_subject_candidates,
-        )
-
         expected_initial_sample_ids = {
-            sample.sample_name
-            for sample in plan.context.samples
-            if load_plan_inputs(plan).get(sample.raw_stem)
+            sample.sample_name for sample in plan.context.samples
         }
         assert {
             job.sample.sample_name for job in batch.jobs
         } == expected_initial_sample_ids
-        assert all(_request_subject_candidates(job) for job in batch.jobs)
         assert all(
             job.processing_attempt_id == plan.context.processing_attempt_id
             for job in batch.jobs
@@ -1275,15 +1288,12 @@ def test_sample_parallelism_keeps_partition_and_acquisition_counts_fixed(
         project_child=project_composed_child,
     )
     assert type(result) is CompletedUntargetBatchWorkflowResult
-    initial_sample_count = sum(
-        bool(load_plan_inputs(plan).get(sample.raw_stem))
-        for sample in plan.context.samples
-    )
+    initial_sample_count = len(plan.context.samples)
     assert job_counts == [initial_sample_count * 2, initial_sample_count]
     assert live_jobs == 0
     assert append_order == ["partition-00000-backfill", "partition-00001-backfill"]
     assert len(handle_threads) == 8
-    assert barrier_checks == [6, 7]
+    assert barrier_checks == [8, 8]
     assert overlap_count <= peak_handles <= raw_workers
     assert len(intervals) == overlap_count
     if raw_workers > 1:
@@ -1448,6 +1458,9 @@ def test_process_recovery_dispatches_only_missing_subjects(tmp_path, monkeypatch
     from xic_extractor.execution.workers import WorkerAdmissionPool
     from xic_extractor.untargeted_execution.partition import execution as runtime
     from xic_extractor.untargeted_execution.partition import workers as worker
+    from xic_extractor.untargeted_execution.partition_composition import (
+        group_acquired_partition,
+    )
 
     class LocalProcessMessages(WorkerAdmissionPool):
         @property
@@ -1474,12 +1487,16 @@ def test_process_recovery_dispatches_only_missing_subjects(tmp_path, monkeypatch
         return execute_recovery(request)
 
     monkeypatch.setattr(runtime, "_execute_sample_backfill_worker", observe_request)
+    config = AlignmentConfig(anchor_min_seed_events=1)
     with LocalProcessMessages(max_workers=1, backend="thread") as pool:
         result = runtime.execute_partition(
             batch.jobs,
             partition_key="sparse-recovery",
-            alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+            alignment_config=config,
             pool=pool,
+            prepare_grouping=lambda initial: group_acquired_partition(
+                batch, initial, alignment_config=config
+            ),
         )
     assert result.succeeded
     assert len(requests) == 1
@@ -1598,114 +1615,53 @@ def test_process_outcome_must_cover_the_exact_work_units(
     assert result.sample_results == ()
 
 
-def test_sparse_partition_materializes_only_samples_with_request_candidates(
+def test_published_matrix_leaves_localized_members_without_an_area_blank(
     tmp_path, monkeypatch
 ):
-    from xic_extractor.untargeted_execution.partition.models import (
-        _request_subject_candidates,
-    )
+    import numpy as np
 
-    plan, _ = _plan(tmp_path, monkeypatch, scenario="recovery")
-    batch = materialize_untargeted_partition(
-        plan,
-        plan.subject_batch,
-        sparse=True,
+    early, late = 7.895, 8.214
+    overlap = _FakeRaw((early, late))
+    rt, intensity = unresolved_overlap_trace()
+    shifted = rt - 7.3
+    valid = shifted >= 0.0
+    overlap.rt, overlap.intensity = shifted[valid], intensity[valid]
+    overlap.scans = tuple(
+        replace(scan, scan_number=int(np.searchsorted(overlap.rt, scan.rt)) + 1)
+        for scan in overlap.scans
     )
-
-    assert len(batch.sample_job_templates) == len(plan.context.samples)
-    assert batch.jobs
-    assert all(_request_subject_candidates(job) for job in batch.jobs)
-    initial_sample_ids = {job.sample.sample_name for job in batch.jobs}
-    assert len(initial_sample_ids) >= 2
-    missing_sample_id = plan.context.samples[-1].sample_name
-    assert missing_sample_id not in initial_sample_ids
-
-
-@pytest.mark.parametrize(
-    "scenario,expected_sparse_jobs,expected_sparse_results",
-    [("recovery", 9, 12), ("below_threshold", 3, 3), ("blank_missing", 9, 9)],
-)
-def test_sparse_recovery_partition_matches_dense_composition(
-    tmp_path, monkeypatch, scenario, expected_sparse_jobs, expected_sparse_results
-):
-    from tests.untargeted_partition_fixtures import (
-        execute_partition_inline,
-    )
-    from xic_extractor.untargeted_execution.partition_composition import (
-        compose_untargeted_partition,
-    )
-
-    plan, reference = _plan(tmp_path, monkeypatch, scenario=scenario)
-    config = AlignmentConfig(anchor_min_seed_events=1)
-    dense_batch = materialize_untargeted_partition(plan, plan.subject_batch)
-    assert len(dense_batch.jobs) == 12
-    dense_runtime = execute_dense_partition(
-        dense_batch,
-        alignment_config=config,
-    )
-    assert dense_runtime.succeeded
-    dense_composition = compose_untargeted_partition(
-        dense_batch,
-        dense_runtime.sample_results,
-        alignment_config=config,
-        known_istd_reference=reference,
-    )
-
-    sparse_batch = materialize_untargeted_partition(
-        plan, plan.subject_batch, sparse=True
-    )
-    assert len(sparse_batch.jobs) == expected_sparse_jobs
-    sparse_runtime = execute_partition_inline(
-        sparse_batch.jobs,
-        backfill_templates=sparse_batch.sample_job_templates,
-        partition_key="sparse-recovery",
-        alignment_config=config,
-    )
-    assert sparse_runtime.succeeded
-    assert len(sparse_runtime.sample_results) == expected_sparse_results
-    sparse_composition = compose_untargeted_partition(
-        sparse_batch,
-        sparse_runtime.sample_results,
-        alignment_config=config,
-        known_istd_reference=reference,
-    )
-
-    dense_by_key = {
-        (
-            result.job.sample.raw_stem,
-            result.job.method_subject.method_subject_id,
-        ): result
-        for result in dense_runtime.sample_results
+    raws = {
+        "Overlap": overlap,
+        "EarlyA": _FakeRaw((7.91,)),
+        "EarlyB": _FakeRaw((7.93,)),
+        "Late": _FakeRaw((8.28,)),
     }
-    sparse_by_key = {
-        (
-            result.job.sample.raw_stem,
-            result.job.method_subject.method_subject_id,
-        ): result
-        for result in sparse_runtime.sample_results
+    paths = raw_paths(tmp_path, tuple(raws))
+    peaks = {stem: discover(raw, paths[stem]) for stem, raw in raws.items()}
+    assert {event.rt for p in peaks["Overlap"] for event in p.located_events} == {
+        early,
+        late,
     }
-    missing_stem = plan.context.samples[-1].raw_stem
-    if scenario == "recovery":
-        missing_results = [
-            result
-            for result in sparse_runtime.sample_results
-            if result.job.sample.raw_stem == missing_stem
-        ]
-        assert missing_results
-        assert all(result.backfill_attempts for result in missing_results)
-        assert set(sparse_by_key) == set(dense_by_key)
-    else:
-        assert missing_stem not in {
-            result.job.sample.raw_stem for result in sparse_runtime.sample_results
-        }
-    assert dense_composition.children == sparse_composition.children
-    assert dense_composition.initial_groups == sparse_composition.initial_groups
-    assert (
-        dense_composition.excluded_candidates == sparse_composition.excluded_candidates
+
+    output = publish_alignment(
+        tmp_path, monkeypatch, paths=paths, raws=raws, peaks=peaks
     )
 
+    (row,) = read_tsv(output / "alignment_matrix.tsv")
+    assert float(row["RT"]) == pytest.approx(7.92, abs=0.04)
+    assert float(row["EarlyA"]) > 0 and float(row["EarlyB"]) > 0
+    assert row["Overlap"] == ""
+    assert row["Late"] == ""
+    detected = [
+        cell
+        for (_feature, sample), cell in published_cells(output).items()
+        if sample == "Overlap" and cell["status"] == "detected"
+    ]
+    assert len(detected) == 2
+    assert all(not cell["area"] for cell in detected)
 
-def test_formal_partition_reuses_prepared_group_ids_for_recovery_and_composition(
+
+def test_formal_partition_reuses_prepared_group_ids_with_ms1_only_members(
     tmp_path, monkeypatch
 ):
     import xic_extractor.alignment.cid_nl_initial_grouping as grouping_owner
@@ -1744,52 +1700,15 @@ def test_formal_partition_reuses_prepared_group_ids_for_recovery_and_composition
     prepared = leaf.prepared_grouping
     assert prepared is not None
     assert len(prepared.worksets) == 1
-    assert len(batch.jobs) == 2
-    assert len({job.method_subject.method_subject_id for job in batch.jobs}) == 2
-    assert len(leaf.sample_results) == 4
+    assert len(batch.jobs) == len(leaf.sample_results) == 8
     assert calls == [1]
-    prepared_group_ids = {
-        group.group_hypothesis_id
-        for workset in prepared.worksets
-        for group in workset.grouping_scope.groups
-    }
-    assert len(prepared_group_ids) == 1
-    backfill_group_ids = {
-        attempt.group_hypothesis_id
-        for result in leaf.sample_results
-        for attempt in result.backfill_attempts
-        if attempt.group_hypothesis_id is not None
-    }
-    assert backfill_group_ids
-    assert backfill_group_ids == prepared_group_ids
+    (group,) = prepared.worksets[0].grouping_scope.groups
     assert {
-        result.job.sample.raw_stem
-        for result in leaf.sample_results
-        if result.backfill_attempts
-    } == {"S2", "S3"}
-    recovery_result = next(
-        result for result in leaf.sample_results if result.backfill_attempts
-    )
-    backfill_attempt = recovery_result.backfill_attempts[0]
-    same_rt_different_groups = replace(
-        recovery_result,
-        backfill_attempts=(
-            replace(backfill_attempt, group_hypothesis_id="group-a"),
-            replace(backfill_attempt, group_hypothesis_id="group-b"),
-        ),
-    )
-    assert (
-        same_rt_different_groups.backfill_for_group(
-            0.0, group_hypothesis_id="group-b"
-        ).group_hypothesis_id
-        == "group-b"
-    )
-    assert (
-        same_rt_different_groups.backfill_for_group(
-            0.0, group_hypothesis_id="wrong-group"
-        )
-        is None
-    )
+        owner.sample_stem: owner.primary_identity_event is not None
+        for owner in group.owners
+    } == {"S0": True, "S1": True, "S2": False, "S3": False}
+    assert all(not result.backfill_attempts for result in leaf.sample_results)
+    prepared_group_ids = {group.group_hypothesis_id}
     calls_before_composition = len(calls)
     composed = adapter.execute_composition(
         partition,
@@ -2067,53 +1986,7 @@ def test_result_store_close_failure_is_reported_once(tmp_path, monkeypatch, reta
             original_close(calls[0])
 
 
-def _run_for_cache(tmp_path, monkeypatch, *, retain, tag, shared=None):
-    from xic_extractor.untargeted_execution.execution import (
-        execute_untargeted_plan,
-    )
-
-    plan, reference = _plan(tmp_path, monkeypatch)
-    output_dir = tmp_path / tag
-    result = execute_untargeted_plan(
-        plan,
-        output_dir=output_dir,
-        alignment_config=AlignmentConfig(anchor_min_seed_events=1),
-        known_istd_reference=reference,
-        max_partition_jobs=len(plan.context.samples),
-        retain_acquisition_cache=retain,
-        acquisition_cache_dir=shared,
-        project_child=project_composed_child,
-        execution=in_process_execution(),
-    )
-    result.close()
-    return output_dir / ".cid_nl_acquisition_cache"
-
-
-def test_acquisition_cache_is_released_after_a_successful_run(tmp_path, monkeypatch):
-    """A one-shot run leaves no cache behind; it only accelerates acquisition."""
-    cache = _run_for_cache(tmp_path, monkeypatch, retain=False, tag="released")
-    assert not cache.exists()
-
-
-def test_acquisition_cache_is_kept_when_asked(tmp_path, monkeypatch):
-    """Repeated development runs can keep it and skip rereading every RAW."""
-    cache = _run_for_cache(tmp_path, monkeypatch, retain=True, tag="retained")
-    assert cache.is_dir()
-
-
-def test_a_shared_acquisition_cache_outlives_the_run(tmp_path, monkeypatch):
-    """Runs into new output directories reuse one cache, e.g. on a fast disk."""
-    shared = tmp_path / "ssd-cache"
-    own = _run_for_cache(
-        tmp_path, monkeypatch, retain=False, tag="shared", shared=shared
-    )
-    entries = sorted(path for path in shared.rglob("*.json"))
-    assert entries
-    assert not own.exists()
-
-
-def test_acquisition_cache_survives_a_failed_attempt(tmp_path, monkeypatch):
-    """A retry allowed by the marker must not have to reread every RAW file."""
+def test_a_failed_attempt_leaves_no_partition_spool(tmp_path, monkeypatch):
     import xic_extractor.untargeted_execution.execution as bounded_owner
 
     plan, _ = _plan(tmp_path, monkeypatch)
@@ -2139,5 +2012,4 @@ def test_acquisition_cache_survives_a_failed_attempt(tmp_path, monkeypatch):
             project_child=project_composed_child,
             execution=in_process_execution(),
         )
-    assert (output_dir / ".cid_nl_acquisition_cache").is_dir()
     assert not _spool_dirs(output_dir)

@@ -16,7 +16,10 @@ from xic_extractor.alignment.backfill.conservative import (
 from xic_extractor.alignment.cell_observation.group_context import (
     select_cid_nl_group_backfill_subject,
 )
-from xic_extractor.alignment.cid_nl_grouping import CID_NL_GROUPING_RULES
+from xic_extractor.alignment.cid_nl_grouping import (
+    CID_NL_GROUPING_RULES,
+    has_cid_nl_activation_support,
+)
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSamplePeakGroupHypothesis,
@@ -100,7 +103,7 @@ def plan_grouped_cid_nl_backfills(
         groups = tuple(
             group
             for group in workset.grouping_scope.groups
-            if all(owner_id in direct for owner_id in group.owner_ids)
+            if any(owner_id in direct for owner_id in group.owner_ids)
         )
         for group, target_ids in plan_conservative_backfill_targets(
             groups, sample_population=sample_population
@@ -110,7 +113,12 @@ def plan_grouped_cid_nl_backfills(
             subject = select_cid_nl_group_backfill_subject(
                 group,
                 tuple(
-                    {direct[owner_id].method_subject for owner_id in group.owner_ids}
+                    {
+                        direct[owner.owner_id].method_subject
+                        for owner in group.owners
+                        if owner.owner_id in direct
+                        and has_cid_nl_activation_support(owner)
+                    }
                 ),
             )
             trajectory = workset.grouping_scope.peak_trajectories.trajectory_for(
@@ -119,7 +127,9 @@ def plan_grouped_cid_nl_backfills(
             locations = trajectory.backfill_locations(
                 tuple(samples[sample_id].raw_stem for sample_id in sorted(target_ids)),
                 reference_samples=frozenset(
-                    owner.sample_stem for owner in group.owners
+                    owner.sample_stem
+                    for owner in group.owners
+                    if has_cid_nl_activation_support(owner)
                 ),
                 rt_frame=rt_frame,
                 backfill_half_window_min=backfill_half_window_min,

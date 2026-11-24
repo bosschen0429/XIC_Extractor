@@ -45,6 +45,70 @@ from xic_extractor.peak_detection.physical_peak_population import (
 from xic_extractor.peak_detection.scoring_metrics import noise_shape_severity
 
 
+@pytest.mark.parametrize("dense_gap", [False, True], ids=["sparse", "dense"])
+def test_full_gradient_keeps_peaks_on_each_side_of_a_sampled_gap(
+    dense_gap: bool,
+) -> None:
+    rt = np.fromstring(
+        "0 .042 .083 .125 .167 .208 .250 .292 .329 .355 .378 .394 .415 .432 "
+        ".459 .472 .495 .516 .547 .583 .624 .665 .707 .749 .790 .831 .872 .913",
+        sep=" ",
+    )
+    if dense_gap:
+        rt[10:16] = np.linspace(0.400, 0.450, 6)
+    acquired = 1000.0 * np.fromstring(
+        "0 0 29 46 147 205 344 288 241 224 0 0 0 0 0 0 "
+        "257 369 203 94 26 23 0 0 0 0 0 0",
+        sep=" ",
+    )
+    before = np.arange(-6.0, -0.01, 0.01)
+    after = np.arange(0.93, 6.0, 0.01)
+    full_rt = np.concatenate((before, rt, after))
+    full_acquired = np.pad(acquired, (len(before), len(after)))
+    population = measure_physical_peak_population(
+        full_rt,
+        full_acquired,
+        context_rt_start_min=float(full_rt[0]),
+        context_rt_end_min=float(full_rt[-1]),
+        profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
+    )
+
+    resolved = [
+        s
+        for s in population.universe.segments
+        if population.measure_segment(s).state == "available"
+    ]
+    assert [s.apex_rt_min for s in resolved] == pytest.approx((0.292, 0.516))
+    assert resolved[0].right_rt_min < resolved[1].left_rt_min
+
+
+def test_distant_peak_does_not_cut_at_an_earlier_single_scan_dropout() -> None:
+    acquired = np.zeros(330)
+    rt = 0.0415 * np.arange(len(acquired))
+    spike, apex, last_hit = 15, 29, 34
+    acquired[spike] = 192e3
+    acquired[24:35] = 1000.0 * np.array(
+        [431, 523, 0, 625, 719, 927, 869, 348, 510, 0, 266]
+    )
+    acquired[205:210] = [25000, 45000, 72000, 55000, 37000]
+    population = measure_physical_peak_population(
+        rt,
+        acquired,
+        context_rt_start_min=float(rt[0]),
+        context_rt_end_min=float(rt[-1]),
+        profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
+    )
+
+    measured = population.evaluate(float(rt[apex]))
+    assert measured.state == "available"
+    assert measured.integration is not None
+    assert measured.integration.rt_apex_min == pytest.approx(rt[apex])
+    assert measured.integration.rt_right_min >= rt[last_hit]
+    rejected = population.evaluate(float(rt[spike]))
+    assert rejected.state == "unavailable"
+    assert rejected.reason == "insufficient_original_xic_support"
+
+
 @pytest.mark.parametrize(
     "height,expected", [(5.0, "unavailable"), (200.0, "available")]
 )

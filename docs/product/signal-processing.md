@@ -125,6 +125,13 @@ maxima reaching the same 4% prominence floor remain review evidence even when
 they do not qualify as independent seeds. The complete envelope does not
 establish one chemical component or individual component areas.
 
+Untargeted can also localize separate acquired crests inside an unresolved
+envelope. Each crest needs continuous original top support, and observed
+(nonzero) scans between the crests must confirm a clear valley, using the same
+relative depth criterion as the physical owner. These are separate
+positions for correspondence and local event attachment, not separate
+integrations. See [Quant Matrix](quant-matrix.md#matrix-publication).
+
 An unresolved shoulder remains a review condition (`physical_shoulder_overlap`).
 Targeted carries it into the product review reasons; Untargeted quantifies the
 envelope when the peak otherwise qualifies and carries the same reason on that
@@ -139,8 +146,16 @@ selection question.
 
 A separable valley answers one question: do the acquired scans support two
 regions that can be measured separately? It does not claim two compounds.
-Within one coarse component, zero scans are censored (they neither form nor
-fill a valley). A valley is at least two consecutive scans at or below
+Within one coarse component, at least two consecutive non-detections can
+separate two runs of detections if each run holds at least two consecutive
+scans and falls from its observed maximum toward the gap. The detections
+bracketing the gap must be at least one envelope resolution apart (or the
+explicit valley duration if larger), and the Gaussian envelope on the native
+scan grid must confirm a clear valley. The cut is inside the gap; each side
+still needs to qualify as a peak. An apex dropout does not establish a boundary.
+
+For measured valleys, zero scans are censored (they neither form nor fill
+a valley). A measured valley is at least two consecutive scans at or below
 `min(minor - 3 sigma, f x minor)`, where `minor` is the smaller of the two side
 maxima, `sigma` the short-scale noise of the component's scans and `f` the
 policy's clear-valley fraction (0.5 for the physical owner). Each adjacent lobe
@@ -152,7 +167,11 @@ require a minimum valley duration in minutes. The deepest valley cuts first and
 each side is examined again; the result depends only on the acquired values,
 not on peak IDs or input order.
 
-Calibration (#1056) used the 102 reviewed regions of #1049 on 8RAW and the
+The accepted cuts also delimit Discovery's raw peak basins. Picking the first
+raw minimum between distant peaks instead could cut an earlier lobe at an
+unrelated dropout.
+
+Measured-valley calibration (#1056) used the 102 reviewed regions of #1049 on 8RAW and the
 enzyme control: separable doublets (B) 13/24 split; noise ripple or zero
 dropouts (A) 0/13, broad single components including peak plus plateau (W)
 0/15 and unflagged controls 0/27 split. The "lobe is a peak at its own scale"

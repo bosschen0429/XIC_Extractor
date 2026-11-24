@@ -414,8 +414,15 @@ class PeakTrajectories:
     )
     _raw_linked_owners: frozenset[str] = field(default_factory=frozenset, repr=False)
     _raw_pairs: tuple[tuple[str, str], ...] = field(default=(), repr=False)
+    _order_witnesses: tuple[
+        tuple[str, str, str, tuple[str, ...], tuple[str, ...]], ...
+    ] = field(default=(), repr=False)
+    _owner_samples: Mapping[str, str] = field(default_factory=dict, repr=False)
     _track_by_owner: Mapping[str, int] = field(init=False, repr=False, compare=False)
     _distinct: frozenset[tuple[int, int]] = field(init=False, repr=False, compare=False)
+    _witnesses: Mapping[tuple[int, int], frozenset[_Witness] | None] = field(
+        init=False, repr=False, compare=False
+    )
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -427,25 +434,14 @@ class PeakTrajectories:
                 for owner_id in track.owner_ids
             },
         )
-        distinct: set[tuple[int, int]] = set()
-        later: dict[int, set[int]] = defaultdict(set)
-        for first_owner, second_owner in self.physical_order:
-            first = self._track_by_owner.get(first_owner)
-            second = self._track_by_owner.get(second_owner)
-            if first is not None and second is not None and first != second:
-                distinct.add((min(first, second), max(first, second)))
-                later[first].add(second)
-        for first in range(len(self.tracks)):
-            pending = set(later.get(first, ()))
-            reached = {first}
-            while pending:
-                second = pending.pop()
-                if second in reached:
-                    continue
-                reached.add(second)
-                distinct.add((min(first, second), max(first, second)))
-                pending.update(later.get(second, set()) - reached)
-        object.__setattr__(self, "_distinct", frozenset(distinct))
+        witnesses = _distinct_track_witnesses(
+            self.physical_order,
+            self._order_witnesses,
+            self._track_by_owner,
+            len(self.tracks),
+        )
+        object.__setattr__(self, "_distinct", frozenset(witnesses))
+        object.__setattr__(self, "_witnesses", witnesses)
 
     def trajectory_for(self, owners: Sequence[SampleLocalMS1Owner]) -> PeakTrajectory:
         """Bind a finalized group to its direct and compatible context points.
@@ -471,9 +467,7 @@ class PeakTrajectories:
                     for sample, rt in self.tracks[index].sample_apices
                 )
             )
-        points.update(
-            (owner.sample_stem, owner.peak.integration.rt_apex_min) for owner in owners
-        )
+        points.update((owner.sample_stem, owner.peak.rt_apex_min) for owner in owners)
         return PeakTrajectory(tuple(sorted(requested)), tuple(sorted(points.items())))
 
     def owner_track_indices(self) -> dict[str, int]:
@@ -535,6 +529,8 @@ class PeakTrajectories:
             physical_order=self.physical_order,
             _raw_linked_owners=self._raw_linked_owners,
             _raw_pairs=self._raw_pairs,
+            _order_witnesses=self._order_witnesses,
+            _owner_samples=self._owner_samples,
         )
 
     def supports_ordered_pair(self, first: str, second: str) -> bool:
@@ -547,8 +543,36 @@ class PeakTrajectories:
         )
 
     def permits_membership(self, owner_ids: Iterable[str]) -> bool:
-        """Unobserved correspondence may extend a track; distinct peaks cannot merge."""
-        return self._compatible(self._indices(owner_ids))
+        """Unobserved correspondence may extend a track; distinct peaks cannot merge.
+
+        Two owners' tracks stay distinct only where an independent sample
+        shows the order: neither owner's sample, and each of its two ordered
+        points linked within its track to some other sample. An order resting
+        only on links to the owners' samples is the correspondence the group
+        decides; grouping cost weighs it instead.
+        """
+        owners = [item for item in owner_ids if item in self._track_by_owner]
+        if self._compatible({self._track_by_owner[item] for item in owners}):
+            return True
+        for position, first in enumerate(owners):
+            for second in owners[position + 1 :]:
+                tracks = self._track_by_owner[first], self._track_by_owner[second]
+                key = (min(tracks), max(tracks))
+                if key not in self._distinct:
+                    continue
+                seen = self._witnesses[key]
+                decided = {
+                    self._owner_samples.get(first),
+                    self._owner_samples.get(second),
+                }
+                if seen is None or any(
+                    sample not in decided
+                    and set(earlier) - decided
+                    and set(later) - decided
+                    for sample, earlier, later in seen
+                ):
+                    return False
+        return True
 
     def _indices(self, owner_ids: Iterable[str]) -> set[int]:
         return {
@@ -605,8 +629,8 @@ class _LocalizationLinks:
             bound = self.owner_nodes.get(owner.owner_id)
             if bound is None:
                 continue
-            left = owner.peak.integration.rt_left_min
-            right = owner.peak.integration.rt_right_min
+            left = owner.peak.rt_left_min
+            right = owner.peak.rt_right_min
             if not left <= self.nodes[bound].landmark.apex_rt <= right:
                 continue
             contradicted.update(
@@ -638,6 +662,63 @@ class _LocalizationLinks:
             (self.nodes[node].sample, self.nodes[node].landmark.apex_rt)
             for node in sorted(selected - withdrawn)
         )
+
+
+_Witness = tuple[str, tuple[str, ...], tuple[str, ...]]
+
+
+def _join_witnesses(
+    first: frozenset[_Witness] | None, second: frozenset[_Witness] | None
+) -> frozenset[_Witness] | None:
+    """Samples showing an order, each with the samples its two points link to.
+
+    ``None`` marks an order of unrecorded origin.
+    """
+    return None if first is None or second is None else first | second
+
+
+def _distinct_track_witnesses(
+    physical_order: Iterable[tuple[str, str]],
+    order_witnesses: Iterable[tuple[str, str, str, tuple[str, ...], tuple[str, ...]]],
+    track_by_owner: Mapping[str, int],
+    track_count: int,
+) -> dict[tuple[int, int], frozenset[_Witness] | None]:
+    """Distinct track pairs, each with the witnesses along its ordering path.
+
+    A < B < C distinguishes A/C through B, so a chained pair joins its steps'
+    witnesses.
+    """
+    by_order: dict[tuple[str, str], set[_Witness]] = defaultdict(set)
+    for first_owner, second_owner, sample, earlier, later_links in order_witnesses:
+        by_order[(first_owner, second_owner)].add((sample, earlier, later_links))
+    steps: dict[tuple[int, int], frozenset[_Witness] | None] = {}
+    later: dict[int, set[int]] = defaultdict(set)
+    for first_owner, second_owner in physical_order:
+        first = track_by_owner.get(first_owner)
+        second = track_by_owner.get(second_owner)
+        if first is not None and second is not None and first != second:
+            recorded = by_order.get((first_owner, second_owner))
+            steps[(first, second)] = _join_witnesses(
+                steps.get((first, second), frozenset()),
+                frozenset(recorded) if recorded else None,
+            )
+            later[first].add(second)
+    witnesses: dict[tuple[int, int], frozenset[_Witness] | None] = {}
+    for first in range(track_count):
+        pending = [(second, steps[(first, second)]) for second in later[first]]
+        reached = {first}
+        while pending:
+            second, seen = pending.pop()
+            if second in reached:
+                continue
+            reached.add(second)
+            key = (min(first, second), max(first, second))
+            witnesses[key] = _join_witnesses(witnesses.get(key, frozenset()), seen)
+            pending.extend(
+                (after, _join_witnesses(seen, steps[(second, after)]))
+                for after in later[second] - reached
+            )
+    return witnesses
 
 
 def _unique_sample_positions(
@@ -960,10 +1041,20 @@ def resolve_peak_trajectories(
     track_owner_by_node = {
         node: track.owner_ids[0] for track, indices in tracks for node in indices
     }
-    witnessed_order = tuple(
+    linked = [
+        tuple(sorted({nodes[n].sample for n in adjacent if roots[n] == roots[node]}))
+        for node, adjacent in enumerate(neighbors)
+    ]
+    order_witnesses = tuple(
         sorted(
             {
-                (track_owner_by_node[first], track_owner_by_node[second])
+                (
+                    track_owner_by_node[first],
+                    track_owner_by_node[second],
+                    nodes[first].sample,
+                    linked[first],
+                    linked[second],
+                )
                 for first, second in physical_order
                 if first in track_owner_by_node
                 and second in track_owner_by_node
@@ -971,12 +1062,17 @@ def resolve_peak_trajectories(
             }
         )
     )
+    witnessed_order = tuple(sorted({(item[0], item[1]) for item in order_witnesses}))
     owner_by_node = {node: owner_id for owner_id, node in owner_nodes.items()}
     return PeakTrajectories(
         tuple(track for track, _ in tracks),
         comparisons,
         retained_contexts,
         physical_order=witnessed_order,
+        _order_witnesses=order_witnesses,
+        _owner_samples={
+            owner_id: nodes[node].sample for owner_id, node in owner_nodes.items()
+        },
         _localization_links=_LocalizationLinks(
             tuple(nodes),
             owner_nodes,
@@ -1016,6 +1112,24 @@ def ordered_pattern_contexts(
     return tuple(sorted(contexts, key=lambda context: (context.rt, context.raw)))
 
 
+def _contexts_within_reach(
+    owners: Sequence[SampleLocalMS1Owner],
+    contexts: Sequence[SampleElutionContext],
+    ppm: float,
+) -> list[SampleElutionContext]:
+    """Contexts an owner can bind directly or through one bound context's mass.
+
+    Each link is a ``ppm`` test, so two links stay inside three tolerances of the
+    owners' masses. Filtering keeps the supplied order, hence every tie.
+    """
+    lower = min(owner.peak.mz for owner in owners)
+    upper = max(owner.peak.mz for owner in owners)
+    reach = 3.0 * (ppm + PPM_BOUNDARY_EPSILON)
+    lower -= mz_tolerance_da(lower, reach)
+    upper += mz_tolerance_da(upper, reach)
+    return [context for context in contexts if lower <= context.mz <= upper]
+
+
 def _local_patterns(
     owners: Sequence[SampleLocalMS1Owner],
     contexts: Sequence[SampleElutionContext],
@@ -1027,12 +1141,17 @@ def _local_patterns(
     dict[str, int],
     frozenset[tuple[int, int]],
 ]:
+    contexts = _contexts_within_reach(
+        owners, contexts, config.precursor_mz_tolerance_ppm
+    )
     by_sample: dict[str, list[SampleElutionContext]] = defaultdict(list)
     for context in contexts:
         if context.landmarks:
             by_sample[context.sample_stem].append(context)
     context_indexes = {
-        sample: _MassIndex([context.mz for context in rows], config.preferred_ppm)
+        sample: _MassIndex(
+            [context.mz for context in rows], config.precursor_mz_tolerance_ppm
+        )
         for sample, rows in by_sample.items()
     }
     nodes: list[_Node] = []
@@ -1064,7 +1183,9 @@ def _local_patterns(
                         for mz in nearby_masses
                         for index in nodes_by_mass[(context.sample_stem, mz)]
                     )
-                    if within_ppm(nodes[index].mz, context.mz, config.preferred_ppm)
+                    if within_ppm(
+                        nodes[index].mz, context.mz, config.precursor_mz_tolerance_ppm
+                    )
                     and abs(nodes[index].landmark.apex_rt - peak.apex_rt)
                     <= config.owner_apex_close_sec / 60.0
                 ),
@@ -1095,7 +1216,7 @@ def _local_patterns(
         owners,
         key=lambda item: (
             item.sample_stem,
-            item.peak.integration.rt_apex_min,
+            item.peak.rt_apex_min,
             item.owner_id,
         ),
     ):
@@ -1109,8 +1230,8 @@ def _local_patterns(
         available = [
             context
             for context in candidate_contexts
-            if within_ppm(owner.peak.mz, context.mz, config.preferred_ppm)
-            and context.rt_start <= owner.peak.integration.rt_apex_min <= context.rt_end
+            if within_ppm(owner.peak.mz, context.mz, config.precursor_mz_tolerance_ppm)
+            and context.rt_start <= owner.peak.rt_apex_min <= context.rt_end
         ]
         if not available:
             continue
@@ -1126,11 +1247,9 @@ def _local_patterns(
         retained.add(context)
         selected = min(
             range(len(peaks)),
-            key=lambda index: abs(
-                peaks[index].apex_rt - owner.peak.integration.rt_apex_min
-            ),
+            key=lambda index: abs(peaks[index].apex_rt - owner.peak.rt_apex_min),
         )
-        if abs(peaks[selected].apex_rt - owner.peak.integration.rt_apex_min) > max(
+        if abs(peaks[selected].apex_rt - owner.peak.rt_apex_min) > max(
             config.owner_apex_close_sec / 60.0, peaks[selected].width / 2.0
         ):
             continue
@@ -1144,7 +1263,9 @@ def _local_patterns(
         owner_nodes[owner.owner_id] = indices[selected - start]
 
     seeds = tuple(patterns.values())
-    seed_index = _MassIndex([seed.mz for seed in seeds], config.preferred_ppm)
+    seed_index = _MassIndex(
+        [seed.mz for seed in seeds], config.precursor_mz_tolerance_ppm
+    )
     seed_centers = [
         _pattern_center(seed.sample, [nodes[i].landmark for i in seed.nodes], rt_frame)
         for seed in seeds
@@ -1163,7 +1284,9 @@ def _local_patterns(
         compatible = [
             index
             for index in seed_index.candidates(context.mz)
-            if within_ppm(seeds[index].mz, context.mz, config.preferred_ppm)
+            if within_ppm(
+                seeds[index].mz, context.mz, config.precursor_mz_tolerance_ppm
+            )
         ]
         if not compatible:
             continue
@@ -1205,7 +1328,9 @@ def _neighbor_pairs(
     rt_frame: RtFrame | None,
 ) -> tuple[tuple[_Pattern, _Pattern], ...]:
     chosen: set[tuple[int, int]] = set()
-    mass_index = _MassIndex([pattern.mz for pattern in patterns], config.preferred_ppm)
+    mass_index = _MassIndex(
+        [pattern.mz for pattern in patterns], config.precursor_mz_tolerance_ppm
+    )
     centers = [
         _pattern_center(
             pattern.sample,
@@ -1222,7 +1347,7 @@ def _neighbor_pairs(
         for other_index in mass_index.candidates(pattern.mz):
             other = patterns[other_index]
             if pattern.sample == other.sample or not within_ppm(
-                pattern.mz, other.mz, config.preferred_ppm
+                pattern.mz, other.mz, config.precursor_mz_tolerance_ppm
             ):
                 continue
             if not center.comparable_to(centers[other_index]):
@@ -1298,7 +1423,9 @@ def _match_patterns(
     """The unique best ordered pairing under one shared displacement.
 
     Displacements range within ``max_shift``; ``shift_hypotheses`` adds
-    discrete displacements, each checked only at its own value.
+    discrete displacements, each checked only at its own value. Each shift
+    scores only cells within its tolerance; a column prefix tree supplies the
+    best two distinct earlier paths, and a row enters it once fully read.
     """
     heights = max(peak.height for peak in left), max(peak.height for peak in right)
     deltas = [[b.apex_rt - a.apex_rt for b in right] for a in left]
@@ -1324,33 +1451,70 @@ def _match_patterns(
     ordered = sorted(endpoints)
     shifts.update((a + b) / 2.0 for a, b in zip(ordered, ordered[1:], strict=False))
     shifts.update(shift_hypotheses)
-    empty: _ScoredPath = ((0, 0.0, 0.0), ())
+    empty: list[_ScoredPath] = [((0, 0.0, 0.0), ())]
+    columns = len(right)
+    windows = sorted(
+        (
+            deltas[i][j] - tolerances[i][j] * (1.0 + 1e-9) - 1e-12,
+            deltas[i][j] + tolerances[i][j] * (1.0 + 1e-9) + 1e-12,
+            i,
+            j,
+        )
+        for i in range(len(left))
+        for j in range(columns)
+    )
+    next_window = 0
+    active: list[tuple[float, float, int, int]] = []
     alternatives: dict[tuple[tuple[int, int], ...], tuple[int, float, float]] = {}
     for shift in sorted(shifts):
-        previous_row = [[empty] for _ in range(len(right) + 1)]
-        for i in range(len(left)):
-            row = [[empty]]
-            for j in range(len(right)):
-                upper, across = previous_row[j + 1], row[j]
-                residual = abs(deltas[i][j] - shift) / tolerances[i][j]
-                if residual <= 1.0:
-                    options = [*upper, *across]
-                    options.extend(
+        while next_window < len(windows) and windows[next_window][0] <= shift:
+            active.append(windows[next_window])
+            next_window += 1
+        active = [window for window in active if window[1] >= shift]
+        cells = sorted(
+            (i, j, residual)
+            for _, _, i, j in active
+            if (residual := abs(deltas[i][j] - shift) / tolerances[i][j]) <= 1.0
+        )
+        tree = [empty] * (columns + 1)
+        position = 0
+        while position < len(cells):
+            row = cells[position][0]
+            updates = []
+            while position < len(cells) and cells[position][0] == row:
+                _, j, residual = cells[position]
+                position += 1
+                before = empty
+                index = j
+                while index:
+                    before = _merge_top_two_paths(before, tree[index])
+                    index -= index & -index
+                extended = sorted(
+                    {
                         (
                             (
                                 previous[0] + 1,
-                                previous[1] - errors[i][j],
+                                previous[1] - errors[row][j],
                                 previous[2] - residual,
                             ),
-                            (*pairs, (i, j)),
+                            (*pairs, (row, j)),
                         )
-                        for previous, pairs in previous_row[j]
-                    )
-                    row.append(sorted(set(options), reverse=True)[:2])
-                else:
-                    row.append(_merge_top_two_paths(upper, across))
-            previous_row = row
-        for score, pairs in previous_row[-1]:
+                        for previous, pairs in before
+                    },
+                    reverse=True,
+                )[:2]
+                updates.append((j, extended))
+            for j, extended in updates:
+                index = j + 1
+                while index <= columns:
+                    tree[index] = _merge_top_two_paths(tree[index], extended)
+                    index += index & -index
+        best = empty
+        index = columns
+        while index:
+            best = _merge_top_two_paths(best, tree[index])
+            index -= index & -index
+        for score, pairs in best:
             if pairs and score > alternatives.get(pairs, (-1, 0.0, 0.0)):
                 alternatives[pairs] = score
     if not alternatives:

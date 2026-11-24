@@ -1724,7 +1724,6 @@ def test_stopping_untargeted_backfill_cleans_run_scratch(
     try:
         assert backfill_written.wait(HANDSHAKE_TIMEOUT_S)
         assert list(output_root.rglob(".partition_spool-*"))
-        assert list(output_root.rglob(".cid_nl_acquisition_cache"))
         page.locator("#analysis-stop").click()
         with page.expect_response("**/api/analysis/cancel") as stopping:
             page.locator("#confirm-accept").click()
@@ -1737,7 +1736,6 @@ def test_stopping_untargeted_backfill_cleans_run_scratch(
         "工作已停止；已發布的結果保留。"
     )
     assert not list(output_root.rglob(".partition_spool-*"))
-    assert not list(output_root.rglob(".cid_nl_acquisition_cache"))
     assert list(output_root.rglob("discovery_peaks.csv"))
     assert not list(output_root.rglob("alignment_matrix.tsv"))
 

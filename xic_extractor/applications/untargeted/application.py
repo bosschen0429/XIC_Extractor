@@ -211,8 +211,6 @@ def run_untargeted_application(
                     should_cancel=context.should_cancel,
                     progress_callback=context.progress_callback,
                     retain_partition_memory=False,
-                    retain_acquisition_cache=request.execution.retain_acquisition_cache,
-                    acquisition_cache_dir=request.execution.acquisition_cache_dir,
                     max_partition_jobs=request.execution.max_partition_jobs,
                     mass_recalibration_by_sample=(
                         _batch_mass_recalibration(
@@ -610,8 +608,6 @@ def _group_batch(
             alignment_config=request.alignment_config,
             known_istd_reference=known_istd_reference,
             timing_recorder=recorder,
-            acquisition_cache_dir=request.execution.acquisition_cache_dir,
-            retain_acquisition_cache=request.execution.retain_acquisition_cache,
             execution=request.execution.profile,
             max_partition_jobs=request.execution.max_partition_jobs,
             should_cancel=context.should_cancel,

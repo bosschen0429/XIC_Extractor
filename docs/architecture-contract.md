@@ -235,7 +235,7 @@ this section states the shape and does not restate the contracts.
 | `discovery/` | candidate discovery, seed generation, workflow-neutral discovery facts and receipt-bound candidate reading | matrix decisions or target-list policy |
 | `execution/` | generic attempt lifecycle, scheduling, workers, cancellation, cleanup, result storage and runtime metrics | method-specific science, subject splitting, or writer authority |
 | `extraction/` | Targeted acquisition, result models, product projection, input binding and capture population | application composition, UI, or Alignment decisions |
-| `untargeted_execution/` | retained Untargeted planning, acquisition cache, partition execution and private result lifetime | Targeted policy, application composition, Matrix writing or a second runtime owner |
+| `untargeted_execution/` | retained Untargeted planning, partition execution and private result lifetime | Targeted policy, application composition, Matrix writing or a second runtime owner |
 | `peak_detection/` | physical observations, hypotheses, resolvers, boundaries, integration, evidence composition | cross-sample grouping, workflow policy, or writers |
 | `alignment/` | cross-sample grouping, repair composition, Backfill and Alignment adapters | a second runtime owner, transport authority, or reading Targeted acquisition results |
 | `output/` | schema rendering and the Targeted product result model; `output/alignment/` writes Matrix artifacts | evidence recomputation, application store lifetime or RAW access |

@@ -12,11 +12,12 @@ Backfill query follows each sample's own RT rather than the group centre.
 """
 
 from dataclasses import replace
+from pathlib import Path
 
 import numpy as np
 import pytest
 
-from tests.alignment_pipeline_helpers import render, written_cells
+from tests.alignment_pipeline_helpers import written_cells
 from tests.cid_nl_peak_support_no_raw_fixture import (
     cid_nl_evidence,
     cid_nl_support_policy,
@@ -282,8 +283,6 @@ def test_backfill_batch_retains_shape_contradictions_as_soft_risk(
 def test_backfill_query_and_empty_completion_keep_sample_rt_separate_from_group(
     tmp_path, monkeypatch, empty
 ):
-    import csv
-
     from xic_extractor.alignment.cid_nl_initial_grouping import regroup_cid_nl_grouping
     from xic_extractor.alignment.feature_membership_inference import BatchRtWarp
     from xic_extractor.untargeted_execution.partition_composition import (
@@ -358,48 +357,47 @@ def test_backfill_query_and_empty_completion_keep_sample_rt_separate_from_group(
         stem = sample_result.job.sample.raw_stem
         if stem.startswith("S"):
             continue
-        (attempt,) = sample_result.backfill_attempts
         expected = 8.0 + shifts[stem]
+        if not empty:
+            assert not sample_result.backfill_attempts
+            (peak,) = (
+                sample_result.adapter_result.assessment_input.assessment.candidate_peaks
+            )
+            assert peak.integration.rt_apex_min == pytest.approx(expected)
+            continue
+        (attempt,) = sample_result.backfill_attempts
         assert attempt.query_rt == pytest.approx(expected)
         assert attempt.query_rt_basis == "calibrated_trajectory_fit"
         receipt = attempt.assessment.evaluation_receipt
         assert (receipt.query_rt_min, receipt.query_rt_max) == pytest.approx(
             (expected - BACKFILL_HALF_WINDOW_MIN, expected + BACKFILL_HALF_WINDOW_MIN)
         )
-        assert len(attempt.assessment.candidate_peaks) == (0 if empty else 1)
-        if not empty:
-            assert attempt.assessment.candidate_peaks[
-                0
-            ].integration.rt_apex_min == pytest.approx(expected)
+        assert not attempt.assessment.candidate_peaks
     completed = complete_dense_partition(batch, result, alignment_config=config)
     writer = completed.application_result
     for _row, sample_stem, cell in written_cells(writer):
-        if sample_stem in {"Early", "Late"}:
+        if sample_stem not in {"Early", "Late"}:
+            continue
+        apex = 8.0 + shifts[sample_stem]
+        if empty:
+            assert cell.value is None
             assert backfill_query_bounds(cell) == pytest.approx(
-                (
-                    8.0 + shifts[sample_stem] - BACKFILL_HALF_WINDOW_MIN,
-                    8.0 + shifts[sample_stem] + BACKFILL_HALF_WINDOW_MIN,
-                )
+                (apex - BACKFILL_HALF_WINDOW_MIN, apex + BACKFILL_HALF_WINDOW_MIN)
             )
-    path = render("backfill", tmp_path / "queries.tsv", writer)
-    with path.open(encoding="utf-8") as stream:
-        rows = list(csv.DictReader(stream, delimiter="\t"))
-    if not empty:
-        for row in rows:
-            if row["sample_stem"] in {"Early", "Late"}:
-                assert float(row["backfill_query_rt_min"]) == pytest.approx(
-                    8.0 + shifts[row["sample_stem"]] - BACKFILL_HALF_WINDOW_MIN
-                )
+        else:
+            assert cell.value is not None
+            assert cell.selected_integration.rt_apex_min == pytest.approx(apex)
+            assert backfill_query_bounds(cell) == (None, None)
 
 
 @pytest.mark.parametrize(
-    "outcome", ["support", "empty", "below-quorum", "blank", "failed"]
+    "outcome", ["support", "empty", "below-quorum", "blank", "excluded", "failed"]
 )
 def test_rejected_discovery_input_cannot_supply_backfill_support(
     tmp_path, monkeypatch, outcome
 ):
-    """A Discovery peak held at peak level is not admitted to Alignment. Only an
-    authorized Backfill reads the rejected sample's RAW.
+    """A review-only Discovery candidate supplies no support; a new physical
+    observation may be measured but cannot bypass sample role or support quorum.
     """
     stems = ("S1", "S2", "Rejected")
     paths = raw_paths(tmp_path, stems)
@@ -410,19 +408,27 @@ def test_rejected_discovery_input_cannot_supply_backfill_support(
     assert not any(peak.admitted for peak in peaks["Rejected"])
     if outcome == "empty":
         raws["Rejected"].intensity[:] = 0.0
-    blank = {"blank": "Rejected", "below-quorum": "S2"}.get(outcome)
+    context_stem = {
+        "blank": "Rejected",
+        "excluded": "Rejected",
+        "below-quorum": "S2",
+    }.get(outcome)
     metadata = sample_metadata_for(
         stems,
         **(
             {
-                blank: SampleMetadata(
-                    sample_name=blank,
-                    raw_stem=blank,
-                    injection_order=stems.index(blank) + 1,
-                    sample_role="blank",
+                context_stem: SampleMetadata(
+                    sample_name=context_stem,
+                    raw_stem=context_stem,
+                    injection_order=stems.index(context_stem) + 1,
+                    sample_role="sample" if outcome == "excluded" else "blank",
+                    excluded=outcome == "excluded",
+                    exclusion_reason="operator exclusion"
+                    if outcome == "excluded"
+                    else "",
                 )
             }
-            if blank
+            if context_stem
             else {}
         ),
     )
@@ -457,16 +463,20 @@ def test_rejected_discovery_input_cannot_supply_backfill_support(
     assert not rejected_ids & {cell["source_candidate_id"] for cell in cells.values()}
     (rejected,) = (cell for (_f, stem), cell in cells.items() if stem == "Rejected")
     assert rejected["source_candidate_id"] == ""
+    (matrix_row,) = read_tsv(output / "alignment_matrix.tsv")
     if outcome == "support":
-        assert rejected["status"] == "backfilled"
+        assert rejected["status"] == "ms1_only"
         assert float(rejected["area"]) > 0
+        assert float(matrix_row["Rejected"]) == pytest.approx(
+            float(rejected["area"]), rel=1e-5
+        )
     elif outcome == "empty":
         assert rejected["status"] == "unavailable"
-        assert rejected["area"] == ""
+        assert rejected["area"] == matrix_row["Rejected"] == ""
     else:
-        assert rejected["status"] == "not_searched"
-        assert rejected["area"] == ""
-    assert ("Rejected" in opened) is (outcome in {"support", "empty"})
+        assert rejected["status"] == "unresolved"
+        assert rejected["area"] == matrix_row["Rejected"] == ""
+    assert "Rejected" in opened
 
 
 @pytest.mark.parametrize(
@@ -526,22 +536,23 @@ def test_backfill_recovers_every_authorized_rt_group(
     for center in authorized:
         cell = missing[center]
         if center in recovery_peaks:
-            assert cell["status"] == "backfilled"
+            assert cell["status"] == "ms1_only"
             assert float(cell["area"]) > 0
             assert float(cell["apex_rt"]) == pytest.approx(center, abs=0.01)
         else:
             assert cell["status"] == "unavailable"
             assert cell["area"] == ""
     if shared_support == "below-quorum":
-        assert missing[12.0]["status"] == "not_searched"
+        assert missing[12.0]["area"] == ""
+        assert missing[12.0]["status"] == (
+            "unresolved" if 12.0 in recovery_peaks else "not_searched"
+        )
 
 
-def _shared_peak_scenario(tmp_path, mz_separation_ppm, *, observed=("S1", "S2")):
+def _shared_peak_raws(mz_separation_ppm, observed=("S1", "S2")):
     """Two groups 0.12 min apart; Missing has one MS1 peak between them."""
     centers = {**dict.fromkeys(observed, (8.0, 8.12)), "Missing": (8.06,)}
-    settings = replace(SETTINGS, neutral_loss_profile=None, rt_max=8.6)
-    paths = raw_paths(tmp_path, tuple(centers))
-    raws, peaks = {}, {}
+    raws = {}
     for index, stem in enumerate(centers, start=1):
         raw = _gaussian_raw(
             centers[stem],
@@ -563,6 +574,15 @@ def _shared_peak_scenario(tmp_path, mz_separation_ppm, *, observed=("S1", "S2"))
             )
         )
         raws[stem] = raw
+    return raws
+
+
+def _shared_peak_scenario(tmp_path, mz_separation_ppm, *, observed=("S1", "S2")):
+    settings = replace(SETTINGS, neutral_loss_profile=None, rt_max=8.6)
+    raws = _shared_peak_raws(mz_separation_ppm, observed)
+    paths = raw_paths(tmp_path, tuple(raws))
+    peaks = {}
+    for stem, raw in raws.items():
         discovered = discover(raw, paths[stem], settings)
         peaks[stem] = (
             discovered
@@ -572,7 +592,7 @@ def _shared_peak_scenario(tmp_path, mz_separation_ppm, *, observed=("S1", "S2"))
     return paths, raws, peaks, settings
 
 
-@pytest.mark.parametrize("mz_separation_ppm", [0.0, 12.0])
+@pytest.mark.parametrize("mz_separation_ppm", [0.0, 6.0])
 def test_shared_physical_recovery_claim_is_not_assigned_to_two_groups(
     tmp_path, monkeypatch, mz_separation_ppm
 ):
@@ -591,11 +611,11 @@ def test_shared_physical_recovery_claim_is_not_assigned_to_two_groups(
 
     assert len(read_tsv(output / "alignment_matrix.tsv")) == 2
     missing = [cell for cell, _review in _cells_of(output, "Missing").values()]
-    assert sorted(cell["status"] for cell in missing) == ["backfilled", "unresolved"]
+    assert sorted(cell["status"] for cell in missing) == ["ms1_only", "unresolved"]
     assert sum(bool(cell["area"]) for cell in missing) == 1
 
 
-@pytest.mark.parametrize("mz_separation_ppm", [0.0, 12.0, 21.1])
+@pytest.mark.parametrize("mz_separation_ppm", [0.0, 6.0, 10.6])
 @pytest.mark.parametrize("reverse", [False, True])
 @pytest.mark.parametrize("sloped_background", [False, True])
 def test_shared_ms1_only_backfill_peak_is_not_written_to_two_rows(
@@ -621,6 +641,14 @@ def test_shared_ms1_only_backfill_peak_is_not_written_to_two_rows(
             rt_range=(6.8, 9.4, 1041) if slope else (7.4, 8.7, 521),
             width=0.018,
         )
+        if observed and second_mz != first_mz:
+            raw.additional_ms1_ions = {
+                second_mz: 1000.0 * np.exp(-0.5 * ((raw.rt - 8.12) / 0.018) ** 2)
+            }
+            raw.intensity = 1000.0 * np.exp(-0.5 * ((raw.rt - 8.0) / 0.018) ** 2)
+        elif not observed:
+            raw.ms1_mz = (first_mz + second_mz) / 2
+            raw.additional_ms1_ions = {}
         if slope:
             raw.intensity = raw.intensity + 40.0 * (raw.rt - 6.8)
         raw.scans = tuple(
@@ -654,7 +682,7 @@ def test_shared_ms1_only_backfill_peak_is_not_written_to_two_rows(
             "detected",
         ]
     missing = [cells[(feature, "Missing")] for feature in features]
-    assert sorted(cell["status"] for cell in missing) == ["backfilled", "unresolved"]
+    assert sorted(cell["status"] for cell in missing) == ["ms1_only", "unresolved"]
     assert sum(bool(cell["area"]) for cell in missing) == 1
 
     evidence = read_review_evidence(output / "alignment_explanation.sqlite")
@@ -663,11 +691,12 @@ def test_shared_ms1_only_backfill_peak_is_not_written_to_two_rows(
         for group in evidence.groups.values()
         for cell in group.cells.values()
         for risk in cell["membership_risks"]
-        if risk["phase"] == "backfill"
+        if risk["phase"] == "initial"
+        and "accepted_competition" in risk["risk_flags"]
+        and cell["sample_key"] == "Missing"
     ]
     assert len(competing) == 1
     ((cell, risk),) = competing
-    assert "backfill_competition" in risk["risk_flags"]
     assert risk["alternative_partition"] and risk["cost_gap"] >= 0
     if mz_separation_ppm == 0 and not reverse and not sloped_background:
         from xic_inspector.api import SelectionRequest, prepare_report
@@ -686,13 +715,13 @@ def test_shared_ms1_only_backfill_peak_is_not_written_to_two_rows(
 
 
 @pytest.mark.parametrize(
-    ("missing_peaks", "expected_status"),
-    [((8.0,), "backfilled"), ((7.8, 8.2), "unavailable")],
+    "missing_peaks",
+    [(8.0,), (7.8, 8.2)],
     ids=["one-ms1-peak", "two-ms1-peaks"],
 )
 @pytest.mark.parametrize("composition", [None, "union", "intersection"])
-def test_ms1_only_backfill_fills_only_one_unique_group_window_peak(
-    tmp_path, monkeypatch, missing_peaks, expected_status, composition
+def test_batch_ms1_only_publishes_only_one_selected_peak_in_the_established_row(
+    tmp_path, monkeypatch, missing_peaks, composition
 ):
     """The Missing peak has the supports' shape, so it integrates alike."""
     centers = {"S1": (8.0,), "S2": (8.0,), "Missing": missing_peaks}
@@ -729,33 +758,21 @@ def test_ms1_only_backfill_fills_only_one_unique_group_window_peak(
         output_level="validation-minimal",
     )
 
-    ((cell, review),) = _cells_of(output, "Missing").values()
-    assert cell["status"] == expected_status
+    (matrix_row,) = read_tsv(output / "alignment_matrix.tsv")
+    missing = tuple(_cells_of(output, "Missing").values())
+    ((cell, review),) = (item for item in missing if item[1]["matrix_row_index"])
+    assert len(missing) == len(missing_peaks)
+    assert cell["status"] == "ms1_only"
     assert cell["source_candidate_id"] == ""
-    if expected_status == "unavailable":
-        assert cell["area"] == ""
-    else:
-        support_area = float(
-            published_cells(output)[(review["feature_id"], "S1")]["area"]
-        )
-        assert float(cell["area"]) == pytest.approx(support_area, rel=0.05)
-        assert float(cell["apex_rt"]) == pytest.approx(8.0, abs=0.01)
-        from tools.diagnostics.output_population_census import main as population_main
-
-        required = (
-            "alignment_backfill_cell_evidence.tsv",
-            "alignment_review.tsv:neutral_loss_tag",
-            "alignment_review.tsv:group_product_mz",
-        )
-        requirements = [
-            part for item in required for part in ("--require-populated", item)
-        ]
-        backfill_tsv = output / "alignment_backfill_cell_evidence.tsv"
-        populated = backfill_tsv.read_text(encoding="utf-8")
-        backfill_tsv.write_text(populated.splitlines()[0] + "\n", encoding="utf-8")
-        assert population_main([str(output), *requirements]) == 1
-        backfill_tsv.write_text(populated, encoding="utf-8")
-        assert population_main([str(output), *requirements]) == 0
+    support_area = float(published_cells(output)[(review["feature_id"], "S1")]["area"])
+    assert float(cell["area"]) == pytest.approx(support_area, rel=0.05)
+    assert float(matrix_row["Missing"]) == pytest.approx(float(cell["area"]), rel=1e-5)
+    assert any(
+        float(cell["apex_rt"]) == pytest.approx(apex, abs=0.01)
+        for apex in missing_peaks
+    )
+    if len(missing_peaks) > 1:
+        assert "accepted_competition" in review["membership_risk_flags"].split(";")
     assert review["detected_count"] == "2"
     assert review["warning"] != "no_anchor"
     if not composition:
@@ -801,7 +818,7 @@ def test_backfill_reaches_a_sample_whose_support_belongs_to_another_group(
         round(float(review["group_center_rt"]), 1): cell
         for cell, review in _cells_of(output, "Missing").values()
     }
-    assert missing[8.0]["status"] == "backfilled"
+    assert missing[8.0]["status"] == "ms1_only"
     assert float(missing[8.0]["area"]) > 0
     assert missing[8.0]["source_candidate_id"] == ""
     assert missing[9.6]["status"] == "detected"
@@ -871,19 +888,22 @@ def _shared_peak_inputs(
     )
 
 
-def _run_cached_backfill_cli(directory, output):
-    """Run in a fresh interpreter: the fixture supplies RAW facts, not a DLL."""
+def _run_backfill_cli(root, directory, output):
+    """Run in a fresh interpreter, rereading the fixture's synthetic RAWs."""
     from scripts.run_alignment import main
-    from xic_extractor.untargeted_execution.partition import execution as phases
     from xic_extractor.untargeted_execution.partition import workers
 
-    def forbidden(*args, **kwargs):
-        raise AssertionError("Replay opened a RAW")
-
+    root = Path(root)
+    raws = _shared_peak_raws(0.0)
     with pytest.MonkeyPatch.context() as patch:
-        patch.setattr(phases, "ensure_assemblies_loaded", lambda *_: None)
         patch.setattr(workers, "ensure_assemblies_loaded", lambda *_: None)
-        patch.setattr(workers, "open_raw", forbidden)
+        install_runtime_raws(
+            patch,
+            sources_by_path={
+                root / "raw" / f"{stem}.raw": raw for stem, raw in raws.items()
+            },
+            tmp_path=root,
+        )
         return main(["backfill", "--inputs", directory, "--output-dir", output])
 
 
@@ -915,8 +935,7 @@ def _backfill_request(tmp_path, options, config):
         output_dir=tmp_path / "grouping",
         discovery_settings=options["settings"],
         execution=UntargetedExecutionPolicy(
-            profile=ExecutionProfile(alignment_workers=1, backend="thread"),
-            acquisition_cache_dir=tmp_path / "raw-facts",
+            profile=ExecutionProfile(alignment_workers=1, backend="thread")
         ),
     )
 
@@ -961,9 +980,6 @@ def test_full_alignment_captures_competing_rows_and_single_batch_matrix(
         replace(
             request,
             output_dir=control_dir,
-            execution=replace(
-                request.execution, acquisition_cache_dir=tmp_path / "control-facts"
-            ),
             publication=UntargetedPublicationPolicy(emit_alignment_cells=True),
         )
     )
@@ -1010,7 +1026,15 @@ def test_full_alignment_captures_competing_rows_and_single_batch_matrix(
     groups = defaultdict(set)
     for row in read_tsv(regrouped / "members.tsv"):
         groups[row["group_id"]].add(row["owner_id"])
-    assert sorted(map(len, groups.values())) == [2, 2]
+    assert sorted(map(len, groups.values())) == [2, 3]
+    assert (
+        sum(
+            owner.startswith("Missing|ms1_physical_observation|")
+            for owners in groups.values()
+            for owner in owners
+        )
+        == 1
+    )
 
     directory = capture_dir / "backfill-inputs"
     backfilled = tmp_path / "backfill"
@@ -1019,7 +1043,8 @@ def test_full_alignment_captures_competing_rows_and_single_batch_matrix(
             sys.executable,
             "-c",
             "import sys; from tests.test_cid_nl_multi_group_recovery import "
-            "_run_cached_backfill_cli as run; sys.exit(run(*sys.argv[1:]))",
+            "_run_backfill_cli as run; sys.exit(run(*sys.argv[1:]))",
+            str(tmp_path),
             str(directory),
             str(backfilled),
         ],
@@ -1044,7 +1069,7 @@ def test_full_alignment_captures_competing_rows_and_single_batch_matrix(
         [item[2] for item in expected], abs=0.006
     )
     missing = [(status, area) for stem, status, area in actual if stem == "Missing"]
-    assert sorted(status for status, _area in missing) == ["backfilled", "unresolved"]
+    assert sorted(status for status, _area in missing) == ["ms1_only", "unresolved"]
     assert sum(area > 0 for _status, area in missing) == 1
 
     (directory / "0.pickle.gz").write_bytes(b"not the captured partition")

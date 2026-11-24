@@ -8,14 +8,17 @@ observations produced here for their respective bootstrap populations.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections import Counter
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from xic_extractor.alignment.cid_nl_grouping import has_cid_nl_activation_support
 from xic_extractor.alignment.rt_drift import BatchRtModelAccumulator, RtDriftModel
 from xic_extractor.alignment.sample_rt_calibration import (
     BatchRtCalibration,
     BatchRtCalibrationAccumulator,
+    ordinary_anchor_min_samples,
 )
 
 if TYPE_CHECKING:
@@ -26,6 +29,8 @@ if TYPE_CHECKING:
         InitialGroupingScope,
         RetainedGroupingCandidate,
     )
+    from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
+    from xic_extractor.alignment.rt_frame import SampleRtFrame
 
 _CALIBRATION_GROUP_BASES: frozenset[FeatureMembershipBasis] = frozenset(
     {
@@ -54,6 +59,34 @@ class RtAnchorObservation:
     bootstrap_group_id: str | None
 
 
+def places_sample_on_rt_frame(owner: SampleLocalMS1Owner) -> bool:
+    """Whether a direct-supported owner's apex is an anchor observation."""
+    return has_cid_nl_activation_support(owner) and owner.quantification_eligible
+
+
+def reaches_ordinary_anchor_quorum(
+    sample_stems: Iterable[str], frame: SampleRtFrame
+) -> bool:
+    """Whether anchors from these samples can form one calibrating correspondence.
+
+    A bootstrap group calibrates a cohort only when it holds
+    ``ordinary_anchor_min_samples`` of that cohort's samples, so a population
+    below the quorum in every cohort calibrates nothing however it is grouped.
+    """
+    universe = frame.sample_universe or frame.injection_order
+    cohorts = frame.sample_cohorts
+    sizes = Counter(cohorts[stem] for stem in universe if stem in cohorts)
+    present = Counter(
+        cohorts[stem]
+        for stem in set(sample_stems)
+        if stem in universe and stem in cohorts
+    )
+    return any(
+        count >= ordinary_anchor_min_samples(sizes[cohort])
+        for cohort, count in present.items()
+    )
+
+
 def rt_anchor_observations(
     scope: InitialGroupingScope,
     candidates: Sequence[RetainedGroupingCandidate],
@@ -77,7 +110,7 @@ def rt_anchor_observations(
             subject.neutral_loss_da,
             owner.sample_stem,
             owner.owner_id,
-            owner.peak.integration.rt_apex_min,
+            owner.peak.rt_apex_min,
             group.group_hypothesis_id
             if group.inference_basis is not None
             and group.inference_basis.basis in _CALIBRATION_GROUP_BASES
@@ -86,8 +119,7 @@ def rt_anchor_observations(
         for group in scope.groups
         for owner in group.owners
         if (subject := subject_by_owner.get(owner.owner_id)) is not None
-        and owner.primary_identity_event is not None
-        and owner.quantification_eligible
+        and places_sample_on_rt_frame(owner)
     )
 
 

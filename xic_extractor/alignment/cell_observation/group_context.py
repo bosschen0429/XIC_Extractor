@@ -16,7 +16,10 @@ from xic_extractor.peak_detection.cid_nl_method_assessment import (
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CidNlMethodSubject,
 )
-from xic_extractor.peak_detection.peak_hypothesis_identity import MeasuredPeakHypothesis
+from xic_extractor.peak_detection.peak_hypothesis_identity import (
+    HYPOTHESIS_METHOD_DDA_CID_NL,
+    MeasuredPeakHypothesis,
+)
 from xic_extractor.sample_metadata import SampleMetadata
 
 TerminalObservationVariant: TypeAlias = Literal[
@@ -87,6 +90,14 @@ class CidNlCellGroupContext:
             select_cid_nl_group_backfill_subject(self.group, subjects),
         )
         object.__setattr__(self, "_owner_ids", tuple(sorted(self.group.owner_ids)))
+
+    @property
+    def direct_supports(self) -> tuple[CidNlCellGroupSupport, ...]:
+        return tuple(
+            support
+            for support in self.supports
+            if support.hypothesis.method == HYPOTHESIS_METHOD_DDA_CID_NL
+        )
 
     @property
     def method_subjects(self) -> tuple[CidNlMethodSubject, ...]:

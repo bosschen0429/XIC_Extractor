@@ -1,4 +1,4 @@
-"""Canonical validation, JSON serialization, and parsing primitives.
+"""Canonical validation and parsing primitives.
 
 These primitives provide fast, reusable invariant guards across data models,
 contracts, and persistence envelopes, reducing copy-paste boilerplate.
@@ -6,110 +6,12 @@ contracts, and persistence envelopes, reducing copy-paste boilerplate.
 
 from __future__ import annotations
 
-import json
 import math
 import re
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable
 from numbers import Integral, Real
 
 _LOWER_SHA256 = re.compile(r"[0-9a-f]{64}")
-
-
-def canonical_json_bytes(value: object) -> bytes:
-    """Serialize a JSON-compatible object to canonical UTF-8 bytes."""
-    return json.dumps(
-        value,
-        ensure_ascii=False,
-        allow_nan=False,
-        separators=(",", ":"),
-    ).encode("utf-8")
-
-
-def make_unique_mapping_hook(
-    label: str = "JSON payload",
-    error_factory: Callable[[str], Exception] = ValueError,
-) -> Callable[[Sequence[tuple[str, object]]], dict[str, object]]:
-    """Return an object_pairs_hook for json.loads that rejects duplicate keys."""
-
-    def hook(pairs: Sequence[tuple[str, object]]) -> dict[str, object]:
-        result: dict[str, object] = {}
-        for key, value in pairs:
-            if key in result:
-                raise error_factory(f"{label} has duplicate field: {key}")
-            result[key] = value
-        return result
-
-    return hook
-
-
-json_unique_mapping_hook = make_unique_mapping_hook()
-
-
-def parse_json_mapping_payload(
-    payload: bytes | str,
-    *,
-    label: str,
-    error_factory: Callable[[str], Exception] = ValueError,
-    type_error_factory: Callable[[str], Exception] = TypeError,
-    enforce_canonical: bool = False,
-) -> tuple[bytes, dict[str, object]]:
-    """Validate, decode, and parse payload into canonical UTF-8 bytes and mapping."""
-    raw = payload.encode("utf-8") if isinstance(payload, str) else payload
-    if not isinstance(raw, bytes):
-        raise type_error_factory(f"{label} payload must be bytes or str")
-    try:
-        decoded = raw.decode("utf-8")
-    except UnicodeDecodeError as exc:
-        raise error_factory(f"{label} payload must be UTF-8") from exc
-    try:
-        hook = (
-            json_unique_mapping_hook
-            if error_factory is ValueError
-            else make_unique_mapping_hook(label=label, error_factory=error_factory)
-        )
-        value = json.loads(decoded, object_pairs_hook=hook)
-    except json.JSONDecodeError as exc:
-        raise error_factory(f"{label} payload must be valid JSON") from exc
-    if not isinstance(value, dict):
-        raise error_factory(f"{label} must be one JSON object")
-    if enforce_canonical and canonical_json_bytes(value) != raw:
-        raise error_factory(f"{label} is not canonical")
-    return raw, value
-
-
-def canonical_float_hex(
-    value: object,
-    *,
-    label: str = "canonical numeric fields",
-    error_factory: Callable[[str], Exception] = ValueError,
-    type_error_factory: Callable[[str], Exception] = TypeError,
-) -> str:
-    """Return canonical hexadecimal representation of a finite real number."""
-    if isinstance(value, bool) or not isinstance(value, Real):
-        raise type_error_factory(f"{label} must be numbers")
-    number = float(value)
-    if not math.isfinite(number):
-        raise error_factory(f"{label} must be finite")
-    return (0.0 if number == 0.0 else number).hex()
-
-
-def parse_canonical_float_hex(
-    value: object,
-    *,
-    field: str = "field",
-    error_factory: Callable[[str], Exception] = ValueError,
-    type_error_factory: Callable[[str], Exception] = TypeError,
-) -> float:
-    """Parse and roundtrip-verify a canonical finite hexadecimal float string."""
-    if not isinstance(value, str):
-        raise type_error_factory(f"{field} must be canonical hexadecimal text")
-    try:
-        number = float.fromhex(value)
-    except ValueError as exc:
-        raise error_factory(f"{field} must be canonical hexadecimal text") from exc
-    if not math.isfinite(number) or canonical_float_hex(number) != value:
-        raise error_factory(f"{field} must be canonical finite hexadecimal text")
-    return number
 
 
 def require_finite_real(
@@ -244,43 +146,6 @@ def require_owner_normalized_text(
     return value
 
 
-def require_mapping(
-    value: object,
-    *,
-    label: str = "payload",
-    error_factory: Callable[[str], Exception] = ValueError,
-) -> dict[str, object]:
-    """Validate that value is a dictionary."""
-    if not isinstance(value, dict):
-        raise error_factory(f"{label} must be one JSON object")
-    return value
-
-
-def require_list(
-    value: object,
-    *,
-    label: str = "payload",
-    error_factory: Callable[[str], Exception] = ValueError,
-) -> list[object]:
-    """Validate that value is a list."""
-    if not isinstance(value, list):
-        raise error_factory(f"{label} must be one JSON array")
-    return value
-
-
-def require_keys(
-    value: Mapping[str, object],
-    keys: tuple[str, ...],
-    *,
-    label: str,
-    error_factory: Callable[[str], Exception] = ValueError,
-) -> None:
-    """Validate that value's keys exactly match the expected keys sequence."""
-    actual = tuple(value)
-    if actual != keys:
-        raise error_factory(f"{label} fields must be exactly {keys}; got {actual}")
-
-
 def is_lower_sha256(value: object) -> bool:
     """Return whether value is a 64-character lowercase hex SHA-256 digest."""
     return isinstance(value, str) and _LOWER_SHA256.fullmatch(value) is not None
@@ -304,19 +169,10 @@ def require_lower_sha256(
 
 
 __all__ = [
-    "canonical_float_hex",
-    "canonical_json_bytes",
-    "json_unique_mapping_hook",
-    "make_unique_mapping_hook",
-    "parse_canonical_float_hex",
-    "parse_json_mapping_payload",
     "require_boolean",
     "require_finite_real",
     "require_integer",
-    "require_keys",
-    "require_list",
     "require_lower_sha256",
-    "require_mapping",
     "require_optional_integer",
     "require_optional_text",
     "require_owner_normalized_text",

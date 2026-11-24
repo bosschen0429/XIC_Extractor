@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
-from pathlib import Path
 
 DEFAULT_ALIGNMENT_WORKERS = 4
 DEFAULT_WORKER_BACKEND = "process"
@@ -81,6 +80,4 @@ class UntargetedExecutionPolicy:
     """Resources for retained Alignment, independent of scientific settings."""
 
     profile: ExecutionProfile
-    retain_acquisition_cache: bool = False
-    acquisition_cache_dir: Path | None = None
     max_partition_jobs: int = 100_000

@@ -26,7 +26,9 @@ from xic_extractor.peak_detection.cid_nl_method_assessment import (
     is_ms1_only_cid_nl_backfill_assessment,
 )
 from xic_extractor.peak_detection.observations import PeakObservation
-from xic_extractor.peak_detection.peak_hypothesis_identity import MeasuredPeakHypothesis
+from xic_extractor.peak_detection.peak_hypothesis_identity import (
+    MeasuredPeakHypothesis,
+)
 from xic_extractor.sample_metadata import SampleMetadata
 
 
@@ -176,7 +178,7 @@ def compose_cid_nl_predecessor_cells(
             ).append(assessment)
     support_contexts: dict[tuple[str, int], list[CidNlCellGroupContext]] = {}
     for context in contexts:
-        for support in context.supports:
+        for support in context.direct_supports:
             support_contexts.setdefault(
                 (
                     support.sample.sample_name,
@@ -225,6 +227,8 @@ def compose_cid_nl_predecessor_cells(
                 or local_support.assessment is not assessment
                 else (local_support,)
             )
+            if not local and assessment.technical_state == "not_evaluated":
+                continue
             outside_context = None
             observation = None
             hypothesis = None
@@ -238,10 +242,6 @@ def compose_cid_nl_predecessor_cells(
                     for sibling in support_contexts.get((sample_id, id(assessment)), ())
                     if sibling is not context
                 )
-                if not siblings and recovered is not assessment:
-                    raise ValueError(
-                        "outside-group cell requires one exact sibling SUPPORT context"
-                    )
                 outside_context = (
                     min(siblings, key=lambda sibling: sibling.group.group_hypothesis_id)
                     if siblings

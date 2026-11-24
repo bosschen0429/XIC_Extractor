@@ -64,11 +64,7 @@ def _window_inference(
     common_rt = {
         owner.owner_id: rt
         for owner in owners
-        if (
-            rt := rt_frame.calibrated_rt_min(
-                owner.sample_stem, owner.peak.integration.rt_apex_min
-            )
-        )
+        if (rt := rt_frame.calibrated_rt_min(owner.sample_stem, owner.peak.rt_apex_min))
         is not None
     }
     trajectories = trajectories.common_frame_membership(common_rt)
@@ -89,8 +85,10 @@ def _window_inference(
     shape_conflicts: dict[str, set[str]] = defaultdict(set)
     eligible = tuple(owner for owner in owners if owner.owner_id not in weak)
     by_chemistry: dict[tuple[str, str], list[SampleLocalMS1Owner]] = defaultdict(list)
+    has_unobserved_method = any(rules.method_unobserved(owner) for owner in eligible)
     for owner in eligible:
-        by_chemistry[rules.chemistry_key(owner)].append(owner)
+        key = ("", "") if has_unobserved_method else rules.chemistry_key(owner)
+        by_chemistry[key].append(owner)
 
     final_components: list[tuple[str, ...]] = [(owner_id,) for owner_id in sorted(weak)]
     for chemistry in sorted(by_chemistry):
@@ -101,7 +99,7 @@ def _window_inference(
         windows: list[list[SampleLocalMS1Owner]] = []
         for owner in sorted_owners:
             if not windows or owner.peak.mz - windows[-1][-1].peak.mz > mz_tolerance_da(
-                windows[-1][-1].peak.mz, config.max_ppm
+                windows[-1][-1].peak.mz, config.precursor_mz_tolerance_ppm
             ):
                 windows.append([])
             windows[-1].append(owner)
@@ -299,11 +297,7 @@ def _window_membership_result(
                     else None,
                     rt_basis=rt_basis,
                     rt_raw_delta_sec=(
-                        abs(
-                            owner.peak.integration.rt_apex_min
-                            - witness.peak.integration.rt_apex_min
-                        )
-                        * 60.0
+                        abs(owner.peak.rt_apex_min - witness.peak.rt_apex_min) * 60.0
                         if witness is not None
                         else None
                     ),

@@ -22,8 +22,7 @@ def test_default_config_matches_alignment_contract():
 
     config = AlignmentConfig()
 
-    assert config.preferred_ppm == 20.0
-    assert config.max_ppm == 50.0
+    assert config.precursor_mz_tolerance_ppm == 10.0
     assert config.preferred_rt_sec == 60.0
     assert config.product_mz_tolerance_ppm == 20.0
     assert config.min_peak_shape_similarity == 0.80
@@ -57,9 +56,8 @@ def test_alignment_config_owner_gate_validation(field, value):
 @pytest.mark.parametrize(
     "kwargs",
     [
-        {"preferred_ppm": 0.0},
-        {"max_ppm": -1.0},
-        {"preferred_ppm": 51.0, "max_ppm": 50.0},
+        {"precursor_mz_tolerance_ppm": 0.0},
+        {"precursor_mz_tolerance_ppm": -1.0},
         {"preferred_rt_sec": 0.0},
         {"product_mz_tolerance_ppm": 0.0},
         {"min_peak_shape_similarity": -0.1},
@@ -78,8 +76,7 @@ def test_invalid_tolerance_windows_are_rejected(kwargs):
 @pytest.mark.parametrize(
     "field",
     [
-        "preferred_ppm",
-        "max_ppm",
+        "precursor_mz_tolerance_ppm",
         "preferred_rt_sec",
         "product_mz_tolerance_ppm",
     ],
@@ -95,8 +92,7 @@ def test_non_finite_tolerance_windows_are_rejected(field, value):
 @pytest.mark.parametrize(
     "field",
     [
-        "preferred_ppm",
-        "max_ppm",
+        "precursor_mz_tolerance_ppm",
         "preferred_rt_sec",
         "product_mz_tolerance_ppm",
     ],

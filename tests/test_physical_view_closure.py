@@ -151,7 +151,7 @@ def test_one_ion_in_two_windows_is_one_peak_whatever_the_input_order(
         groups[::-1] if reverse else groups,
         acquisition_source=raw.acquisition_source,
         signal_processing_profile=TEST_PROFILE,
-        settings=_settings(),
+        settings=_settings(precursor_mz_tolerance_ppm=20),
         ms1_centroid=lambda *_: None,
     )
 
@@ -175,7 +175,7 @@ def test_distinct_ions_in_overlapping_windows_stay_apart() -> None:
         groups,
         acquisition_source=raw.acquisition_source,
         signal_processing_profile=TEST_PROFILE,
-        settings=_settings(),
+        settings=_settings(precursor_mz_tolerance_ppm=20),
         ms1_centroid=lambda *_: None,
     )
 

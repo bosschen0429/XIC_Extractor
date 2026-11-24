@@ -88,6 +88,7 @@ class ChromPeakSegmentEnumeration:
     morphology_trace_window_points: int
     morphology_trace_effective_points: int
     morphology_trace_values: tuple[float, ...] = ()
+    component_cut_indices: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -239,11 +240,20 @@ def enumerate_chrom_peak_segments(
             )
             group_start = index + 1
     if active_policy.morphology_trace_method == "rt_envelope":
+        native_envelope = gaussian15_morphology_trace(
+            acquired, window_points=active_policy.morphology_trace_window_points
+        )
         groups = [
             part
             for group in groups
             for part in _split_at_separable_valleys(
-                group, rt, residual, acquired, context_interval, active_policy
+                group,
+                rt,
+                residual,
+                acquired,
+                native_envelope,
+                context_interval,
+                active_policy,
             )
         ]
     segments = tuple(
@@ -269,6 +279,11 @@ def enumerate_chrom_peak_segments(
         morphology_trace_window_points=active_policy.morphology_trace_window_points,
         morphology_trace_effective_points=morphology_effective_points,
         morphology_trace_values=tuple(float(value) for value in morphology_trace),
+        component_cut_indices=tuple(
+            relation.valley_index
+            for _, _, relation in groups[:-1]
+            if relation is not None
+        ),
     )
 
 
@@ -543,6 +558,7 @@ def _split_at_separable_valleys(
     rt: np.ndarray,
     residual: np.ndarray,
     acquired: np.ndarray,
+    native_envelope: np.ndarray,
     context: TraceInterval,
     policy: ChromPeakSegmentPolicy,
 ) -> list[
@@ -552,11 +568,19 @@ def _split_at_separable_valleys(
         _AdjacentPeakRelation | None,
     ]
 ]:
-    """Cut one coarse component at its separable acquired valleys."""
+    """Separate acquired lobes across sustained non-detection or measured valleys."""
     seeds, left_relation, right_relation = group
     start = left_relation.valley_index if left_relation else context.start_index
     end = right_relation.valley_index + 1 if right_relation else context.end_index
-    cuts = separable_valleys(rt, acquired, start, end, policy, cut_signal=residual)
+    gaps = _sampled_nondetection_cuts(rt, acquired, native_envelope, start, end, policy)
+    edges = (start, *gaps, end)
+    cuts: list[int] = []
+    for left, right in zip(edges, edges[1:], strict=False):
+        cuts.extend(
+            separable_valleys(rt, acquired, left, right, policy, cut_signal=residual)
+        )
+        if right != end:
+            cuts.append(right)
     if not cuts:
         return [group]
     bounds = (start, *cuts, end)
@@ -585,6 +609,43 @@ def _split_at_separable_valleys(
             )
         )
     return parts
+
+
+def _sampled_nondetection_cuts(
+    rt: np.ndarray,
+    acquired: np.ndarray,
+    native_envelope: np.ndarray,
+    start: int,
+    end: int,
+    policy: ChromPeakSegmentPolicy,
+) -> tuple[int, ...]:
+    """Separate bounded detections across clear valleys on the native scan grid."""
+    detected = acquired[start:end] > 0.0
+    changes = np.flatnonzero(np.diff(detected, prepend=False, append=False)) + start
+    starts, ends = changes[::2], changes[1::2]
+    rt_resolution = max(
+        policy.morphology_min_sigma_rt, policy.valley_min_duration_min or 0.0
+    )
+    cuts = []
+    for left, gap, resume, right in zip(
+        starts[:-1], ends[:-1], starts[1:], ends[1:], strict=True
+    ):
+        if min(gap - left, resume - gap, right - resume) < 2:
+            continue
+        if rt[resume] - rt[gap - 1] < rt_resolution:
+            continue
+        if acquired[gap - 1] >= np.max(acquired[left:gap]) or acquired[
+            resume
+        ] >= np.max(acquired[resume:right]):
+            continue
+        cut = int(gap + np.argmin(native_envelope[gap:resume]))
+        minor = min(
+            float(np.max(native_envelope[left:gap])),
+            float(np.max(native_envelope[resume:right])),
+        )
+        if native_envelope[cut] <= policy.clear_valley_max_fraction * minor:
+            cuts.append(cut)
+    return tuple(cuts)
 
 
 def separable_valleys(
@@ -734,6 +795,14 @@ def local_apex_prominence(signal: np.ndarray, apex_index: int) -> float:
     return float(signal[apex_index]) - max(float(signal[0]), float(signal[-1]))
 
 
+def supported_contour_apices(
+    contour: np.ndarray, minimum_prominence_fraction: float
+) -> np.ndarray:
+    return find_peaks(
+        contour, prominence=minimum_prominence_fraction * float(np.max(contour))
+    )[0]
+
+
 def _segment_from_seed(
     rt: np.ndarray,
     intensity: np.ndarray,
@@ -783,12 +852,10 @@ def _segment_from_seed(
     relation_labels = _relation_labels(left_relation, right_relation)
     if policy.morphology_trace_method == "rt_envelope":
         contour = boundary_signal[left:right]
-        peaks = find_peaks(contour)[0]
-        prominences = peak_prominences(contour, peaks)[0]
-        review_lobes = sum(
-            prominences >= policy.min_prominence_fraction_of_envelope * np.max(contour)
+        review_lobes = supported_contour_apices(
+            contour, policy.min_prominence_fraction_of_envelope
         )
-        if len(envelope_seeds) > 1 or review_lobes > 1:
+        if len(envelope_seeds) > 1 or len(review_lobes) > 1:
             relation_labels = (*relation_labels, "shoulder_overlap")
     interval = _trace_interval(rt, left, right)
     segment_class = _segment_class(interval, relation_labels, policy)

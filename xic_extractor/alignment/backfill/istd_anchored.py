@@ -111,7 +111,7 @@ def resolve_istd_anchored_backfill(
     )
     paired_observations = tuple(paired_istd_observations()) if plans else ()
     pair_rts = {
-        sample_by_id[peak.sample_key].raw_stem: peak.integration.rt_apex_min
+        sample_by_id[peak.sample_key].raw_stem: peak.rt_apex_min
         for peak in paired_observations
     }
     decisions: list[ConservativeBackfillCellDecision] = []
@@ -161,7 +161,7 @@ def resolve_istd_anchored_backfill(
             tuple(
                 (
                     support.sample.raw_stem,
-                    support.hypothesis.peak.integration.rt_apex_min,
+                    support.hypothesis.peak.rt_apex_min,
                 )
                 for support in direct_supports
             ),

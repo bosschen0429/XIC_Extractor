@@ -22,6 +22,7 @@ from xic_extractor.alignment.cell_observation.observations import (
     CellObservation,
     CidNlCellGroupContext,
 )
+from xic_extractor.alignment.cid_nl_grouping import has_cid_nl_activation_support
 from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSamplePeakGroupHypothesis,
 )
@@ -29,6 +30,7 @@ from xic_extractor.alignment.peak_trajectories import BackfillPeakLocation
 from xic_extractor.mass_accuracy import absolute_ppm_error
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessment,
+    cid_nl_support_requires_supplement,
 )
 from xic_extractor.peak_detection.observations import PeakObservation
 from xic_extractor.peak_detection.physical_peak_evaluation import (
@@ -158,33 +160,46 @@ def mint_conservative_backfill_candidate_universe(
     )
 
 
+def samples_eligible_for_group_extension(
+    groups: tuple[CrossSamplePeakGroupHypothesis, ...],
+    *,
+    sample_population: tuple[SampleMetadata, ...],
+) -> dict[CrossSamplePeakGroupHypothesis, frozenset[str]]:
+    """Apply the direct SUPPORT quorum to eligibility without granting a value."""
+    eligible_ids = frozenset(
+        sample.sample_name
+        for sample in sample_population
+        if is_backfill_eligible_sample(sample)
+    )
+    minimum_support = minimum_direct_support_count(len(eligible_ids))
+    validated = {}
+    for group in groups:
+        if group.disposition == "rejected":
+            continue
+        support_ids = {
+            member.sample_key
+            for owner, member in (
+                (owner, owner.cross_sample_member_subject) for owner in group.owners
+            )
+            if has_cid_nl_activation_support(owner) and member is not None
+        }
+        if len(support_ids & eligible_ids) >= minimum_support:
+            validated[group] = eligible_ids
+    return validated
+
+
 def plan_conservative_backfill_targets(
     groups: tuple[CrossSamplePeakGroupHypothesis, ...],
     *,
     sample_population: tuple[SampleMetadata, ...],
 ) -> tuple[tuple[CrossSamplePeakGroupHypothesis, frozenset[str]], ...]:
-    """Plan missing-sample work from frozen direct-SUPPORT membership.
-
-    The acquisition caller supplies groups constructed only from direct SUPPORT
-    owners and a complete sample population. Scheduling needs their sample votes,
-    not a dense population of CellObservations or quantitation artifacts.
-    Final cell composition remains responsible for the output evidence. A
-    rejected group is no row, so it searches no missing sample.
-    """
-    eligible_ids = frozenset(
-        sample.sample_name
-        for sample in sample_population
-        if _sample_is_activation_eligible(sample)
-    )
-    minimum_support = minimum_direct_support_count(len(eligible_ids))
+    """Plan missing-sample work from frozen direct-SUPPORT membership."""
     planned = []
-    for group in groups:
-        if group.disposition == "rejected":
-            continue
-        support_ids = frozenset(member.sample_key for member in group.member_subjects)
-        if len(support_ids & eligible_ids) < minimum_support:
-            continue
-        targets = eligible_ids - support_ids
+    for group, eligible_ids in samples_eligible_for_group_extension(
+        groups, sample_population=sample_population
+    ).items():
+        occupied = {member.sample_key for member in group.member_subjects}
+        targets = eligible_ids - occupied
         if targets:
             planned.append((group, targets))
     return tuple(planned)
@@ -213,19 +228,23 @@ def assess_conservative_backfill_group(
     cells = _canonical_cells(ordered_cells)
     samples = _canonical_samples(ordered_samples)
     eligible_ids = tuple(
-        sample.sample_name
-        for sample in samples
-        if _sample_is_activation_eligible(sample)
+        sample.sample_name for sample in samples if is_backfill_eligible_sample(sample)
+    )
+    activation_supports = tuple(
+        support
+        for support in group_context.direct_supports
+        if support.hypothesis.peak.integration is not None
+        and not cid_nl_support_requires_supplement(
+            support.assessment, support.hypothesis.peak
+        )
     )
     direct_support_ids = tuple(
-        support.sample.sample_name for support in group_context.supports
+        support.sample.sample_name for support in activation_supports
     )
     eligible_support_ids = tuple(
         sample_id for sample_id in direct_support_ids if sample_id in eligible_ids
     )
-    support_traces = tuple(
-        support.hypothesis.peak for support in group_context.supports
-    )
+    support_traces = tuple(support.hypothesis.peak for support in activation_supports)
     cell_sample_ids = tuple(cell.sample_key for cell in cells)
     sample_ids = tuple(sample.sample_name for sample in samples)
     sample_count = len(eligible_ids)
@@ -378,14 +397,14 @@ def map_conservative_backfill_candidates(
         ordered_candidates = tuple(
             sorted(
                 target_candidates,
-                key=lambda item: item.peak_observation.integration.rt_apex_min,
+                key=lambda item: item.peak_observation.rt_apex_min,
             )
         )
         group_rts = tuple(
             _group_center_rt(group_facts[index]) for index in ordered_indexes
         )
         candidate_rts = tuple(
-            item.peak_observation.integration.rt_apex_min for item in ordered_candidates
+            item.peak_observation.rt_apex_min for item in ordered_candidates
         )
         if len(set(group_rts)) != len(group_rts) or len(set(candidate_rts)) != len(
             candidate_rts
@@ -556,7 +575,8 @@ def _canonical_samples(
     return samples
 
 
-def _sample_is_activation_eligible(sample: SampleMetadata) -> bool:
+def is_backfill_eligible_sample(sample: SampleMetadata) -> bool:
+    """Only non-excluded sample/QC injections can request a revisit."""
     return (
         not sample.excluded and sample.sample_role in ACTIVATION_ELIGIBLE_SAMPLE_ROLES
     )

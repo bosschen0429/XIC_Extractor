@@ -10,6 +10,34 @@ repos:
         files: ^((xic_extractor|scripts|tools|xic_inspector|xic_workbench|tests)/.*\.py|\.pre-commit-config\.yaml)$
         pass_filenames: false
 
+      - id: new-source-comments
+        name: Reject source comments absent from HEAD
+        entry: uv run --cache-dir .uv-cache python scripts/check_comments.py --base HEAD
+        language: system
+        files: \.(py|spec|rules|js|css|html|svg|sh|ps1|bat|cmd|vbs|toml|ya?ml)$
+        pass_filenames: false
+
+      - id: import-contracts
+        name: Check import contracts
+        entry: uv run --cache-dir .uv-cache lint-imports --no-cache
+        language: system
+        files: ^((xic_extractor|scripts|tools|xic_inspector|xic_workbench)/.*\.py|pyproject\.toml|\.importlinter)$
+        pass_filenames: false
+
+      - id: repository-docs
+        name: Check repository docs
+        entry: uv run --cache-dir .uv-cache python scripts/check_repository_docs.py
+        language: system
+        files: \.md$
+        pass_filenames: false
+
+      - id: architecture-census
+        name: Check current repository architecture census
+        entry: uv run --cache-dir .uv-cache pytest tests/test_docs_architecture_census.py -m current_repository_census --noconftest -q -p no:cacheprovider
+        language: system
+        files: ^((xic_extractor|scripts|tools|xic_inspector|xic_workbench|tests)/.*\.py|docs/.*\.md)$
+        pass_filenames: false
+
       - id: ruff-format-staged-python
         name: Ruff format staged Python files
         entry: uv run --cache-dir .uv-cache ruff format

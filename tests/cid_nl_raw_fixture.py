@@ -19,6 +19,7 @@ from xic_extractor.discovery.ms1_capture import (
 from xic_extractor.discovery.ms2_events import collect_strict_nl_events
 from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.discovery.strict_event_receipts import read_parent_ms1_observations
+from xic_extractor.mass_accuracy import mz_window
 from xic_extractor.ms2_scan_models import Ms2Scan, Ms2ScanEvent
 from xic_extractor.processing_identity import (
     AcquisitionSourceIdentity,
@@ -85,6 +86,26 @@ def fake_acquisition_source() -> AcquisitionSourceIdentity:
             acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
             observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
         )
+
+
+def unresolved_overlap_trace() -> tuple[np.ndarray, np.ndarray]:
+    """Two acquired crests with localizable but unresolved integration bounds."""
+    local_rt = np.fromstring(
+        "15.0317 15.0634 15.0952 15.1364 15.1778 15.2193 15.2607 15.3021 "
+        "15.3431 15.3849 15.4268 15.4583 15.5002 15.5422 15.5835 15.6247 "
+        "15.6662 15.7077 15.7489 15.7847",
+        sep=" ",
+    )
+    before = np.arange(0.0, 15.0, 0.01)
+    after = np.arange(15.80, 20.01, 0.01)
+    body = 1000.0 * np.fromstring(
+        "0 0 0 93 322 404 358 211 134 301 0 160 230 458 604 254 77 26 0 0",
+        sep=" ",
+    )
+    return (
+        np.concatenate((before, local_rt, after)),
+        np.pad(body, (len(before), len(after))),
+    )
 
 
 def _settings() -> DiscoverySettings:
@@ -188,11 +209,21 @@ class _FakeThermoRaw:
     def GetChromatogramData(self, settings, start_scan: int, end_scan: int):
         self.chromatogram_request_counts.append(len(settings))
         self.chromatogram_windows.append((start_scan, end_scan))
-        rt = self.source.rt[start_scan - 1 : end_scan]
-        intensity = self.source.intensity[start_scan - 1 : end_scan]
+        selection = slice(start_scan - 1, end_scan)
+        rt = self.source.rt[selection]
+        present = np.ones(rt.shape, dtype=bool)
+        if self.source.additional_ms1_ions is not None:
+            for scan in self.scans:
+                if start_scan <= scan <= end_scan:
+                    present[scan - start_scan] = False
         return SimpleNamespace(
-            PositionsArray=[rt.tolist() for _setting in settings],
-            IntensitiesArray=[intensity.tolist() for _setting in settings],
+            PositionsArray=[rt[present].tolist() for _setting in settings],
+            IntensitiesArray=[
+                self.source.xic_for_mass_ranges(setting.MassRanges)[selection][
+                    present
+                ].tolist()
+                for setting in settings
+            ],
         )
 
     def GetFilterForScanNumber(self, scan_number: int):
@@ -210,7 +241,15 @@ class _FakeThermoRaw:
         )
 
     def GetCentroidStream(self, scan_number: int, refresh: bool):
-        return SimpleNamespace(Masses=[], Intensities=[])
+        points = [
+            (mz, float(intensity[scan_number - 1]))
+            for mz, intensity in self.source.ion_profiles()
+            if intensity[scan_number - 1] > 0
+        ]
+        return SimpleNamespace(
+            Masses=[mz for mz, _ in points],
+            Intensities=[intensity for _, intensity in points],
+        )
 
     def GetSimplifiedScan(self, scan_number: int):
         scan = self.scans[scan_number]
@@ -242,6 +281,8 @@ class _FakeRaw:
                 for neutral_loss_da in neutral_loss_das
             )
         self.acquisition_source = acquisition_source
+        self.ms1_mz = scan_precursor_mz
+        self.additional_ms1_ions: dict[float, np.ndarray] | None = None
         self.rt = np.linspace(7.4, 8.7, 521)
         self.intensity = sum(
             (
@@ -324,9 +365,29 @@ class _FakeRaw:
                     scan_number=scan.scan_number,
                 )
 
+    def ion_profiles(self):
+        return (
+            (self.ms1_mz, self.intensity),
+            *(self.additional_ms1_ions or {}).items(),
+        )
+
+    def xic_for_mass_ranges(self, ranges):
+        if self.additional_ms1_ions is None:
+            return self.intensity
+        return sum(
+            (
+                signal
+                for mz, signal in self.ion_profiles()
+                if any(low <= mz <= high for low, high in ranges)
+            ),
+            np.zeros_like(self.rt),
+        )
+
     def _trace(self, request: XICRequest) -> XICTrace:
         first, last = self.scan_window_for_request(request)
         return XICTrace(
             rt=self.rt[first - 1 : last].copy(),
-            intensity=self.intensity[first - 1 : last].copy(),
+            intensity=self.xic_for_mass_ranges(
+                (mz_window(request.mz, request.ppm_tol),)
+            )[first - 1 : last].copy(),
         )

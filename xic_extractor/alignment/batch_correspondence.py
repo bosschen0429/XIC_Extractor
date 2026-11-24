@@ -713,7 +713,7 @@ def batch_feature(
     """
     positions = []
     for owner in group.owners:
-        observed = owner.peak.integration.rt_apex_min
+        observed = owner.peak.rt_apex_min
         sample = (
             calibration.samples.get(owner.sample_stem)
             if calibration is not None

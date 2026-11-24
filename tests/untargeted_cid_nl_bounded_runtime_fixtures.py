@@ -55,6 +55,9 @@ def scenario_acquisitions(paths, *, settings, scenario="positive"):
         if scenario == "positive":
             raw.intensity *= sample_index + 1
             third_raw.intensity *= sample_index + 1
+            assert raw.additional_ms1_ions is not None
+            for profile in raw.additional_ms1_ions.values():
+                profile *= sample_index + 1
             sample_candidates = _current_candidates(
                 raw, raw_file=path, settings=settings
             )
@@ -79,9 +82,13 @@ def scenario_acquisitions(paths, *, settings, scenario="positive"):
                 key=lambda item: item.peak_id,
             )
         )
+        assert raw.additional_ms1_ions is not None
+        raw.additional_ms1_ions[third_raw.ms1_mz] = third_raw.intensity
         raw.scans = (*raw.scans, *third_raw.scans)
         if scenario == "ineligible":
             raw.intensity[:] = 0.0
+            for profile in raw.additional_ms1_ions.values():
+                profile[:] = 0.0
             sample_candidates = _current_candidates(
                 raw,
                 raw_file=path,
@@ -98,7 +105,10 @@ def scenario_acquisitions(paths, *, settings, scenario="positive"):
             candidates[path.stem] = sample_candidates
         if scenario == "partial_recovery" and path == paths[-1]:
             candidates[path.stem] = sample_candidates[:1]
+            raw.additional_ms1_ions[500.004][:] = 0.0
         if scenario == "cross_subject_recovery":
+            raw.ms1_mz = 500.002
+            raw.additional_ms1_ions = {}
             precursor = 500.0 if path == paths[0] else 500.004
             candidates[path.stem] = (
                 tuple(
@@ -163,9 +173,7 @@ def entry_scenario(tmp_path, scenario, sample_count=4):
     )
 
 
-def _plan(
-    tmp_path, monkeypatch, *, scenario="positive", opened_sink=None, sample_count=4
-):
+def _plan(tmp_path, monkeypatch, *, scenario="positive", sample_count=4):
     paths = tuple(tmp_path / f"S{i}.synthetic" for i in range(sample_count))
     for path in paths:
         if not path.exists():
@@ -195,9 +203,7 @@ def _plan(
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,
     )
-    opened = install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
-    if opened_sink is not None:
-        opened_sink.append(opened)
+    install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
     import xic_extractor.untargeted_execution.partition.execution as runtime_owner
 
     monkeypatch.setattr(

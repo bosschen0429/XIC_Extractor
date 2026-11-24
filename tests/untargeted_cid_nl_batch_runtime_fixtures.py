@@ -43,5 +43,6 @@ def _nearby_subject_candidates(
         )
     )
     source_raw = _FakeRaw((7.98,))
+    source_raw.additional_ms1_ions = {second_raw.ms1_mz: second_raw.intensity * 0.7}
     source_raw.scans = (first_raw.scans[0], second_raw.scans[0])
     return source_raw, candidates
