@@ -511,7 +511,7 @@ def test_composite_backfill_resolves_one_event_per_scan_loss_across_references(
     source_raw.scans = (
         replace(
             scan,
-            precursor_mz=499.9925,
+            precursor_mz=499.99625,
             masses=np.asarray((500.0 - 116.0474, 500.0 - 132.0423)),
             intensities=np.asarray((800.0, 700.0)),
             base_peak=800.0,
@@ -533,7 +533,7 @@ def test_composite_backfill_resolves_one_event_per_scan_loss_across_references(
     values: tuple[object, ...] = ("1", str(scan.scan_number - 1))
     if monoisotopic_recorded:
         labels = ("Monoisotopic M/Z:", *labels)
-        values = ("500.0075", *values)
+        values = ("500.00375", *values)
     vendor.trailer_labels = list(labels)
     monkeypatch.setattr(
         vendor,
