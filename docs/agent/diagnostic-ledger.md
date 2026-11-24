@@ -384,6 +384,36 @@ timing acceptance claim.
 Reopen for changes to snapshot storage or grouping-only output.
 Artifacts: `output/i1246/` in the #1246 worktree.
 
+### Peaks without method evidence rearranged direct rows
+
+`diagnostic_only` (#1274); frozen 85RAW grouping inputs captured at `dc2bbc4b1`,
+replayed with `ddacf394` code, no RAW except three ions read for MS2.
+
+- Of 128,678 owners, 102,576 have no method evidence of their own. 92% of those
+  sit in a sample with no direct owner of the same ion; the 7,992 that share a
+  sample with one concentrate in 97 of 1,845 windows.
+- In those 97 windows, grouping the direct owners alone and then all owners
+  separated 49 of 176 direct rows (five or more members) and merged pieces of
+  several into 30 rows. m/z 348.21: 40 strict-MS2 Y labels went from 37+3 with
+  direct owners only to 15+9+8+5+3 with all owners.
+- Cause: a row costs 1 plus its worst pair whatever its size, so once enough
+  unconfirmed peaks occupy each RT band, placing direct owners in those bands
+  is nearly free. With direct rows kept together, 348.21 is 37+3 with one X
+  label in the main row, the 268.1184 blind classes are unchanged, and the
+  merged rows in 14 checked windows fall from 21 to 0. Across 91 windows rows
+  go 604 to 615 with multi-member rows unchanged at 516.
+- Rejected on the two judged windows: worst pair replaced by the median peer
+  cost or by the worst pair after dropping the least-agreeing 5% of members;
+  coefficient cost set to zero; unconfirmed peaks admitted by mean cost to a
+  direct row; removing any one pair-cost term. A summed per-owner cost favors
+  cutting large rows.
+- Not established: whether the other 47 changed rows were wrong (MS2 could not
+  separate rows in 282.15, 293.17 or 406.22); windows with fewer than 20 such
+  peaks; any batch outside development.
+
+Rerun when the row cost, the direct-first ordering or the first-pass peak
+population changes.
+
 ### Grouping time concentrates in dense windows
 
 `diagnostic_only` (2026-11-21). Replaying the 83-injection `output/nl_gate/fix`

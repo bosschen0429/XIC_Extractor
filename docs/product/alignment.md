@@ -338,6 +338,17 @@ same membership cost to fixed groups within its own search eligibility; see
   multiplied by sample count. Whole-band merges and per-sample assignment use
   this same objective and accept strict improvements. Every proposed group is
   evaluated as a whole, so a favorable connecting pair cannot hide its endpoints.
+- Owners with their own method evidence define rows first. When a neighborhood
+  also holds owners without it, selection first runs on the direct owners
+  alone. Each resulting row of two or more is then kept together: a
+  configuration that separates its members is infeasible, and selection over
+  the whole neighborhood starts from those rows. Owners without method evidence
+  join them or group with each other under the same objective. They may extend
+  a direct row or connect two of them, but cannot rearrange direct owners, so
+  a direct row does not depend on how many unconfirmed peaks surround it. The
+  cost is otherwise the same, and a neighborhood of only one kind of owner is
+  selected in a single pass. A direct row that is itself wrong is not corrected
+  by observations without method evidence.
 - On equal primary cost, compare average owner-to-peer fit across the complete
   configuration: each grouped owner contributes its mean pair cost to its
   peers; a singleton retains cost 1. This secondary comparison adds no weight
