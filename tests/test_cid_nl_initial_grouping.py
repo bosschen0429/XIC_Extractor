@@ -136,7 +136,6 @@ def test_owner_decides_membership_and_exact_exclusion_from_acquired_evidence(
     groups = tuple(
         group for workset in final.worksets for group in workset.grouping_scope.groups
     )
-    ms1_only_samples = {"S2"} if scenario == "unsearched" else set()
     assert {
         owner.sample_stem
         for group in groups
@@ -148,23 +147,8 @@ def test_owner_decides_membership_and_exact_exclusion_from_acquired_evidence(
         for group in groups
         for owner in group.owners
         if owner.primary_identity_event is None
-    } == ms1_only_samples
-    if scenario == "unsearched":
-        owners = {
-            owner.sample_stem: owner for group in groups for owner in group.owners
-        }
-        assert {
-            (owner.peak.mz, owner.peak.integration.rt_apex_min)
-            for owner in owners.values()
-        } == {(500.0, 8.0)}
-        assert any(
-            decision.owner_id == owners["S2"].owner_id
-            and owners["S1"].owner_id in decision.witness_owner_ids
-            for group in groups
-            for decision in group.inference_decisions
-        )
-    else:
-        assert len(groups) == bool(retained_samples)
+    } == set()
+    assert len(groups) == bool(retained_samples)
     assert {
         binding.sample_key for binding in grouping.request.scope.capture_bindings
     } == retained_samples

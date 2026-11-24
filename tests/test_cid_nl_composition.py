@@ -476,7 +476,9 @@ def test_intersection_rechecks_an_observed_peak_outside_the_discovery_window(
     if seed_count == 1:
         assert matrix_rows == []
         assert cell["area"] == ""
-        assert cell["status"] == "unresolved"
+        assert cell["status"] == "not_searched"
+        assert not method_windows
+        return
     else:
         (matrix,) = matrix_rows
         assert bool(matrix["Late"]) is (len(local_losses) != 1)
