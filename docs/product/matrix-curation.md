@@ -161,6 +161,7 @@ The single-pair rules remove the heavier row when it relates to the lighter one 
 | `+CH2O` | +30.010565 |
 | `+CH3OH` | +32.026215 (methanol, mobile phase B) |
 | `+H2O2` | +34.005479 |
+| `delta_mz=<value>` | A difference no relation names that recurs in at least 3 co-eluting pairs of kept rows (within 0.005 Da); the weaker row of each pair folds into the stronger one |
 | `[M+K]+/[M+Na]+` | +15.973938; the lighter row is itself an adduct |
 | `Ca/Mg` | +15.977549; the same complex with Ca in place of Mg |
 | `[M+Mg+CH3COO]+/[M+Na]+` | +60.008577 |
@@ -321,7 +322,7 @@ the source folder.
 | `analysis_matrix.tsv` | Kept rows in original order with original tokens and all sample columns |
 | `feature_decisions.tsv` | Every source row: `source_matrix_row_index`, `feature_id`, `Mz`, `RT`, `istd_label`, each enabled step's columns, the final `decision` and `decision_reason` (`kept_by_all_steps`, `dropped_by:<steps>` or `istd_protected`) |
 | `same_compound_relations.tsv` | Each mass-related row pair that co-elutes in some sample: relation, `e_ppm`, both-direct samples, supporting samples (backfilled ones only when direct co-elution is insufficient), the backfilled share of them, backfilled samples without an apex, largest apex difference, median light/heavy ratio, log-ratio MAD, outcome and whether it contributed to excluding the heavier row; an excluded row need not have a unique parent |
-| `same_compound_review.tsv` | Pairs and groups to review: unstable isotope ratio, ≈1.998 unexplained by the isotope rules, review-only relation, representative ≥10× weaker than a removed member, excluded derivatives with unassigned parent (`decision=drop`), supported non-[M+H]⁺ families (neutral mass, models and witnesses), an ion family removed by a later feature filter, and recurring unexplained mass differences between rows this step keeps, most frequent first. A pair already inside one group, or between two removed ions, is not reviewed again |
+| `same_compound_review.tsv` | Pairs and groups to review: unstable isotope ratio, ≈1.998 unexplained by the isotope rules, review-only relation, representative ≥10× weaker than a removed member, excluded derivatives with unassigned parent (`decision=drop`), supported non-[M+H]⁺ families (neutral mass, models and witnesses), and an ion family removed by a later feature filter. A pair already inside one group, or between two removed ions, is not reviewed again |
 | `sample_metadata.tsv` | Matrix column → sample identity, role, group, order and exclusion |
 | `matrix_curation_summary.json` | Enabled steps and parameters, input paths, sample data source and counts |
 

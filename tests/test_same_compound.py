@@ -785,7 +785,7 @@ def test_representative_much_weaker_than_removed_member_is_reviewed():
     assert review_kinds(result) == [("representative_weaker_than_member", "L")]
 
 
-def test_recurring_unexplained_difference_is_listed_by_frequency():
+def test_recurring_unexplained_difference_folds_the_weaker_row():
     rows = [
         member
         for index, base_rt in enumerate((10.0, 20.0, 30.0))
@@ -794,12 +794,37 @@ def test_recurring_unexplained_difference_is_listed_by_frequency():
             row(f"H{index}", 310.0 + 50 * index, base_rt=base_rt, scale=0.5),
         )
     ]
-    _, result = decide(*rows)
+    decisions, result = decide(*rows)
 
-    assert [
-        (row["review_kind"], row["relation"], row["detail"])
-        for row in result.review_rows
-    ] == [("recurring_unexplained_mass_difference", "delta_mz=10.0000", "pair_count=3")]
+    for index in range(3):
+        assert decisions[f"H{index}"][:4] == (
+            False,
+            "recurring_mass_difference",
+            f"L{index}",
+            ("delta_mz=10.0000",),
+        )
+        assert decisions[f"L{index}"][0] is True
+    assert result.review_rows == ()
+
+
+def test_recurring_difference_keeps_the_stronger_row_even_when_it_is_heavier():
+    rows = [
+        member
+        for index, base_rt in enumerate((10.0, 20.0, 30.0))
+        for member in (
+            row(f"L{index}", 300.0 + 50 * index, base_rt=base_rt, scale=0.5),
+            row(f"H{index}", 310.0 + 50 * index, base_rt=base_rt),
+        )
+    ]
+    decisions, _ = decide(*rows)
+
+    for index in range(3):
+        assert decisions[f"L{index}"][:3] == (
+            False,
+            "recurring_mass_difference",
+            f"H{index}",
+        )
+        assert decisions[f"H{index}"][0] is True
 
 
 def _scenario():
@@ -1244,7 +1269,7 @@ def test_machine_output_without_backfill_ledger_is_curated(tmp_path, monkeypatch
     assert summary["inputs"]["explanation"].endswith("alignment_explanation.sqlite")
 
 
-def test_frequency_table_counts_a_pair_once_whichever_row_elutes_first():
+def test_recurring_difference_counts_a_pair_once_whichever_row_elutes_first():
     flip = (1.0, 1.0, 1.0, -1.0, -1.0, -1.0)
     rows = [
         member
@@ -1254,9 +1279,11 @@ def test_frequency_table_counts_a_pair_once_whichever_row_elutes_first():
             row(f"H{index}", 310.0 + 50 * index, base_rt=base_rt, shifts=flip),
         )
     ]
-    _, result = decide(*rows)
+    decisions, _ = decide(*rows)
 
-    assert [row["detail"] for row in result.review_rows] == ["pair_count=3"]
+    assert [decisions[f"H{index}"][1] for index in range(3)] == [
+        "recurring_mass_difference"
+    ] * 3
 
 
 def test_removed_ions_neither_repeat_differences_nor_review_pairs():
@@ -1326,6 +1353,7 @@ def test_a_coeluting_row_outside_the_mass_tolerance_is_not_an_adduct(ppm, kept):
         ("13C_M+1|[M+Na]+", "several"),
         ("[M+Fe+CH3COO]+", "metal_complex"),
         ("+CH3OH", "solvent"),
+        ("delta_mz=10.9910", "recurring"),
         ("", "ion_family"),
     ],
 )
