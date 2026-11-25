@@ -56,7 +56,7 @@ def _frame(model: RtDriftModel) -> SampleRtFrame:
 
 
 def _model(shift=SHIFT) -> RtDriftModel:
-    anchor = DriftAnchor("anchor", 30.0, 0, True, FLAT)
+    anchor = DriftAnchor("anchor", 30.0, 0, FLAT)
     return RtDriftModel((anchor,), dict(shift), "samples")
 
 
@@ -379,7 +379,6 @@ def test_anchor_lookup_preserves_the_closed_displacement_window(query_rt):
             f"boundary-{index}",
             reference,
             index,
-            True,
             {"left": 0.0, "right": 1.0},
             DriftCoefficients(time=(index + 1) / 10.0),
         )
@@ -433,12 +432,8 @@ def test_borrowed_batch_state_is_shared_only_by_queries_without_an_own_anchor():
     falling = {sample: 1 - value for sample, value in rising.items()}
     model = RtDriftModel(
         (
-            DriftAnchor(
-                "early", 10.0, 0, True, rising, owner_ids=frozenset({"own-early"})
-            ),
-            DriftAnchor(
-                "late", 13.0, 1, True, falling, owner_ids=frozenset({"own-late"})
-            ),
+            DriftAnchor("early", 10.0, 0, rising, owner_ids=frozenset({"own-early"})),
+            DriftAnchor("late", 13.0, 1, falling, owner_ids=frozenset({"own-late"})),
         )
     )
     lookup = model.batch_state_lookup()
@@ -449,7 +444,7 @@ def test_borrowed_batch_state_is_shared_only_by_queries_without_an_own_anchor():
     reversed_lookup = model.batch_state_lookup()
     assert reversed_lookup(("own-early",), 11.0) == rising
     assert reversed_lookup(("d",), 11.0) == borrowed
-    late_only = RtDriftModel((DriftAnchor("late", 13.0, 1, True, falling),))
+    late_only = RtDriftModel((DriftAnchor("late", 13.0, 1, falling),))
     other = late_only.batch_state_lookup()(("a",), 11.0)
     assert other != borrowed
     assert other == late_only.batch_state(("e",), 11.0)
