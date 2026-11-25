@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
 
+import numpy as np
 import pytest
 
 from xic_extractor.execution._serialization import owner_pickle_dumps
@@ -67,6 +68,14 @@ def test_roundtrip_preserves_explicit_nested_owner_identity_and_proxy(tmp_path):
     assert restored.child_outputs[0]["shared"] is shared_container
     with pytest.raises(TypeError):
         restored.child_outputs[0]["new"] = "mutation"
+
+
+def test_roundtrip_preserves_array_larger_than_one_pickle_frame(tmp_path):
+    trace = np.arange(1 << 14, dtype=float)
+    store = StreamedResultStore(tmp_path, ())
+    entry = store.append("large-trace", Payload((trace,)))
+    assert entry.size_bytes == len(next(tmp_path.iterdir()).read_bytes())
+    np.testing.assert_array_equal(store.read(entry.index).child_outputs[0], trace)
 
 
 def test_sealed_sequence_preserves_order_indices_and_empty_chunks(tmp_path):
