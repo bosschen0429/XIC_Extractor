@@ -466,6 +466,7 @@ def _measure_region(
                     measured_mz=mz,
                     signal_processing_profile=profile,
                     resolver_mode=settings.resolver_mode,
+                    envelope_evaluation=kept.evaluation,
                 )
             else:
                 (peak,) = mint_physical_peak_observations(

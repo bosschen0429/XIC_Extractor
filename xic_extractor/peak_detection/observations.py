@@ -302,8 +302,13 @@ def mint_localized_peak_observation(
     measured_mz: float,
     signal_processing_profile: SignalProcessingProfile,
     resolver_mode: str,
+    envelope_evaluation: PhysicalPeakEvaluation,
 ) -> PeakObservation:
-    """Project a localized lobe without issuing an integration result."""
+    """Project a localized lobe without issuing an integration result.
+
+    The lobe has no area of its own; ``envelope_evaluation`` is the measurement
+    of the unresolved envelope it lies in.
+    """
     return _project_peak_observation(
         sample_key=sample.sample_name,
         trace=trace,
@@ -312,6 +317,7 @@ def mint_localized_peak_observation(
         selected_indices=tuple(range(component.start_index, component.end_index)),
         resolver_mode=resolver_mode,
         proposal_sources=("unresolved_overlap_lobe",),
+        physical_evaluation=envelope_evaluation,
         signal_processing_profile=signal_processing_profile,
         localized_apex_rt_min=float(trace.rt[component.apex_index]),
     )

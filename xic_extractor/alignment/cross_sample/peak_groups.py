@@ -73,6 +73,9 @@ class CrossSamplePeakGroupHypothesis:
     inference_decisions: tuple[SparseFeatureDecision, ...] = field(
         default=(), compare=False
     )
+    one_band: bool = field(default=False, compare=False)
+    """Members are pieces of one chromatographic band; each sample's value is
+    the whole envelope holding its member (see ``band_identity``)."""
 
     @property
     def group_hypothesis_id(self) -> str:
@@ -189,6 +192,7 @@ def _hypothesis_from_owner_group(
     center: tuple[float, float] | None = None,
     inference_basis: FeatureMembershipGroup | None = None,
     inference_decisions: tuple[SparseFeatureDecision, ...] = (),
+    one_band: bool = False,
 ) -> CrossSamplePeakGroupHypothesis:
     """Build one group from its owners; ``center`` keeps an earlier decision."""
 
@@ -230,6 +234,7 @@ def _hypothesis_from_owner_group(
         evidence=evidence,
         inference_basis=inference_basis,
         inference_decisions=inference_decisions,
+        one_band=one_band,
     )
 
 

@@ -1046,6 +1046,74 @@ def evaluate_physical_peak(
     return answer_physical_peak_question(prepared_result, universe, question)
 
 
+def peak_envelope(
+    universe: PhysicalSegmentUniverse, segment: PhysicalSegment
+) -> tuple[PhysicalSegment, ...]:
+    """The segments joined to ``segment`` by shared cut points, in RT order.
+
+    A separable-valley cut leaves its valley scan as the last scan of one
+    segment and the first of the next. Segments that meet that way are one
+    continuous signal above background: an envelope. Segments separated by a
+    return to background are not joined. The envelope is a measurement fact;
+    whether it holds one chemical component or several is decided elsewhere.
+    """
+    ordered = sorted(universe.segments, key=lambda item: item.start_index)
+    position = next(
+        (index for index, item in enumerate(ordered) if item == segment), None
+    )
+    if position is None:
+        return (segment,)
+    first = last = position
+    while first > 0 and ordered[first - 1].end_index - 1 == ordered[first].start_index:
+        first -= 1
+    while (
+        last < len(ordered) - 1
+        and ordered[last].end_index - 1 == ordered[last + 1].start_index
+    ):
+        last += 1
+    return tuple(ordered[first : last + 1])
+
+
+def measure_peak_envelope(
+    evaluation: PhysicalPeakEvaluation,
+) -> IntegrationResult | None:
+    """Integrate the whole envelope holding the selected segment.
+
+    Its area is the sum of the segment areas on the same canonical signal; its
+    height and apex are the highest segment's. A single-segment envelope is the
+    selected segment's own integration.
+    """
+    selected = evaluation.answer.selected_segment
+    prepared = evaluation.retained_prepared_signal
+    if selected is None or prepared is None:
+        return None
+    segments = peak_envelope(evaluation.segment_universe, selected)
+    if len(segments) == 1:
+        return evaluation.integration
+    first, last = segments[0], segments[-1]
+    top = max(segments, key=lambda item: (item.height, -item.start_index))
+    envelope = PhysicalSegment(
+        start_index=first.start_index,
+        end_index=last.end_index,
+        apex_index=top.apex_index,
+        left_rt_min=first.left_rt_min,
+        right_rt_min=last.right_rt_min,
+        apex_rt_min=top.apex_rt_min,
+        height=top.height,
+        scan_support_count=last.end_index - first.start_index,
+        area_counts_seconds=sum(item.area_counts_seconds for item in segments),
+        segment_class="shoulder_candidate",
+        boundary_stop_reason="shoulder_overlap_review",
+        evidence_sources=tuple(
+            sorted(
+                {source for item in segments for source in item.evidence_sources}
+                | {"shoulder_overlap"}
+            )
+        ),
+    )
+    return _physical_raw_descriptor_projection(prepared, envelope)
+
+
 def _physical_raw_descriptor_projection(
     prepared: PreparedSignal,
     selected: PhysicalSegment,

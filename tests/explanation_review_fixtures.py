@@ -235,6 +235,7 @@ def _quality_review_report(
             value=value,
             source="raw_trapezoid",
             selected_integration=observation.integration,
+            value_peak=observation if value is not None else None,
             review_reasons=(),
         )
         cells.append(review_cell(decision))

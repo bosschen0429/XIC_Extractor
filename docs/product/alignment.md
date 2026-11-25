@@ -41,7 +41,7 @@ terminology remains owned by the [Domain Glossary](domain-glossary.md).
   stem, display coordinate nor area is an identity basis, and neither carries
   identity across reports.
 - Several Discovery peak anchors or groups never collapse into one product row
-  without an explicit consolidation contract and its tests.
+  except through [band consolidation](#join-groups-and-consolidate-split-bands).
 - Initial members stay fixed during bounded Backfill. Only CrossSample can admit
   a unique missing-sample SUPPORT observation and record its successor group and
   lineage; a Backfill observation never implies membership. A new processing
@@ -452,7 +452,7 @@ of 2. Final membership does not inherit this seed-rating gate. MS1-only Target
 owners separately use precursor, physical quality and RT evidence; missing MS2
 alone neither excludes them nor admits them to a CID evidence group.
 
-### Join groups and handle shoulders
+### Join groups and consolidate split bands
 
 Final grouping compares separated bands through the same complete-configuration
 cost and sample-occupancy constraints. An injection gap alone is not evidence of
@@ -466,13 +466,31 @@ widening acquisition may change recovery, not the initial Feature boundary.
 Known-identity and bootstrap/composite
 directional rules remain within inference.
 
-Shoulder rejection is a separate action. Current conditions require both groups
-to be established, more than half of the smaller group's members to share
-samples with the other group, and the member in each shared sample to have a
-smaller area, compatible preferred m/z, and the same peak boundaries. A rejected
-group does not plan Backfill, and its members are not moved into the other group.
-This is the current split-off shoulder treatment, not a general correspondence
-merge rule.
+Band consolidation is the one consolidation contract. A separable valley can
+cut one chromatographic band into two segments in some injections only, and
+each half then groups with its counterparts, so one compound becomes two rows.
+The same single-injection shape also arises from two co-eluting compounds;
+only cross-injection behaviour separates them. After final grouping and before
+Backfill, `band_identity` compares established same-m/z groups in the samples
+where both hold a member:
+
+- both members lie in one [envelope](signal-processing.md#separable-valleys) —
+  segments joined by shared cut scans, or one unresolved segment holding both
+  lobes — or the groups are not one band;
+- members in separate envelopes, in any sample, mean two compounds;
+- the area ratio of the two halves, over at least two samples, stays within a
+  factor of two.
+
+Groups that pass merge into one `one_band` group with one member per sample (the
+earliest apex). Each sample's value is the physical owner's integration of the
+whole envelope holding that member, so a half, a lobe, or a half whose sibling
+failed qualification all report the band; the cell carries
+`physical_shoulder_overlap`. Pairs that fail any condition stay separate rows.
+The factor of two is product policy chosen on the 8RAW split bands and true
+pairs of #1283: splits cut in up to seven of eight injections had ratio ranges
+of at most 1.9-fold, and every true pair was resolved in some injection. A pair
+resolved only by zero-scan dropouts in a weak channel stays separate, the
+conservative direction.
 
 ### Localization and Backfill
 

@@ -42,6 +42,7 @@ def test_origin_names_only_the_peak_providing_the_matrix_value(
             evidence_states=(),
         ),
         selected_integration=selected.peak_observation.integration,
+        value_peak=selected.peak_observation if value is not None else None,
         value=value,
         variant="numeric" if value is not None else "not_quantifiable",
         source="trapezoid_counts_seconds_on_canonical_signal",

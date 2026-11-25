@@ -171,6 +171,14 @@ The accepted cuts also delimit Discovery's raw peak basins. Picking the first
 raw minimum between distant peaks instead could cut an earlier lobe at an
 unrelated dropout.
 
+A cut leaves its valley scan as the last scan of one segment and the first of
+the next. Segments joined that way form one envelope (`peak_envelope`): one
+continuous signal above background. The envelope is a measurement fact; how
+many compounds it holds is decided across injections by
+[band consolidation](alignment.md#join-groups-and-consolidate-split-bands).
+`measure_peak_envelope` integrates it on the same canonical signal; its area is
+the sum of the segment areas.
+
 Measured-valley calibration (#1056) used the 102 reviewed regions of #1049 on 8RAW and the
 enzyme control: separable doublets (B) 13/24 split; noise ripple or zero
 dropouts (A) 0/13, broad single components including peak plus plateau (W)

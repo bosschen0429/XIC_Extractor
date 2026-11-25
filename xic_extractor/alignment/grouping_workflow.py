@@ -10,6 +10,7 @@ from typing import cast
 from xic_extractor.alignment.backfill.membership_selection import (
     select_backfill_memberships,
 )
+from xic_extractor.alignment.band_identity import merge_one_band_groups
 from xic_extractor.alignment.cid_nl_grouping import CID_NL_GROUPING_RULES
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample.grouping_result import (
@@ -49,7 +50,6 @@ from xic_extractor.alignment.result.scientific_alignment import (
 )
 from xic_extractor.alignment.rt_drift import ROW_MIN_SAMPLES
 from xic_extractor.alignment.rt_frame import RtFrame, SampleRtFrame
-from xic_extractor.mass_accuracy import within_ppm
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessment,
     is_ms1_only_cid_nl_backfill_assessment,
@@ -207,13 +207,16 @@ def regroup_cid_nl_cross_sample_groups(
         injection_order=rt_frame.injection_order,
         rt_frame=rt_frame,
     )
-    groups = group_cid_nl_owners(
-        owners,
+    groups = merge_one_band_groups(
+        group_cid_nl_owners(
+            owners,
+            config=alignment_config,
+            sample_universe=frozenset(sample.raw_stem for sample in samples),
+            rt_frame=rt_frame,
+            operation_counts_sink=operation_counts_sink,
+            peak_trajectories=trajectories,
+        ),
         config=alignment_config,
-        sample_universe=frozenset(sample.raw_stem for sample in samples),
-        rt_frame=rt_frame,
-        operation_counts_sink=operation_counts_sink,
-        peak_trajectories=trajectories,
     )
     population = tuple(sorted(groups, key=lambda group: group.group_hypothesis_id))
     scope = replace(grouping_scope, groups=groups, peak_trajectories=trajectories)
@@ -237,8 +240,8 @@ def group_cid_nl_owners(
     operation_counts_sink: list[FeatureInferenceOperationCounts] | None = None,
     peak_trajectories: PeakTrajectories | None = None,
 ) -> tuple[CrossSamplePeakGroupHypothesis, ...]:
-    """Consume inferred membership and apply the separate shoulder disposition."""
-    groups = construct_cross_sample_peak_group_hypotheses(
+    """Consume inferred membership."""
+    return construct_cross_sample_peak_group_hypotheses(
         tuple(owners),
         accept_competition=True,
         config=config,
@@ -249,7 +252,6 @@ def group_cid_nl_owners(
         peak_trajectories=peak_trajectories or PeakTrajectories(),
         rules=CID_NL_GROUPING_RULES,
     )
-    return reject_shoulder_groups(groups, config=config)
 
 
 def direct_evidence_rt_rows(
@@ -479,6 +481,7 @@ def admit_cid_nl_group_backfills(
                 center=(group.group_center_mz, group.group_center_rt),
                 inference_basis=group.inference_basis,
                 inference_decisions=group.inference_decisions,
+                one_band=group.one_band,
             )
             admitted.extend(
                 cast(CrossSampleGroupMemberSubject, owner.cross_sample_member_subject)
@@ -518,77 +521,6 @@ def admit_cid_nl_group_backfills(
         successor_ids,
         retained,
         rejected_cells,
-    )
-
-
-def reject_shoulder_groups(
-    groups: tuple[CrossSamplePeakGroupHypothesis, ...],
-    *,
-    config: AlignmentConfig,
-) -> tuple[CrossSamplePeakGroupHypothesis, ...]:
-    """Reject an established group that is the split-off shoulder of another.
-
-    Discovery can cut one chromatographic peak at a valley into a small shoulder
-    and the peak. A sample holds one member per group, so the shoulders then form
-    their own group, and its Backfill finds the whole peak where no shoulder was
-    cut. A group is such a shoulder when more than half of its members share a
-    boundary with a same-m/z member of one other established group and every
-    member it shares a sample with is such a smaller, adjacent neighbour.
-    """
-    by_sample = {
-        group.group_hypothesis_id: {owner.sample_stem: owner for owner in group.owners}
-        for group in groups
-        if group.disposition == "established"
-    }
-    rejected: dict[str, str] = {}
-    for group_id, owners in by_sample.items():
-        for other_id, others in by_sample.items():
-            shared = owners.keys() & others.keys()
-            if (
-                other_id != group_id
-                and 2 * len(shared) > len(owners)
-                and all(
-                    _is_shoulder_of(owners[sample], others[sample], config=config)
-                    for sample in shared
-                )
-            ):
-                rejected[group_id] = other_id
-                break
-    if not rejected:
-        return groups
-    return tuple(
-        replace(
-            group,
-            disposition="rejected",
-            evidence=(
-                f"{group.evidence};shoulder_of:{rejected[group.group_hypothesis_id]}"
-            ),
-        )
-        if group.group_hypothesis_id in rejected
-        else group
-        for group in groups
-    )
-
-
-def _is_shoulder_of(
-    owner: SampleLocalMS1Owner,
-    neighbour: SampleLocalMS1Owner,
-    *,
-    config: AlignmentConfig,
-) -> bool:
-    owner_area = owner.peak.area_raw_counts_seconds
-    neighbour_area = neighbour.peak.area_raw_counts_seconds
-    return (
-        owner_area is not None
-        and neighbour_area is not None
-        and owner_area < neighbour_area
-        and (
-            owner.peak.rt_right_min == neighbour.peak.rt_left_min
-            or owner.peak.rt_left_min == neighbour.peak.rt_right_min
-        )
-        and within_ppm(
-            owner.peak.mz, neighbour.peak.mz, config.precursor_mz_tolerance_ppm
-        )
     )
 
 
