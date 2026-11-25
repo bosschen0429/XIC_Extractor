@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import re
 import shutil
-from collections.abc import Callable, Iterable
+from collections.abc import Buffer, Callable, Iterable
 from dataclasses import dataclass, fields, is_dataclass
 from pathlib import Path
 from typing import Any, BinaryIO, Protocol
@@ -28,9 +28,9 @@ class _PartitionWriter:
         self.stream = stream
         self.size_bytes = 0
 
-    def write(self, data: bytes) -> int:
+    def write(self, data: Buffer) -> int:
         written = self.stream.write(data)
-        if written != len(data):
+        if written != memoryview(data).nbytes:
             raise OSError("incomplete partition write")
         self.size_bytes += written
         return written
