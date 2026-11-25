@@ -183,7 +183,6 @@ def review_cell(decision: ProductionCellDecision) -> dict[str, Any]:
         ),
         "support_origin": origin,
         "signal_quality": [qualities[key] for key in sorted(qualities)],
-        "review_reasons": list(decision.review_reasons),
         "observation_ids": sorted(
             {
                 cell.physical_peak_key

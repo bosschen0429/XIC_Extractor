@@ -205,10 +205,7 @@ def test_held_rows_never_become_alignment_roots(tmp_path, monkeypatch, with_supp
             resolver_mode="local_minimum",
             evaluation_sink=evaluations.append,
         )
-        assert (
-            evaluations[0].state == "available"
-            and not evaluations[0].requires_overlap_review
-        )
+        assert evaluations[0].state == "available"
         assert observation is not None
         assert observation.physical_evaluation is evaluations[0]
     result = execute_untargeted_plan(
@@ -348,21 +345,6 @@ def test_alignment_measurement_decides_admission_through_the_whole_run(
         full_audit=True,
     )
     assert report.exists()
-    if alignment_signal == "overlap":
-        import json
-        import sqlite3
-
-        with sqlite3.connect(report) as db:
-            reviews = dict(
-                db.execute(
-                    "SELECT s.sample_key, c.review_reasons FROM cells c "
-                    "JOIN samples s ON s.id=c.sample WHERE c.value IS NOT NULL"
-                )
-            )
-        assert {key: json.loads(value) for key, value in reviews.items()} == {
-            "Clean1": [],
-            "Clean2": [],
-        }
 
 
 def test_alignment_rejects_raw_replaced_after_discovery_without_recalibration(

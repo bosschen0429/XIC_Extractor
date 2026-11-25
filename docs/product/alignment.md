@@ -483,8 +483,7 @@ where both hold a member:
 Groups that pass merge into one `one_band` group with one member per sample (the
 earliest apex). Each sample's value is the physical owner's integration of the
 whole envelope holding that member, so a half, or a half whose sibling failed
-qualification, reports the band; the cell carries
-`physical_shoulder_overlap`. Pairs that fail any condition stay separate rows.
+qualification, reports the band. Pairs that fail any condition stay separate rows.
 The factor of two is product policy chosen on the 8RAW split bands and true
 pairs of #1283: splits cut in up to seven of eight injections had ratio ranges
 of at most 1.9-fold, and every true pair was resolved in some injection. A pair

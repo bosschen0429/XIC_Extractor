@@ -397,27 +397,6 @@ def test_inspector_reads_injection_order_from_final_calibration_summary(review_p
     )
 
 
-def test_area_note_follows_only_its_own_sample_area_on_demand(review_page):
-    payload = build_peak_comparison_payload()
-    rows = {row["sample_id"]: row for row in payload["items"][0]["samples"]}
-    rows["B"]["area_notes"] = ["肩峰／重疊"]
-    page = review_page
-    page.set_content('<div id="host"></div>')
-    _load_view_assets(page)
-    page.evaluate(
-        "payload=>XicInspector.mount(document.getElementById('host'),payload,{mode:'curves'})",
-        payload,
-    )
-    root = page.locator("#host")
-    tooltip = root.get_by_role("tooltip")
-    expect(root).not_to_contain_text("肩峰／重疊")
-    root.get_by_role("button", name="聚焦 B", exact=True).hover()
-    expect(tooltip).to_contain_text("正式面積：4.560e+2 · 肩峰／重疊")
-    root.get_by_role("button", name="聚焦 A", exact=True).hover()
-    expect(tooltip).to_contain_text("正式面積：1.230e+2")
-    expect(tooltip).not_to_contain_text("肩峰／重疊")
-
-
 @pytest.mark.parametrize("theme", ["light", "dark"])
 def test_curve_sidebar_groups_are_additive_and_collapse_does_not_hide_curves(
     review_page, theme

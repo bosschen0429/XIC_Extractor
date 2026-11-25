@@ -23,7 +23,6 @@ def test_segment_enumeration_recovers_clean_full_peak_segment() -> None:
     assert result.morphology_trace_method == "gaussian_15"
     assert len(result.segments) == 1
     segment = result.segments[0]
-    assert segment.segment_class == "isolated_peak"
     assert segment.apex_rt_min == pytest.approx(5.0)
     assert segment.interval.rt_start_min == pytest.approx(2.0)
     assert segment.interval.rt_end_min == pytest.approx(8.0)
@@ -40,10 +39,6 @@ def test_segment_enumeration_splits_baseline_separated_neighbor_peaks() -> None:
     result = enumerate_chrom_peak_segments(rt, intensity, baseline)
 
     assert result.status == "OK"
-    assert [segment.segment_class for segment in result.segments] == [
-        "separate_peak",
-        "separate_peak",
-    ]
     assert [segment.apex_rt_min for segment in result.segments] == pytest.approx(
         [3.0, 8.0]
     )
@@ -53,22 +48,16 @@ def test_segment_enumeration_splits_baseline_separated_neighbor_peaks() -> None:
     assert "local_minimum_valley" in result.segments[1].evidence_sources
 
 
-def test_segment_enumeration_marks_high_valley_shoulder_for_review() -> None:
+def test_high_valley_cut_is_not_a_valley_split() -> None:
     rt, intensity, baseline = _trace([0, 0, 10, 50, 40, 45, 30, 0, 0])
 
     result = enumerate_chrom_peak_segments(rt, intensity, baseline)
 
     assert result.status == "OK"
     assert len(result.segments) == 2
-    assert {segment.segment_class for segment in result.segments} == {
-        "shoulder_candidate"
-    }
     assert all(
-        segment.boundary_stop_reason == "shoulder_overlap_review"
+        "local_minimum_valley" not in segment.evidence_sources
         for segment in result.segments
-    )
-    assert all(
-        "shoulder_overlap" in segment.evidence_sources for segment in result.segments
     )
 
 
@@ -154,7 +143,7 @@ def test_clear_separated_groups_restore_one_representative_per_lobe() -> None:
     assert central.interval.rt_end_min == pytest.approx(2.26)
 
 
-def test_shoulder_envelope_preserves_mass_and_weak_isolated_peak() -> None:
+def test_unresolved_envelope_preserves_mass_and_weak_isolated_peak() -> None:
     rt = np.linspace(0.0, 12.0, 3601)
     signal = (
         10000.0 * np.exp(-0.5 * ((rt - 3.0) / 0.6) ** 2)
@@ -175,7 +164,6 @@ def test_shoulder_envelope_preserves_mass_and_weak_isolated_peak() -> None:
 
     assert len(result.segments) == 2
     envelope, isolated = result.segments
-    assert "shoulder_overlap" in envelope.evidence_sources
     assert envelope.apex_rt_min == pytest.approx(3.0, abs=0.08)
     assert envelope.interval.rt_start_min < 3.0 - 1.2
     assert envelope.interval.rt_end_min > 4.8 + 1.2
@@ -184,11 +172,10 @@ def test_shoulder_envelope_preserves_mass_and_weak_isolated_peak() -> None:
         pytest.approx(known_overlap_area, rel=0.01)
     )
     assert isolated.apex_rt_min == pytest.approx(9.0, abs=0.04)
-    assert "shoulder_overlap" not in isolated.evidence_sources
 
 
 @pytest.mark.parametrize("reverse", (False, True))
-def test_remote_small_pulses_do_not_split_an_unresolved_shoulder(
+def test_remote_small_pulses_do_not_split_an_unresolved_envelope(
     reverse: bool,
 ) -> None:
     from xic_extractor.peak_detection.ms1_morphology import (
@@ -222,7 +209,6 @@ def test_remote_small_pulses_do_not_split_an_unresolved_shoulder(
 
     principal = [s for s in result.segments if 6.0 < s.apex_rt_min < 11.0]
     assert len(principal) == 1
-    assert all("shoulder_overlap" in s.evidence_sources for s in principal)
     centers = (6.9, 8.5) if reverse else (7.5, 9.1)
     assert principal[0].apex_rt_min == pytest.approx(6.9 if reverse else 9.1, abs=0.12)
     assert principal[0].interval.rt_start_min < min(centers) - 1.2
@@ -355,7 +341,6 @@ def test_clear_valley_classification_uses_one_signal_scale() -> None:
         answer = evaluate_physical_peak(prepared, query_rt_min=center)
         assert answer.state == "available"
         assert len(answer.segment_universe.segments) == 2
-        assert not answer.requires_overlap_review
 
 
 @pytest.mark.parametrize("reverse", (False, True))
@@ -384,7 +369,6 @@ def test_clear_split_survives_asymmetric_envelope_apex_shift(reverse: bool) -> N
     assert answer.answer.selected_segment is not None
     assert answer.answer.selected_segment.apex_rt_min == pytest.approx(query, abs=0.002)
     assert len(answer.segment_universe.segments) == 2
-    assert not answer.requires_overlap_review
 
 
 @pytest.mark.parametrize("reverse", (False, True))

@@ -240,19 +240,6 @@ def _labels_without_repeat(row: dict[str, str]) -> tuple[str, str]:
             {
                 "NL": "NO_MS2",
                 "ISTD Pair": "d3-A",
-                "Projection Support Reasons": "ms1_peak_present; trace_coherent",
-                "Projection Review Reasons": (
-                    "missing_ms2_not_observed; physical_shoulder_overlap;"
-                    " trace_morphology_review"
-                ),
-                "Projection Not Counted Reasons": "missing_ms2_policy_not_counted",
-            },
-            ("肩峰／重疊", "無 MS2、峰形不完整"),
-        ),
-        (
-            {
-                "NL": "NO_MS2",
-                "ISTD Pair": "d3-A",
                 "Projection Support Reasons": "ms1_peak_present",
                 "Projection Review Reasons": "trace_morphology_review",
                 "Projection Not Counted Reasons": "missing_ms2_policy_not_counted",
@@ -317,7 +304,7 @@ def test_an_unknown_saved_code_fails_instead_of_disappearing():
 def test_needs_look_follows_the_label_table():
     assert not needs_look("ISTD 位置", "", is_istd=False)
     assert needs_look("ISTD 位置", "無 MS2", is_istd=False)
-    assert needs_look("肩峰／重疊", "", is_istd=False)
+    assert needs_look("峰形不完整", "", is_istd=False)
     assert needs_look("共用離子區段（B）", "", is_istd=False)
     assert not needs_look("偏離 ISTD 位置", "", is_istd=False)
     assert not needs_look("無可用 MS1 峰", "", is_istd=False)

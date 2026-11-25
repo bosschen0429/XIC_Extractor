@@ -128,10 +128,9 @@ no admitted peak completes with no subjects and an empty Matrix.
 A shoulder or overlapping envelope alone does not hold a peak. Background
 plateaus, noise texture and tail extensions are rejected per row by
 [shape consistency](alignment.md#reject-rows-without-one-elution-shape), not per
-peak. A qualified peak's area is measured on the unresolved envelope, and its cell carries the review
-reason `physical_shoulder_overlap`. The Workbench curve view shows the reason after that
-sample's published area when the sample is hovered or focused; it is not a
-sample risk, and the Matrix holds only the value.
+peak. A qualified peak's area is measured on its segment; a split band is
+measured on its whole envelope (see
+[Alignment](alignment.md#join-groups-and-consolidate-split-bands)).
 
 ### Physical qualification
 

@@ -108,7 +108,7 @@ class CidNlBatchGrouping:
         """Fit the published map and the drift model on one bootstrap population.
 
         ``reference`` holds that population when it differs from this one,
-        i.e. without peaks measured on an unresolved shoulder or overlap.
+        i.e. only the bootstrap anchors.
         """
         source = reference if reference is not None else self
         frame = source._bootstrap_frame

@@ -1,8 +1,8 @@
 """MS1 landmarks for correspondence, independent of peak integration.
 
 A landmark is a supported local maximum, not a selected physical segment or
-method-backed observation. In particular, shoulders can describe a pattern
-without becoming separate quantitation results.
+method-backed observation. In particular, maxima within one envelope can
+describe a pattern without becoming separate quantitation results.
 """
 
 from __future__ import annotations

@@ -120,16 +120,13 @@ context-completeness rule. The interior-maxima rule removes measurement-noise
 ripple, not every periodic fluctuation or unresolved chemical shoulder.
 
 Shoulder-connected lobes form one quantitative envelope unless a clear envelope
-valley or a separable acquired valley separates their area. Only independent
-seeds mark an envelope for overlap review: a contour ripple without noise-scaled
-support is imperfect chromatography of one peak, not evidence of a second
-component. The complete envelope does not establish one chemical component or
-individual component areas.
-
-An unresolved shoulder remains a review condition (`physical_shoulder_overlap`).
-Targeted carries it into the product review reasons; Untargeted quantifies the
-envelope when the peak otherwise qualifies and carries the same reason on that
-cell.
+valley or a separable acquired valley separates their area. The trace shape does
+not decide whether an envelope holds one chemical component or two: a single
+trace cannot tell imperfect chromatography of one component from two unresolved
+components, so no shoulder or overlap flag is emitted. Untargeted decides one
+band or two from cross-sample evidence
+([Alignment](alignment.md#join-groups-and-consolidate-split-bands)); Targeted
+has no such check, so its area may include an unresolved neighbour.
 NL evidence does not change this physical definition. Targeted uses the same
 owner for NL and no-NL inputs; its acquisition context includes one configured
 window width on each side, while only apexes inside the original selection
@@ -428,7 +425,7 @@ subtraction and area with it:
   it. Raw area is never a fallback: a peak without a morphology area publishes
   none (Alignment `missing_ms1_morphology_area`; Targeted
   `missing_positive_ms1_peak`).
-- `area_raw_counts_seconds` stays internal grouping evidence (shoulder test and
+- `area_raw_counts_seconds` stays internal grouping evidence (edge scoring and
   owner order) and is not shown.
 
 Segmentation, selection, grouping and blank qualification keep their own

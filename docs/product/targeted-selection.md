@@ -283,7 +283,7 @@ batch-context displacement, missing calibration, viable competition and
 uncertain transfer are separate actionable explanations. A finalized paired
 ISTD identity can resolve those localization concerns; it does not clear
 independent morphology, signal-gap or mixed-area concerns, or a missing
-neutral loss or MS2, which stays a doubt. Unresolved morphology or overlap concerns can require quality
+neutral loss or MS2, which stays a doubt. Unresolved morphology concerns can require quality
 review independently of identity. Reason labels describe source
 evidence; they do not start a second candidate ranking.
 
@@ -343,8 +343,8 @@ composes it once every Target of the batch has rendered. All of these must hold:
    current-sample ISTD, peak-quality and blocker requirements above.
 
 The result records `paired_istd_identity` among its support reasons, so it
-remains distinguishable from NL-confirmed detection. Morphology, overlap and
-other review reasons still flag it.
+remains distinguishable from NL-confirmed detection. Morphology and other
+review reasons still flag it.
 
 The same position also rejects. When the paired ISTD is counted, any analyte
 peak outside that tolerance is another signal, not this analyte, even if its own

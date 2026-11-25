@@ -969,7 +969,6 @@ def test_whole_trend_has_matching_target_and_discovery_facts(
         discovery.end_index,
         discovery.apex_index,
     )
-    assert not discovery.requires_overlap_review
 
 
 @pytest.mark.parametrize("pattern", ["alternating", "random", "random_amplitude"])
@@ -1074,7 +1073,6 @@ def test_overlapping_components_keep_one_unflagged_envelope(
     assert discovery.answer.selected_segment.left_rt_min < 3.0
     assert discovery.answer.selected_segment.right_rt_min > 7.0
     assert discovery.integration == targeted.integration
-    assert not discovery.requires_overlap_review
 
 
 @pytest.mark.parametrize("scale,background", [(1.0, 0.0), (1000.0, 100000.0)])
@@ -1701,7 +1699,7 @@ def test_middle_query_selects_the_unresolved_envelope_not_a_component(
     assert (
         set(answers[0].answer.selected_segment.evidence_sources)
         - set(answers[1].answer.selected_segment.evidence_sources)
-    ) <= {"local_minimum_valley", "shoulder_overlap"}
+    ) <= {"local_minimum_valley"}
 
 
 @pytest.mark.parametrize("point_count", [301, 1801])

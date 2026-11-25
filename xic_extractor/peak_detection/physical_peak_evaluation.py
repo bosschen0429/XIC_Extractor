@@ -554,8 +554,6 @@ def _censoring_aware_segments(
             scan_support_count=right - left,
             area_counts_seconds=float(np.trapezoid(raw[left:right], rt[left:right]))
             * 60.0,
-            segment_class="isolated_peak",
-            boundary_stop_reason="detection_density_return",
             evidence_sources=("local_hit_density_enrichment", "near_detection_limit"),
             raw_component=(
                 RawPeakComponent(
@@ -1009,13 +1007,8 @@ def measure_peak_envelope(
         height=top.height,
         scan_support_count=last.end_index - first.start_index,
         area_counts_seconds=sum(item.area_counts_seconds for item in segments),
-        segment_class="shoulder_candidate",
-        boundary_stop_reason="shoulder_overlap_review",
         evidence_sources=tuple(
-            sorted(
-                {source for item in segments for source in item.evidence_sources}
-                | {"shoulder_overlap"}
-            )
+            sorted({source for item in segments for source in item.evidence_sources})
         ),
     )
     return _physical_raw_descriptor_projection(prepared, envelope)
@@ -1106,8 +1099,6 @@ def _physical_segment_from_chrom(segment: Any) -> PhysicalSegment:
         height=segment.morphology_apex_residual,
         scan_support_count=segment.interval.scan_count,
         area_counts_seconds=segment.area_baseline_corrected,
-        segment_class=segment.segment_class,
-        boundary_stop_reason=segment.boundary_stop_reason,
         evidence_sources=segment.evidence_sources,
     )
 

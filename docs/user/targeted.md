@@ -194,7 +194,6 @@
 | `無可用 MS1 峰` | ![只有雜訊，沒有峰](assets/labels/no-ms1-peak.svg) | 沒有可量測、RT 又合理的 MS1 峰，包括完全沒有峰；記為 `ND` | 依據 | 只有 ISTD |
 | `偏離 ISTD 位置` | ![分析物峰離配對 ISTD 的預期位置太遠](assets/labels/off-istd-position.svg) | 有峰，但不在配對 ISTD 位置；記為 `ND` | 依據 | 否 |
 | `ISTD 未計入` | ![配對 ISTD 沒有峰，分析物峰下的 MS2 也沒見到中性丟失](assets/labels/istd-not-counted.svg) | 配對 ISTD 在這個樣本未計入，分析物也沒有自己的中性丟失 | 依據 | 是 |
-| `肩峰／重疊` | ![主峰旁有肩峰](assets/labels/shoulder-overlap.svg) | 峰旁有肩峰，或與鄰近峰重疊 | 因此未計入時是依據；否則是疑點 | 是 |
 | `峰形不完整` | ![峰頂中斷、形狀不連續](assets/labels/incomplete-shape.svg) | 峰形不連續或不完整 | 因此未計入時是依據；否則是疑點 | 是 |
 | `不符特異性條件` | ![伴隨離子出現在別的時間](assets/labels/specificity-not-met.svg) | 沒有候選峰符合全部特異性條件 | 依據 | 是 |
 | `不足以定量` | ![只有零碎的弱訊號](assets/labels/not-quantifiable.svg) | 看得到訊號，但不足以可靠定量；面積留白 | 依據 | 是 |
