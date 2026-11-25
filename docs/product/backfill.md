@@ -169,9 +169,8 @@ segment whose own boundaries contain the query center. Mere overlap with the
 search window is insufficient. Multiple containing segments remain ambiguous;
 one containing segment must pass the existing complete-context, acquired-support,
 continuity, and background-contrast checks. An evaluation requiring overlap
-review mints the Backfill observation when it
-[rises above its surroundings](signal-processing.md#overlap-surroundings), as
-in Discovery; its cell carries the review reason `physical_shoulder_overlap`. MS1-only observations
+review mints the Backfill observation as in Discovery; its cell carries the
+review reason `physical_shoulder_overlap`. MS1-only observations
 remain eligible for the existing cell policy; rejected Discovery rows supply neither
 new roots nor borrowed NL evidence. This candidate recovery neither
 changes the RT tolerance nor bypasses downstream ownership and duplicate-peak

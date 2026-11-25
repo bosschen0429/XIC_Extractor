@@ -120,10 +120,11 @@ context-completeness rule. The interior-maxima rule removes measurement-noise
 ripple, not every periodic fluctuation or unresolved chemical shoulder.
 
 Shoulder-connected lobes form one quantitative envelope unless a clear envelope
-valley or a separable acquired valley separates their area. Canonical contour
-maxima reaching the same 4% prominence floor remain review evidence even when
-they do not qualify as independent seeds. The complete envelope does not
-establish one chemical component or individual component areas.
+valley or a separable acquired valley separates their area. Only independent
+seeds mark an envelope for overlap review: a contour ripple without noise-scaled
+support is imperfect chromatography of one peak, not evidence of a second
+component. The complete envelope does not establish one chemical component or
+individual component areas.
 
 Untargeted can also localize separate acquired crests inside an unresolved
 envelope. Each crest needs continuous original top support, and observed
@@ -223,21 +224,6 @@ The robust MAD aggregation and qualification factor here are product policy;
 that paper does not validate this chromatographic gate or its threshold.
 These checks address missing acquired support and insufficient local contrast,
 not every form of noise or chemical identity.
-
-### Overlap surroundings
-
-Top ripples flag a peak with a shoulder and a slice of a continuous plateau
-alike. Missing scans can cut such a plateau, and a slice whose boundaries sit
-on them passes local relief. Discovery and Backfill therefore qualify an
-overlap-review peak only when it rises above the acquired signal just outside
-it. Each side's level is the median of the nonzero raw scans within 0.5 min
-outside the selected segment; zero scans are missing observations, and a
-shorter acquired context supplies what it has. When the higher side's level is
-at least half the segment's raw apex, the peak fails with
-`overlap_not_above_surroundings`. A neighboring peak inside that flank raises
-the level as background does. Peaks without overlap review keep local relief
-only. The flank and the one-half limit are product policy chosen on a reviewed
-sample of overlap peaks, not a calibrated error rate.
 
 Known-reference ISTD localization answers a narrower question than discovering
 local maxima: small surface ripples should not erase a supported broad contour

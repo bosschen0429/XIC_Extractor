@@ -50,6 +50,7 @@ from xic_extractor.alignment.result.scientific_alignment import (
 )
 from xic_extractor.alignment.rt_drift import ROW_MIN_SAMPLES
 from xic_extractor.alignment.rt_frame import RtFrame, SampleRtFrame
+from xic_extractor.alignment.shape_consistency import reject_inconsistent_groups
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessment,
     is_ms1_only_cid_nl_backfill_assessment,
@@ -207,16 +208,18 @@ def regroup_cid_nl_cross_sample_groups(
         injection_order=rt_frame.injection_order,
         rt_frame=rt_frame,
     )
-    groups = merge_one_band_groups(
-        group_cid_nl_owners(
-            owners,
+    groups = reject_inconsistent_groups(
+        merge_one_band_groups(
+            group_cid_nl_owners(
+                owners,
+                config=alignment_config,
+                sample_universe=frozenset(sample.raw_stem for sample in samples),
+                rt_frame=rt_frame,
+                operation_counts_sink=operation_counts_sink,
+                peak_trajectories=trajectories,
+            ),
             config=alignment_config,
-            sample_universe=frozenset(sample.raw_stem for sample in samples),
-            rt_frame=rt_frame,
-            operation_counts_sink=operation_counts_sink,
-            peak_trajectories=trajectories,
-        ),
-        config=alignment_config,
+        )
     )
     population = tuple(sorted(groups, key=lambda group: group.group_hypothesis_id))
     scope = replace(grouping_scope, groups=groups, peak_trajectories=trajectories)

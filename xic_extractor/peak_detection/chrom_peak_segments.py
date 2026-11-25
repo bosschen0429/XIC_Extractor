@@ -850,13 +850,8 @@ def _segment_from_seed(
             left = max(basin_left, left - 1)
             right = min(basin_right, right + 1)
     relation_labels = _relation_labels(left_relation, right_relation)
-    if policy.morphology_trace_method == "rt_envelope":
-        contour = boundary_signal[left:right]
-        review_lobes = supported_contour_apices(
-            contour, policy.min_prominence_fraction_of_envelope
-        )
-        if len(envelope_seeds) > 1 or len(review_lobes) > 1:
-            relation_labels = (*relation_labels, "shoulder_overlap")
+    if policy.morphology_trace_method == "rt_envelope" and len(envelope_seeds) > 1:
+        relation_labels = (*relation_labels, "shoulder_overlap")
     interval = _trace_interval(rt, left, right)
     segment_class = _segment_class(interval, relation_labels, policy)
     stop_reason = _boundary_stop_reason(segment_class, relation_labels)

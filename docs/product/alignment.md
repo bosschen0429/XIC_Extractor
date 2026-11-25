@@ -492,6 +492,23 @@ of at most 1.9-fold, and every true pair was resolved in some injection. A pair
 resolved only by zero-scan dropouts in a weak channel stays separate, the
 conservative direction.
 
+### Reject rows without one elution shape
+
+A compound elutes with the same shape in every injection, give or take
+intensity. Background plateaus, noise texture and tail extensions do not: each
+injection shows a different slice of differently shaped signal, and their
+signal-to-noise can equal a true peak's, so no single-peak measure separates
+them. After band consolidation, `shape_consistency` aligns each member's
+canonical signal at its apex (for a one-band group, the apex of its envelope),
+over ±0.6 min, scales it to its height, and takes the median pairwise
+correlation. An established group below 0.6 is rejected and does not plan
+Backfill. The rule also rejects rows whose members are different peaks in
+different injections; their values mixed compounds, and regrouping them is a
+separate problem. On the 8RAW review of #1283 it removed 7 of 16 reviewed
+background rows and 14 other rows, mostly rows mixing different peaks;
+background rows whose slices happen to share one shape stay. The window and
+floor are product policy, not a calibrated error rate.
+
 ### Localization and Backfill
 
 Trajectories use observed positions for localization. Missing positions are
