@@ -49,7 +49,6 @@ def execute_partition(
     progress_callback: Callable[[Mapping[str, object]], None] | None = None,
     should_cancel: Callable[[], bool] | None = None,
     pool: WorkerAdmissionPool,
-    reference_jobs: tuple[UntargetedPartitionJob, ...] = (),
     initial_only: bool = False,
     initial_results: tuple[UntargetedInitialSampleResult, ...] | None = None,
     prepare_grouping: Callable[
@@ -64,7 +63,6 @@ def execute_partition(
     """
     work = _prepare_runtime_work(
         jobs,
-        reference_jobs=reference_jobs,
         alignment_config=alignment_config,
         progress_callback=progress_callback,
         partition_key=partition_key,
@@ -79,7 +77,6 @@ def execute_partition(
         tuple(work.results),
         failure,
         work.prepared_grouping,
-        work.reference_results,
     )
 
 
@@ -88,7 +85,6 @@ class _RuntimeWork:
     run: Callable[[], Exception | None]
     results: list[UntargetedSampleResult]
     prepared_grouping: CidNlGrouping | None = None
-    reference_results: tuple[UntargetedInitialSampleResult, ...] = ()
 
 
 def _prepare_runtime_work(
@@ -99,7 +95,6 @@ def _prepare_runtime_work(
     partition_key: str,
     should_cancel: Callable[[], bool] | None = None,
     pool: WorkerAdmissionPool,
-    reference_jobs: tuple[UntargetedPartitionJob, ...] = (),
     initial_only: bool = False,
     initial_results: tuple[UntargetedInitialSampleResult, ...] | None = None,
     prepare_grouping: Callable[
@@ -155,9 +150,6 @@ def _prepare_runtime_work(
         if jobs and initial_results is None
         else ()
     )
-    reference_by_sample: dict[str, list[UntargetedPartitionJob]] = {}
-    for job in reference_jobs:
-        reference_by_sample.setdefault(job.sample.sample_name, []).append(job)
     batch_phases: list[_BatchSamplePhaseState] = []
     for sample_states in sample_groups:
         first = sample_states[0].job
@@ -178,7 +170,6 @@ def _prepare_runtime_work(
                 initial_resource_key=initial_resource_key,
                 backfill_resource_key=backfill_resource_key,
                 regions=regions,
-                reference_jobs=tuple(reference_by_sample.get(sample_id, ())),
             )
         )
 
@@ -264,7 +255,6 @@ def _prepare_runtime_work(
                 jobs=tuple(s.job for s in sample_states),
                 initial_resource_key=phase.initial_resource_key,
                 regions=phase.regions,
-                reference_jobs=phase.reference_jobs,
             )
 
         def handle_initial_response(
@@ -354,15 +344,6 @@ def _prepare_runtime_work(
                                 )
                                 for state in states
                                 if state.adapter_result is not None
-                            )
-                        )
-                        work.reference_results = tuple(
-                            UntargetedInitialSampleResult(job, answer)
-                            for phase in batch_phases
-                            for job, answer in zip(
-                                phase.reference_jobs,
-                                phase.reference_results,
-                                strict=True,
                             )
                         )
                         if not initial_only and alignment_config.backfill_enabled:

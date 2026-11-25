@@ -50,7 +50,6 @@ class UntargetedInputPlan:
         ],
     ]
     dll_dir: Path
-    rt_reference_subjects: UntargetedCidNlMethodSubjectBatch | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,59 +81,16 @@ class PreparedUntargetedAlignmentWorksets:
 
 def pack_subject_partitions(
     main: PreparedUntargetedAlignmentWorksets,
-    reference: PreparedUntargetedAlignmentWorksets | None,
     *,
     max_partition_jobs: int,
     sample_count: int,
-) -> tuple[tuple[tuple[CidNlMethodSubject, ...], tuple[CidNlMethodSubject, ...]], ...]:
-    """Pack worksets so each RT-reference workset lies inside one partition.
-
-    A reference workset can join candidates of several main worksets; those
-    main worksets travel together so the first pass measures every reference
-    channel. Each partition carries its main and reference subjects.
-    """
-    parent = list(range(len(main.worksets)))
-
-    def root(index: int) -> int:
-        while parent[index] != index:
-            parent[index] = parent[parent[index]]
-            index = parent[index]
-        return index
-
-    workset_by_candidate = {
-        candidate: index
-        for index, workset in enumerate(main.worksets)
-        for subject in workset
-        for candidate, _ in main.memberships_by_subject[subject.method_subject_id]
-    }
-    reference_by_root: dict[int, list[CidNlMethodSubject]] = {}
-    if reference is not None:
-        for workset in reference.worksets:
-            joined = sorted(
-                {
-                    root(workset_by_candidate[candidate])
-                    for subject in workset
-                    for candidate, _ in reference.memberships_by_subject[
-                        subject.method_subject_id
-                    ]
-                }
-            )
-            for other in joined[1:]:
-                parent[root(other)] = root(joined[0])
-        for workset in reference.worksets:
-            memberships = reference.memberships_by_subject[workset[0].method_subject_id]
-            candidate = memberships[0][0]
-            reference_by_root.setdefault(
-                root(workset_by_candidate[candidate]), []
-            ).extend(workset)
-    units: dict[int, list[CidNlMethodSubject]] = {}
-    for index, workset in enumerate(main.worksets):
-        units.setdefault(root(index), []).extend(workset)
+) -> tuple[tuple[CidNlMethodSubject, ...], ...]:
+    """Pack whole worksets into partitions of bounded size and one mass bin."""
     ordered = sorted(
-        units.items(),
-        key=lambda item: (
-            min(subject.precursor_mz for subject in item[1]),
-            min(subject.method_subject_id for subject in item[1]),
+        main.worksets,
+        key=lambda workset: (
+            min(subject.precursor_mz for subject in workset),
+            min(subject.method_subject_id for subject in workset),
         ),
     )
 
@@ -142,13 +98,11 @@ def pack_subject_partitions(
         return tuple(sorted(subjects, key=lambda subject: subject.method_subject_id))
 
     subjects_per_partition = max(1, max_partition_jobs // sample_count)
-    packed: list[tuple[tuple[CidNlMethodSubject, ...], tuple[CidNlMethodSubject, ...]]]
-    packed = []
+    packed: list[tuple[CidNlMethodSubject, ...]] = []
     current: list[CidNlMethodSubject] = []
-    current_reference: list[CidNlMethodSubject] = []
     current_candidate_count = 0
     current_mass_bin: int | None = None
-    for unit_root, unit in ordered:
+    for unit in ordered:
         mass_bin = int(min(subject.precursor_mz for subject in unit) // 100.0)
         candidate_count = sum(
             len(main.memberships_by_subject.get(subject.method_subject_id, ()))
@@ -163,17 +117,14 @@ def pack_subject_partitions(
             or current_mass_bin != mass_bin
             or current_candidate_count + candidate_count > 1024
         ):
-            packed.append((by_id(current), by_id(current_reference)))
-            current, current_reference = [], []
+            packed.append(by_id(current))
+            current = []
             current_candidate_count = 0
         current.extend(unit)
-        current_reference.extend(
-            unit if reference is None else reference_by_root.get(unit_root, ())
-        )
         current_candidate_count += candidate_count
         current_mass_bin = mass_bin
     if current:
-        packed.append((by_id(current), by_id(current_reference)))
+        packed.append(by_id(current))
     return tuple(packed)
 
 
@@ -308,11 +259,6 @@ def prepare_indexed_untargeted_plan(
         )
 
     subject_batch = bind(ordered)
-    reference = tuple(
-        pair
-        for pair in ordered
-        if not source.locations[pair[1]].requires_overlap_review
-    )
     expectations = {
         path.stem: expectation
         for path, expectation in zip(
@@ -336,7 +282,4 @@ def prepare_indexed_untargeted_plan(
         excluded_candidates=(),
         partition_input_loader=load_partition,
         dll_dir=dll_dir,
-        rt_reference_subjects=bind(reference)
-        if len(reference) != len(ordered)
-        else None,
     )

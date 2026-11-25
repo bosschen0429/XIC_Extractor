@@ -310,7 +310,6 @@ class UntargetedPartitionResult:
     sample_results: tuple[UntargetedSampleResult, ...]
     failure: Exception | None = None
     prepared_grouping: CidNlGrouping | None = None
-    reference_results: tuple[UntargetedInitialSampleResult, ...] = ()
 
     @property
     def succeeded(self) -> bool:

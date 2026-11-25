@@ -239,9 +239,7 @@ def _hypothesis_from_owner_group(
 
 
 def _settled_members(group: Sequence[SampleLocalMS1Owner]) -> bool:
-    return len(group) >= 2 and not all(
-        owner.peak.requires_overlap_review for owner in group
-    )
+    return len(group) >= 2
 
 
 def accepted_membership_risks(

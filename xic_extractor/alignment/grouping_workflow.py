@@ -161,7 +161,6 @@ def build_initial_cid_nl_cross_sample_groups(
         CidNlMethodAssessment, tuple[MeasuredPeakHypothesis, ...]
     ]
     | None = None,
-    anchors_calibrate: bool = True,
 ) -> tuple[
     InitialGroupingScope,
     CrossSampleGroupingResult,
@@ -176,7 +175,6 @@ def build_initial_cid_nl_cross_sample_groups(
         elution_contexts=elution_contexts,
         operation_counts_sink=operation_counts_sink,
         retained_hypotheses_by_assessment=retained_hypotheses_by_assessment,
-        anchors_calibrate=anchors_calibrate,
     )
     groups = grouping_scope.groups
     population = tuple(sorted(groups, key=lambda group: group.group_hypothesis_id))

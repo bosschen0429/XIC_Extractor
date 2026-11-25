@@ -18,7 +18,6 @@ from xic_extractor.configuration.signal_processing_profile import (
 from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_extractor.peak_detection.physical_peak_models import (
     PhysicalPeakEvaluation,
-    RawPeakComponent,
 )
 from xic_extractor.peak_detection.traces import Trace
 from xic_extractor.sample_metadata import SampleMetadata
@@ -66,8 +65,6 @@ class PeakObservation:
     signal_processing_profile: SignalProcessingProfile | None = field(
         default=None, compare=False
     )
-    retained_overlap_review: bool = field(default=False, compare=False)
-    localized_apex_rt_min: float | None = None
 
     def __post_init__(self) -> None:
         mz = _finite_float(self.mz, field="mz")
@@ -95,15 +92,6 @@ class PeakObservation:
         object.__setattr__(self, "intensity", intensity)
 
     @property
-    def requires_overlap_review(self) -> bool:
-        """Whether this peak was measured on an unresolved shoulder or overlap."""
-        if self.integration is None:
-            return True
-        if self.physical_evaluation is not None:
-            return self.physical_evaluation.requires_overlap_review
-        return self.retained_overlap_review
-
-    @property
     def physical_identity(self) -> PeakObservation:
         """This peak without advisory measurement quality, for in-process joins."""
 
@@ -113,10 +101,8 @@ class PeakObservation:
 
     @property
     def rt_apex_min(self) -> float:
-        if self.integration is not None:
-            return self.integration.rt_apex_min
-        assert self.localized_apex_rt_min is not None
-        return self.localized_apex_rt_min
+        assert self.integration is not None
+        return self.integration.rt_apex_min
 
     @property
     def rt_left_min(self) -> float:
@@ -248,7 +234,6 @@ def _project_peak_observation(
     physical_evaluation: PhysicalPeakEvaluation | None = None,
     signal_processing_profile: SignalProcessingProfile | None = None,
     capture_stage: str = "initial_capture",
-    localized_apex_rt_min: float | None = None,
 ) -> PeakObservation:
     """Project signals and integration already validated by their input owner."""
     selected_rt = tuple(
@@ -290,36 +275,6 @@ def _project_peak_observation(
         physical_evaluation=physical_evaluation,
         signal_processing_profile=signal_processing_profile,
         capture_stage=capture_stage,
-        localized_apex_rt_min=localized_apex_rt_min,
-    )
-
-
-def mint_localized_peak_observation(
-    *,
-    sample: SampleMetadata,
-    trace: Trace,
-    component: RawPeakComponent,
-    measured_mz: float,
-    signal_processing_profile: SignalProcessingProfile,
-    resolver_mode: str,
-    envelope_evaluation: PhysicalPeakEvaluation,
-) -> PeakObservation:
-    """Project a localized lobe without issuing an integration result.
-
-    The lobe has no area of its own; ``envelope_evaluation`` is the measurement
-    of the unresolved envelope it lies in.
-    """
-    return _project_peak_observation(
-        sample_key=sample.sample_name,
-        trace=trace,
-        mz=measured_mz,
-        integration=None,
-        selected_indices=tuple(range(component.start_index, component.end_index)),
-        resolver_mode=resolver_mode,
-        proposal_sources=("unresolved_overlap_lobe",),
-        physical_evaluation=envelope_evaluation,
-        signal_processing_profile=signal_processing_profile,
-        localized_apex_rt_min=float(trace.rt[component.apex_index]),
     )
 
 
@@ -355,7 +310,6 @@ def _owner_minted_peak_observation(
     physical_evaluation: PhysicalPeakEvaluation | None,
     signal_processing_profile: SignalProcessingProfile | None,
     capture_stage: str,
-    localized_apex_rt_min: float | None,
 ) -> PeakObservation:
     """Issue an observation from values normalized by the observation owner once."""
 
@@ -365,11 +319,9 @@ def _owner_minted_peak_observation(
     object.__setattr__(observation, "rt", rt)
     object.__setattr__(observation, "intensity", intensity)
     object.__setattr__(observation, "integration", integration)
-    object.__setattr__(observation, "localized_apex_rt_min", localized_apex_rt_min)
     object.__setattr__(observation, "generation_provenance", generation_provenance)
     object.__setattr__(observation, "source_trace", source_trace)
     object.__setattr__(observation, "physical_evaluation", physical_evaluation)
-    object.__setattr__(observation, "retained_overlap_review", False)
     object.__setattr__(
         observation, "signal_processing_profile", signal_processing_profile
     )

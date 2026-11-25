@@ -290,7 +290,6 @@ def test_scan_shared_by_isotope_and_monoisotope_binds_only_the_subject_ion():
             processing_attempt_id="attempt",
             settings=SETTINGS,
             raw=None,
-            rt_reference_only=False,
         )[subject.method_subject_id]
         assert [(cid, peak.mz) for cid, peak in result.candidate_observations] == [
             ("A@monoisotope", pytest.approx(monoisotope, abs=1e-4))

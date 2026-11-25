@@ -8,9 +8,7 @@ another sugar belongs to that sugar, though a minor product matched this loss.
 A compound whose every ion leaves a negative mass defect after
 the loss holds no organic nucleobase: an inorganic cluster or multiply charged
 ion lost the same elemental composition. A compound whose groups each had one
-attached MS2 event is unconfirmed and listed apart. A compound whose every
-peak carries Discovery's overlap review is listed apart as well, as Alignment
-keeps a group of only such peaks out of the Matrix. Each candidate's fate is
+attached MS2 event is unconfirmed and listed apart. Each candidate's fate is
 decided once, with the ion it derives from and, where its mass difference is
 known, the relation; the summary counts those fates. Chromatograms come from
 an injected reader, so RAW access stays in ``nl_adduct_count_acquisition``.
@@ -68,7 +66,6 @@ MATCH_PPM = 10.0
 MATCH_RT_MIN = 0.3
 KINDS = ("nucleoside", "nucleoside_mz", "two_sugar", "other")
 COUNTED, UNCONFIRMED, NO_NUCLEOBASE = "counted", "unconfirmed", "no_nucleobase"
-OVERLAP_ONLY = "overlap_only"
 KNOWN_DIFFERENCE = "derived_known_difference"
 NUCLEOSIDE_ELUTION = "derived_nucleoside_elution"
 OTHER_SUGAR = "derived_other_sugar_nucleoside"
@@ -89,7 +86,6 @@ class Candidate:
     rt: float
     event_count: int
     second_loss_ratio: float = 0.0
-    overlap: bool = False
     fragment_sugar: str = ""
 
 
@@ -160,10 +156,6 @@ class Unit:
         )
 
     @property
-    def overlap_only(self) -> bool:
-        return all(c.overlap for g in self.groups for c in g.members)
-
-    @property
     def fragment_sugar(self) -> str:
         """The fragment sugar of the ion with the most attached MS2 events."""
         ions = [c for g in self.groups for c in g.members]
@@ -179,7 +171,7 @@ class Unit:
             return NO_NUCLEOBASE
         if self.unconfirmed:
             return UNCONFIRMED
-        return OVERLAP_ONLY if self.overlap_only else COUNTED
+        return COUNTED
 
     @property
     def late(self) -> bool:
@@ -407,7 +399,6 @@ class RunCount:
             "other_sugar_fragment": fates[OTHER_SUGAR_FRAGMENT],
             "no_nucleobase": fates[NO_NUCLEOBASE],
             "unconfirmed": fates[UNCONFIRMED],
-            "overlap_only": fates[OVERLAP_ONLY],
             "counted": fates[COUNTED],
             "counted_kinds": {k: kinds.get(k, 0) for k in KINDS},
             "counted_late": sum(u.late for u in self.counted),

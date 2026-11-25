@@ -62,16 +62,10 @@ def _review_rank(
     peak = binding.peak
     if peak.status == "blank":
         return 2
-    evaluation = binding.physical_evaluation
-    shouldered = (
-        evaluation.state not in {"unavailable", "failed"}
-        and evaluation.requires_overlap_review
-    )
     if (
         peak.attached_event_count >= 2
         and abs(peak.ms1_apex_rt - best_event_rt)
         <= settings.ms1_search_padding_min + _RT_DELTA_EPSILON_MIN
-        and not shouldered
     ):
         return 0
     return 1

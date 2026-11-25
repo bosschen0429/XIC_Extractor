@@ -133,7 +133,6 @@ def test_held_rows_never_become_alignment_roots(tmp_path, monkeypatch, with_supp
                 }[path.stem]
             )
             (expected_ids if peak.admitted else rejected_ids).add(peak.peak_id)
-            assert not peak.requires_overlap_review
         folder = tmp_path / path.stem
         folder.mkdir()
         receipts.update(
@@ -179,7 +178,6 @@ def test_held_rows_never_become_alignment_roots(tmp_path, monkeypatch, with_supp
     )
     assert {cid for cid, _ in plan.subject_batch.candidate_memberships} == expected_ids
     if with_supported:
-        assert plan.rt_reference_subjects is None
         partition = materialize_untargeted_partition(plan, plan.subject_batch)
         assert {
             c.peak_id for job in partition.jobs for c in job.candidates

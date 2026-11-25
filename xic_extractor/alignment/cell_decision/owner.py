@@ -138,12 +138,8 @@ class ProductionCellDecision:
             return ()
         for cell in evidence.effective_cells:
             observation = cell.peak_observation
-            if observation is not None and (
-                (
-                    observation.integration is self.selected_integration
-                    and observation.requires_overlap_review
-                )
-                or _measures_envelope(evidence.group, observation)
+            if observation is not None and _measures_envelope(
+                evidence.group, observation
             ):
                 return ("physical_shoulder_overlap",)
         return ()
@@ -347,12 +343,12 @@ def _decide_group(
 def _measures_envelope(
     group: CrossSamplePeakGroupHypothesis, peak: PeakObservation
 ) -> bool:
-    """A one-band member that is only part of its envelope: a lobe or a cut half."""
+    """A one-band member that is only part of its envelope: a cut half."""
     evaluation = peak.physical_evaluation
     if not group.one_band or evaluation is None:
         return False
     selected = evaluation.answer.selected_segment
-    return peak.integration is None or (
+    return (
         selected is not None
         and len(peak_envelope(evaluation.segment_universe, selected)) > 1
     )

@@ -82,7 +82,6 @@ def assess_sample_regions(
     processing_attempt_id: str,
     settings: DiscoverySettings,
     raw: CidNlRawSource | None,
-    rt_reference_only: bool,
 ) -> dict[str, CidNlAcquisitionResult]:
     """Bind a sample's measured peaks and separate scan relations to subjects.
 
@@ -115,8 +114,6 @@ def assess_sample_regions(
             if len(observed) != 1:
                 continue
             (peak,) = observed
-            if rt_reference_only and peak.requires_overlap_review:
-                continue
             prior = lineage_subject_by_peak.setdefault(peak, key)
             if prior == key:
                 bindings.setdefault(key, []).append((candidate.peak_id, peak))
@@ -124,8 +121,6 @@ def assess_sample_regions(
     peaks_by_subject: dict[str, list[PeakObservation]] = {}
     for region in regions:
         for peak in region.peaks:
-            if rt_reference_only and peak.requires_overlap_review:
-                continue
             compatible = tuple(
                 subject
                 for subject, _ in scopes

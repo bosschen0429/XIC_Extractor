@@ -2,7 +2,7 @@
 
 A separable-valley cut measures where acquired signal can be measured
 separately; it does not decide how many compounds an envelope holds. In some
-injections one band is split into two lobes, and each lobe groups with its
+injections one band is split into two halves, and each half groups with its
 counterparts in other injections, so one compound becomes two rows. A true
 pair of co-eluting compounds produces the same single-injection shape. Only the
 cross-injection behaviour separates them:
@@ -45,8 +45,8 @@ class _Member:
     left: float
     right: float
     envelope: tuple[PhysicalSegment, ...]
-    area: float | None
-    """The member's own segment area; ``None`` for an unresolved lobe."""
+    area: float
+    """The member's own segment area."""
 
 
 def _member(peak: PeakObservation) -> _Member | None:
@@ -56,12 +56,11 @@ def _member(peak: PeakObservation) -> _Member | None:
     segment = evaluation.answer.selected_segment
     if segment is None:
         return None
-    lobe = peak.integration is None
     return _Member(
         left=peak.rt_left_min,
         right=peak.rt_right_min,
         envelope=peak_envelope(evaluation.segment_universe, segment),
-        area=None if lobe else segment.area_counts_seconds,
+        area=segment.area_counts_seconds,
     )
 
 
@@ -99,9 +98,7 @@ def _one_band(
         if relation != "same_envelope":
             return False
         if (
-            first.area is not None
-            and second.area is not None
-            and first.area > 0.0
+            first.area > 0.0
             and second.area > 0.0
             and (first.left, first.right) != (second.left, second.right)
         ):

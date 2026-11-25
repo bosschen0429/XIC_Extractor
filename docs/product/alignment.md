@@ -475,16 +475,15 @@ Backfill, `band_identity` compares established same-m/z groups in the samples
 where both hold a member:
 
 - both members lie in one [envelope](signal-processing.md#separable-valleys) —
-  segments joined by shared cut scans, or one unresolved segment holding both
-  lobes — or the groups are not one band;
+  segments joined by shared cut scans — or the groups are not one band;
 - members in separate envelopes, in any sample, mean two compounds;
 - the area ratio of the two halves, over at least two samples, stays within a
   factor of two.
 
 Groups that pass merge into one `one_band` group with one member per sample (the
 earliest apex). Each sample's value is the physical owner's integration of the
-whole envelope holding that member, so a half, a lobe, or a half whose sibling
-failed qualification all report the band; the cell carries
+whole envelope holding that member, so a half, or a half whose sibling failed
+qualification, reports the band; the cell carries
 `physical_shoulder_overlap`. Pairs that fail any condition stay separate rows.
 The factor of two is product policy chosen on the 8RAW split bands and true
 pairs of #1283: splits cut in up to seven of eight injections had ratio ranges

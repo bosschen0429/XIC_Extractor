@@ -178,7 +178,6 @@ def prepare_cid_nl_grouping(
     rt_frame: SampleRtFrame,
     elution_contexts: Sequence[SampleElutionContext] = (),
     known_istd_reference: KnownIstdReference | None = None,
-    anchors_calibrate: bool = True,
 ) -> CidNlGrouping:
     """Decide candidate participation and initial membership from acquired science.
 
@@ -401,7 +400,6 @@ def prepare_cid_nl_grouping(
             rt_frame=rt_frame,
             retained_hypotheses_by_assessment=(retained_hypotheses_by_assessment),
             operation_counts_sink=operation_counts,
-            anchors_calibrate=anchors_calibrate,
         )
         prepared_worksets.append(
             CidNlWorksetGrouping(

@@ -62,7 +62,6 @@ from xic_extractor.untargeted_execution.execution_result import (
 )
 from xic_extractor.untargeted_execution.input_planning import (
     PreparedUntargetedAlignmentWorksets,
-    pack_subject_partitions,
 )
 
 
@@ -358,59 +357,11 @@ def test_bounded_runtime_failure_never_publishes_completed_batch(
     assert not any((tmp_path / "failed" / name).exists() for name in PUBLISHED_TABLES)
 
 
-def test_reference_workset_joining_two_worksets_packs_them_together():
-    subjects = tuple(
-        mint_untargeted_cid_nl_method_subject(
-            precursor_mz=mz,
-            precursor_tolerance_ppm=20.0,
-            neutral_loss_da=116.0474,
-            composition=None,
-        )
-        for mz in (300.0, 300.5, 301.0)
-    )
-    first, middle, last = subjects
-    main = PreparedUntargetedAlignmentWorksets(
-        worksets=((first,), (middle,), (last,)),
-        memberships_by_subject={
-            subject.method_subject_id: ((f"c{index}", subject.method_subject_id),)
-            for index, subject in enumerate(subjects)
-        },
-    )
-    bridge = mint_untargeted_cid_nl_method_subject(
-        precursor_mz=300.0,
-        precursor_tolerance_ppm=20.0,
-        neutral_loss_da=116.0474,
-        composition=None,
-    )
-    reference = PreparedUntargetedAlignmentWorksets(
-        worksets=((bridge,),),
-        memberships_by_subject={
-            bridge.method_subject_id: (
-                ("c0", bridge.method_subject_id),
-                ("c2", bridge.method_subject_id),
-            )
-        },
-    )
-
-    packed = pack_subject_partitions(
-        main, reference, max_partition_jobs=2, sample_count=1
-    )
-
-    by_id = {subject.method_subject_id: subject for subject in subjects}
-    assert [
-        ({s.precursor_mz for s in partition}, refs) for partition, refs in packed
-    ] == [
-        ({300.0, 301.0}, (bridge,)),
-        ({by_id[middle.method_subject_id].precursor_mz}, ()),
-    ]
-
-
 def test_bounded_partition_keeps_alignment_workset_atomic(
     tmp_path,
     monkeypatch,
 ) -> None:
     from xic_extractor.peak_detection.cid_nl_method_subject import (
-        mint_untargeted_cid_nl_method_subject,
         mint_untargeted_cid_nl_method_subject_batch,
     )
     from xic_extractor.untargeted_execution.execution import (
@@ -476,13 +427,9 @@ def test_indexed_mass_partition_keeps_closed_worksets_and_budgets_neighbors(
 ) -> None:
     from xic_extractor.peak_detection.cid_nl_method_subject import (
         cid_nl_alignment_subject_worksets,
-        mint_untargeted_cid_nl_method_subject,
         mint_untargeted_cid_nl_method_subject_batch,
     )
     from xic_extractor.untargeted_execution import execution as bounded_owner
-    from xic_extractor.untargeted_execution.input_planning import (
-        PreparedUntargetedAlignmentWorksets,
-    )
 
     plan, _reference = _plan(tmp_path, monkeypatch)
     subjects = tuple(
@@ -648,7 +595,6 @@ def test_bounded_partition_real_entry_mints_interleaved_worksets_canonically(
 
     from xic_extractor.peak_detection.cid_nl_method_subject import (
         cid_nl_alignment_subject_worksets,
-        mint_untargeted_cid_nl_method_subject,
         mint_untargeted_cid_nl_method_subject_batch,
     )
     from xic_extractor.untargeted_execution import execution as bounded_owner

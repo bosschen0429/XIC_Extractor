@@ -46,25 +46,16 @@ with its method channel, apex RT and, when its bootstrap group is agreed, that
 group. Bootstrap takes measured support from the retained assessment binding,
 not nominal method-query masses projected into an observation-only owner. The
 published RT map and the [drift model](#drift-beyond-the-map) are both fitted on
-one reference population: channels from Discovery peaks without shoulder review,
-with Alignment measurements that carry shoulder review left out, plus the
-measured ISTDs. Admitted overlap peaks are grouped and quantified but move
-neither the map, the drift anchors nor B. M is the exception: its
-[row vote](#drift-beyond-the-map) groups the full population's direct-evidence
-peaks, so an admitted overlap peak in a voting row moves M. Removing a peak only after grouping is not
+one population: the bootstrap channels of every admitted Discovery peak, plus
+the measured ISTDs. M is [voted](#drift-beyond-the-map) from the same
+population's direct-evidence rows. Removing a peak only after grouping is not
 equivalent: that peak may have set a channel center or changed which bootstrap
 correspondences agreed. Final rows and their coefficients are inferred on the
 full population.
 
-The reference population is read from the first pass, not acquired again.
-Partitions are packed so every reference workset lies inside one partition;
-its channels are assessed on that partition's measured regions, related only
-to their own Discovery events and without peaks that carry shoulder review,
-then bootstrapped on their own. A representative window can therefore come
-from any search window of the region, including one planned for a reviewed
-Discovery input. Bootstrap groups exist only to calibrate, so they are inferred
-only where they can: not for a population the batch does not calibrate from,
-and not for a workset whose anchors fall short of the correspondence quorum
+The calibration population is read from the first pass, not acquired again.
+Bootstrap groups exist only to calibrate, so they are inferred only where they
+can: not for a workset whose anchors fall short of the correspondence quorum
 below in every cohort. Such owners stay ungrouped until final grouping, and
 their anchors still reach the drift model.
 

@@ -38,7 +38,6 @@ from xic_extractor.untargeted_execution.partition.cid_nl_region_acquisition impo
     CidNlSampleRegion,
     DiscoveryMassRegion,
     acquire_cid_nl_sample_regions,
-    relate_region_events,
 )
 from xic_extractor.untargeted_execution.partition.cid_nl_sample_acquisition import (
     CidNlAcquisitionResult,
@@ -128,8 +127,6 @@ class _BatchSamplePhaseState:
     initial_resource_key: str | None
     backfill_resource_key: str | None
     regions: tuple[DiscoveryMassRegion, ...] = ()
-    reference_jobs: tuple[UntargetedPartitionJob, ...] = ()
-    reference_results: tuple[CidNlAcquisitionResult, ...] = ()
 
     @property
     def job(self) -> UntargetedPartitionJob:
@@ -205,59 +202,7 @@ def _execute_initial_assessment_batch(
             processing_attempt_id=job.processing_attempt_id,
             settings=job.settings,
             raw=raw,
-            rt_reference_only=False,
         )
-        ref_jobs = phase.reference_jobs
-        if ref_jobs:
-            same_view = (
-                len(ref_jobs) == len(states)
-                and all(
-                    ref is state.job and state.error is None
-                    for ref, state in zip(ref_jobs, states, strict=True)
-                )
-                and not any(
-                    peak.requires_overlap_review
-                    for region in regions
-                    for peak in region.peaks
-                )
-            )
-            answers = (
-                results
-                if same_view
-                else assess_sample_regions(
-                    regions=relate_region_events(
-                        regions,
-                        sample=job.sample,
-                        acquisition_source=job.acquisition_source_expectation.source,
-                        events=(
-                            event
-                            for candidate in (
-                                *ref_jobs[0].candidates,
-                                *ref_jobs[0].support_candidates,
-                            )
-                            for event in candidate.located_events
-                        ),
-                        settings=job.settings,
-                    ),
-                    sample=job.sample,
-                    acquisition_source=job.acquisition_source_expectation.source,
-                    scopes=tuple(
-                        (j.method_subject, _request_subject_candidates(j))
-                        for j in ref_jobs
-                    ),
-                    processing_attempt_id=job.processing_attempt_id,
-                    settings=job.settings,
-                    raw=raw,
-                    rt_reference_only=True,
-                )
-            )
-            phase.reference_results = tuple(
-                replace(
-                    answers[j.method_subject.method_subject_id],
-                    capture_evidence=(),
-                )
-                for j in ref_jobs
-            )
         for state in states:
             if state.error is None:
                 state.adapter_result = results[
@@ -437,7 +382,6 @@ class _SampleInitialWorkerRequest:
     jobs: tuple[UntargetedPartitionJob, ...]
     initial_resource_key: str | None
     regions: tuple[DiscoveryMassRegion, ...]
-    reference_jobs: tuple[UntargetedPartitionJob, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -450,7 +394,6 @@ class _InitialJobOutcome:
 @dataclass(frozen=True, slots=True)
 class _SampleInitialWorkerResponse:
     job_outcomes: tuple[_InitialJobOutcome, ...]
-    reference_results: tuple[CidNlAcquisitionResult, ...] = ()
 
     def _outcomes_by_key(
         self, work_unit_keys: tuple[str, ...]
@@ -461,7 +404,6 @@ class _SampleInitialWorkerResponse:
         return {item.work_unit_key: item for item in self.job_outcomes}
 
     def apply_to(self, phase: _BatchSamplePhaseState) -> None:
-        phase.reference_results = self.reference_results
         outcomes = self._outcomes_by_key(
             tuple(state.job.work_unit_key for state in phase.states)
         )
@@ -485,7 +427,6 @@ def _execute_initial_sample_phase(
     local = phase.isolated_worker_state()
     _execute_initial_assessment_batch(local)
     return _SampleInitialWorkerResponse(
-        reference_results=local.reference_results,
         job_outcomes=tuple(
             _InitialJobOutcome(
                 work_unit_key=state.job.work_unit_key,
@@ -513,7 +454,6 @@ def _execute_sample_initial_worker(
         initial_resource_key=request.initial_resource_key,
         backfill_resource_key=None,
         regions=request.regions,
-        reference_jobs=request.reference_jobs,
     )
     return _execute_initial_sample_phase(phase)
 

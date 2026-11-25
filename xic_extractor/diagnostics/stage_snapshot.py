@@ -56,7 +56,6 @@ from xic_extractor.rt_calibration_codec import (
     rt_drift_from_payload,
     rt_drift_payload,
 )
-from xic_extractor.validation_primitives import require_boolean, require_finite_real
 
 _GROUPING_SCHEMA = "grouping_experiment_inputs"
 _RtModel = tuple[
@@ -328,7 +327,6 @@ def _owner_payload(owner: SampleLocalMS1Owner) -> dict[str, Any]:
         "owner_peak_end_rt": owner.peak.rt_right_min,
         "owner_area": owner.peak.area_raw_counts_seconds,
         "owner_height": owner.peak.height_raw,
-        "requires_overlap_review": owner.peak.requires_overlap_review,
         "primary_identity_event": (
             asdict(owner.primary_identity_event)
             if owner.primary_identity_event is not None
@@ -365,20 +363,12 @@ def _peak_payload(peak: PeakObservation) -> dict[str, Any]:
         "integration": asdict(peak.integration)
         if peak.integration is not None
         else None,
-        "localized_apex_rt_min": peak.localized_apex_rt_min,
     }
 
 
 def _read_peak(value: dict[str, Any]) -> PeakObservation:
     rt = tuple(value["rt"])
     integration = value["integration"]
-    apex = value["localized_apex_rt_min"]
-    if integration is None:
-        apex = require_finite_real(apex, field="localized_apex_rt_min")
-        if apex not in rt[1:-1]:
-            raise ValueError("localized apex must be an interior acquired scan")
-    elif apex is not None:
-        raise ValueError("an integrated peak already records its apex")
     return PeakObservation(
         sample_key=value["sample_key"],
         mz=value["mz"],
@@ -387,7 +377,6 @@ def _read_peak(value: dict[str, Any]) -> PeakObservation:
         integration=(
             _read_integration(integration) if integration is not None else None
         ),
-        localized_apex_rt_min=apex,
         generation_provenance=None,  # type: ignore[arg-type]
         source_trace=None,  # type: ignore[arg-type]
     )
@@ -472,9 +461,6 @@ def _read_owner_peak(
             replace(integration, raw_scan_indices=tuple(range(len(member_peak.rt))))
             if integration is not None
             else None
-        ),
-        retained_overlap_review=require_boolean(
-            value.pop("requires_overlap_review"), field="requires_overlap_review"
         ),
     )
 

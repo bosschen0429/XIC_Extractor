@@ -409,7 +409,6 @@ def _measured_peak(
             doubly_charged=doubly_charged, attached_event_count=len(attached)
         ),
         ms1_apex_mz=apex_mz,
-        requires_overlap_review=evaluation.requires_overlap_review,
         evidence_score=score_discovery_evidence(
             attached_event_count=len(attached),
             ms1_event_delta_min=selected.apex_rt_min - representative.rt,

@@ -131,14 +131,7 @@ plateaus, noise texture and tail extensions are rejected per row by
 peak. A qualified peak's area is measured on the unresolved envelope, and its cell carries the review
 reason `physical_shoulder_overlap`. The Workbench curve view shows the reason after that
 sample's published area when the sample is hovered or focused; it is not a
-sample risk, and the Matrix holds only the value. A group made only of such
-peaks stays [provisional](alignment.md#group-identity-and-disposition) and does
-not reach the Matrix.
-Discovery records its own physical assessment in
-`requires_overlap_review` independently of admission. Alignment needs this
-column to form the reference population of its RT calibration and drift model;
-regenerate an older peak table
-without it rather than treating missing review information as a clean peak.
+sample risk, and the Matrix holds only the value.
 
 ### Physical qualification
 

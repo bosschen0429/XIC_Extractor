@@ -23,7 +23,6 @@ from xic_extractor.peak_detection.chrom_peak_segments import (
     enumerate_chrom_peak_segments,
     local_apex_prominence,
     measure_chrom_peak_component,
-    supported_contour_apices,
 )
 from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_extractor.peak_detection.ms1_morphology import (
@@ -843,65 +842,6 @@ def _original_top_support_failure(
     ):
         return "insufficient_original_xic_continuity"
     return ""
-
-
-def localize_overlap_peak_lobes(
-    evaluation: PhysicalPeakEvaluation,
-) -> tuple[RawPeakComponent, ...]:
-    """Locate acquired crests in one overlap without claiming separable areas.
-
-    Each canonical maximum needs continuous original top support and a raw
-    crest. Intervening relief must also exist in positive acquired scans: a
-    dropout alone cannot manufacture two peak positions.
-    """
-    segment = evaluation.answer.selected_segment
-    prepared = evaluation.retained_prepared_signal
-    if segment is None or prepared is None or not segment.requires_overlap_review:
-        return ()
-    left, right = segment.start_index, segment.end_index
-    raw = np.asarray(prepared.raw[left:right])
-    baseline = np.asarray(prepared.baseline[left:right])
-    signal = np.asarray(prepared.positive_signal[left:right])
-    peaks = supported_contour_apices(
-        signal, prepared.profile.segment_min_prominence_fraction
-    )
-    if len(peaks) < 2:
-        return ()
-    cuts = tuple(
-        int(a + np.argmin(signal[a : b + 1]))
-        for a, b in zip(peaks, peaks[1:], strict=False)
-    )
-    lobes = []
-    crests = []
-    for i, apex in enumerate(peaks):
-        start = cuts[i - 1] if i else 0
-        stop = cuts[i] + 1 if i < len(cuts) else len(raw)
-        crest = int(start + np.argmax(raw[start:stop]))
-        if not start < crest < stop - 1 or not (
-            0 < raw[crest - 1] < raw[crest] and 0 < raw[crest + 1] < raw[crest]
-        ):
-            return ()
-        if _original_top_support_failure(
-            np.maximum(raw[start:stop] - baseline[start:stop], 0.0),
-            signal[start:stop],
-            int(apex - start),
-        ):
-            return ()
-        crests.append(crest)
-        lobes.append(
-            RawPeakComponent(left + start, left + stop, left + crest, False, False)
-        )
-    clear_valley_fraction = _physical_segment_policy(
-        prepared.profile
-    ).clear_valley_max_fraction
-    for a, b in zip(crests, crests[1:], strict=False):
-        acquired_valley = raw[a + 1 : b]
-        detected = acquired_valley[acquired_valley > 0.0]
-        if not len(detected) or float(np.min(detected)) > (
-            clear_valley_fraction * min(raw[a], raw[b])
-        ):
-            return ()
-    return tuple(lobes)
 
 
 def answer_physical_peak_question(
