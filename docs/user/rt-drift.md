@@ -56,10 +56,10 @@ B 與 M 不是猜的，而是從一批明顯漂移、彼此佐證的化合物量
 
 ## M：每一針自己的偏移
 
-![每一針的 M，pooled QC 位於 0 附近](assets/rt-drift/sample-shift.svg)
+![每一針的 M；pooled QC 集中在一小段範圍，樣本散得開](assets/rt-drift/sample-shift.svg)
 
 - 有些針整體偏早或偏晚，而且只有部分化合物會受影響。可能的原因是基質效應；組織類型解釋不了多少，所以逐針量。
-- pooled QC 每次都是同一份基質，RT 只受 B 影響，不受 M 影響。M 是相對 pooled QC 的走勢量的，所以 pooled QC 落在 0 附近。
+- pooled QC 每次都是同一份基質，RT 只受 B 影響，所以各針 pooled QC 的 M 應該彼此相近。M 由各列和進樣順序前後鄰針的比較投票決定（見[最後一節](#從漂移錨點算出-b-與-m)第 4 步），零點不是 pooled QC，所以 pooled QC 不一定落在 0：本批 7 針 pooled QC 的 M 在約 0 到 38 秒之間，樣本則從約 −175 到 +133 秒。
 - 一針量不到 M 時是「未知」，不是 0。M 的零點本身沒有意義：整體加一個常數，會被每一列的 center 吸收。
 
 ## 哪些列會套用 a、b
