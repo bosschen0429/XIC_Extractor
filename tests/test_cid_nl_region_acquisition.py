@@ -152,7 +152,7 @@ def test_batch_seed_search_retains_local_competition_without_local_cid(monkeypat
     b_raw = _Raw(((500.001, 3.1, 2.3e5), (499.996, 12.9, 1.7e5)))
     (a,) = _capture("A", a_raw, regions, events)
     (b,) = _capture("B", b_raw, regions, events)
-    assert a_raw.raw_chromatogram_call_count == b_raw.raw_chromatogram_call_count == 2
+    assert a_raw.raw_chromatogram_call_count == b_raw.raw_chromatogram_call_count == 3
     for result, expected in (
         (a, [(3.0, 500.002, 1.1e6), (13.0, 499.997, 3.1e5)]),
         (b, [(3.1, 500.001, 2.3e5), (12.9, 499.996, 1.7e5)]),

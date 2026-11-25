@@ -34,6 +34,7 @@ from xic_extractor.discovery.same_ion_peaks import group_same_ion_peaks
 from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.discovery.strict_event_receipts import resolve_discovery_scan_events
 from xic_extractor.mass_accuracy import mz_tolerance_da, mz_window, signed_ppm_error
+from xic_extractor.peak_detection.background_contrast import background_contrast
 from xic_extractor.peak_detection.cid_nl_candidate_set_relation import (
     DdaCidNlCandidateSetRelation,
 )
@@ -70,7 +71,7 @@ from xic_extractor.sample_metadata import SampleMetadata
 from xic_extractor.untargeted_execution.partition.cid_nl_discovery_evidence import (
     discovery_scan_evidence,
 )
-from xic_extractor.xic_models import XICRequest
+from xic_extractor.xic_models import XICRequest, XICTrace
 
 EVENT_NEIGHBORHOOD_MIN = 3.0
 """A peak apex this far from every batch event of its region is not minted."""
@@ -268,7 +269,9 @@ def acquire_cid_nl_sample_regions(
     capability = mint_trace_acquisition_capability(
         acquisition_source, adapter_namespace=__name__
     )
-    captures = _acquire_regions(raw, capability, requests)
+    acquired = tuple(_acquire_regions(raw, capability, requests))
+    captures = iter(acquired)
+    channels = _whole_run_channels(raw, acquired, rt_start=rt_start, rt_end=rt_end)
     results = []
     for region, region_requests in zip(regions, per_region, strict=True):
         results.append(
@@ -281,9 +284,48 @@ def acquire_cid_nl_sample_regions(
                 events=region_events(region),
                 settings=settings,
                 profile=profile,
+                channels=channels,
             )
         )
     return tuple(results)
+
+
+def _whole_run_channels(
+    raw: RegionRawSource,
+    acquired: tuple[_Capture, ...],
+    *,
+    rt_start: float,
+    rt_end: float,
+) -> dict[tuple[float, float], XICTrace]:
+    """Each requested mass channel over the whole run, read in shared passes.
+
+    Only channels that were acquired are read; one whose region trace already
+    spans the run reuses it. Requests
+    sharing one scan range are one vendor pass, so the rest cost about one
+    narrow read per channel batch.
+    """
+    traces: dict[tuple[float, float], XICTrace] = {
+        (request.mz, request.ppm_tol): trace.trace
+        for request, trace, _ in acquired
+        if trace is not None and request.rt_min <= rt_start and request.rt_max >= rt_end
+    }
+    channels = tuple(
+        key
+        for key in dict.fromkeys(
+            (r.mz, r.ppm_tol) for r, trace, _ in acquired if trace is not None
+        )
+        if key not in traces
+    )
+    for start in range(0, len(channels), PHYSICAL_CAPTURE_BATCH_MAX_REQUESTS):
+        chunk = channels[start : start + PHYSICAL_CAPTURE_BATCH_MAX_REQUESTS]
+        read = raw.extract_xic_many(
+            tuple(
+                XICRequest(mz=mz, rt_min=rt_start, rt_max=rt_end, ppm_tol=ppm)
+                for mz, ppm in chunk
+            )
+        )
+        traces.update(zip(chunk, read, strict=True))
+    return traces
 
 
 def relate_region_events(
@@ -375,6 +417,7 @@ def _measure_region(
     events: tuple[DiscoveryEvent, ...],
     settings: DiscoverySettings,
     profile: SignalProcessingProfile,
+    channels: dict[tuple[float, float], XICTrace],
 ) -> CidNlSampleRegion:
     """Resolve signal aliases before attaching any CID-NL events.
 
@@ -455,6 +498,17 @@ def _measure_region(
             measured_mz=(mz,),
             signal_processing_profile=profile,
             resolver_mode=settings.resolver_mode,
+        )
+        channel = channels[request.mz, request.ppm_tol]
+        peak = replace(
+            peak,
+            background_contrast=background_contrast(
+                np.asarray(channel.rt, dtype=float),
+                np.asarray(channel.intensity, dtype=float),
+                left_rt_min=peak.rt_left_min,
+                right_rt_min=peak.rt_right_min,
+                profile=profile,
+            ),
         )
         held = peaks.get(peak.physical_peak_key)
         if held is None or np.count_nonzero(peak.intensity) > np.count_nonzero(

@@ -65,6 +65,8 @@ class PeakObservation:
     signal_processing_profile: SignalProcessingProfile | None = field(
         default=None, compare=False
     )
+    background_contrast: float | None = field(default=None, compare=False)
+    """Height over the median nearby bump of its channel; see background_contrast."""
 
     def __post_init__(self) -> None:
         mz = _finite_float(self.mz, field="mz")
@@ -326,6 +328,7 @@ def _owner_minted_peak_observation(
         observation, "signal_processing_profile", signal_processing_profile
     )
     object.__setattr__(observation, "capture_stage", capture_stage)
+    object.__setattr__(observation, "background_contrast", None)
     return observation
 
 
