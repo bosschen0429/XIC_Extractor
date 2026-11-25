@@ -69,16 +69,13 @@ class DriftAnchor:
 
     ``shape`` is the channel's injection-order trend after removing its
     sample-shift response, scaled to a unit 5-95% range and oriented to rise
-    with injection order. ``sample_shift_member`` marks channels whose
-    detrended offsets define the anchors' M, the starting point that rows
-    then vote from. ``coefficients`` is the channel's own fit
+    with injection order. ``coefficients`` is the channel's own fit
     against its shape and M, used to predict its displacement between samples.
     """
 
     channel: str
     reference_rt_min: float
     family: int
-    sample_shift_member: bool
     shape: Mapping[str, float]
     coefficients: DriftCoefficients = DriftCoefficients()
     owner_ids: frozenset[str] = field(default_factory=frozenset, compare=False)
@@ -544,7 +541,6 @@ def _drift_model(
                 channel,
                 float(median(calibrated[channel].values())),
                 families[channel],
-                channel in members,
                 shape,
                 _own_fit(
                     [

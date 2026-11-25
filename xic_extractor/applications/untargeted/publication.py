@@ -272,7 +272,6 @@ def _rt_drift_summary(completed: CompletedUntargetBatchWorkflowResult) -> str:
                     "channel": anchor.channel,
                     "reference_rt_min": anchor.reference_rt_min,
                     "family": anchor.family,
-                    "sample_shift_member": anchor.sample_shift_member,
                 }
                 for anchor in (drift.anchors if drift else ())
             ],

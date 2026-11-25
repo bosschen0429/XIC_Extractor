@@ -139,7 +139,7 @@ def test_compact_snapshot_keeps_curve_tie_priority_and_distinct_anchor_bindings(
         else (first, preferred)
     )
     anchor = DriftAnchor(
-        "channel", 9.0, 0, False, {"A": 0.0}, owner_ids=frozenset({owner.owner_id})
+        "channel", 9.0, 0, {"A": 0.0}, owner_ids=frozenset({owner.owner_id})
     )
     drift = RtDriftModel((anchor,))
     other_drift = RtDriftModel((replace(anchor, owner_ids=frozenset({"other-owner"})),))
