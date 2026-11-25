@@ -115,7 +115,7 @@ first three flags below.
 
 | Stage | Input to retain | What to compare |
 | --- | --- | --- |
-| `regroup` | `--save-grouping-inputs` → `grouping-inputs.json.gz` | Initial groups, members and reassignments, after refitting batch RT calibration and drift from the retained anchors; `--compare-to <capture output dir>` keeps a variant to one replay when that capture ran the current grouping code |
+| `regroup` | `--save-grouping-inputs` → `grouping-inputs.json.gz` | Initial groups, members and reassignments, after refitting batch RT calibration and drift from the retained anchors and voting the sample shift with the snapshot's direct-evidence rows; `--compare-to <capture output dir>` keeps a variant to one replay when that capture ran the current grouping code |
 | `backfill` | `--save-backfill-inputs` → `backfill-inputs/` | `backfill-cells.tsv`: competing rows, sample, area, decision and status |
 | `pair-batches` | `--save-pairing-inputs` → one file per declared batch | `batch_correspondence.tsv`: partners, competitors and unpaired reasons; `summary.json`: reference and RT map diagnostics |
 | `matrix` | `--save-matrix-inputs` → `matrix-cells.pickle.gz` and, for multiple batches, `matrix-join.pickle.gz` | Only `alignment_matrix.tsv`, from the formal writer |

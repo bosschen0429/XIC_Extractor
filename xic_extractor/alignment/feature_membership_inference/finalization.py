@@ -6,6 +6,7 @@ import math
 from collections import Counter, defaultdict
 from collections.abc import Collection, Sequence
 from dataclasses import replace
+from functools import partial
 
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.grouping_rules import GroupingRules
@@ -25,6 +26,108 @@ from .models import FeatureMembershipGroup, SparseFeatureDecision
 from .sample_assignment import _UNASSIGNED_COST, _Candidate, _solve_sample_assignment
 
 
+def _select_window(
+    window: list[SampleLocalMS1Owner],
+    *,
+    rules: GroupingRules,
+    config: AlignmentConfig,
+    rt_frame: RtFrame,
+    trajectories: PeakTrajectories,
+    counts: Counter[str],
+    directional_partitions: tuple[Partition, ...],
+    kept_together: tuple[tuple[str, ...], ...] = (),
+) -> tuple[
+    MembershipComparison, Partition, dict[str, tuple[Partition, ...]], list[Partition]
+]:
+    """One precursor-mass window: the selected partition and its alternatives."""
+    comparison = MembershipComparison(
+        window,
+        rules=rules,
+        config=config,
+        rt_frame=rt_frame,
+        trajectories=trajectories,
+        kept_together=kept_together,
+    )
+    partition = comparison.initial_partition()
+    direction_candidates = [
+        canonical_partition(
+            [
+                tuple(key for key in group if key in comparison.owners)
+                for group in candidate
+            ]
+        )
+        for candidate in directional_partitions
+    ]
+    partition = min(
+        [partition, *direction_candidates],
+        key=lambda p: (comparison.cost(p), comparison.partition_key(p)),
+    )
+    comparison.settle(partition)
+    by_sample: dict[str, list[SampleLocalMS1Owner]] = defaultdict(list)
+    for owner in window:
+        by_sample[owner.sample_stem].append(owner)
+    while True:
+        moves = []
+        for sample_owners in by_sample.values():
+            ids = {o.owner_id for o in sample_owners}
+            base = canonical_partition(
+                [tuple(p for p in g if p not in ids) for g in partition]
+            )
+            bands = {
+                f"band:{i:08d}": group
+                for i, group in enumerate(
+                    sorted(base, key=lambda g: comparison.partition_key((g,)))
+                )
+            }
+            candidates = {
+                owner.owner_id: tuple(
+                    _Candidate(key, delta, "supported", "complete_group_cost", group)
+                    for key, group in bands.items()
+                    if math.isfinite(
+                        delta := comparison.group_cost(
+                            tuple(sorted((*group, owner.owner_id)))
+                        )
+                        - comparison.group_cost(group)
+                    )
+                    and delta <= _UNASSIGNED_COST
+                )
+                for owner in sample_owners
+            }
+            assignments, _ = _solve_sample_assignment(
+                sample_owners,
+                candidates,
+                counts,
+                assess_ambiguity=False,
+                owner_order={o.owner_id: measured_owner_key(o) for o in sample_owners},
+            )
+            proposed = {key: list(group) for key, group in bands.items()}
+            singletons = []
+            for owner in sample_owners:
+                if key := assignments.get(owner.owner_id):
+                    proposed[key].append(owner.owner_id)
+                else:
+                    singletons.append((owner.owner_id,))
+            candidate = canonical_partition([*proposed.values(), *singletons])
+            if (comparison.cost(candidate), comparison.partition_key(candidate)) < (
+                comparison.cost(partition) - 1e-12,
+                comparison.partition_key(partition),
+            ):
+                moves.append(candidate)
+        if not moves:
+            refined, alternatives_by_owner = comparison.refine_choices(partition)
+            if refined == partition:
+                break
+            partition = refined
+            continue
+        partition = comparison.merge(
+            min(
+                moves,
+                key=lambda p: (comparison.cost(p), comparison.partition_key(p)),
+            )
+        )
+    return comparison, partition, alternatives_by_owner, direction_candidates
+
+
 def _accepted_final_memberships(
     owners: tuple[SampleLocalMS1Owner, ...],
     *,
@@ -35,7 +138,12 @@ def _accepted_final_memberships(
     counts: Counter[str],
     directional_partitions: tuple[Partition, ...] = (),
 ) -> tuple[tuple[FeatureMembershipGroup, ...], tuple[SparseFeatureDecision, ...]]:
-    """Select whole bands, then reassess samples with the assignment solver."""
+    """Select whole bands, then reassess samples with the assignment solver.
+
+    Peaks with their own method evidence define rows first. Peaks without it
+    are then placed among those rows or grouped with each other, and cannot
+    separate members the direct evidence put together.
+    """
     windows: list[list[SampleLocalMS1Owner]] = []
     for owner in sorted(owners, key=lambda o: (o.peak.mz, measured_owner_key(o))):
         if not windows or not within_ppm(
@@ -43,96 +151,24 @@ def _accepted_final_memberships(
         ):
             windows.append([])
         windows[-1].append(owner)
+    select = partial(
+        _select_window,
+        rules=rules,
+        config=config,
+        rt_frame=rt_frame,
+        trajectories=trajectories,
+        counts=counts,
+        directional_partitions=directional_partitions,
+    )
     groups, decisions = [], []
     for window in windows:
-        comparison = MembershipComparison(
-            window,
-            rules=rules,
-            config=config,
-            rt_frame=rt_frame,
-            trajectories=trajectories,
+        direct = [owner for owner in window if not rules.method_unobserved(owner)]
+        kept_together: tuple[tuple[str, ...], ...] = ()
+        if direct and len(direct) < len(window):
+            kept_together = tuple(row for row in select(direct)[1] if len(row) > 1)
+        comparison, partition, alternatives_by_owner, direction_candidates = select(
+            window, kept_together=kept_together
         )
-        partition = comparison.initial_partition()
-        direction_candidates = [
-            canonical_partition(
-                [
-                    tuple(key for key in group if key in comparison.owners)
-                    for group in candidate
-                ]
-            )
-            for candidate in directional_partitions
-        ]
-        partition = min(
-            [partition, *direction_candidates],
-            key=lambda p: (comparison.cost(p), comparison.partition_key(p)),
-        )
-        comparison.settle(partition)
-        by_sample: dict[str, list[SampleLocalMS1Owner]] = defaultdict(list)
-        for owner in window:
-            by_sample[owner.sample_stem].append(owner)
-        while True:
-            moves = []
-            for sample_owners in by_sample.values():
-                ids = {o.owner_id for o in sample_owners}
-                base = canonical_partition(
-                    [tuple(p for p in g if p not in ids) for g in partition]
-                )
-                bands = {
-                    f"band:{i:08d}": group
-                    for i, group in enumerate(
-                        sorted(base, key=lambda g: comparison.partition_key((g,)))
-                    )
-                }
-                candidates = {
-                    owner.owner_id: tuple(
-                        _Candidate(
-                            key, delta, "supported", "complete_group_cost", group
-                        )
-                        for key, group in bands.items()
-                        if math.isfinite(
-                            delta := comparison.group_cost(
-                                tuple(sorted((*group, owner.owner_id)))
-                            )
-                            - comparison.group_cost(group)
-                        )
-                        and delta <= _UNASSIGNED_COST
-                    )
-                    for owner in sample_owners
-                }
-                assignments, _ = _solve_sample_assignment(
-                    sample_owners,
-                    candidates,
-                    counts,
-                    assess_ambiguity=False,
-                    owner_order={
-                        o.owner_id: measured_owner_key(o) for o in sample_owners
-                    },
-                )
-                proposed = {key: list(group) for key, group in bands.items()}
-                singletons = []
-                for owner in sample_owners:
-                    if key := assignments.get(owner.owner_id):
-                        proposed[key].append(owner.owner_id)
-                    else:
-                        singletons.append((owner.owner_id,))
-                candidate = canonical_partition([*proposed.values(), *singletons])
-                if (comparison.cost(candidate), comparison.partition_key(candidate)) < (
-                    comparison.cost(partition) - 1e-12,
-                    comparison.partition_key(partition),
-                ):
-                    moves.append(candidate)
-            if not moves:
-                refined, alternatives_by_owner = comparison.refine_choices(partition)
-                if refined == partition:
-                    break
-                partition = refined
-                continue
-            partition = comparison.merge(
-                min(
-                    moves,
-                    key=lambda p: (comparison.cost(p), comparison.partition_key(p)),
-                )
-            )
         risks = comparison.risks(partition, alternatives_by_owner=alternatives_by_owner)
         if len(direction_candidates) == 2:
             left = {

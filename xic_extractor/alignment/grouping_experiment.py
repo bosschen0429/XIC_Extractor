@@ -12,7 +12,10 @@ from xic_extractor.alignment.cross_sample.peak_groups import (
 from xic_extractor.alignment.feature_membership_inference import (
     BatchRtWarp,
 )
-from xic_extractor.alignment.grouping_workflow import group_cid_nl_owners
+from xic_extractor.alignment.grouping_workflow import (
+    direct_evidence_rt_rows,
+    group_cid_nl_owners,
+)
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 from xic_extractor.alignment.peak_trajectories import (
     resolve_peak_trajectories,
@@ -113,17 +116,44 @@ def replay_grouping(
 def refit_rt_models(inputs: GroupingInputs) -> GroupingInputs:
     """Fit each batch RT model again from its retained anchors with current code.
 
-    Worksets without retained anchors keep their frozen model.
+    Worksets without retained anchors keep their frozen model. The sample
+    shift is then voted by the batch's direct-evidence rows, as a full run does.
     """
+    sample_universe = frozenset(inputs.sample_stems)
+    base_frame = SampleRtFrame(
+        injection_order=inputs.injection_order, sample_universe=sample_universe
+    )
     fitted: dict[int, tuple[BatchRtCalibration, RtDriftModel]] = {}
-    worksets = []
     for workset in inputs.worksets:
         model_inputs = workset.rt_model_inputs
-        if model_inputs is None:
-            worksets.append(workset)
+        if model_inputs is None or id(model_inputs) in fitted:
             continue
-        if id(model_inputs) not in fitted:
-            fitted[id(model_inputs)] = fit_batch_rt_model(model_inputs)
-        calibration, drift = fitted[id(model_inputs)]
-        worksets.append(replace(workset, rt_calibration=calibration, rt_drift=drift))
-    return replace(inputs, worksets=tuple(worksets))
+        calibration, drift = fit_batch_rt_model(model_inputs)
+        rows = [
+            row
+            for other in inputs.worksets
+            if other.rt_model_inputs is model_inputs
+            for row in direct_evidence_rt_rows(
+                other.owners,
+                other.elution_contexts,
+                config=inputs.alignment_config,
+                sample_universe=sample_universe,
+                rt_frame=base_frame.with_warp(other.rt_warp).with_sample_calibration(
+                    calibration, drift
+                ),
+            )
+        ]
+        fitted[id(model_inputs)] = fit_batch_rt_model(model_inputs, shift_rows=rows)
+    return replace(
+        inputs,
+        worksets=tuple(
+            workset
+            if workset.rt_model_inputs is None
+            else replace(
+                workset,
+                rt_calibration=fitted[id(workset.rt_model_inputs)][0],
+                rt_drift=fitted[id(workset.rt_model_inputs)][1],
+            )
+            for workset in inputs.worksets
+        ),
+    )

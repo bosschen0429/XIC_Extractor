@@ -70,7 +70,8 @@ class DriftAnchor:
     ``shape`` is the channel's injection-order trend after removing its
     sample-shift response, scaled to a unit 5-95% range and oriented to rise
     with injection order. ``sample_shift_member`` marks channels whose
-    detrended offsets define M. ``coefficients`` is the channel's own fit
+    detrended offsets define the anchors' M, the starting point that rows
+    then vote from. ``coefficients`` is the channel's own fit
     against its shape and M, used to predict its displacement between samples.
     """
 
@@ -225,7 +226,11 @@ class BatchRtModelAccumulator:
                 item.rt_min
             )
 
-    def freeze(self, calibration: BatchRtCalibration) -> RtDriftModel:
+    def freeze(
+        self,
+        calibration: BatchRtCalibration,
+        shift_rows: Iterable[Mapping[str, float]] = (),
+    ) -> RtDriftModel:
         """Freeze B shapes and M against the general map, once per batch."""
         channels: dict[str, dict[str, float]] = defaultdict(dict)
         owners: dict[str, set[str]] = defaultdict(set)
@@ -241,6 +246,7 @@ class BatchRtModelAccumulator:
             sample_cohorts=self._cohorts,
             qc_samples=self._qc,
             channel_owner_ids={key: frozenset(value) for key, value in owners.items()},
+            shift_rows=shift_rows,
         )
 
 
@@ -252,9 +258,13 @@ def fit_rt_drift_model(
     sample_cohorts: Mapping[str, str] | None = None,
     qc_samples: frozenset[str] = frozenset(),
     channel_owner_ids: Mapping[str, frozenset[str]] | None = None,
+    shift_rows: Iterable[Mapping[str, float]] = (),
 ) -> RtDriftModel:
     """Drift anchors are channels the general map leaves spread out and that
     another elution family reproduces; freeze their B shapes and M.
+
+    ``shift_rows`` are direct-evidence rows in the general map; when given,
+    they vote M and every anchor is fitted against that vote.
     """
     cohorts = dict(sample_cohorts or {})
     unsettled = _unsettled_channels(
@@ -269,6 +279,7 @@ def fit_rt_drift_model(
         cohorts=cohorts,
         families=_families(calibrated),
         owner_ids=channel_owner_ids or {},
+        shift_rows=shift_rows,
     )
 
 
@@ -449,6 +460,7 @@ def _drift_model(
     cohorts: Mapping[str, str],
     families: Mapping[str, int],
     owner_ids: Mapping[str, frozenset[str]],
+    shift_rows: Iterable[Mapping[str, float]] = (),
 ) -> RtDriftModel:
     if not calibrated:
         return RtDriftModel()
@@ -497,11 +509,14 @@ def _drift_model(
                 family_offsets[sample].append(float(median(values)))
         return {s: float(median(v)) for s, v in family_offsets.items()}
 
-    sample_shift = shift(None)
+    anchor_shift = shift(None)
+    sample_shift = _row_voted_shift(anchor_shift, shift_rows, injection_order)
     anchors = []
     for channel in sorted(residual):
         values = residual[channel]
-        own_shift = shift(families[channel])
+        own_shift = (
+            shift(families[channel]) if sample_shift is anchor_shift else sample_shift
+        )
         response = _slope(
             [own_shift[s] for s in values if s in own_shift],
             [detrended[channel][s] for s in values if s in own_shift],
@@ -545,6 +560,91 @@ def _drift_model(
         sample_shift,
         "qc" if qc_basis else "samples",
     )
+
+
+ROW_MIN_SAMPLES = 20
+_ROW_NEIGHBORS = 8
+_MIN_ROW_RESPONSE = 0.3
+_MIN_ROW_VOTES = 3
+
+
+def _row_voted_shift(
+    base: dict[str, float],
+    rows: Iterable[Mapping[str, float]],
+    injection_order: Mapping[str, int],
+) -> dict[str, float]:
+    """Let rows of direct-evidence peaks vote each sample's shift M.
+
+    The anchors' M (``base``) rests on the few channels that hold one peak per
+    sample, so some samples are voted by one or two of them. A row is one
+    compound's general-map RT per sample, already separated from same-mass
+    neighbours, which gives every sample many more voters. Each row is compared
+    with its injection-order neighbours, so a slow trend cancels; a row votes
+    when that local offset follows the anchors' M, and its vote is the offset
+    divided by its own response. A sample with too few votes keeps the anchors'
+    M; without a voting row, ``base`` itself is returned.
+    """
+    voters = []
+    for row in rows:
+        members = sorted(
+            (s for s in row if s in injection_order),
+            key=lambda s: (injection_order[s], s),
+        )
+        if len(members) < ROW_MIN_SAMPLES:
+            continue
+        neighbors = {
+            sample: sorted(
+                (other for other in members if other != sample),
+                key=lambda other: (
+                    abs(injection_order[other] - injection_order[sample]),
+                    injection_order[other],
+                    other,
+                ),
+            )[:_ROW_NEIGHBORS]
+            for sample in members
+        }
+        local = {
+            sample: row[sample] - float(median(row[n] for n in neighbors[sample]))
+            for sample in members
+        }
+        known = [
+            sample
+            for sample in members
+            if sample in base and all(n in base for n in neighbors[sample])
+        ]
+        if len(known) < _MIN_COMMON_SAMPLES:
+            continue
+        shift = [
+            base[sample] - float(median(base[n] for n in neighbors[sample]))
+            for sample in known
+        ]
+        offsets = [local[sample] for sample in known]
+        response = _slope(shift, offsets)
+        if (
+            response >= _MIN_ROW_RESPONSE
+            and _spearman(shift, offsets) >= _SYNC_CORRELATION
+        ):
+            voters.append((local, neighbors, response))
+    if not voters:
+        return base
+    refined = dict(base)
+    for _ in range(_BACKFIT_ITERATIONS):
+        updated = {}
+        for sample, current in refined.items():
+            votes = [
+                local[sample] / response
+                + float(median(refined[n] for n in neighbors[sample]))
+                for local, neighbors, response in voters
+                if sample in local and all(n in refined for n in neighbors[sample])
+            ]
+            updated[sample] = (
+                float(median(votes)) if len(votes) >= _MIN_ROW_VOTES else current
+            )
+        converged = all(abs(updated[s] - refined[s]) < 1e-9 for s in refined)
+        refined = updated
+        if converged:
+            break
+    return refined
 
 
 def _slope(x: Sequence[float] | np.ndarray, y: Sequence[float] | np.ndarray) -> float:

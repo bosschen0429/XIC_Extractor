@@ -137,8 +137,13 @@ class BatchRtModelInputs:
 
 def fit_batch_rt_model(
     inputs: BatchRtModelInputs,
+    shift_rows: Iterable[Mapping[str, float]] = (),
 ) -> tuple[BatchRtCalibration, RtDriftModel]:
-    """Fit the published map, then the drift model against that map."""
+    """Fit the published map, then the drift model against that map.
+
+    ``shift_rows`` are the batch's direct-evidence rows in that map; they vote
+    the drift model's sample shift.
+    """
     calibration = BatchRtCalibrationAccumulator(
         sample_stems=inputs.sample_stems, sample_cohorts=inputs.sample_cohorts
     )
@@ -151,4 +156,4 @@ def fit_batch_rt_model(
         calibration.add_observations(batch)
         drift.add_observations(batch)
     frozen = calibration.freeze(measured_istds=inputs.measured_istds)
-    return frozen, drift.freeze(frozen)
+    return frozen, drift.freeze(frozen, shift_rows)

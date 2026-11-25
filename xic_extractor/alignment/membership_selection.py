@@ -271,8 +271,17 @@ class MembershipComparison:
         rt_frame: RtFrame,
         trajectories: PeakTrajectories,
         fixed_coefficients: Mapping[tuple[str, ...], DriftCoefficients] | None = None,
+        kept_together: Sequence[Sequence[str]] = (),
     ) -> None:
-        """``fixed_coefficients`` keeps settled groups' drift fits unchanged."""
+        """``fixed_coefficients`` keeps settled groups' drift fits unchanged.
+
+        ``kept_together`` lists rows already established by stronger evidence:
+        a partition that separates their members is infeasible, and selection
+        starts from them. They may still gain members or join other groups.
+        """
+        self._kept_together = tuple(
+            tuple(sorted(row)) for row in kept_together if len(row) > 1
+        )
         self.owners = {o.owner_id: o for o in owners}
         self.measured_keys = {o.owner_id: measured_owner_key(o) for o in owners}
         ranked = sorted(set(self.measured_keys.values()))
@@ -1081,6 +1090,17 @@ class MembershipComparison:
         return not (max(earlier) < min(later) or max(later) < min(earlier))
 
     def cost(self, partition: Partition) -> float:
+        if self._kept_together:
+            placed = {
+                owner_id: index
+                for index, group in enumerate(partition)
+                for owner_id in group
+            }
+            if any(
+                len({placed[owner_id] for owner_id in row}) > 1
+                for row in self._kept_together
+            ):
+                return math.inf
         return math.fsum(self.group_cost(group) for group in partition)
 
     def peer_fit(self, partition: Partition) -> float:
@@ -1148,11 +1168,14 @@ class MembershipComparison:
         enter selection. Infeasible proposals retain their feasible sub-bands;
         no selected group is split after configuration selection.
         """
-        singletons = canonical_partition([(key,) for key in self.owners])
-        partition = self.merge(singletons)
+        kept = {owner_id for row in self._kept_together for owner_id in row}
+        seeds = canonical_partition(
+            [*self._kept_together, *((key,) for key in self.owners if key not in kept)]
+        )
+        partition = self.merge(seeds)
         if not any(self.population_gaps.values()):
             return partition
-        feasible_seeds = self.merge(singletons, propose_whole_bands=True)
+        feasible_seeds = self.merge(seeds, propose_whole_bands=True)
         alternative = self.merge(feasible_seeds)
         return min(
             (partition, alternative),

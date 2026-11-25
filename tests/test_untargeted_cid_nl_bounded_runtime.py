@@ -2013,3 +2013,68 @@ def test_a_failed_attempt_leaves_no_partition_spool(tmp_path, monkeypatch):
             execution=in_process_execution(),
         )
     assert not _spool_dirs(output_dir)
+
+
+def test_final_grouping_uses_the_sample_shift_voted_by_direct_evidence_rows(
+    tmp_path, monkeypatch
+):
+    import xic_extractor.alignment.cid_nl_initial_grouping as grouping_owner
+    import xic_extractor.untargeted_execution.execution as bounded_owner
+    from xic_extractor.alignment.rt_drift import ROW_MIN_SAMPLES, RtDriftModel
+    from xic_extractor.alignment.sample_rt_calibration import (
+        BatchRtCalibration,
+        RtCalibrationPolicy,
+        SampleRtCalibration,
+    )
+    from xic_extractor.execution.result_store import StreamedResultStore
+
+    anchors_shift, voted_shift = 0.1, 0.2
+    voting_rows = []
+
+    def fit_known_shift(inputs, shift_rows=()):
+        """An identity map supporting every sample, and M by whether rows voted."""
+        rows = tuple(shift_rows)
+        voting_rows.extend(rows)
+        calibration = BatchRtCalibration(
+            RtCalibrationPolicy(),
+            (),
+            {
+                stem: SampleRtCalibration(
+                    stem,
+                    "calibrated",
+                    ((7.0, 7.0), (9.0, 9.0)),
+                    None,
+                    None,
+                    "not_evaluated",
+                )
+                for stem in inputs.sample_stems
+            },
+            None,
+            None,
+            None,
+        )
+        shift = voted_shift if rows else anchors_shift
+        return calibration, RtDriftModel((), dict.fromkeys(inputs.sample_stems, shift))
+
+    monkeypatch.setattr(grouping_owner, "fit_batch_rt_model", fit_known_shift)
+    plan, _ = _plan(tmp_path, monkeypatch, sample_count=ROW_MIN_SAMPLES)
+    adapter = bounded_owner.UntargetedPartitionPipelineAdapter(
+        plan,
+        alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+        max_partition_jobs=100,
+        project_child=project_composed_child,
+        execution=in_process_execution(),
+    )
+    store = StreamedResultStore(tmp_path / "spool", adapter.get_shared_objects())
+    for bootstrap in adapter.bootstrap_partitions:
+        adapter.execute_composition(
+            bootstrap, adapter.execute_acquisition(bootstrap), store
+        )
+    adapter.prepare_batch_search(store, lambda: None)
+
+    samples = {f"S{i}" for i in range(ROW_MIN_SAMPLES)}
+    assert voting_rows and all(set(row) == samples for row in voting_rows)
+    _, leaf = adapter.execute_acquisition(adapter.partitions[-1]).result
+    for workset in leaf.prepared_grouping.worksets:
+        final_shift = workset.grouping_result.rt_frame.drift_model.sample_shift_min
+        assert final_shift == dict.fromkeys(samples, voted_shift)

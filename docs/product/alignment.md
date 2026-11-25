@@ -158,7 +158,14 @@ table. Scheduling partitions pack worksets for execution only; they do not
 restrict scientific comparison or RT calibration.
 
 The first pass searches every sample, with or without its own CID-NL events,
-for each ion planned from the batch's qualifying events. Event masses within
+for each ion planned from the batch's qualifying events. A mass region with
+events in fewer than `K` samples, the direct-support quorum that
+[Backfill](backfill.md) also uses, is read only in the samples that carry an
+event there: peaks from other samples could not complete a row whose direct
+evidence is too sparse to be published, so they are not collected. A region
+stays read in every sample when one of its peaks shows the loss in two or more
+scans, since a repeat under one peak is a reproducible signal that sparse DDA
+sampling alone would hide. Event masses within
 5 ppm of each other are readings of one ion; each sample reads one XIC at
 their median mass with the shared precursor tolerance (10 ppm), over the
 ion's event RTs widened by 3 min, and measures it once. A peak becomes an
@@ -338,6 +345,17 @@ same membership cost to fixed groups within its own search eligibility; see
   multiplied by sample count. Whole-band merges and per-sample assignment use
   this same objective and accept strict improvements. Every proposed group is
   evaluated as a whole, so a favorable connecting pair cannot hide its endpoints.
+- Owners with their own method evidence define rows first. When a neighborhood
+  also holds owners without it, selection first runs on the direct owners
+  alone. Each resulting row of two or more is then kept together: a
+  configuration that separates its members is infeasible, and selection over
+  the whole neighborhood starts from those rows. Owners without method evidence
+  join them or group with each other under the same objective. They may extend
+  a direct row or connect two of them, but cannot rearrange direct owners, so
+  a direct row does not depend on how many unconfirmed peaks surround it. The
+  cost is otherwise the same, and a neighborhood of only one kind of owner is
+  selected in a single pass. A direct row that is itself wrong is not corrected
+  by observations without method evidence.
 - On equal primary cost, compare average owner-to-peer fit across the complete
   configuration: each grouped owner contributes its mean pair cost to its
   peers; a singleton retains cost 1. This secondary comparison adds no weight

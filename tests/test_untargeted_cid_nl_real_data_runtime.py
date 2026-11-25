@@ -99,7 +99,7 @@ def test_runtime_delivers_one_real_subject_cohort(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    raw_paths = (tmp_path / "S1.synthetic", tmp_path / "S2.synthetic")
+    raw_paths = tuple(tmp_path / f"{stem}.synthetic" for stem in ("S1", "S2", "S3"))
     for path in raw_paths:
         path.write_bytes(f"real-data-runtime:{path.stem}".encode())
     settings = _settings()
@@ -107,6 +107,12 @@ def test_runtime_delivers_one_real_subject_cohort(
     candidates = _current_candidates(
         source_raw,
         raw_file=raw_paths[0],
+        settings=settings,
+    )
+    second_source = _FakeRaw((7.98, 8.02))
+    second_candidates = _current_candidates(
+        second_source,
+        raw_file=raw_paths[2],
         settings=settings,
     )
     subject = mint_untargeted_cid_nl_method_subject(
@@ -129,14 +135,20 @@ def test_runtime_delivers_one_real_subject_cohort(
                 injection_order=2,
                 sample_role="qc",
             ),
+            SampleMetadata(
+                sample_name="S3",
+                raw_stem="S3",
+                injection_order=3,
+                sample_role="sample",
+            ),
         ),
         method_subject=subject,
         settings=settings,
-        peaks_by_sample={"S1": candidates, "S2": ()},
+        peaks_by_sample={"S1": candidates, "S2": (), "S3": second_candidates},
         discovery_receipts_by_sample=build_discovery_receipts(
             tmp_path,
             raw_paths,
-            {"S1": candidates, "S2": ()},
+            {"S1": candidates, "S2": (), "S3": second_candidates},
         ),
         signal_processing_profile=TEST_PROFILE,
     )
@@ -144,7 +156,11 @@ def test_runtime_delivers_one_real_subject_cohort(
     source_without_cid.scans = ()
     opened = install_runtime_raws(
         monkeypatch,
-        sources_by_path={raw_paths[0]: source_raw, raw_paths[1]: source_without_cid},
+        sources_by_path={
+            raw_paths[0]: source_raw,
+            raw_paths[1]: source_without_cid,
+            raw_paths[2]: second_source,
+        },
         tmp_path=tmp_path,
     )
     jobs = tuple(
@@ -173,13 +189,13 @@ def test_runtime_delivers_one_real_subject_cohort(
     )
 
     assert result.succeeded is True, result.failure
-    assert len(result.sample_results) == 2
+    assert len(result.sample_results) == 3
     assert (
         sum(
             len(item.adapter_result.candidate_observations)
             for item in result.sample_results
         )
-        == 1
+        == 2
     )
     by_stem = {item.job.sample.raw_stem: item for item in result.sample_results}
     s1_assessment = by_stem["S1"].adapter_result.assessment_input.assessment
@@ -192,10 +208,9 @@ def test_runtime_delivers_one_real_subject_cohort(
     (s2_peak,) = s2_assessment.candidate_peaks
     assert s2_peak.integration.rt_apex_min == pytest.approx(8.1)
     assert not s2_assessment.individual_support_refs
-    for path in raw_paths:
-        (vendor,) = opened[path]
-        assert vendor.chromatogram_request_counts == [1]
-        assert vendor.disposed is True
+    assert all(opened[path][0].chromatogram_request_counts == [1] for path in raw_paths)
+    assert [len(opened[path]) for path in (raw_paths[0], raw_paths[2])] == [1, 1]
+    assert all(vendor.disposed for path in raw_paths for vendor in opened[path])
 
 
 @pytest.mark.parametrize(
@@ -504,7 +519,7 @@ def test_batch_candidate_selection_preserves_order_and_request_sample_membership
 
 
 @pytest.mark.parametrize("excluded", [False, True])
-def test_runtime_reads_seeded_regions_without_backfill_when_support_is_below_quorum(
+def test_runtime_reads_a_region_only_where_its_events_are_when_below_quorum(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     excluded: bool,
@@ -591,7 +606,9 @@ def test_runtime_reads_seeded_regions_without_backfill_when_support_is_below_quo
     assert empty.technical_state == "not_evaluated"
     assert empty.method_result is None and not empty.candidate_peaks
     assert all(item.backfill_attempt is None for item in result.sample_results)
-    for path in raw_paths:
+    for path, windows in zip(
+        raw_paths, ([(1, len(source_raws[raw_paths[0]].rt))], []), strict=True
+    ):
         (handle,) = opened[path]
-        assert handle.chromatogram_windows == [(1, len(source_raws[path].rt))]
+        assert handle.chromatogram_windows == windows
         assert handle.disposed

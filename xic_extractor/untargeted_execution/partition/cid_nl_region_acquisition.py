@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from bisect import bisect_left, bisect_right
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import dataclass, replace
 from statistics import median
 from typing import Protocol
@@ -93,13 +93,16 @@ class DiscoveryMassRegion:
     """A connected union of seed mass windows and the batch event RTs inside it.
 
     Not a chemical ion identity. Each sample reads one XIC per ion in ``ions``,
-    and only peaks near some sample's event become observations.
+    and only peaks near some sample's event become observations. When
+    ``only_samples`` is set, too few samples carry an event for the region to
+    yield a published row, and only those samples read it.
     """
 
     centers: tuple[float, ...]
     ppm: float
     event_rts: tuple[float, ...]
     ions: tuple[XICRequest, ...]
+    only_samples: frozenset[str] | None = None
 
     def near_event(self, rt: float) -> bool:
         index = bisect_left(self.event_rts, rt)
@@ -145,7 +148,11 @@ class CidNlSampleRegion:
 
 
 def plan_cid_nl_mass_regions(
-    events: Iterable[DiscoveryEvent], *, settings: DiscoverySettings
+    events: Iterable[DiscoveryEvent],
+    *,
+    settings: DiscoverySettings,
+    minimum_event_samples: int = 1,
+    peak_events: Iterable[Sequence[DiscoveryEvent]] = (),
 ) -> tuple[DiscoveryMassRegion, ...]:
     """Discover the search universe from valid local method events across the batch.
 
@@ -153,23 +160,44 @@ def plan_cid_nl_mass_regions(
     ``APEX_ION_SPREAD_PPM`` of the lowest one are readings of one ion; that ion
     gets one XIC at the median reading, over its event RTs widened by
     ``EVENT_NEIGHBORHOOD_MIN``. Two neighboring ions keep separate XICs.
+
+    A region with events in fewer than ``minimum_event_samples`` samples is
+    read only in those samples: the others' peaks there could not complete a
+    row that direct evidence is too sparse to establish. A region stays read
+    everywhere when one peak, given by its events in ``peak_events``, shows the
+    loss in two or more scans: a repeat under one peak is a reproducible signal
+    that sparse sampling alone would hide.
     """
     ppm = settings.precursor_mz_tolerance_ppm
     rts_by_mz: dict[float, set[float]] = {}
-    for event in events:
-        if (
+    samples_by_mz: dict[float, set[str]] = {}
+
+    def qualifies(event: DiscoveryEvent) -> bool:
+        return (
             event.neutral_loss_tag in settings.selected_tag_names
             and event.assess_precursor_loss(settings.nl_tolerance_ppm).supports_nl
-        ):
-            rts_by_mz.setdefault(event_ion_mz(event), set()).add(float(event.rt))
-    regions: list[tuple[list[float], set[float]]] = []
+        )
+
+    repeated = {
+        event_ion_mz(event)
+        for located in peak_events
+        if len(supporting := [event for event in located if qualifies(event)]) > 1
+        for event in supporting
+    }
+    for event in events:
+        if qualifies(event):
+            mz = event_ion_mz(event)
+            rts_by_mz.setdefault(mz, set()).add(float(event.rt))
+            samples_by_mz.setdefault(mz, set()).add(event.sample_stem)
+    regions: list[tuple[list[float], set[float], set[str]]] = []
     right = 0.0
     for mz in sorted(rts_by_mz):
         low, high = mz_window(mz, ppm)
         if not regions or low > right:
-            regions.append(([], set()))
+            regions.append(([], set(), set()))
         regions[-1][0].append(mz)
         regions[-1][1].update(rts_by_mz[mz])
+        regions[-1][2].update(samples_by_mz[mz])
         right = high
     return tuple(
         DiscoveryMassRegion(
@@ -177,8 +205,11 @@ def plan_cid_nl_mass_regions(
             ppm,
             tuple(sorted(rts)),
             _ion_requests(centers, rts_by_mz, ppm),
+            frozenset(samples)
+            if len(samples) < minimum_event_samples and repeated.isdisjoint(centers)
+            else None,
         )
-        for centers, rts in regions
+        for centers, rts, samples in regions
     )
 
 
@@ -216,7 +247,8 @@ def acquire_cid_nl_sample_regions(
 ) -> tuple[CidNlSampleRegion, ...]:
     """Read every planned ion within this RAW's LC run, even without local CID.
 
-    An ion whose event window lies outside this run's LC range is not read.
+    An ion whose event window lies outside this run's LC range is not read, nor
+    is a region restricted to other samples.
     """
     if not regions:
         return ()
@@ -229,7 +261,9 @@ def acquire_cid_nl_sample_regions(
                 rt_max=min(ion.rt_max, rt_end),
             )
             for ion in region.ions
-            if ion.rt_max > rt_start and ion.rt_min < rt_end
+            if ion.rt_max > rt_start
+            and ion.rt_min < rt_end
+            and (region.only_samples is None or sample.raw_stem in region.only_samples)
         )
         for region in regions
     )

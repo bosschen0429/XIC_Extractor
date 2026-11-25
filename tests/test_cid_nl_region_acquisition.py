@@ -401,3 +401,45 @@ def test_reference_relates_only_its_own_events_to_the_first_pass_peaks():
     assert reference.peaks == full[0].peaks
     assert [r.dda_scan_number for r in full[0].individual_relations] == [300, 800]
     assert [r.dda_scan_number for r in reference.individual_relations] == [800]
+
+
+def test_region_below_the_event_quorum_is_read_only_where_its_events_are():
+    """An ion with events in fewer samples than the quorum cannot become a
+    published row, so a sample without its own event does not read it."""
+    a = _scan_events("A", 100, 3.0, 500.0)
+    b = _scan_events("B", 200, 3.0, 500.0)
+    peak = ((500.0, 3.0, 2.0e5),)
+
+    sparse = plan_cid_nl_mass_regions(a, settings=SETTINGS, minimum_event_samples=2)
+    (own,) = _capture("A", _Raw(peak), sparse, a)
+    assert len(own.peaks) == 1
+    (elsewhere,) = _capture("C", _Raw(peak), sparse, ())
+    assert elsewhere.peaks == ()
+    assert elsewhere.coverage == ()
+
+    shared = plan_cid_nl_mass_regions(
+        (*a, *b), settings=SETTINGS, minimum_event_samples=2
+    )
+    (elsewhere,) = _capture("C", _Raw(peak), shared, ())
+    assert len(elsewhere.peaks) == 1
+
+
+def test_repeated_loss_under_one_peak_keeps_a_sparse_region_read_everywhere():
+    """Two scans of one peak both showing the loss mark a reproducible signal,
+    so the region is read in every sample although only one carries events."""
+    first = _scan_events("A", 100, 3.0, 500.0)
+    second = _scan_events("A", 101, 3.02, 500.0)
+    peak = ((500.0, 3.0, 2.0e5),)
+
+    def read_elsewhere(peak_events):
+        regions = plan_cid_nl_mass_regions(
+            (*first, *second),
+            settings=SETTINGS,
+            minimum_event_samples=2,
+            peak_events=peak_events,
+        )
+        (result,) = _capture("C", _Raw(peak), regions, ())
+        return len(result.peaks)
+
+    assert read_elsewhere(((*first, *second),)) == 1
+    assert read_elsewhere((first, second)) == 0
