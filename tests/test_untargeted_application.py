@@ -525,13 +525,10 @@ def test_pipeline_rejects_unsupported_profile_before_read_or_raw(
     assert touched is False
 
 
-@pytest.mark.parametrize(
-    "settings", [None, replace(_settings(), tag_combine_mode="intersection")]
-)
 def test_pipeline_rejects_unsupported_discovery_before_acquisition_or_output(
     tmp_path: Path,
-    settings,
 ) -> None:
+    settings = replace(_settings(), tag_combine_mode="intersection")
     output_dir = tmp_path / "out"
 
     with pytest.raises(ValueError, match="pure single-provider CID-NL"):

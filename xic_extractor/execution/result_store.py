@@ -6,7 +6,7 @@ import os
 import re
 import shutil
 from collections.abc import Buffer, Callable, Iterable
-from dataclasses import dataclass, fields, is_dataclass
+from dataclasses import dataclass, fields
 from pathlib import Path
 from typing import Any, BinaryIO, Protocol
 
@@ -187,8 +187,6 @@ class StreamedResultStore:
     def append(
         self, partition_key: str, payload: object, retain_memory: bool = False
     ) -> SealedPartition:
-        if not is_dataclass(payload) or isinstance(payload, type):
-            raise TypeError("partition payload requires a dataclass result")
         return self._append_payload(partition_key, payload, retain_memory=retain_memory)
 
     def append_child_outputs(
@@ -201,8 +199,6 @@ class StreamedResultStore:
     ) -> SealedPartition:
         """Atomically append child outputs while composing them one at a time."""
 
-        if not is_dataclass(metadata_payload) or isinstance(metadata_payload, type):
-            raise TypeError("partition payload requires a dataclass result")
         if metadata_payload.child_outputs != ():
             raise ValueError("streaming metadata payload must have empty child outputs")
         return self._append_payload(

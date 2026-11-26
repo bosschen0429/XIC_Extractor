@@ -110,8 +110,6 @@ def alignment_metadata(
         DEFAULT_SIGNAL_PROCESSING_PROFILE
     ),
 ) -> dict[str, str]:
-    if not isinstance(signal_processing_profile, SignalProcessingProfile):
-        raise TypeError("signal_processing_profile must be a SignalProcessingProfile")
     metadata = {
         "discovery_batch_index": str(discovery_batch_index),
         "raw_dir": str(raw_dir),

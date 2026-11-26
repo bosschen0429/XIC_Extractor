@@ -123,8 +123,6 @@ class WorkerAdmissionPool:
             raise ValueError("max_workers must be a positive integer")
         if backend not in {"thread", "process"}:
             raise ValueError("backend must be 'thread' or 'process'")
-        if not isinstance(shared_objects, tuple):
-            raise TypeError("shared_objects must be a tuple")
         self._max_workers = max_workers
         self._backend = backend
         self._thread_name_prefix = thread_name_prefix

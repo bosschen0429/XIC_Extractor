@@ -11,9 +11,6 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from xic_extractor.discovery.settings import DiscoverySettings
 
-from xic_extractor.configuration.mass_recalibration import (
-    MassRecalibration,
-)
 from xic_extractor.configuration.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
     SignalProcessingProfile,
@@ -21,36 +18,7 @@ from xic_extractor.configuration.signal_processing_profile import (
 from xic_extractor.processing_identity import (
     AcquisitionSourceIdentity,
 )
-from xic_extractor.validation_primitives import (
-    require_integer,
-    require_text,
-)
-
-_WEIGHT_KEYS = (
-    "ms1_peak_present",
-    "seed_event_per",
-    "seed_event_max",
-    "rt_aligned",
-    "rt_near",
-    "rt_shifted",
-    "product_intensity_high",
-    "product_intensity_med",
-    "area_high",
-    "area_med",
-    "scan_support_high",
-    "scan_support_low",
-)
-_THRESHOLD_FLOAT_KEYS = (
-    "rt_aligned_max_min",
-    "rt_near_max_min",
-    "rt_shifted_max_min",
-    "product_intensity_high_min",
-    "product_intensity_med_min",
-    "area_high_min",
-    "area_med_min",
-    "scan_support_high_score_min",
-    "scan_support_low_score_max",
-)
+from xic_extractor.validation_primitives import require_text
 
 
 @dataclass(frozen=True, slots=True)
@@ -76,22 +44,11 @@ class ProcessingRunSpec:
 def validate_cid_nl_discovery_settings(settings: DiscoverySettings) -> None:
     """Reject settings a preset file, CLI or Workbench form can produce."""
 
-    from xic_extractor.configuration.cid_nl_profile import NeutralLossProfile
-    from xic_extractor.discovery.evidence_config import (
-        DiscoveryEvidenceProfile,
-        DiscoveryEvidenceThresholds,
-        DiscoveryEvidenceWeights,
-    )
-    from xic_extractor.discovery.settings import DiscoverySettings
     from xic_extractor.settings_schema import RESOLVER_MODES
 
-    if not isinstance(settings, DiscoverySettings):
-        raise TypeError("settings must be DiscoverySettings")
     profiles = settings.neutral_loss_profiles
-    if not isinstance(profiles, tuple) or not profiles:
-        raise ValueError("neutral_loss_profiles must be a non-empty tuple")
-    if any(not isinstance(profile, NeutralLossProfile) for profile in profiles):
-        raise TypeError("neutral_loss_profiles must contain NeutralLossProfile")
+    if not profiles:
+        raise ValueError("neutral_loss_profiles must be non-empty")
     tags = tuple(
         require_text(profile.tag, field="neutral loss tag") for profile in profiles
     )
@@ -140,8 +97,6 @@ def validate_cid_nl_discovery_settings(settings: DiscoverySettings) -> None:
             raise ValueError(f"{field} must be finite and positive")
     if not isinstance(settings.enable_blank_qualification, bool):
         raise TypeError("enable_blank_qualification must be a boolean")
-    if not isinstance(settings.mass_recalibration, MassRecalibration):
-        raise TypeError("mass_recalibration must be a MassRecalibration policy")
     if settings.blank_library_path is not None:
         if not isinstance(settings.blank_library_path, str):
             raise TypeError("blank_library_path must be text or None")
@@ -164,25 +119,6 @@ def validate_cid_nl_discovery_settings(settings: DiscoverySettings) -> None:
     require_text(settings.resolver_mode, field="resolver_mode")
     if settings.resolver_mode not in RESOLVER_MODES:
         raise ValueError("unsupported resolver_mode")
-    evidence = settings.evidence_profile
-    if not isinstance(evidence, DiscoveryEvidenceProfile):
-        raise TypeError("evidence_profile must be DiscoveryEvidenceProfile")
-    if evidence.name != "default":
-        raise ValueError("unsupported Discovery evidence profile")
-    if not isinstance(evidence.weights, DiscoveryEvidenceWeights):
-        raise TypeError("evidence weights must be DiscoveryEvidenceWeights")
-    if not isinstance(evidence.thresholds, DiscoveryEvidenceThresholds):
-        raise TypeError("evidence thresholds must be DiscoveryEvidenceThresholds")
-    for key in _WEIGHT_KEYS:
-        require_integer(
-            getattr(evidence.weights, key), field=key, type_error_factory=TypeError
-        )
-    for key in _THRESHOLD_FLOAT_KEYS:
-        value = getattr(evidence.thresholds, key)
-        if not math.isfinite(float(value)):
-            raise ValueError(f"{key} must be finite")
-    if evidence.thresholds.scan_support_target <= 0:
-        raise ValueError("scan_support_target must be positive")
 
 
 __all__ = [

@@ -86,10 +86,6 @@ def positive_residual_area(
 ) -> float:
     rt = np.asarray(rt_values, dtype=float)
     residual = np.asarray(residual_values, dtype=float)
-    if rt.ndim != 1 or residual.ndim != 1:
-        raise ValueError("rt_values and residual_values must be one-dimensional")
-    if len(rt) != len(residual):
-        raise ValueError("rt_values and residual_values must have the same length")
     left, right = _bounded_interval(left_index, right_index, len(rt))
     segment = np.maximum(residual[left:right], 0.0)
     segment_rt = rt[left:right]
@@ -171,14 +167,6 @@ def canonical_gaussian_signal_traces(
 
     intensity = np.asarray(intensity_values, dtype=float)
     baseline = np.asarray(baseline_values, dtype=float)
-    if intensity.ndim != 1 or baseline.ndim != 1:
-        raise ValueError("intensity_values and baseline_values must be one-dimensional")
-    if len(intensity) != len(baseline):
-        raise ValueError("intensity_values and baseline_values must match")
-    if len(intensity) < profile.window_points:
-        raise ValueError("insufficient_points_for_profile")
-    if not np.all(np.isfinite(intensity)) or not np.all(np.isfinite(baseline)):
-        raise ValueError("intensity_values and baseline_values must be finite")
     smoothed_raw = gaussian15_morphology_trace(
         intensity,
         window_points=profile.window_points,

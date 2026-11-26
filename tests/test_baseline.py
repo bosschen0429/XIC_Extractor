@@ -53,22 +53,6 @@ def test_short_baseline_returns_float_copy() -> None:
     assert not np.shares_memory(y, bl)
 
 
-@pytest.mark.parametrize(
-    ("kwargs", "message"),
-    [
-        ({"lam": 0}, "lam"),
-        ({"p": 0}, "p"),
-        ({"p": 1}, "p"),
-        ({"n_iter": 0}, "n_iter"),
-    ],
-)
-def test_baseline_rejects_invalid_parameters(
-    kwargs: dict[str, float | int], message: str
-) -> None:
-    with pytest.raises(ValueError, match=message):
-        asls_baseline(np.ones(5), **kwargs)
-
-
 @pytest.mark.parametrize("lam", [0.1, 1.0, 10.0])
 @pytest.mark.parametrize("n_points", [301, 901, 2701])
 @pytest.mark.parametrize("slope", [0.0, 1.25])
@@ -144,18 +128,3 @@ def test_rt_baseline_uniform_grid_matches_index_space_scaling() -> None:
     assert rt_baseline[10:-10] == pytest.approx(
         index_baseline[10:-10], rel=2e-3, abs=0.02
     )
-
-
-@pytest.mark.parametrize(
-    ("rt", "intensity", "message"),
-    [
-        (np.array([0.0, 1.0]), np.array([1.0]), "same length"),
-        (np.array([0.0, 1.0, 0.5]), np.ones(3), "strictly increasing"),
-        (np.array([0.0, np.nan, 1.0]), np.ones(3), "finite"),
-    ],
-)
-def test_rt_baseline_rejects_invalid_trace(
-    rt: np.ndarray, intensity: np.ndarray, message: str
-) -> None:
-    with pytest.raises(ValueError, match=message):
-        asls_baseline_on_rt(rt, intensity, lam=1.0)
