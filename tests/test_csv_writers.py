@@ -413,15 +413,6 @@ def test_long_csv_labels_carry_the_configured_nl_observation(
     assert row["Area"] == "123.45"
 
 
-def test_long_csv_reports_file_processing_error() -> None:
-    row = _long_output_rows(
-        FileResult("Bad", {}, error="read failed"), [_target("WithNL")]
-    )[0]
-    assert (row["依據"], row["疑點"]) == ("RAW 失敗", "")
-    assert row["Area"] == "ERROR"
-    assert row["Counted Detection"] == "FALSE"
-
-
 @pytest.mark.parametrize(
     ("group", "role", "expected"),
     [

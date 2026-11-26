@@ -87,9 +87,6 @@ class FileResultLike(Protocol):
     @property
     def results(self) -> Mapping[str, ExtractionResultLike]: ...
 
-    @property
-    def error(self) -> str | None: ...
-
 
 def _long_output_rows(
     file_result: FileResultLike, targets: Sequence[Target]
@@ -114,20 +111,12 @@ def _long_output_rows(
             "疑點": "",
             **{header: "" for header in TARGETED_PRODUCT_PROJECTION_HEADERS},
         }
-        if file_result.error is not None:
-            _set_long_ms1_values(row, "ERROR")
-            row["NL"] = "ERROR" if target.neutral_loss_da is not None else ""
-            row.update(_error_projection_fields())
+        result = file_result.results[target.label]
+        _set_long_peak_values(row, result)
+        row["NL"] = result.nl_token or "" if target.neutral_loss_da is not None else ""
+        row.update(_projection_fields(result.targeted_product_projection))
+        if result.targeted_product_projection is not None:
             row["依據"], row["疑點"] = result_labels(row)
-        else:
-            result = file_result.results[target.label]
-            _set_long_peak_values(row, result)
-            row["NL"] = (
-                result.nl_token or "" if target.neutral_loss_da is not None else ""
-            )
-            row.update(_projection_fields(result.targeted_product_projection))
-            if result.targeted_product_projection is not None:
-                row["依據"], row["疑點"] = result_labels(row)
         rows.append(row)
     return rows
 
@@ -148,21 +137,6 @@ def _projection_fields(
         "Projection Not Counted Reasons": _join_reasons(projection.not_counted_reasons),
         "Projection Exclusion Reasons": _join_reasons(projection.exclusion_reasons),
         "Benchmark Eligibility State": projection.benchmark_eligibility_state,
-    }
-
-
-def _error_projection_fields() -> dict[str, str]:
-    return {
-        "Product State": "excluded",
-        "Counted Detection": "FALSE",
-        "Review State": "review_required",
-        "Projection Reason": "decision: excluded; excluded: file_error",
-        "Projection Support Reasons": "",
-        "Projection Review Reasons": "",
-        "Projection Conflict Reasons": "",
-        "Projection Not Counted Reasons": "",
-        "Projection Exclusion Reasons": "file_error",
-        "Benchmark Eligibility State": "",
     }
 
 

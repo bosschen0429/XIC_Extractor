@@ -75,7 +75,6 @@ def _labelled_codes() -> set[str]:
         set(labels.REVIEW_LABELS)
         | labels.CONFLICT_CODES
         | labels.NOT_COUNTED_CODES
-        | labels.EXCLUSION_CODES
         | labels.BASIS_SUPPORT_CODES
         | labels.HIDDEN_SUPPORT_CODES
         | {labels.OFF_PAIRED_ISTD_POSITION, labels.NOT_QUANTIFIABLE}
@@ -285,10 +284,6 @@ def _labels_without_repeat(row: dict[str, str]) -> tuple[str, str]:
                 "Projection Review Reasons": "targeted_shared_ion_region:B",
             },
             ("共用離子區段（B）", ""),
-        ),
-        (
-            {"RT": "ERROR", "Projection Exclusion Reasons": "file_error"},
-            ("RAW 失敗", ""),
         ),
     ],
 )

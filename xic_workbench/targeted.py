@@ -13,7 +13,7 @@ from xic_extractor.configuration.models import ConfigError, ExtractionConfig, Ta
 from xic_workbench import config_io
 
 if TYPE_CHECKING:
-    from xic_extractor.extraction.result_models import ExtractionResult, RunOutput
+    from xic_extractor.extraction.result_models import RunOutput
 
 
 class _TargetSummary(TypedDict):
@@ -114,7 +114,7 @@ class TargetedRun:
             raise InterruptedError(self.cancellation_reason)
 
         self.stage = "Targeted 結果摘要"
-        summary = build_summary(config, targets, execution.active_output, excel_path)
+        summary = build_summary(targets, execution.active_output, excel_path)
         summary["published_paths"] = [str(path) for path in published_paths]
         summary["sample_summary"] = self.sample_summary
         return summary
@@ -126,12 +126,11 @@ def _excel_output_path(config: ExtractionConfig) -> Path:
 
 
 def build_summary(
-    config: ExtractionConfig,
     targets: list[Target],
     output: RunOutput,
     excel_path: Path,
 ) -> dict[str, Any]:
-    target_summaries = [_target_summary(config, target, output) for target in targets]
+    target_summaries = [_target_summary(target, output) for target in targets]
     return {
         "total_files": len(output.file_results),
         "excel_path": str(excel_path),
@@ -150,7 +149,6 @@ def build_summary(
 
 
 def _target_summary(
-    config: ExtractionConfig,
     target: Target,
     output: RunOutput,
 ) -> _TargetSummary:
@@ -174,7 +172,9 @@ def _target_summary(
                 nl_fail += 1
             elif result.nl.status == "NO_MS2":
                 nl_no_ms2 += 1
-        if _is_detected(config, target, result):
+        projection = result.targeted_product_projection
+        assert projection is not None
+        if projection.counted_detection:
             detected += 1
         if result.reported_peak_area is not None:
             accepted_areas.append(result.reported_peak_area)
@@ -190,22 +190,3 @@ def _target_summary(
         "nl_no_ms2": nl_no_ms2,
         "median_area": median_area,
     }
-
-
-def _is_detected(
-    config: ExtractionConfig,
-    target: Target,
-    result: ExtractionResult,
-) -> bool:
-    projection = result.targeted_product_projection
-    if projection is not None:
-        return projection.counted_detection
-    if result.peak_result.status != "OK" or result.peak_result.peak is None:
-        return False
-    if target.neutral_loss_da is None:
-        return True
-    if result.nl is None:
-        return False
-    if result.nl.status in {"OK", "WARN"}:
-        return True
-    return config.count_no_ms2_as_detected and result.nl.status == "NO_MS2"
