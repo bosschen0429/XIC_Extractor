@@ -113,7 +113,6 @@ def bootstrap_cid_nl_initial_population(
         CidNlMethodAssessment, tuple[MeasuredPeakHypothesis, ...]
     ]
     | None = None,
-    anchors_calibrate: bool = True,
 ) -> tuple[
     InitialGroupingScope,
     tuple[RetainedGroupingCandidate, ...],
@@ -121,9 +120,8 @@ def bootstrap_cid_nl_initial_population(
 ]:
     """Build initial groups and their physical candidate bindings.
 
-    Initial groups are inferred only where their anchors can calibrate:
-    ``anchors_calibrate`` is False when the batch calibrates from another
-    population, and a workset short of the anchor quorum calibrates nothing.
+    Initial groups are inferred only where their anchors can calibrate: a
+    workset short of the anchor quorum calibrates nothing.
     Otherwise every owner is its own group and only final grouping, which
     resolves trajectories on the frozen frame, assigns rows.
     """
@@ -214,7 +212,7 @@ def bootstrap_cid_nl_initial_population(
     if not owners and not searched_no_observation:
         raise GroupingBootstrapError("bootstrap assessments have no peak observations")
     rt_frame = rt_frame.bind_owners(tuple(owners))
-    if anchors_calibrate and reaches_ordinary_anchor_quorum(anchor_samples, rt_frame):
+    if reaches_ordinary_anchor_quorum(anchor_samples, rt_frame):
         correspondence = resolve_peak_trajectories(
             owners,
             elution_contexts,

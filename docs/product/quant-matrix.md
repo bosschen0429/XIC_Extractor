@@ -45,12 +45,6 @@ delivery seam as if they were already final.
   or count as direct CID-NL support.
 - Inclusion and counting consume those completed answers, not raw cells.
 
-An acquired lobe of an unresolved overlap may have its own peak position and
-local CID-NL events without a separately measured area. It may compete for a
-group, but has no integration, cannot count toward row or Backfill activation,
-and gives its selected cell the no-write reason `not_quantifiable`. It already
-occupies that sample's cell; Backfill cannot remeasure the overlap into a value.
-
 Owners without an integration or with an apex on an integration boundary do
 not train the RT calibration. Cell decisions take values from peak
 integrations, not the anchor-eligibility flag.

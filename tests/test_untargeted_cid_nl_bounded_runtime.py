@@ -25,7 +25,6 @@ from tests.alignment_pipeline_helpers import (
 from tests.cid_nl_raw_fixture import (
     _FakeRaw,
     _FakeThermoRaw,
-    unresolved_overlap_trace,
 )
 from tests.discovery_csv_fixtures import representative_event
 from tests.untargeted_alignment_entry_fixtures import (
@@ -63,7 +62,6 @@ from xic_extractor.untargeted_execution.execution_result import (
 )
 from xic_extractor.untargeted_execution.input_planning import (
     PreparedUntargetedAlignmentWorksets,
-    pack_subject_partitions,
 )
 
 
@@ -359,59 +357,11 @@ def test_bounded_runtime_failure_never_publishes_completed_batch(
     assert not any((tmp_path / "failed" / name).exists() for name in PUBLISHED_TABLES)
 
 
-def test_reference_workset_joining_two_worksets_packs_them_together():
-    subjects = tuple(
-        mint_untargeted_cid_nl_method_subject(
-            precursor_mz=mz,
-            precursor_tolerance_ppm=20.0,
-            neutral_loss_da=116.0474,
-            composition=None,
-        )
-        for mz in (300.0, 300.5, 301.0)
-    )
-    first, middle, last = subjects
-    main = PreparedUntargetedAlignmentWorksets(
-        worksets=((first,), (middle,), (last,)),
-        memberships_by_subject={
-            subject.method_subject_id: ((f"c{index}", subject.method_subject_id),)
-            for index, subject in enumerate(subjects)
-        },
-    )
-    bridge = mint_untargeted_cid_nl_method_subject(
-        precursor_mz=300.0,
-        precursor_tolerance_ppm=20.0,
-        neutral_loss_da=116.0474,
-        composition=None,
-    )
-    reference = PreparedUntargetedAlignmentWorksets(
-        worksets=((bridge,),),
-        memberships_by_subject={
-            bridge.method_subject_id: (
-                ("c0", bridge.method_subject_id),
-                ("c2", bridge.method_subject_id),
-            )
-        },
-    )
-
-    packed = pack_subject_partitions(
-        main, reference, max_partition_jobs=2, sample_count=1
-    )
-
-    by_id = {subject.method_subject_id: subject for subject in subjects}
-    assert [
-        ({s.precursor_mz for s in partition}, refs) for partition, refs in packed
-    ] == [
-        ({300.0, 301.0}, (bridge,)),
-        ({by_id[middle.method_subject_id].precursor_mz}, ()),
-    ]
-
-
 def test_bounded_partition_keeps_alignment_workset_atomic(
     tmp_path,
     monkeypatch,
 ) -> None:
     from xic_extractor.peak_detection.cid_nl_method_subject import (
-        mint_untargeted_cid_nl_method_subject,
         mint_untargeted_cid_nl_method_subject_batch,
     )
     from xic_extractor.untargeted_execution.execution import (
@@ -477,13 +427,9 @@ def test_indexed_mass_partition_keeps_closed_worksets_and_budgets_neighbors(
 ) -> None:
     from xic_extractor.peak_detection.cid_nl_method_subject import (
         cid_nl_alignment_subject_worksets,
-        mint_untargeted_cid_nl_method_subject,
         mint_untargeted_cid_nl_method_subject_batch,
     )
     from xic_extractor.untargeted_execution import execution as bounded_owner
-    from xic_extractor.untargeted_execution.input_planning import (
-        PreparedUntargetedAlignmentWorksets,
-    )
 
     plan, _reference = _plan(tmp_path, monkeypatch)
     subjects = tuple(
@@ -649,7 +595,6 @@ def test_bounded_partition_real_entry_mints_interleaved_worksets_canonically(
 
     from xic_extractor.peak_detection.cid_nl_method_subject import (
         cid_nl_alignment_subject_worksets,
-        mint_untargeted_cid_nl_method_subject,
         mint_untargeted_cid_nl_method_subject_batch,
     )
     from xic_extractor.untargeted_execution import execution as bounded_owner
@@ -1613,52 +1558,6 @@ def test_process_outcome_must_cover_the_exact_work_units(
 
     assert not result.succeeded
     assert result.sample_results == ()
-
-
-def test_published_matrix_leaves_localized_members_without_an_area_blank(
-    tmp_path, monkeypatch
-):
-    import numpy as np
-
-    early, late = 7.895, 8.214
-    overlap = _FakeRaw((early, late))
-    rt, intensity = unresolved_overlap_trace()
-    shifted = rt - 7.3
-    valid = shifted >= 0.0
-    overlap.rt, overlap.intensity = shifted[valid], intensity[valid]
-    overlap.scans = tuple(
-        replace(scan, scan_number=int(np.searchsorted(overlap.rt, scan.rt)) + 1)
-        for scan in overlap.scans
-    )
-    raws = {
-        "Overlap": overlap,
-        "EarlyA": _FakeRaw((7.91,)),
-        "EarlyB": _FakeRaw((7.93,)),
-        "Late": _FakeRaw((8.28,)),
-    }
-    paths = raw_paths(tmp_path, tuple(raws))
-    peaks = {stem: discover(raw, paths[stem]) for stem, raw in raws.items()}
-    assert {event.rt for p in peaks["Overlap"] for event in p.located_events} == {
-        early,
-        late,
-    }
-
-    output = publish_alignment(
-        tmp_path, monkeypatch, paths=paths, raws=raws, peaks=peaks
-    )
-
-    (row,) = read_tsv(output / "alignment_matrix.tsv")
-    assert float(row["RT"]) == pytest.approx(7.92, abs=0.04)
-    assert float(row["EarlyA"]) > 0 and float(row["EarlyB"]) > 0
-    assert row["Overlap"] == ""
-    assert row["Late"] == ""
-    detected = [
-        cell
-        for (_feature, sample), cell in published_cells(output).items()
-        if sample == "Overlap" and cell["status"] == "detected"
-    ]
-    assert len(detected) == 2
-    assert all(not cell["area"] for cell in detected)
 
 
 def test_formal_partition_reuses_prepared_group_ids_with_ms1_only_members(

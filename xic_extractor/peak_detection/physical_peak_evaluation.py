@@ -23,7 +23,6 @@ from xic_extractor.peak_detection.chrom_peak_segments import (
     enumerate_chrom_peak_segments,
     local_apex_prominence,
     measure_chrom_peak_component,
-    supported_contour_apices,
 )
 from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_extractor.peak_detection.ms1_morphology import (
@@ -64,8 +63,6 @@ from xic_extractor.peak_detection.signal_quality import (
 _BACKFILL_POLICIES = frozenset(
     {PHYSICAL_PEAK_BACKFILL_POLICY, PHYSICAL_PEAK_UNLOCATED_BACKFILL_POLICY}
 )
-OVERLAP_SURROUNDING_FLANK_MIN = 0.5
-OVERLAP_SURROUNDING_LEVEL_LIMIT = 0.5
 
 
 def prepare_physical_signal(
@@ -363,7 +360,6 @@ def _physical_segment_policy(
         include_baseline_return_samples=True,
         clear_valley_max_fraction=0.50,
         min_prominence_noise_sigma=DISCOVERY_MIN_CONTRAST_SIGMA,
-        min_prominence_fraction_of_envelope=profile.segment_min_prominence_fraction,
     )
 
 
@@ -557,8 +553,6 @@ def _censoring_aware_segments(
             scan_support_count=right - left,
             area_counts_seconds=float(np.trapezoid(raw[left:right], rt[left:right]))
             * 60.0,
-            segment_class="isolated_peak",
-            boundary_stop_reason="detection_density_return",
             evidence_sources=("local_hit_density_enrichment", "near_detection_limit"),
             raw_component=(
                 RawPeakComponent(
@@ -819,13 +813,6 @@ def _physical_segment_support_failure(
             if backfill
             else "insufficient_local_peak_contrast"
         )
-    if (
-        (backfill or selection_policy_version == DISCOVERY_PHYSICAL_PEAK_POINT_POLICY)
-        and selected.requires_overlap_review
-        and _surrounding_level_fraction(prepared, selected)
-        >= OVERLAP_SURROUNDING_LEVEL_LIMIT
-    ):
-        return "overlap_not_above_surroundings"
     return ""
 
 
@@ -852,89 +839,6 @@ def _original_top_support_failure(
     ):
         return "insufficient_original_xic_continuity"
     return ""
-
-
-def localize_overlap_peak_lobes(
-    evaluation: PhysicalPeakEvaluation,
-) -> tuple[RawPeakComponent, ...]:
-    """Locate acquired crests in one overlap without claiming separable areas.
-
-    Each canonical maximum needs continuous original top support and a raw
-    crest. Intervening relief must also exist in positive acquired scans: a
-    dropout alone cannot manufacture two peak positions.
-    """
-    segment = evaluation.answer.selected_segment
-    prepared = evaluation.retained_prepared_signal
-    if segment is None or prepared is None or not segment.requires_overlap_review:
-        return ()
-    left, right = segment.start_index, segment.end_index
-    raw = np.asarray(prepared.raw[left:right])
-    baseline = np.asarray(prepared.baseline[left:right])
-    signal = np.asarray(prepared.positive_signal[left:right])
-    peaks = supported_contour_apices(
-        signal, prepared.profile.segment_min_prominence_fraction
-    )
-    if len(peaks) < 2:
-        return ()
-    cuts = tuple(
-        int(a + np.argmin(signal[a : b + 1]))
-        for a, b in zip(peaks, peaks[1:], strict=False)
-    )
-    lobes = []
-    crests = []
-    for i, apex in enumerate(peaks):
-        start = cuts[i - 1] if i else 0
-        stop = cuts[i] + 1 if i < len(cuts) else len(raw)
-        crest = int(start + np.argmax(raw[start:stop]))
-        if not start < crest < stop - 1 or not (
-            0 < raw[crest - 1] < raw[crest] and 0 < raw[crest + 1] < raw[crest]
-        ):
-            return ()
-        if _original_top_support_failure(
-            np.maximum(raw[start:stop] - baseline[start:stop], 0.0),
-            signal[start:stop],
-            int(apex - start),
-        ):
-            return ()
-        crests.append(crest)
-        lobes.append(
-            RawPeakComponent(left + start, left + stop, left + crest, False, False)
-        )
-    clear_valley_fraction = _physical_segment_policy(
-        prepared.profile
-    ).clear_valley_max_fraction
-    for a, b in zip(crests, crests[1:], strict=False):
-        acquired_valley = raw[a + 1 : b]
-        detected = acquired_valley[acquired_valley > 0.0]
-        if not len(detected) or float(np.min(detected)) > (
-            clear_valley_fraction * min(raw[a], raw[b])
-        ):
-            return ()
-    return tuple(lobes)
-
-
-def _surrounding_level_fraction(
-    prepared: PreparedSignal, selected: PhysicalSegment
-) -> float:
-    """The higher side's acquired level just outside the segment, over its apex.
-
-    Each side's level is the median of its nonzero raw scans: zero scans are
-    missing observations, not a level. Acquired context shorter than the flank
-    supplies what it has; a side without nonzero scans has level zero.
-    """
-    rt = np.asarray(prepared.rt, dtype=float)
-    raw = np.asarray(prepared.raw, dtype=float)
-    apex = float(np.max(raw[selected.start_index : selected.end_index]))
-    if apex <= 0.0:
-        return 0.0
-    left = slice(None, selected.start_index)
-    right = slice(selected.end_index, None)
-    sides = (
-        raw[left][rt[left] >= selected.left_rt_min - OVERLAP_SURROUNDING_FLANK_MIN],
-        raw[right][rt[right] <= selected.right_rt_min + OVERLAP_SURROUNDING_FLANK_MIN],
-    )
-    levels = [float(np.median(side[side > 0.0])) for side in sides if any(side > 0.0)]
-    return max(levels, default=0.0) / apex
 
 
 def answer_physical_peak_question(
@@ -1046,6 +950,69 @@ def evaluate_physical_peak(
     return answer_physical_peak_question(prepared_result, universe, question)
 
 
+def peak_envelope(
+    universe: PhysicalSegmentUniverse, segment: PhysicalSegment
+) -> tuple[PhysicalSegment, ...]:
+    """The segments joined to ``segment`` by shared cut points, in RT order.
+
+    A separable-valley cut leaves its valley scan as the last scan of one
+    segment and the first of the next. Segments that meet that way are one
+    continuous signal above background: an envelope. Segments separated by a
+    return to background are not joined. The envelope is a measurement fact;
+    whether it holds one chemical component or several is decided elsewhere.
+    """
+    ordered = sorted(universe.segments, key=lambda item: item.start_index)
+    position = next(
+        (index for index, item in enumerate(ordered) if item == segment), None
+    )
+    if position is None:
+        return (segment,)
+    first = last = position
+    while first > 0 and ordered[first - 1].end_index - 1 == ordered[first].start_index:
+        first -= 1
+    while (
+        last < len(ordered) - 1
+        and ordered[last].end_index - 1 == ordered[last + 1].start_index
+    ):
+        last += 1
+    return tuple(ordered[first : last + 1])
+
+
+def measure_peak_envelope(
+    evaluation: PhysicalPeakEvaluation,
+) -> IntegrationResult | None:
+    """Integrate the whole envelope holding the selected segment.
+
+    Its area is the sum of the segment areas on the same canonical signal; its
+    height and apex are the highest segment's. A single-segment envelope is the
+    selected segment's own integration.
+    """
+    selected = evaluation.answer.selected_segment
+    prepared = evaluation.retained_prepared_signal
+    if selected is None or prepared is None:
+        return None
+    segments = peak_envelope(evaluation.segment_universe, selected)
+    if len(segments) == 1:
+        return evaluation.integration
+    first, last = segments[0], segments[-1]
+    top = max(segments, key=lambda item: (item.height, -item.start_index))
+    envelope = PhysicalSegment(
+        start_index=first.start_index,
+        end_index=last.end_index,
+        apex_index=top.apex_index,
+        left_rt_min=first.left_rt_min,
+        right_rt_min=last.right_rt_min,
+        apex_rt_min=top.apex_rt_min,
+        height=top.height,
+        scan_support_count=last.end_index - first.start_index,
+        area_counts_seconds=sum(item.area_counts_seconds for item in segments),
+        evidence_sources=tuple(
+            sorted({source for item in segments for source in item.evidence_sources})
+        ),
+    )
+    return _physical_raw_descriptor_projection(prepared, envelope)
+
+
 def _physical_raw_descriptor_projection(
     prepared: PreparedSignal,
     selected: PhysicalSegment,
@@ -1131,8 +1098,6 @@ def _physical_segment_from_chrom(segment: Any) -> PhysicalSegment:
         height=segment.morphology_apex_residual,
         scan_support_count=segment.interval.scan_count,
         area_counts_seconds=segment.area_baseline_corrected,
-        segment_class=segment.segment_class,
-        boundary_stop_reason=segment.boundary_stop_reason,
         evidence_sources=segment.evidence_sources,
     )
 

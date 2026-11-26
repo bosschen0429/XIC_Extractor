@@ -706,7 +706,6 @@ def test_reused_hold_peak_needs_its_own_group_window(
         processing_attempt_id=fixture.processing_attempt_id,
         settings=settings,
         raw=raw,
-        rt_reference_only=False,
     )[fixture.method_subject.method_subject_id]
     original = capture.assessment_input.assessment
     assert original.method_result == "HOLD" and original.evidence_observations

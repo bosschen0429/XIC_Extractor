@@ -31,12 +31,6 @@ ChromPeakSegmentStatus = Literal[
     "PEAK_NOT_FOUND",
     "MALFORMED_TRACE",
 ]
-ChromPeakSegmentClass = Literal[
-    "isolated_peak",
-    "separate_peak",
-    "shoulder_candidate",
-    "low_scan_segment",
-]
 
 SEPARABLE_VALLEY_NOISE_SIGMA = 3.0
 
@@ -54,7 +48,6 @@ class ChromPeakSegmentPolicy:
     morphology_trace_window_points: int = DEFAULT_GAUSSIAN15_WINDOW_POINTS
     morphology_min_sigma_rt: float = 0.0
     min_prominence_noise_sigma: float = 0.0
-    min_prominence_fraction_of_envelope: float = 0.04
     min_prominence_fraction_of_apex: float = 0.0
     valley_min_duration_min: float | None = None
 
@@ -74,8 +67,6 @@ class ChromPeakSegment:
     morphology_apex_residual: float
     area_baseline_corrected: float
     morphology_area_shadow: float
-    segment_class: ChromPeakSegmentClass
-    boundary_stop_reason: str
     evidence_sources: tuple[str, ...]
 
 
@@ -101,7 +92,7 @@ class _ApexSeed:
 @dataclass(frozen=True)
 class _AdjacentPeakRelation:
     valley_index: int
-    relation_class: Literal["clear_split", "shoulder_overlap"]
+    relation_class: Literal["clear_split", "shallow_valley"]
 
 
 def measure_chrom_peak_component(
@@ -499,13 +490,11 @@ def _supported_apex_seeds(
     relations = _adjacent_relations(signal, seeds, policy)
     retained = {seed.index for seed in seeds if seed.index in (start, end - 1)}
     supported: set[int] = set()
-    prominence_by_index: dict[int, float] = {}
     seed_positions = {seed.index: index for index, seed in enumerate(seeds)}
     for seed, prominence, left, right in zip(
         interior, prominences, left_bases, right_bases, strict=True
     ):
         left, right = start + int(left), start + int(right) + 1
-        prominence_by_index[seed.index] = float(prominence)
         noise = short_scale_noise_sigma(rt[left:right], acquired[left:right]) or 0.0
         position = seed_positions[seed.index]
         for neighbor_position in (position - 1, position + 1):
@@ -535,14 +524,7 @@ def _supported_apex_seeds(
         if index < len(relations) and relations[index].relation_class != "clear_split":
             continue
         if any(item.index in supported for item in group):
-            envelope_height = max(item.height for item in group)
-            retained.update(
-                item.index
-                for item in group
-                if item.index in supported
-                and prominence_by_index[item.index]
-                >= policy.min_prominence_fraction_of_envelope * envelope_height
-            )
+            retained.update(item.index for item in group if item.index in supported)
         else:
             retained.update(item.index for item in group)
         group = []
@@ -764,10 +746,10 @@ def _adjacent_relations(
                 float(morphology_trace[right_seed.index]),
             ),
         )
-        relation_class: Literal["clear_split", "shoulder_overlap"] = (
+        relation_class: Literal["clear_split", "shallow_valley"] = (
             "clear_split"
             if valley_fraction <= policy.clear_valley_max_fraction
-            else "shoulder_overlap"
+            else "shallow_valley"
         )
         relations.append(
             _AdjacentPeakRelation(
@@ -850,16 +832,7 @@ def _segment_from_seed(
             left = max(basin_left, left - 1)
             right = min(basin_right, right + 1)
     relation_labels = _relation_labels(left_relation, right_relation)
-    if policy.morphology_trace_method == "rt_envelope":
-        contour = boundary_signal[left:right]
-        review_lobes = supported_contour_apices(
-            contour, policy.min_prominence_fraction_of_envelope
-        )
-        if len(envelope_seeds) > 1 or len(review_lobes) > 1:
-            relation_labels = (*relation_labels, "shoulder_overlap")
     interval = _trace_interval(rt, left, right)
-    segment_class = _segment_class(interval, relation_labels, policy)
-    stop_reason = _boundary_stop_reason(segment_class, relation_labels)
     area = integrate_with_baseline(
         intensity,
         rt,
@@ -889,9 +862,9 @@ def _segment_from_seed(
         morphology_apex_residual=apex_residual,
         area_baseline_corrected=area,
         morphology_area_shadow=morphology_area,
-        segment_class=segment_class,
-        boundary_stop_reason=stop_reason,
-        evidence_sources=_evidence_sources(relation_labels, segment_class),
+        evidence_sources=_evidence_sources(
+            relation_labels, low_scan=interval.scan_count < policy.min_scan_count
+        ),
     )
 
 
@@ -975,36 +948,8 @@ def _relation_labels(
     return tuple(labels)
 
 
-def _segment_class(
-    interval: TraceInterval,
-    relation_labels: tuple[str, ...],
-    policy: ChromPeakSegmentPolicy,
-) -> ChromPeakSegmentClass:
-    if interval.scan_count < policy.min_scan_count:
-        return "low_scan_segment"
-    if "shoulder_overlap" in relation_labels:
-        return "shoulder_candidate"
-    if "clear_split" in relation_labels:
-        return "separate_peak"
-    return "isolated_peak"
-
-
-def _boundary_stop_reason(
-    segment_class: ChromPeakSegmentClass,
-    relation_labels: tuple[str, ...],
-) -> str:
-    if segment_class == "low_scan_segment":
-        return "segment_too_few_scans"
-    if "shoulder_overlap" in relation_labels:
-        return "shoulder_overlap_review"
-    if "clear_split" in relation_labels:
-        return "baseline_valley_split"
-    return "baseline_return"
-
-
 def _evidence_sources(
-    relation_labels: tuple[str, ...],
-    segment_class: ChromPeakSegmentClass,
+    relation_labels: tuple[str, ...], *, low_scan: bool
 ) -> tuple[str, ...]:
     sources = [
         "morphology_trace",
@@ -1014,9 +959,7 @@ def _evidence_sources(
     ]
     if "clear_split" in relation_labels:
         sources.append("local_minimum_valley")
-    if "shoulder_overlap" in relation_labels:
-        sources.append("shoulder_overlap")
-    if segment_class == "low_scan_segment":
+    if low_scan:
         sources.append("scan_support")
     return tuple(sources)
 

@@ -25,9 +25,6 @@ from xic_extractor.output.alignment.tsv_writer import UntargetChildOutputs
 from xic_extractor.rt_calibration_codec import rt_calibration_payload
 
 if TYPE_CHECKING:
-    from xic_extractor.alignment.cell_observation.observations import (
-        FinalGroupCellObservation,
-    )
     from xic_extractor.alignment.config import AlignmentConfig
     from xic_extractor.alignment.result.application_result import (
         FinalizedUntargetApplicationResult,
@@ -438,12 +435,7 @@ def project_alignment_explanation_child(
         for decision in group_cells:
             if decision.value is None:
                 continue
-            evidence = cast("FinalGroupCellObservation", decision.evidence)
-            trace = next(
-                peak.source_trace
-                for peak in evidence.value_peaks
-                if peak.integration == decision.selected_integration
-            )
+            trace = cast("PeakObservation", decision.value_peak).source_trace
             sink.set_cell_curve(
                 group_id,
                 decision.subject.canonical_sample.sample_name,

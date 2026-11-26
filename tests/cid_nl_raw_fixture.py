@@ -88,26 +88,6 @@ def fake_acquisition_source() -> AcquisitionSourceIdentity:
         )
 
 
-def unresolved_overlap_trace() -> tuple[np.ndarray, np.ndarray]:
-    """Two acquired crests with localizable but unresolved integration bounds."""
-    local_rt = np.fromstring(
-        "15.0317 15.0634 15.0952 15.1364 15.1778 15.2193 15.2607 15.3021 "
-        "15.3431 15.3849 15.4268 15.4583 15.5002 15.5422 15.5835 15.6247 "
-        "15.6662 15.7077 15.7489 15.7847",
-        sep=" ",
-    )
-    before = np.arange(0.0, 15.0, 0.01)
-    after = np.arange(15.80, 20.01, 0.01)
-    body = 1000.0 * np.fromstring(
-        "0 0 0 93 322 404 358 211 134 301 0 160 230 458 604 254 77 26 0 0",
-        sep=" ",
-    )
-    return (
-        np.concatenate((before, local_rt, after)),
-        np.pad(body, (len(before), len(after))),
-    )
-
-
 def _settings() -> DiscoverySettings:
     return DiscoverySettings(
         neutral_loss_profile=NeutralLossProfile("DNA_dR", NEUTRAL_LOSS_DA),

@@ -4,8 +4,7 @@ Each compound counts once: ions derived from another candidate (known mass
 difference and synchronized peak shape) or from a nucleoside are removed, so
 are compounds whose MS2 fragments mainly by losing another preset's sugar and
 compounds whose every ion leaves a negative mass defect after the loss (no
-organic nucleobase); single-MS2 compounds are listed as unconfirmed, and
-compounds made only of overlap-review peaks as overlap_only.
+organic nucleobase); single-MS2 compounds are listed as unconfirmed.
 Optional replicate controls from the same batch add per-injection and
 cumulative counts; their RT is compared as measured. Writes
 ``nl_adduct_count.json`` and ``nl_adduct_candidates.tsv`` with each
@@ -86,7 +85,7 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         description=(
             "Count adducts in one sample's neutral-loss Discovery output: remove "
             "ions derived from another candidate or a nucleoside, list single-MS2 "
-            "and overlap-only compounds apart, and compare with replicate control "
+            "compounds apart, and compare with replicate control "
             "injections."
         ),
     )

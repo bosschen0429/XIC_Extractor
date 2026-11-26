@@ -76,8 +76,8 @@ def test_alignment_and_delta_mass_read_one_peak_mass(tmp_path, apex_mz):
 
 @pytest.mark.parametrize("with_supported", [False, True], ids=["all_review", "mixed"])
 def test_held_rows_never_become_alignment_roots(tmp_path, monkeypatch, with_supported):
-    """Discovery holds peaks without NL support; an overlap-review peak is
-    admitted and its review travels with the observation."""
+    """Discovery holds peaks without NL support; an unresolved multi-component
+    envelope is admitted as one peak without overlap review."""
     stems = (
         ("Rescued", "Overlap", "Orphan", "Clean1", "Clean2")
         if with_supported
@@ -133,7 +133,6 @@ def test_held_rows_never_become_alignment_roots(tmp_path, monkeypatch, with_supp
                 }[path.stem]
             )
             (expected_ids if peak.admitted else rejected_ids).add(peak.peak_id)
-            assert peak.requires_overlap_review == (path.stem == "Overlap")
         folder = tmp_path / path.stem
         folder.mkdir()
         receipts.update(
@@ -179,10 +178,6 @@ def test_held_rows_never_become_alignment_roots(tmp_path, monkeypatch, with_supp
     )
     assert {cid for cid, _ in plan.subject_batch.candidate_memberships} == expected_ids
     if with_supported:
-        assert plan.rt_reference_subjects is not None
-        assert {cid for cid, _ in plan.rt_reference_subjects.candidate_memberships} == {
-            peak.peak_id for stem in ("Clean1", "Clean2") for peak in candidates[stem]
-        }
         partition = materialize_untargeted_partition(plan, plan.subject_batch)
         assert {
             c.peak_id for job in partition.jobs for c in job.candidates
@@ -210,10 +205,7 @@ def test_held_rows_never_become_alignment_roots(tmp_path, monkeypatch, with_supp
             resolver_mode="local_minimum",
             evaluation_sink=evaluations.append,
         )
-        assert (
-            evaluations[0].state == "available"
-            and evaluations[0].requires_overlap_review
-        )
+        assert evaluations[0].state == "available"
         assert observation is not None
         assert observation.physical_evaluation is evaluations[0]
     result = execute_untargeted_plan(
@@ -353,21 +345,6 @@ def test_alignment_measurement_decides_admission_through_the_whole_run(
         full_audit=True,
     )
     assert report.exists()
-    if alignment_signal == "overlap":
-        import json
-        import sqlite3
-
-        with sqlite3.connect(report) as db:
-            reviews = dict(
-                db.execute(
-                    "SELECT s.sample_key, c.review_reasons FROM cells c "
-                    "JOIN samples s ON s.id=c.sample WHERE c.value IS NOT NULL"
-                )
-            )
-        assert {key: json.loads(value) for key, value in reviews.items()} == {
-            "Clean1": [],
-            "Clean2": ["physical_shoulder_overlap"],
-        }
 
 
 def test_alignment_rejects_raw_replaced_after_discovery_without_recalibration(

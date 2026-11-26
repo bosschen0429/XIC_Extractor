@@ -1,8 +1,8 @@
 """MS1 landmarks for correspondence, independent of peak integration.
 
 A landmark is a supported local maximum, not a selected physical segment or
-method-backed observation. In particular, shoulders can describe a pattern
-without becoming separate quantitation results.
+method-backed observation. In particular, maxima within one envelope can
+describe a pattern without becoming separate quantitation results.
 """
 
 from __future__ import annotations
@@ -22,6 +22,9 @@ from xic_extractor.peak_detection.physical_peak_models import (
     PhysicalSegmentUniverse,
     PreparedSignalResult,
 )
+
+LANDMARK_MIN_PROMINENCE_FRACTION = 0.04
+"""A landmark's prominence relative to the trace maximum."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,8 +108,7 @@ def project_elution_context(
     signal = np.asarray(prepared.positive_signal)
     peaks, _ = find_peaks(
         signal,
-        prominence=float(np.max(signal))
-        * prepared.profile.segment_min_prominence_fraction,
+        prominence=float(np.max(signal)) * LANDMARK_MIN_PROMINENCE_FRACTION,
     )
     margin = prepared.profile.window_points // 2
     peaks = peaks[(peaks >= margin) & (peaks < len(rt) - margin)]

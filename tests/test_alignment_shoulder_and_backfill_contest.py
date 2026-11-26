@@ -1,4 +1,4 @@
-"""A shoulder split from its peak and a Backfill peak already held elsewhere."""
+"""Overlap dispositions and a Backfill peak already held elsewhere."""
 
 from __future__ import annotations
 
@@ -19,7 +19,6 @@ from xic_extractor.alignment.feature_membership_inference import BatchRtWarp
 from xic_extractor.alignment.grouping_workflow import (
     contested_backfill_peaks,
     group_cid_nl_owners,
-    reject_shoulder_groups,
 )
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 from xic_extractor.alignment.peak_trajectories import (
@@ -28,11 +27,6 @@ from xic_extractor.alignment.peak_trajectories import (
 from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.configuration.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
-)
-from xic_extractor.peak_detection.physical_peak_evaluation import (
-    PHYSICAL_PEAK_POINT_POLICY,
-    evaluate_physical_peak,
-    prepare_physical_signal,
 )
 
 _CONFIG = AlignmentConfig()
@@ -98,155 +92,6 @@ def _peak(
 
 def _main(sample: str) -> SampleLocalMS1Owner:
     return _peak(sample, "main", apex=9.0, start=8.65, end=9.4, area=10_000.0)
-
-
-def _shoulder(sample: str, *, end: float = 8.65) -> SampleLocalMS1Owner:
-    return _peak(sample, "shoulder", apex=8.55, start=8.3, end=end, area=800.0)
-
-
-def _groups(owners: tuple[SampleLocalMS1Owner, ...]):
-    groups = construct_cross_sample_peak_group_hypotheses(
-        owners,
-        config=_CONFIG,
-        sample_universe=frozenset(owner.sample_stem for owner in owners),
-        rt_frame=SampleRtFrame(),
-        rules=CID_NL_GROUPING_RULES,
-    )
-    by_rt = {round(group.group_center_rt, 1): group for group in groups}
-    assert set(by_rt) == {8.6, 9.0}
-    return groups, by_rt[8.6], by_rt[9.0]
-
-
-def _measured_on_overlap(owner: SampleLocalMS1Owner) -> SampleLocalMS1Owner:
-    """The owner with its peak measured on an unresolved shoulder or overlap."""
-
-    full_rt = np.linspace(7.0, 13.0, 301)
-    full = 1000 * np.exp(-0.5 * ((full_rt - 9.3) / 0.5) ** 2)
-    full += 700 * np.exp(-0.5 * ((full_rt - 10.4) / 0.5) ** 2)
-    acquired = (full_rt >= 9.0) & (full_rt <= 11.0)
-    evaluation = evaluate_physical_peak(
-        prepare_physical_signal(full_rt[acquired] - 0.8, full[acquired]),
-        query_rt_min=9.0,
-        selection_policy_version=PHYSICAL_PEAK_POINT_POLICY,
-    )
-    assert evaluation.requires_overlap_review
-    return replace(owner, peak=replace(owner.peak, physical_evaluation=evaluation))
-
-
-def test_only_a_group_with_a_peak_measured_apart_enters_the_matrix() -> None:
-    def group(owners: tuple[SampleLocalMS1Owner, ...]):
-        (only,) = construct_cross_sample_peak_group_hypotheses(
-            owners,
-            config=_CONFIG,
-            rt_frame=SampleRtFrame(),
-            rules=CID_NL_GROUPING_RULES,
-        )
-        return only
-
-    overlap_only = group(tuple(_measured_on_overlap(_main(s)) for s in ("S1", "S2")))
-    mixed = group((_main("S1"), _measured_on_overlap(_main("S2"))))
-
-    assert (overlap_only.disposition, overlap_only.destination) == (
-        "provisional",
-        "archive",
-    )
-    assert (mixed.disposition, mixed.destination) == ("established", "matrix")
-
-
-@pytest.mark.parametrize(
-    ("all_overlap", "expected"),
-    [(True, ("provisional", "archive")), (False, ("established", "matrix"))],
-)
-def test_regroup_preserves_overlap_disposition(tmp_path, all_overlap, expected):
-    from xic_extractor.alignment.grouping_experiment import (
-        GroupingInputs,
-        GroupingWorkset,
-        replay_grouping,
-    )
-    from xic_extractor.diagnostics.stage_snapshot import (
-        read_grouping_inputs,
-        write_grouping_inputs,
-    )
-
-    samples = ("S1", "S2")
-    owners = []
-    for sample in samples:
-        owner = _main(sample)
-        if all_overlap or sample == "S2":
-            owner = _measured_on_overlap(owner)
-        assert owner.cross_sample_member_subject is not None
-        owners.append(
-            replace(owner, owner_id=owner.cross_sample_member_subject.subject_id)
-        )
-    inputs = GroupingInputs(
-        samples,
-        {"S1": 1, "S2": 2},
-        _CONFIG,
-        (GroupingWorkset("channel", tuple(owners), (), None),),
-        {},
-    )
-    path = tmp_path / "grouping-inputs.json.gz"
-    write_grouping_inputs(path, inputs, provenance={})
-    restored, _ = read_grouping_inputs(path)
-    (group,) = replay_grouping(restored)
-    assert (group.disposition, group.destination) == expected
-
-
-def test_shoulder_split_from_most_of_its_peaks_leaves_the_matrix() -> None:
-    owners = (
-        *(_main(f"S{index}") for index in range(1, 7)),
-        *(_shoulder(f"S{index}") for index in (1, 2, 3)),
-        _shoulder("S7"),
-    )
-    groups, shoulder, main = _groups(owners)
-    assert shoulder.disposition == main.disposition == "established"
-
-    result = {
-        group.group_hypothesis_id: group
-        for group in reject_shoulder_groups(groups, config=_CONFIG)
-    }
-
-    assert result[main.group_hypothesis_id].disposition == "established"
-    rejected = result[shoulder.group_hypothesis_id]
-    assert rejected.disposition == "rejected"
-    assert rejected.owners == shoulder.owners
-    assert rejected.evidence.endswith(f";shoulder_of:{main.group_hypothesis_id}")
-
-
-def test_shoulder_split_from_half_of_its_peaks_stays_established() -> None:
-    owners = (
-        *(_main(f"S{index}") for index in range(1, 7)),
-        *(_shoulder(f"S{index}") for index in (1, 2)),
-        _shoulder("S7"),
-        _shoulder("S8"),
-    )
-    groups, shoulder, _ = _groups(owners)
-
-    result = reject_shoulder_groups(groups, config=_CONFIG)
-
-    assert result == groups
-    assert shoulder.disposition == "established"
-
-
-def test_a_peak_larger_than_its_neighbour_in_one_sample_is_not_a_shoulder() -> None:
-    owners = (
-        *(_main(f"S{index}") for index in range(1, 7)),
-        *(_shoulder(f"S{index}") for index in (1, 2)),
-        _peak("S3", "shoulder", apex=8.55, start=8.3, end=8.65, area=20_000.0),
-    )
-    groups, _, _ = _groups(owners)
-
-    assert reject_shoulder_groups(groups, config=_CONFIG) == groups
-
-
-def test_a_shoulder_separated_by_a_gap_is_not_split_from_the_peak() -> None:
-    owners = (
-        *(_main(f"S{index}") for index in range(1, 7)),
-        *(_shoulder(f"S{index}", end=8.6) for index in (1, 2, 3)),
-    )
-    groups, _, _ = _groups(owners)
-
-    assert reject_shoulder_groups(groups, config=_CONFIG) == groups
 
 
 def _candidate(

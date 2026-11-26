@@ -185,8 +185,6 @@ def complete_targeted_candidate_batch(
                         < selected_context.acquired_positive_count
                     ):
                         review.append("targeted_acquired_signal_gaps")
-                    if selected_context.observed_component_count > 1:
-                        review.append("targeted_unresolved_substructure")
             elif assessment.candidates.candidates:
                 if any(
                     region.independent_body_supported
