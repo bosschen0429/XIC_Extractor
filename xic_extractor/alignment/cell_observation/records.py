@@ -63,18 +63,6 @@ class CellObservation:
         return self.group_context.group.group_hypothesis_id
 
     @property
-    def group_owner_ids(self) -> tuple[str, ...]:
-        return self.group_context.sorted_owner_ids
-
-    @property
-    def group_method_subject_id(self) -> str:
-        return self.group_context.method_subject_id
-
-    @property
-    def group_target_label(self) -> str | None:
-        return self.group_context.target_label
-
-    @property
     def technical_state(self) -> CidNlTechnicalState:
         return self.method_assessment.technical_state
 

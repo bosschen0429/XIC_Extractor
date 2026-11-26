@@ -69,7 +69,6 @@ class CidNlCellGroupContext:
         init=False, repr=False, compare=False
     )
     _method_subject: CidNlMethodSubject = field(init=False, repr=False, compare=False)
-    _owner_ids: tuple[str, ...] = field(init=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         subjects = tuple(
@@ -89,7 +88,6 @@ class CidNlCellGroupContext:
             "_method_subject",
             select_cid_nl_group_backfill_subject(self.group, subjects),
         )
-        object.__setattr__(self, "_owner_ids", tuple(sorted(self.group.owner_ids)))
 
     @property
     def direct_supports(self) -> tuple[CidNlCellGroupSupport, ...]:
@@ -110,12 +108,3 @@ class CidNlCellGroupContext:
     @property
     def method_subject_id(self) -> str:
         return self.method_subject.method_subject_id
-
-    @property
-    def target_label(self) -> str | None:
-        target = self.method_subject.target
-        return None if target is None else target.label
-
-    @property
-    def sorted_owner_ids(self) -> tuple[str, ...]:
-        return self._owner_ids

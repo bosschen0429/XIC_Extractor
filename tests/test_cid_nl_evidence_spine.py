@@ -763,8 +763,6 @@ def test_cell_identity_binds_full_provisional_group_membership(
     assert single.group.group_hypothesis_id != combined.group.group_hypothesis_id
     assert single.group.owner_ids != combined.group.owner_ids
     assert single.cells[0] != combined_a
-    assert single.cells[0].group_owner_ids == tuple(sorted(single.group.owner_ids))
-    assert combined_a.group_owner_ids == tuple(sorted(combined.group.owner_ids))
 
 
 def test_non_support_cell_rejects_group_from_another_target(tmp_path: Path) -> None:
