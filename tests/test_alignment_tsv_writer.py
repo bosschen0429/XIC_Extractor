@@ -641,11 +641,13 @@ def test_backfill_cell_evidence_tsv_is_compact_and_backfill_scoped(
 
     assert list(rows[0]) == list(ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS)
     assert [(row["feature_id"], row["sample_stem"], row["status"]) for row in rows] == [
-        ("F000001", "sample-a", "detected"),
         ("F000001", "sample-b", "backfilled"),
     ]
-    assert rows[0]["source_candidate_id"] == "sample-a#1"
-    assert rows[1]["area"] == "8"
+    assert rows[0]["area"] == "8"
+    assert (rows[0]["backfill_query_rt_min"], rows[0]["backfill_query_rt_max"]) == (
+        "8",
+        "9",
+    )
 
 
 def test_tsv_writers_escape_formula_like_text(tmp_path: Path):

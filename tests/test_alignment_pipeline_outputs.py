@@ -361,7 +361,7 @@ def test_one_pass_writes_every_requested_file(tmp_path: Path) -> None:
         for path in directory.glob("*.tsv")
     }
     assert line_counts == {
-        "alignment_backfill_cell_evidence.tsv": 3,
+        "alignment_backfill_cell_evidence.tsv": 2,
         "alignment_cells.tsv": 10,
         "alignment_matrix.tsv": 3,
         "alignment_matrix_status.tsv": 4,

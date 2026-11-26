@@ -294,27 +294,19 @@ def project_untarget_child_rows(
                 ),
             ),
         )
-        if any(cell.origin == "backfilled" for cell in cells):
-            emit(
-                "backfill",
-                (
-                    {
-                        **_cell_fields(sample_stem, cell, candidate_ids),
-                        **dict(
-                            zip(
-                                (
-                                    "backfill_query_rt_min",
-                                    "backfill_query_rt_max",
-                                ),
-                                map(format_value, cell.backfill_query_bounds),
-                                strict=True,
-                            )
-                        ),
-                    }
-                    for sample_stem, cell in zip(sample_order, cells, strict=True)
-                    if cell.origin is not None
-                ),
-            )
+        emit(
+            "backfill",
+            (
+                {
+                    **_cell_fields(sample_stem, cell, candidate_ids),
+                    "backfill_query_rt_min": format_value(query_min),
+                    "backfill_query_rt_max": format_value(query_max),
+                }
+                for sample_stem, cell in zip(sample_order, cells, strict=True)
+                for query_min, query_max in (cell.backfill_query_bounds,)
+                if cell.origin is not None and query_min is not None
+            ),
+        )
         emit(
             "cells",
             (

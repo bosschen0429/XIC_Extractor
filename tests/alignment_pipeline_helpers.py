@@ -219,16 +219,34 @@ def owner_cell(
     no_write: NoWriteState = "searched_no_observation",
     integration: IntegrationResult | None = None,
     source: str = "gaussian15_positive_asls_residual",
+    backfill_query: tuple[float, float] | None = None,
 ) -> ProductionCellDecision:
     """One owner cell decision as the writers read it.
 
     A cell with an origin and an area is numeric. A detected cell without an
     area keeps its direct observation and is ``not_quantifiable``. A cell without
-    an origin is the ``no_write`` state and has no peak. ``writer_batch`` binds
-    the cell to its sample, group and peak.
+    an origin is the ``no_write`` state and has no peak. ``backfill_query`` is
+    the RT window of a retained group-bounded Backfill search; a backfilled
+    cell has one by default. ``writer_batch`` binds the cell to its sample,
+    group and peak.
     """
 
     peak = () if origin is None else (None,)
+    if backfill_query is None and origin == "backfilled":
+        backfill_query = (8.0, 9.0)
+    assessments = (
+        ()
+        if backfill_query is None
+        else (
+            SimpleNamespace(
+                evaluation_receipt=SimpleNamespace(
+                    physical_query_mz=500.0,
+                    query_rt_min=backfill_query[0],
+                    query_rt_max=backfill_query[1],
+                )
+            ),
+        )
+    )
     payload: NumericCellDecision | NoWriteCellDecision
     if origin is not None and area is not None:
         payload = NumericCellDecision(value=area, source=source)
@@ -241,6 +259,7 @@ def owner_cell(
         evidence=WriterEvidence(
             direct_observations=peak,
             ms1_only_backfill_observations=peak if origin == "backfilled" else (),
+            method_assessments=assessments,
         ),
         payload=payload,
         selected_integration=(
