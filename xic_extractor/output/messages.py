@@ -139,11 +139,6 @@ def _peak_reason(
             f"XIC empty in window [{target.rt_min}, {target.rt_max}] for "
             f"m/z {target.mz} +/- {target.ppm_tol:g} ppm"
         )
-    if peak_result.status == "WINDOW_TOO_SHORT":
-        return (
-            f"Only {peak_result.n_points} scans in window; "
-            f"savgol requires >= {config.smooth_window}"
-        )
     max_value = _format_optional_number(peak_result.max_smoothed)
     prominence_pct = config.peak_min_prominence_ratio * 100
     return (

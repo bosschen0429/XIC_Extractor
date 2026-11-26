@@ -482,7 +482,7 @@ def test_intersection_rechecks_an_observed_peak_outside_the_discovery_window(
         assert bool(matrix["Late"]) is (len(local_losses) != 1)
         assert (
             cell["status"]
-            == {0: "ms1_only", 1: "unresolved", 2: "detected"}[len(local_losses)]
+            == {0: "backfilled", 1: "unresolved", 2: "detected"}[len(local_losses)]
         )
         if matrix["Late"]:
             assert float(cell["apex_rt"]) == pytest.approx(8.54)

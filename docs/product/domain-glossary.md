@@ -76,8 +76,9 @@ tests.
   its selected integration and provenance. Observations do not select delivered
   values themselves. The Alignment writers read it directly.
 - cell `status`: in the Alignment cell tables, the origin of the cell's peak
-  (`detected` from the group's own direct observation, `backfilled` from an
-  MS1-only Backfill value), otherwise the cell's
+  (`detected` when this injection has its own CID-NL support for the peak,
+  `backfilled` when the peak is MS1-only, whichever search found it),
+  otherwise the cell's
   [no-write reason](decision-policy.md#no-write-reasons). A cell whose
   direct observation yields no value keeps `detected`; its `reason` column
   gives the no-write reason.
@@ -180,8 +181,8 @@ Keep these facts on separate axes:
 - `sample matrix`: the chemical background of a sample, such as a solvent
   standard or tissue extract. Do not shorten it to `matrix`; `Matrix` is the
   product output.
-- `SDO/LEK`: the lab's two-standard instrument-check set. Code spells it
-  `sdolek`.
+- `SDO/LEK`: the lab's two-standard instrument-check set. Sample-role
+  inference treats these injections as `other`.
 
 ## Product Authority Terms
 
@@ -257,7 +258,7 @@ stable because they identify existing data or public interfaces.
 | `backfill` | the bounded missing-cell revisit stage; each workflow's missing cell is defined in [Backfill](backfill.md) | — |
 | `Matrix` | the finalized product-facing numeric feature-by-sample grid; see [Quant Matrix](quant-matrix.md) | a sample matrix; a pre-final cell collection |
 | `sample matrix` | the chemical background of a sample (clean standard, biological extract) | the product `Matrix` |
-| `SDO/LEK` | the lab's two-standard instrument-check set (SDO and LEK); `sdolek` in code | `SDOLEK` in prose |
+| `SDO/LEK` | the lab's two-standard instrument-check set (SDO and LEK) | `SDOLEK` in prose |
 | `revisit` | one context-directed Backfill attempt, represented by the retained `ObservationRevisit*` receipt types | a repair of a previously observed peak |
 | `recovery` | resuming or closing a run after a runtime failure | Backfill; candidate search; oracle recall |
 | `relaxed search` | the peak-detection search near a preferred RT with relaxed thresholds (`peak_detection/relaxed_search.py`) | — |
@@ -288,7 +289,6 @@ Persisted and public exceptions retain their exact spelling:
 
 | Spelling | Why it remains |
 | --- | --- |
-| `preferred_rt_recovery` | Existing proposal-source label |
 | `owner_backfill_xic_backend`, `owner_backfill_window_strategy`, `owner_backfill_superwindow_span_factor` | Existing timing-metric and diagnostic keys |
 | `owner_backfill_evaluation_coverage` | Public run-output field |
 | `alignment_owner_backfill_*`, `owner_backfill_revisit`, `alignment.owner_backfill` | Existing artifact names, source labels, and timing stage |

@@ -24,7 +24,7 @@ conceptual journey.
 | Why is an area counted, flagged, written or left blank? | [Decision policy](decision-policy.md), [Targeted selection](targeted-selection.md) |
 | What did I receive, and how can I inspect or prepare it for use? | [Targeted workbook](targeted-workbook.md), [Quant Matrix](quant-matrix.md), [Workbench and review](workbench.md), [Matrix Curation](matrix-curation.md) |
 | Which blank ions should a DDA method skip without losing a target? | [DDA exclusion lists](dda-exclusion-list.md) |
-| Which evidence establishes readiness? | [Product validation contract](../agent/product-validation-contract.md), [Instrument QC and calibration](instrument-qc-calibration.md) |
+| Which evidence establishes readiness? | [Product validation contract](../agent/product-validation-contract.md) |
 
 ## Authority Boundary
 

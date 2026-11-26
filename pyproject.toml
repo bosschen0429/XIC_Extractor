@@ -418,14 +418,6 @@ forbidden_modules = [
 allow_indirect_imports = false
 
 [[tool.importlinter.contracts]]
-id = "sample-metadata-no-instrument-qc"
-name = "Sample metadata does not depend on instrument QC"
-type = "forbidden"
-source_modules = ["xic_extractor.sample_metadata"]
-forbidden_modules = ["xic_extractor.instrument_qc"]
-allow_indirect_imports = false
-
-[[tool.importlinter.contracts]]
 id = "grouping-and-cell-consume-method-answers"
 name = "Shared grouping and cell closure do not select method interpreters"
 type = "forbidden"

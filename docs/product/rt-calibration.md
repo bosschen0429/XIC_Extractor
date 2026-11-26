@@ -9,7 +9,9 @@ identification.
 observations both models read,
 [`sample_rt_calibration`](../../xic_extractor/alignment/sample_rt_calibration.py)
 the knots and the fit, and [`rt_drift`](../../xic_extractor/alignment/rt_drift.py)
-the drift model on top of it; downstream consumers access the frozen map
+the drift model on top of it;
+[`drift_evidence`](../../xic_extractor/alignment/drift_evidence.py) owns production
+ISTD RT correspondence; downstream consumers access the frozen map
 through `SampleRtFrame`. Shared terminology remains owned by the
 [Domain Glossary](domain-glossary.md). See [Alignment](alignment.md) for how
 grouping consumes this frame.

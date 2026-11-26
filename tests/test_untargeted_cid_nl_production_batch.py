@@ -251,7 +251,7 @@ def test_sample_metadata_sets_matrix_order_and_backfill_eligibility(
         )
 
     assert outcomes == {
-        ("sample", False): (True, "ms1_only", True),
+        ("sample", False): (True, "backfilled", True),
         ("blank", False): (False, "unresolved", True),
         ("sample", True): (False, "unresolved", True),
     }
@@ -562,7 +562,7 @@ def test_backfill_recovers_sample_without_discovery_peak(
         assert all(float(row[stem]) > 0 for stem in supports)
         return
 
-    assert hold["status"] == "ms1_only"
+    assert hold["status"] == "backfilled"
     assert hold["source_candidate_id"] == ""
     assert float(row["Hold"]) > 0
     areas = {stem: float(row[stem]) for stem in stems}
@@ -587,7 +587,7 @@ def test_backfill_recovers_sample_without_discovery_peak(
 
 
 @pytest.mark.parametrize("output_level", ("machine", "validation-minimal", "debug"))
-def test_atomic_publication_preserves_ms1_only_and_no_peak(
+def test_atomic_publication_preserves_ms1_peak_and_no_peak(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     output_level: str,
@@ -638,12 +638,12 @@ def test_atomic_publication_preserves_ms1_only_and_no_peak(
         )
     assert matrix_row["NoPeak"] == cells["NoPeak"]["area"] == ""
     assert review_row["detected_count"] == "3"
-    assert review_row["accepted_backfill_count"] == "0"
+    assert review_row["accepted_backfill_count"] == "1"
     assert review_row["accepted_cell_count"] == "4"
     for stem in stems[:3]:
         assert cells[stem]["status"] == "detected"
         assert cells[stem]["source_candidate_id"] == peaks[stem][0].peak_id
-    assert cells["MS1Only"]["status"] == "ms1_only"
+    assert cells["MS1Only"]["status"] == "backfilled"
     assert cells["MS1Only"]["source_candidate_id"] == ""
     assert cells["NoPeak"]["status"] == "unavailable"
     assert cells["NoPeak"]["source_candidate_id"] == ""

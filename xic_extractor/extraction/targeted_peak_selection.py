@@ -224,7 +224,6 @@ class TargetedCandidateAssessment:
 
         return select_peak_and_area(
             candidate_population,
-            self.config,
             preferred_rt=(
                 selected.selection_apex_rt
                 if scoring_context_builder is None

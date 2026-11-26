@@ -51,7 +51,7 @@ NoWriteState: TypeAlias = Literal[
     "not_quantifiable",
     "unavailable",
 ]
-CellOrigin: TypeAlias = Literal["detected", "backfilled", "ms1_only"]
+CellOrigin: TypeAlias = Literal["detected", "backfilled"]
 CellSubject: TypeAlias = TargetCellSubject | GroupCellSubject
 CellEvidence: TypeAlias = (
     ObservedSearchSubject | SearchedNoObservationSubject | FinalGroupCellObservation
@@ -129,14 +129,14 @@ class ProductionCellDecision:
     def origin(self) -> CellOrigin | None:
         """Where the Untargeted cell's peak came from, or ``None`` without one.
 
-        A peak with CID-NL support is ``detected``, whichever search found it;
-        only a numeric value read from an MS1-only Backfill peak is
-        ``backfilled``. A no-write cell that still retains a supported peak
-        reports ``detected``.
+        A peak with this injection's own CID-NL support is ``detected``,
+        whichever search found it; an MS1-only peak is ``backfilled``, whether
+        the first capture or a later Backfill search found it. A no-write cell
+        that still retains a supported peak reports ``detected``.
         """
         evidence = cast(FinalGroupCellObservation, self.evidence)
         if evidence.ms1_only_group_observations and self.variant != "unresolved":
-            return "ms1_only"
+            return "backfilled"
         if self.value is not None:
             if evidence.direct_observations and not (
                 evidence.ms1_only_backfill_observations

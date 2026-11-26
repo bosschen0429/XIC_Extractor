@@ -1,10 +1,6 @@
-from pathlib import Path
-
 import numpy as np
 import pytest
 
-from xic_extractor.configuration.execution_profile import in_process_execution
-from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
@@ -23,7 +19,6 @@ from xic_extractor.peak_detection.ms1_morphology import (
     gaussian15_morphology_trace,
     gaussian15_positive_asls_residual_trace,
 )
-from xic_extractor.peak_detection.peak_integration import find_peak_and_area
 from xic_extractor.peak_detection.physical_peak_evaluation import (
     answer_physical_peak_question,
     enumerate_physical_segment_universe,
@@ -35,7 +30,7 @@ from xic_extractor.peak_detection.scoring_models import ScoringContext
 from xic_extractor.peak_detection.signal_quality import SignalQuality
 
 
-def test_seed_485_separates_required_residual_first_and_legacy_formulas() -> None:
+def test_seed_485_separates_required_and_residual_first_formulas() -> None:
     rt = np.linspace(0.0, 2.0, 121)
     rng = np.random.default_rng(485)
     background = 25 + 45 * rt + 120 * (rt - 1.05) ** 2 + 18 * np.sin(4.5 * rt + 0.3)
@@ -84,29 +79,6 @@ def test_seed_485_separates_required_residual_first_and_legacy_formulas() -> Non
     assert residual_first_facts[:3] == (4, 0, 33)
     assert residual_first_facts[3] == pytest.approx(
         2245.7044316702472,
-        rel=1e-9,
-        abs=1e-12,
-    )
-
-    legacy = find_peak_and_area(
-        rt,
-        raw,
-        _legacy_peak_config(),
-        preferred_rt=0.8,
-    )
-    assert legacy.status == "OK"
-    assert legacy.peak is not None
-    assert (
-        legacy.peak.rt,
-        legacy.peak.peak_start,
-        legacy.peak.peak_end,
-    ) == pytest.approx(
-        (0.8, 0.0, 0.9833333333333333),
-        rel=0.0,
-        abs=1e-12,
-    )
-    assert legacy.peak.area == pytest.approx(
-        7410.08344021538,
         rel=1e-9,
         abs=1e-12,
     )
@@ -618,22 +590,6 @@ def _twenty_percent_characterization(
         * 60.0
     )
     return apex_index, left_index, right_index, area
-
-
-def _legacy_peak_config() -> ExtractionConfig:
-    return ExtractionConfig(
-        data_dir=Path("raw"),
-        dll_dir=Path("dll"),
-        output_csv=Path("output/xic_results.csv"),
-        diagnostics_csv=Path("output/xic_diagnostics.csv"),
-        smooth_window=15,
-        smooth_polyorder=3,
-        peak_rel_height=0.95,
-        peak_min_prominence_ratio=0.10,
-        ms2_precursor_tol_da=0.5,
-        nl_min_intensity_ratio=0.01,
-        execution=in_process_execution(),
-    )
 
 
 def _candidate(

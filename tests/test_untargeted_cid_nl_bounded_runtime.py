@@ -226,7 +226,7 @@ def test_batch_ms1_only_members_are_partition_invariant_and_do_not_supply_cid(
     cells = published_cells(together)
     for stem, apex in (("S20", 8.1), ("S21", 7.9)):
         cell = cells[(heavy, stem)]
-        assert cell["status"] == "ms1_only"
+        assert cell["status"] == "backfilled"
         assert cell["source_candidate_id"] == ""
         assert float(cell["apex_rt"]) == pytest.approx(apex, abs=0.005)
 
@@ -277,9 +277,9 @@ def test_execution_profile_does_not_change_published_alignment(
             cell["status"]
             for (_f, stem), cell in published_cells(baseline).items()
             if stem == "S3"
-        } <= {"ms1_only", "backfilled", "unavailable", "unresolved"}
+        } <= {"backfilled", "unavailable", "unresolved"}
         assert any(
-            cell["status"] == "ms1_only"
+            cell["status"] == "backfilled"
             for (_f, stem), cell in published_cells(baseline).items()
             if stem == "S3"
         )

@@ -12,10 +12,8 @@ in [`xic_extractor/presets/data/`](../../xic_extractor/presets/data/).
   behavior. It needs
   [expected-diff framing](../agent/product-validation-contract.md#expected-diff-contract),
   focused tests and relevant evidence.
-- Targeted and profile-bound Untargeted processing use the shared physical
-  signal owner. Direct resolver-based diagnostic callers keep their explicit
-  `local_minimum` or `savgol` configuration; those settings do not choose the
-  Targeted physical algorithm.
+- Targeted and Untargeted processing use the shared physical signal owner.
+  `resolver_mode` does not choose a detector.
 - A preset run is reproducible from documented CLI/config surfaces and run
   metadata. A command diary is not a reproducibility source.
 - The TOML format carries method intent only: no RAW/output paths, worker
@@ -108,14 +106,10 @@ Discovery path owns the Pt and Pt + CID-NL composite presets, and CID-NL
 binders reject them. Normal recipes reject the retired Standard Peak and
 Backfill-expansion keys; no replacement publication choice is exposed.
 
-## Resolver Presets
+## Resolver Mode
 
-| Preset | Role |
-| --- | --- |
-| `savgol` | Savitzky-Golay smoothing and prominence-based candidate resolver |
-| `local_minimum` | Local-minimum candidate resolver |
-
-The `savgol` proposal-source label identifies Savitzky-Golay candidates.
+`resolver_mode` accepts `local_minimum` or `savgol`. No detector reads it; the
+value is recorded in run metadata and in hypothesis and trace-group identifiers.
 
 ## Delta Mass Parameters
 
