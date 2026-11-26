@@ -5,6 +5,7 @@ from dataclasses import replace
 from tests.membership_fixtures import cid_nl_owner
 from xic_extractor.alignment.peak_band_linking import (
     MAX_BOOTSTRAP_RT_STEP_MIN,
+    competing_band_members,
     link_peak_bands,
     link_with_band_drift,
 )
@@ -67,6 +68,74 @@ def test_an_exact_rt_tie_uses_measured_order_not_owner_id_or_arrival_order():
             (10.0, 9.75),
             (10.25,),
         )
+
+
+def test_competition_names_the_replacement_without_reopening_the_band():
+    order = {"S1": 1, "S2": 2, "S3": 3}
+    left = cid_nl_owner("S1", "a", apex_rt=10.0)
+    selected = cid_nl_owner("S2", "b", apex_rt=10.2)
+    right = cid_nl_owner("S3", "c", apex_rt=10.35)
+    replacement = cid_nl_owner("S2", "d", apex_rt=10.68)
+    outside_mass = cid_nl_owner("S2", "f", apex_rt=10.28, precursor_mz=500.006)
+    points = tuple(
+        (owner, owner.peak.rt_apex_min)
+        for owner in (right, replacement, selected, outside_mass, left)
+    )
+    band = link_peak_bands(points, injection_order=order)[0]
+    assert band == (left, selected, right)
+    assert competing_band_members(
+        band,
+        points,
+        injection_order=order,
+        has_direct_support=lambda owner: owner.primary_identity_event is not None,
+    ) == ((selected, replacement),)
+
+
+def test_replacement_must_keep_both_sides_of_a_bridge_connected():
+    order = {"S1": 1, "S2": 2, "S3": 3}
+    left = cid_nl_owner("S1", "a", apex_rt=10.0)
+    bridge = cid_nl_owner("S2", "b", apex_rt=10.15)
+    right = cid_nl_owner("S3", "c", apex_rt=10.5)
+    disconnects_right = cid_nl_owner("S2", "d", apex_rt=9.7)
+    points = tuple(
+        (owner, owner.peak.rt_apex_min)
+        for owner in (right, disconnects_right, left, bridge)
+    )
+    band = link_peak_bands(points, injection_order=order)[0]
+    assert band == (left, bridge, right)
+    assert (
+        competing_band_members(
+            band,
+            points,
+            injection_order=order,
+            has_direct_support=lambda owner: owner.primary_identity_event is not None,
+        )
+        == ()
+    )
+
+
+def test_a_replacement_cannot_turn_an_established_band_into_one_direct_peak():
+    order = {"S1": 1, "S2": 2, "S3": 3}
+    first = cid_nl_owner("S1", "a", apex_rt=10.0)
+    direct = cid_nl_owner("S2", "b", apex_rt=10.1)
+    bridge = replace(cid_nl_owner("S3", "c", apex_rt=10.2), primary_identity_event=None)
+    ms1_rival = replace(
+        cid_nl_owner("S2", "d", apex_rt=10.38), primary_identity_event=None
+    )
+    points = tuple(
+        (owner, owner.peak.rt_apex_min) for owner in (first, direct, bridge, ms1_rival)
+    )
+    band = link_peak_bands(points, injection_order=order)[0]
+    assert band == (first, direct, bridge)
+    assert (
+        competing_band_members(
+            band,
+            points,
+            injection_order=order,
+            has_direct_support=lambda owner: owner.primary_identity_event is not None,
+        )
+        == ()
+    )
 
 
 def test_rt_and_injection_limits_apply_to_each_link_not_the_whole_band():

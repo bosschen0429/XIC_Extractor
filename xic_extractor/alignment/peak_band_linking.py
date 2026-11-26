@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import defaultdict
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from math import isclose
@@ -20,6 +21,10 @@ MAX_INJECTION_GAP = 8
 MAX_CALIBRATED_RT_STEP_MIN = 0.4
 MAX_BOOTSTRAP_RT_STEP_MIN = 0.6
 MAX_BAND_PRECURSOR_SPAN_PPM = 10.0
+
+
+def _within_link_step(step: float, limit: float) -> bool:
+    return step <= limit or isclose(step, limit, rel_tol=0.0, abs_tol=1e-12)
 
 
 def link_peak_bands(
@@ -58,9 +63,7 @@ def link_peak_bands(
             if not gap:
                 continue
             step = abs(left_rt - points[j][1])
-            if step <= max_rt_step_min or isclose(
-                step, max_rt_step_min, rel_tol=0.0, abs_tol=1e-12
-            ):
+            if _within_link_step(step, max_rt_step_min):
                 edges.append((step, gap, i, j))
     edges.sort()
 
@@ -180,3 +183,79 @@ def link_with_band_drift(
         (owner, rt) for owner, rt in coordinates if owner.owner_id not in taken
     ]
     return (*accepted, *(LinkedPeakBand(band) for band in link(remaining)))
+
+
+def competing_band_members(
+    members: Sequence[SampleLocalMS1Owner],
+    coordinates: Sequence[tuple[SampleLocalMS1Owner, float]],
+    *,
+    injection_order: Mapping[str, int],
+    has_direct_support: Callable[[SampleLocalMS1Owner], bool],
+    precursor_ppm: float = MAX_BAND_PRECURSOR_SPAN_PPM,
+) -> tuple[tuple[SampleLocalMS1Owner, SampleLocalMS1Owner], ...]:
+    """Give each selected member's admissible rivals without changing membership.
+
+    Coordinates are the same plane that linked this band, including its frozen
+    drift adjustment if it used one. Replacing one member must leave both
+    direct support and connectivity intact, even if that member was a bridge.
+    """
+    direct_count = sum(has_direct_support(owner) for owner in members)
+    if direct_count < 2:
+        return ()
+    points_by_sample: dict[str, list[tuple[SampleLocalMS1Owner, float]]] = defaultdict(
+        list
+    )
+    rt_by_owner: dict[str, float] = {}
+    for owner, rt in coordinates:
+        points_by_sample[owner.sample_stem].append((owner, rt))
+        rt_by_owner[owner.owner_id] = rt
+
+    result: list[tuple[SampleLocalMS1Owner, SampleLocalMS1Owner]] = []
+    for selected in members:
+        points = points_by_sample[selected.sample_stem]
+        if len(points) < 2:
+            continue
+        rank = injection_order[selected.sample_stem]
+        direct_without_member = direct_count - has_direct_support(selected)
+        peers = tuple(
+            (owner, rt_by_owner[owner.owner_id])
+            for owner in members
+            if owner.sample_stem != selected.sample_stem
+        )
+        low = min(owner.peak.mz for owner, _ in peers)
+        high = max(owner.peak.mz for owner, _ in peers)
+        neighbor_rts = {
+            owner.owner_id: rt
+            for owner, rt in peers
+            if 0 < abs(injection_order[owner.sample_stem] - rank) <= MAX_INJECTION_GAP
+        }
+        components = None
+        for rival, rival_rt in sorted(
+            points, key=lambda point: (point[1], point[0].peak.measured_order_key)
+        ):
+            if rival.peak == selected.peak or (
+                direct_without_member + has_direct_support(rival) < 2
+            ):
+                continue
+            mz = rival.peak.mz
+            if not within_ppm(max(high, mz), min(low, mz), precursor_ppm):
+                continue
+            neighbors = {
+                owner_id
+                for owner_id, rt in neighbor_rts.items()
+                if _within_link_step(abs(rt - rival_rt), MAX_CALIBRATED_RT_STEP_MIN)
+            }
+            if not neighbors:
+                continue
+            if components is None:
+                components = link_peak_bands(
+                    peers,
+                    injection_order=injection_order,
+                    precursor_ppm=precursor_ppm,
+                )
+            if all(
+                any(owner.owner_id in neighbors for owner in component)
+                for component in components
+            ):
+                result.append((selected, rival))
+    return tuple(result)
