@@ -108,10 +108,8 @@ topographic prominence over the RT envelope, before adjacent
 maxima truncate its interval. It compares that prominence with four times the raw
 three-point noise MAD between the prominence bases. A subordinate lobe also
 uses the contour toward its adjacent higher lobe, so distant zero background
-cannot dilute its noise estimate. Within a group connected
-by shoulder valleys, maxima must also reach 4% of the group's maximum to remain
-independent seeds. There is no seed-height fraction relative to the maximum
-of the entire acquired context: a remote strong peak cannot erase a local
+cannot dilute its noise estimate. There is no seed-height fraction relative to
+the maximum of the envelope or of the entire acquired context: a remote strong peak cannot erase a local
 weak component before grouping. Subordinate maxima are removed before boundaries are built. A clear valley
 separates groups; an entirely unsupported group remains for the ordinary
 qualification gates, so weak neighboring peaks cannot be dropped merely to
@@ -387,7 +385,6 @@ different profiles leave an otherwise overlapping comparison unresolved.
 | `signal_processing_window_points` | 9 (odd integer, 3–999) | sigma = window / 6.0 | Canonical signal, area, shape |
 | `baseline_lam` | 1.0 minute^4 (fixed) | RT-aware AsLS penalty | Canonical baseline |
 | `boundary_min_sigma_rt` | 0.08 minutes (fixed) | Additional Gaussian smoothing only if needed | Lobe and valley evidence |
-| `segment_min_prominence_fraction` | 0.04 (fixed) | Fraction of shoulder-connected envelope maximum | Independent seed evidence |
 | `DEFAULT_OWN_MAX_SMOOTH_POINTS` | 15 | sigma = window / 6.0 | Shape-identity comparisons |
 
 Sigma is not independently configurable; it is derived from window size. The

@@ -22,7 +22,7 @@ EXPECTED_DEFAULT_JSON = (
     b'"baseline_p":0.01,"baseline_n_iter":10,'
     b'"physical_signal_formula":"gaussian_raw_minus_nonnegative_asls_rt_raw_positive",'
     b'"boundary_basis":"chrom_peak_clear_valleys_tenth_height_return",'
-    b'"boundary_min_sigma_rt":0.08,"segment_min_prominence_fraction":0.04,'
+    b'"boundary_min_sigma_rt":0.08,'
     b'"segment_universe_limit":64,'
     b'"segment_selection_behavior":'
     b'"apex_supported_local_valley_contains_query",'
@@ -44,7 +44,6 @@ _PROFILE_FIELDS = (
     "physical_signal_formula",
     "boundary_basis",
     "boundary_min_sigma_rt",
-    "segment_min_prominence_fraction",
     "segment_universe_limit",
     "segment_selection_behavior",
     "area_basis",

@@ -1177,9 +1177,6 @@ def test_background_component_generator_respects_query_ownership_policy(
         (local_maximum,) = find_peaks(raw)[0]
         valley = local_maximum + int(np.argmin(raw[local_maximum:]))
         assert raw[valley] > 0.5 * raw[local_maximum]
-        assert raw[local_maximum] - raw[valley] < (
-            prepared.prepared.profile.segment_min_prominence_fraction * max(raw)
-        )
         assert result.state == "unavailable"
         assert result.reason == "incomplete_peak_context"
         assert result.answer.selected_segment is None and result.integration is None

@@ -48,7 +48,6 @@ class ChromPeakSegmentPolicy:
     morphology_trace_window_points: int = DEFAULT_GAUSSIAN15_WINDOW_POINTS
     morphology_min_sigma_rt: float = 0.0
     min_prominence_noise_sigma: float = 0.0
-    min_prominence_fraction_of_envelope: float = 0.04
     min_prominence_fraction_of_apex: float = 0.0
     valley_min_duration_min: float | None = None
 
@@ -491,13 +490,11 @@ def _supported_apex_seeds(
     relations = _adjacent_relations(signal, seeds, policy)
     retained = {seed.index for seed in seeds if seed.index in (start, end - 1)}
     supported: set[int] = set()
-    prominence_by_index: dict[int, float] = {}
     seed_positions = {seed.index: index for index, seed in enumerate(seeds)}
     for seed, prominence, left, right in zip(
         interior, prominences, left_bases, right_bases, strict=True
     ):
         left, right = start + int(left), start + int(right) + 1
-        prominence_by_index[seed.index] = float(prominence)
         noise = short_scale_noise_sigma(rt[left:right], acquired[left:right]) or 0.0
         position = seed_positions[seed.index]
         for neighbor_position in (position - 1, position + 1):
@@ -527,14 +524,7 @@ def _supported_apex_seeds(
         if index < len(relations) and relations[index].relation_class != "clear_split":
             continue
         if any(item.index in supported for item in group):
-            envelope_height = max(item.height for item in group)
-            retained.update(
-                item.index
-                for item in group
-                if item.index in supported
-                and prominence_by_index[item.index]
-                >= policy.min_prominence_fraction_of_envelope * envelope_height
-            )
+            retained.update(item.index for item in group if item.index in supported)
         else:
             retained.update(item.index for item in group)
         group = []

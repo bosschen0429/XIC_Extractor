@@ -23,6 +23,9 @@ from xic_extractor.peak_detection.physical_peak_models import (
     PreparedSignalResult,
 )
 
+LANDMARK_MIN_PROMINENCE_FRACTION = 0.04
+"""A landmark's prominence relative to the trace maximum."""
+
 
 @dataclass(frozen=True, slots=True)
 class ElutionLandmark:
@@ -105,8 +108,7 @@ def project_elution_context(
     signal = np.asarray(prepared.positive_signal)
     peaks, _ = find_peaks(
         signal,
-        prominence=float(np.max(signal))
-        * prepared.profile.segment_min_prominence_fraction,
+        prominence=float(np.max(signal)) * LANDMARK_MIN_PROMINENCE_FRACTION,
     )
     margin = prepared.profile.window_points // 2
     peaks = peaks[(peaks >= margin) & (peaks < len(rt) - margin)]

@@ -360,7 +360,6 @@ def _physical_segment_policy(
         include_baseline_return_samples=True,
         clear_valley_max_fraction=0.50,
         min_prominence_noise_sigma=DISCOVERY_MIN_CONTRAST_SIGMA,
-        min_prominence_fraction_of_envelope=profile.segment_min_prominence_fraction,
     )
 
 

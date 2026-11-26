@@ -23,7 +23,6 @@ _PROFILE_KEYS = (
     "physical_signal_formula",
     "boundary_basis",
     "boundary_min_sigma_rt",
-    "segment_min_prominence_fraction",
     "segment_universe_limit",
     "segment_selection_behavior",
     "area_basis",
@@ -40,7 +39,6 @@ _FIXED_PROFILE_VALUES: dict[str, object] = {
     "physical_signal_formula": "gaussian_raw_minus_nonnegative_asls_rt_raw_positive",
     "boundary_basis": "chrom_peak_clear_valleys_tenth_height_return",
     "boundary_min_sigma_rt": 0.08,
-    "segment_min_prominence_fraction": 0.04,
     "segment_universe_limit": 64,
     "segment_selection_behavior": "apex_supported_local_valley_contains_query",
     "area_basis": "trapezoid_counts_seconds_on_canonical_signal",
@@ -65,7 +63,6 @@ class SignalProcessingProfile:
     physical_signal_formula: str = "gaussian_raw_minus_nonnegative_asls_rt_raw_positive"
     boundary_basis: str = "chrom_peak_clear_valleys_tenth_height_return"
     boundary_min_sigma_rt: float = 0.08
-    segment_min_prominence_fraction: float = 0.04
     segment_universe_limit: int = 64
     segment_selection_behavior: str = "apex_supported_local_valley_contains_query"
     area_basis: str = "trapezoid_counts_seconds_on_canonical_signal"
