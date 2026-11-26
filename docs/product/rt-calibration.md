@@ -39,13 +39,24 @@ input selection.
 | Band | Links measured member peaks in injection order; the final band supplies sample-local Backfill coordinates. |
 | Calibration diagnostic | Uses the same fit owner with detected-cell inputs and an interleaved held-out comparison. Its files do not alter production results. |
 
-[`rt_anchors`](../../xic_extractor/alignment/rt_anchors.py) reads the direct
-measured members of each established bootstrap band. The general fit and the
-initial B/M fit use those same band correspondences; two compounds sharing a
-method channel no longer provide one mixed drift series. Only the general map
-also uses the measured ISTD coordinates. A workset without enough possible
-anchor samples in any cohort skips bootstrap linking and contributes no
-ordinary anchor; its peaks remain available to final grouping.
+[`rt_anchors`](../../xic_extractor/alignment/rt_anchors.py) produces the
+anchor observations once per initial grouping: an owner with direct method
+support, a primary identity event and quantification-eligible integration,
+with its method channel, apex RT and, when it belongs to an established
+bootstrap band holding at least two such owners, that band. Each band is one
+calibrating correspondence; the general map also uses the measured ISTD
+coordinates. The [drift model](#drift-beyond-the-map) reads every observation
+by channel, banded or not. M is [voted](#drift-beyond-the-map) from the same
+population's direct bands. Removing a peak only after grouping is not
+equivalent: that peak may have set a channel center or changed which bootstrap
+bands formed. Final rows and their coefficients are inferred on the full
+population.
+
+The calibration population is read from the first pass, not acquired again.
+Bootstrap bands exist only to calibrate, so they are linked only where they
+can: not for a workset whose anchors fall short of the correspondence quorum
+below in every cohort. Such owners stay unlinked until final grouping, and
+their anchors still reach the drift model.
 
 [`sample_rt_calibration`](../../xic_extractor/alignment/sample_rt_calibration.py)
 turns each agreed bootstrap group into one ordinary correspondence and fits the
@@ -278,11 +289,18 @@ more, and differently: after general calibration,
 [`rt_drift`](../../xic_extractor/alignment/rt_drift.py) freezes B and M once,
 after the general fit and before final grouping:
 
-- **Drift anchors** are bootstrap bands whose general-calibrated RT keeps a
-  robust spread of at least 12 seconds and whose residuals correlate
-  (Spearman ≥ 0.75 over at least six common samples) with another elution
-  family. Bands whose apices coincide within 0.05 min (median over shared
-  samples) form one family and vote once.
+- **Channels**: a channel is one CID-NL method subject (precursor m/z and
+  neutral loss). When a sample has exactly one
+  [anchor observation](#anchor-qualification) in that channel, its apex RT is
+  that channel's observation in that sample; several leave the sample unknown.
+  Whether the peak joined a bootstrap band is not consulted, so compounds that
+  drift too far to link before calibration still contribute. Grouping by
+  channel measures drift only; it does not anchor the general map.
+- **Drift anchors** are channels whose general-calibrated RT keeps a robust
+  spread of at least 12 seconds and whose residuals correlate (Spearman ≥ 0.75
+  over at least six common samples) with a channel of another elution family.
+  Channels whose apices coincide within 0.05 min (median over the samples both
+  observe) form one family (isotopes, adducts, co-eluting ions) and vote once.
 - **M**: each drift anchor's residual is detrended by its pooled-QC trend (the
   samples' own running median along injection order when fewer than two QCs
   carry it). Anchors whose scatter around their own running trend has a robust
@@ -290,8 +308,10 @@ after the general fit and before final grouping:
   scatter, define M. M(s) is the median over families of each family's median
   offset. A sample without such an offset has unknown M, not zero. The zero of
   M is arbitrary: a constant is absorbed by the group center.
-- **Rows vote M**: in batches of at least 20 samples, only direct peaks are
-  linked with the initial drift model over the full population. A row seen in at least 20 samples is compared with
+- **Rows vote M**: channels need one peak per sample, so some samples are voted
+  by one or two families. In a batch of at least 20 samples, the peaks with
+  their own method evidence are therefore linked once with the initial drift
+  model, over the full population. A row seen in at least 20 samples is compared with
   its eight nearest injection-order neighbours, which cancels its slow trend.
   It votes when that local offset follows the anchors' M (Theil–Sen response
   of at least 0.3, Spearman ≥ 0.75), and its vote is the offset divided by its

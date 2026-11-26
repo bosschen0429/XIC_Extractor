@@ -8,7 +8,9 @@ from statistics import median
 
 import pytest
 
+from xic_extractor.alignment.rt_anchors import RtAnchorObservation
 from xic_extractor.alignment.rt_drift import (
+    BatchRtModelAccumulator,
     DriftAnchor,
     DriftCoefficients,
     RtDriftModel,
@@ -196,3 +198,30 @@ def test_sample_shift_stays_with_the_anchors_without_enough_following_rows(rows)
     wrong = {**_TRUE_SHIFT, "S12": _TRUE_SHIFT["S12"] + 1.5}
 
     assert _row_voted_shift(wrong, rows, _ROW_ORDER) == wrong
+
+
+def test_several_supported_peaks_leave_that_channel_sample_unknown():
+    accumulator = BatchRtModelAccumulator(
+        sample_cohorts=dict.fromkeys(SAMPLES, ""), injection_order=ORDERS
+    )
+
+    def anchor(channel, sample, owner_id, rt_min):
+        return RtAnchorObservation(channel, 500.0, None, sample, owner_id, rt_min, None)
+
+    accumulator.add_observations(
+        anchor(
+            f"c{channel}", sample, f"{sample}:{channel}", 10.0 * (channel + 1) + shift
+        )
+        for channel in range(2)
+        for sample, shift in SHIFT.items()
+    )
+    accumulator.add_observations((anchor("c0", "s00", "s00:second", 10.5),))
+    identity = BatchRtCalibration.from_coordinate_knots(
+        tuple((sample, ((0.0, 0.0), (60.0, 60.0))) for sample in SAMPLES)
+    )
+    owners = {
+        anchor.channel: anchor.owner_ids
+        for anchor in accumulator.freeze(identity).anchors
+    }
+    assert "s00:0" not in owners["c0"] and "s01:0" in owners["c0"]
+    assert "s00:1" in owners["c1"]

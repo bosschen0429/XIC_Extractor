@@ -29,6 +29,7 @@ from xic_extractor.alignment.peak_band_linking import (
     LinkedPeakBand,
     band_extension_distance,
     competing_band_members,
+    injection_positions,
     link_peak_bands,
     link_with_band_drift,
 )
@@ -76,6 +77,7 @@ def group_peak_bands(
         )
         for owner in ordinary
     )
+    positions = injection_positions(rt_frame.injection_order)
     drift = rt_frame.drift_model
     lookup = drift.batch_state_lookup() if drift is not None else None
     if stage == "bootstrap":
@@ -83,7 +85,7 @@ def group_peak_bands(
             LinkedPeakBand(members)
             for members in link_peak_bands(
                 points,
-                injection_order=rt_frame.injection_order,
+                injection_positions=positions,
                 precursor_ppm=precursor_ppm,
                 max_rt_step_min=MAX_BOOTSTRAP_RT_STEP_MIN,
             )
@@ -91,7 +93,7 @@ def group_peak_bands(
     else:
         bands = link_with_band_drift(
             points,
-            injection_order=rt_frame.injection_order,
+            injection_positions=positions,
             drift=drift,
             has_direct_support=has_cid_nl_activation_support,
             precursor_ppm=precursor_ppm,
@@ -145,7 +147,7 @@ def group_peak_bands(
             distance = band_extension_distance(
                 band_points,
                 (candidate, rt),
-                injection_order=rt_frame.injection_order,
+                injection_positions=positions,
                 precursor_ppm=precursor_ppm,
             )
             if distance is not None:
@@ -162,7 +164,7 @@ def group_peak_bands(
                 competing_band_members(
                     band.members,
                     competition_points,
-                    injection_order=rt_frame.injection_order,
+                    injection_positions=positions,
                     has_direct_support=has_cid_nl_activation_support,
                     precursor_ppm=precursor_ppm,
                 ),

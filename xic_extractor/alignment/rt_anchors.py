@@ -80,6 +80,10 @@ def rt_anchor_observations(
 ) -> tuple[RtAnchorObservation, ...]:
     """Every anchor observation of one initial grouping, in group member order.
 
+    Every direct, quantifiable owner is an observation: the drift model reads
+    all of them. Only members of an established band with at least two anchors
+    carry the band key that calibration correspondences read.
+
     Measured support comes from the retained assessment binding: an
     observation-only owner can carry nominal method-query masses, which do not
     establish a peak in the channel. A retained MS1-only or ambiguous member may
@@ -92,11 +96,13 @@ def rt_anchor_observations(
             for owner in group.owners
             if owner.assessment is not None and places_sample_on_rt_frame(owner)
         ]
-        if len(anchors) < 2 or group.disposition != "established":
-            continue
-        band_key = min(
-            f"{subject.method_subject_id}|{owner.peak.physical_peak_key}"
-            for owner, subject in anchors
+        band_key = (
+            min(
+                f"{subject.method_subject_id}|{owner.peak.physical_peak_key}"
+                for owner, subject in anchors
+            )
+            if len(anchors) >= 2 and group.disposition == "established"
+            else None
         )
         observations.extend(
             RtAnchorObservation(

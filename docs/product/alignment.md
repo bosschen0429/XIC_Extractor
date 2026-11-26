@@ -123,16 +123,20 @@ and the mass span.
 
 Raw-RT bands supply ordinary anchors to the existing batch calibration fitter.
 The bootstrap step bound is 0.6 min so it tolerates some whole-injection
-shifts. Both batch-state (B) and baseline sample shift (M) read the ordinary
-band anchors; direct bands spanning at least 20 injections can then vote on M.
+shifts. Batch state (B) and the baseline sample shift (M) read each method
+channel's unique direct peaks, banded or not; direct bands spanning at least
+20 injections can then vote on M.
 See [Retention Time Calibration](rt-calibration.md) for the fit and voting.
 
 ### Decide membership
 
 [Band linking](../../xic_extractor/alignment/peak_band_linking.py) tries links
 within eight injections and 0.4 min in calibrated RT, or in measured RT where
-the calibration supplies no bounded answer. Shorter RT steps are tried first,
-then shorter injection gaps, then measured peak order. A union may not
+the calibration supplies no bounded answer. Injections are counted by their
+position in the batch, so an injection outside the batch does not widen a gap.
+A link's distance is its RT step plus 0.005 min per injection apart; shorter
+distances are tried first, then shorter injection gaps, then measured peak
+order. A union may not
 duplicate an injection or exceed the configured full-band precursor span
 (capped at 10 ppm). Missing injection order does not invent links.
 

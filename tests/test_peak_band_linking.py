@@ -34,7 +34,7 @@ def test_competing_peaks_keep_their_parallel_bands_without_using_owner_ids():
     for population in (owners, renamed):
         bands = link_peak_bands(
             [(owner, owner.peak.rt_apex_min) for owner in population],
-            injection_order=order,
+            injection_positions=order,
         )
         assert {
             frozenset((owner.sample_stem, owner.peak.rt_apex_min) for owner in band)
@@ -49,7 +49,7 @@ def test_local_mass_links_cannot_bridge_an_out_of_tolerance_band():
     third = cid_nl_owner("S3", "high", precursor_mz=500.006, apex_rt=10.05)
     assert link_peak_bands(
         [(owner, owner.peak.rt_apex_min) for owner in (third, second, first)],
-        injection_order={"S1": 1, "S2": 2, "S3": 3},
+        injection_positions={"S1": 1, "S2": 2, "S3": 3},
     ) == ((first, second), (third,))
 
 
@@ -72,7 +72,7 @@ def test_an_exact_rt_tie_uses_measured_order_not_owner_id_or_arrival_order():
     ):
         linked = link_peak_bands(
             [(owner, owner.peak.rt_apex_min) for owner in owners],
-            injection_order=order,
+            injection_positions=order,
         )
         assert tuple(tuple(o.peak.rt_apex_min for o in band) for band in linked) == (
             (10.0, 9.75),
@@ -91,12 +91,12 @@ def test_competition_names_the_replacement_without_reopening_the_band():
         (owner, owner.peak.rt_apex_min)
         for owner in (right, replacement, selected, outside_mass, left)
     )
-    band = link_peak_bands(points, injection_order=order)[0]
+    band = link_peak_bands(points, injection_positions=order)[0]
     assert band == (left, selected, right)
     assert competing_band_members(
         band,
         points,
-        injection_order=order,
+        injection_positions=order,
         has_direct_support=lambda owner: owner.primary_identity_event is not None,
     ) == ((selected, replacement),)
 
@@ -111,13 +111,13 @@ def test_replacement_must_keep_both_sides_of_a_bridge_connected():
         (owner, owner.peak.rt_apex_min)
         for owner in (right, disconnects_right, left, bridge)
     )
-    band = link_peak_bands(points, injection_order=order)[0]
+    band = link_peak_bands(points, injection_positions=order)[0]
     assert band == (left, bridge, right)
     assert (
         competing_band_members(
             band,
             points,
-            injection_order=order,
+            injection_positions=order,
             has_direct_support=lambda owner: owner.primary_identity_event is not None,
         )
         == ()
@@ -135,13 +135,13 @@ def test_a_replacement_cannot_turn_an_established_band_into_one_direct_peak():
     points = tuple(
         (owner, owner.peak.rt_apex_min) for owner in (first, direct, bridge, ms1_rival)
     )
-    band = link_peak_bands(points, injection_order=order)[0]
+    band = link_peak_bands(points, injection_positions=order)[0]
     assert band == (first, direct, bridge)
     assert (
         competing_band_members(
             band,
             points,
-            injection_order=order,
+            injection_positions=order,
             has_direct_support=lambda owner: owner.primary_identity_event is not None,
         )
         == ()
@@ -159,8 +159,33 @@ def test_rt_and_injection_limits_apply_to_each_link_not_the_whole_band():
             (owner, owner.peak.rt_apex_min)
             for owner in (first, second, third, after_gap, after_step)
         ],
-        injection_order={"S1": 1, "S9": 9, "S17": 17, "S26": 26, "S27": 27},
+        injection_positions={"S1": 1, "S9": 9, "S17": 17, "S26": 26, "S27": 27},
     ) == ((first, second, third), (after_gap,), (after_step,))
+
+
+def test_injection_gaps_count_this_batchs_injections_not_sequence_numbers():
+    """Sequence numbers skipped by injections outside the batch do not widen a gap."""
+    order = {"S1": 1, "S2": 2, "S3": 20, "S4": 21}
+    owners = tuple(cid_nl_owner(sample, "band", apex_rt=10.0) for sample in order)
+    (band,) = group_peak_bands(
+        owners, config=AlignmentConfig(), rt_frame=SampleRtFrame(injection_order=order)
+    )
+    assert band.owners == owners
+
+
+def test_between_nearly_equal_rt_steps_the_nearer_injection_links_first():
+    """Each injection apart adds 0.005 min, so the adjacent injection wins here."""
+    earlier = cid_nl_owner("S1", "a", apex_rt=10.0)
+    member = cid_nl_owner("S3", "b", apex_rt=10.001)
+    adjacent = cid_nl_owner("S4", "c", apex_rt=10.011)
+    three_back = cid_nl_owner("S4", "d", apex_rt=9.9905)
+    assert link_peak_bands(
+        [
+            (owner, owner.peak.rt_apex_min)
+            for owner in (three_back, adjacent, member, earlier)
+        ],
+        injection_positions={"S1": 1, "S3": 3, "S4": 4},
+    ) == ((earlier, member, adjacent), (three_back,))
 
 
 def test_bootstrap_wider_rt_step_crosses_a_whole_injection_jump():
@@ -168,9 +193,14 @@ def test_bootstrap_wider_rt_step_crosses_a_whole_injection_jump():
     shifted = cid_nl_owner("S2", "shifted", apex_rt=8.5)
     order = {"S1": 1, "S2": 2}
     coordinates = [(first, 9.0), (shifted, 8.5)]
-    assert link_peak_bands(coordinates, injection_order=order) == ((first,), (shifted,))
+    assert link_peak_bands(coordinates, injection_positions=order) == (
+        (first,),
+        (shifted,),
+    )
     assert link_peak_bands(
-        coordinates, injection_order=order, max_rt_step_min=MAX_BOOTSTRAP_RT_STEP_MIN
+        coordinates,
+        injection_positions=order,
+        max_rt_step_min=MAX_BOOTSTRAP_RT_STEP_MIN,
     ) == ((first, shifted),)
 
 
@@ -233,7 +263,7 @@ def test_drift_is_fitted_to_the_seed_and_only_relinks_known_coordinates():
     owners = (*expected, competitor, unknown)
     linked = link_with_band_drift(
         [(owner, owner.peak.rt_apex_min) for owner in owners],
-        injection_order=order,
+        injection_positions=order,
         drift=drift,
         has_direct_support=lambda owner: owner.primary_identity_event is not None,
     )
@@ -250,7 +280,7 @@ def test_drift_is_fitted_to_the_seed_and_only_relinks_known_coordinates():
     )
     linked_without_support = link_with_band_drift(
         [(owner, owner.peak.rt_apex_min) for owner in without_support],
-        injection_order=order,
+        injection_positions=order,
         drift=drift,
         has_direct_support=lambda owner: owner.primary_identity_event is not None,
     )

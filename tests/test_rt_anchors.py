@@ -58,7 +58,7 @@ def test_published_map_and_drift_are_measured_on_the_reference_population():
                 )
             )
     movers = tuple(
-        subject_anchor(_subject(m), s, f"{s}-{m}", base + (n - 5.5) * 0.1, f"band-{m}")
+        subject_anchor(_subject(m), s, f"{s}-{m}", base + (n - 5.5) * 0.1, None)
         for m, base in ((510.0, 10.0), (520.0, 22.0))
         for s, n in samples.items()
     )
@@ -72,15 +72,16 @@ def test_published_map_and_drift_are_measured_on_the_reference_population():
             at
         ) == pytest.approx(at)
     assert {a.channel for a in fitted.drift_model.anchors} == {
-        f"band-{m}" for m in (510.0, 520.0)
+        _subject(m).method_subject_id for m in (510.0, 520.0)
     }
 
 
-def test_observations_need_direct_quantifiable_support_and_agreed_groups():
+def test_every_direct_quantifiable_owner_is_observed_and_only_bands_carry_groups():
+    """The drift model reads every direct peak; calibration reads band members."""
     direct = SimpleNamespace(method_subject=_subject(500.0))
-    a, b, c, d = tuple(
+    a, b, c, d, unbanded = tuple(
         replace(cid_nl_owner(sample, "x"), assessment=direct)
-        for sample in ("a", "b", "c", "d")
+        for sample in ("a", "b", "c", "d", "e")
     )
     scope = SimpleNamespace(
         groups=(
@@ -93,6 +94,7 @@ def test_observations_need_direct_quantifiable_support_and_agreed_groups():
                 ),
                 disposition="established",
             ),
+            SimpleNamespace(owners=(unbanded,), disposition="provisional"),
             SimpleNamespace(
                 owners=(cid_nl_owner("a", "y", apex_rt=12.0),),
                 disposition="provisional",
@@ -100,8 +102,14 @@ def test_observations_need_direct_quantifiable_support_and_agreed_groups():
         )
     )
     observations = rt_anchor_observations(scope)
-    assert tuple(o.owner_id for o in observations) == (a.owner_id, b.owner_id)
+    assert tuple(o.owner_id for o in observations) == (
+        a.owner_id,
+        b.owner_id,
+        unbanded.owner_id,
+    )
+    assert observations[0].bootstrap_group_id is not None
     assert observations[0].bootstrap_group_id == observations[1].bootstrap_group_id
+    assert observations[2].bootstrap_group_id is None
     assert observations[0].channel == direct.method_subject.method_subject_id
 
 
