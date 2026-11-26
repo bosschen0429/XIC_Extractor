@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -20,7 +19,6 @@ from tests.cross_sample_association_lineage_fixtures import _final_receipt
 from xic_extractor.alignment.backfill.evaluation_coverage import (
     BackfillEvaluationCoverageBatch,
     BackfillPlanningPosition,
-    BackfillPlanningReason,
 )
 from xic_extractor.alignment.cid_nl_completion import _cell_planning_reason
 from xic_extractor.alignment.cid_nl_evidence_spine import (
@@ -112,29 +110,6 @@ def _support_assessment(
     )
 
 
-def _not_planned_coverage(
-    groups: tuple[Any, ...],
-    samples: tuple[Any, ...],
-    *,
-    planning_reason: Callable[[Any, Any], BackfillPlanningReason],
-):
-    """Coverage shaped like CID-NL completion: no planned requests or terminals."""
-    positions = tuple(
-        BackfillPlanningPosition(
-            group=group,
-            sample=sample,
-            planning_reason=planning_reason(group, sample),
-        )
-        for group in groups
-        for sample in samples
-    )
-    return BackfillEvaluationCoverageBatch(
-        groups=groups,
-        samples=samples,
-        positions=positions,
-    )
-
-
 def _coverage_for_groups(
     fixture: Any,
     groups: tuple[Any, ...],
@@ -150,13 +125,21 @@ def _coverage_for_groups(
         ): cell
         for cell in predecessor_cells
     }
-    return _not_planned_coverage(
-        groups,
-        samples,
-        planning_reason=lambda group, sample: _cell_planning_reason(
-            cells.get((group.group_hypothesis_id, sample.sample_name)),
-            backfill_enabled=backfill_enabled,
-        ),
+    positions = tuple(
+        BackfillPlanningPosition(
+            group=group,
+            sample=sample,
+            planning_reason=_cell_planning_reason(
+                cell, backfill_enabled=backfill_enabled
+            ),
+            cell=cell,
+        )
+        for group in groups
+        for sample in samples
+        for cell in (cells.get((group.group_hypothesis_id, sample.sample_name)),)
+    )
+    return BackfillEvaluationCoverageBatch(
+        groups=groups, samples=samples, positions=positions
     )
 
 

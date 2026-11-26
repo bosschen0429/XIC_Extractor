@@ -64,7 +64,7 @@ def _support_from_scans(
         sample_key=sample.sample_name,
         peak_observation=first.peak_observation,
         candidate_peaks=first.candidate_peaks,
-        acquisition_mode=first.acquisition_mode,
+        acquisition_mode=first.evidence.acquisition_mode,
         policy=first.policy,
         scan_supports=members,
         strict_nl_scan_count=len(

@@ -357,6 +357,7 @@ def _coverage(
             group=group,
             sample=sample,
             planning_reason="no_discovery_input",
+            cell=None,
         )
         for group in groups
         for sample in context.samples

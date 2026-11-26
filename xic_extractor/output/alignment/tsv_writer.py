@@ -19,7 +19,7 @@ from contextlib import ExitStack
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal, cast
+from typing import TYPE_CHECKING, cast
 
 from xic_extractor.alignment.backfill.evidence_contract import (
     ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS,
@@ -59,7 +59,6 @@ if TYPE_CHECKING:
         FinalizedUntargetBatchApplicationResult,
     )
 
-CellOrigin = Literal["detected", "backfilled", "ms1_only"]
 
 ALIGNMENT_REVIEW_COLUMNS = (
     "feature_id",
@@ -295,7 +294,7 @@ def project_untarget_child_rows(
                 ),
             ),
         )
-        if any(cell_origin(cell) == "backfilled" for cell in cells):
+        if any(cell.origin == "backfilled" for cell in cells):
             emit(
                 "backfill",
                 (
@@ -307,13 +306,13 @@ def project_untarget_child_rows(
                                     "backfill_query_rt_min",
                                     "backfill_query_rt_max",
                                 ),
-                                map(format_value, backfill_query_bounds(cell)),
+                                map(format_value, cell.backfill_query_bounds),
                                 strict=True,
                             )
                         ),
                     }
                     for sample_stem, cell in zip(sample_order, cells, strict=True)
-                    if cell_origin(cell) is not None
+                    if cell.origin is not None
                 ),
             )
         emit(
@@ -593,52 +592,10 @@ def _direct_candidate_ids(
     return candidate_ids
 
 
-def cell_origin(decision: ProductionCellDecision) -> CellOrigin | None:
-    """Where the cell's peak came from, or ``None`` when it reports no peak.
-
-    A numeric value read from an MS1-only Backfill peak is ``backfilled``; one
-    read from the group's own direct observation is ``detected``. A no-write
-    cell that still retains a direct observation reports ``detected``.
-    """
-
-    evidence = cast(FinalGroupCellObservation, decision.evidence)
-    if evidence.ms1_only_group_observations and decision.variant != "unresolved":
-        return "ms1_only"
-    if decision.value is not None:
-        if evidence.direct_observations and not (
-            evidence.ms1_only_backfill_observations
-        ):
-            return "detected"
-        return "backfilled"
-    if evidence.direct_observations and decision.variant not in {
-        "not_searched",
-        "unresolved",
-    }:
-        return "detected"
-    return None
-
-
 def cell_status(decision: ProductionCellDecision) -> str:
     """The cell's origin, or its no-write state when it reports no peak."""
 
-    return cell_origin(decision) or decision.variant
-
-
-def backfill_query_bounds(
-    decision: ProductionCellDecision,
-) -> tuple[float | None, float | None]:
-    """The RT window of the cell's single Backfill search, when it has one."""
-
-    evidence = cast(FinalGroupCellObservation, decision.evidence)
-    bounds = {
-        (
-            assessment.evaluation_receipt.query_rt_min,
-            assessment.evaluation_receipt.query_rt_max,
-        )
-        for assessment in evidence.method_assessments
-        if assessment.detector_invocation_id == "untargeted-cid-nl-backfill"
-    }
-    return bounds.pop() if len(bounds) == 1 else (None, None)
+    return decision.origin or decision.variant
 
 
 def _cell_fields(
@@ -650,7 +607,7 @@ def _cell_fields(
     quality = integration.signal_quality if integration is not None else None
     missing_area_reason = (
         primary_matrix_area_from_integration(integration).reason
-        if cell_origin(cell) is not None
+        if cell.origin is not None
         else ""
     )
     return {

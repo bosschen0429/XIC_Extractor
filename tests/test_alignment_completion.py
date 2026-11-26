@@ -49,7 +49,6 @@ def test_workflow_forwards_exact_owner_objects_once(
     terminals = (object(),)
     adapter_fields = {
         "terminal_subjects": terminals,
-        "predecessor_cell_observations": (),
         "backfill_cell_observations": (),
         "rt_frame": object(),
     }
@@ -130,7 +129,6 @@ def test_workflow_forwards_exact_owner_objects_once(
     scientific_kwargs = next(item[1] for item in calls if item[0] == "scientific")
     assert scientific_kwargs["grouping_result"] is final_receipt
     assert scientific_kwargs["terminal_subjects"] is terminals
-    assert scientific_kwargs["predecessor_cell_observations"] == ()
     if variant == "target":
         assert scientific_kwargs["cell_observation_handoff"] is None
     else:

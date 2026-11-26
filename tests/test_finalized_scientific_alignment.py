@@ -58,7 +58,6 @@ def test_finalizer_closes_exact_core_with_terminal_subject_variants(
         terminal_subjects=terminals,
         grouping_result=receipt,
         cell_observation_handoff=handoff,
-        predecessor_cell_observations=predecessor_cells,
     )
 
     assert isinstance(result, FinalizedScientificAlignment)
@@ -110,14 +109,12 @@ def test_finalizer_is_deterministic_and_results_are_immutable(
         terminal_subjects=terminals,
         grouping_result=receipt,
         cell_observation_handoff=handoff,
-        predecessor_cell_observations=predecessor_cells,
     )
     reversed_result = finalize_scientific_alignment(
         scope=scope,
         terminal_subjects=tuple(reversed(terminals)),
         grouping_result=receipt,
         cell_observation_handoff=handoff,
-        predecessor_cell_observations=tuple(reversed(predecessor_cells)),
     )
 
     assert forward == reversed_result
@@ -148,28 +145,6 @@ def test_finalizer_rejects_inexact_terminal_population(
             terminal_subjects=invalid,
             grouping_result=receipt,
             cell_observation_handoff=handoff,
-            predecessor_cell_observations=predecessor_cells,
-        )
-
-
-def test_finalizer_rejects_incomplete_cell_observation_source_population(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    scope, terminals, receipt, handoff, predecessor_cells = _finalization_inputs(
-        tmp_path, monkeypatch
-    )
-
-    with pytest.raises(
-        FinalizedScientificAlignmentContractError,
-        match="incomplete",
-    ):
-        finalize_scientific_alignment(
-            scope=scope,
-            terminal_subjects=terminals,
-            grouping_result=receipt,
-            cell_observation_handoff=handoff,
-            predecessor_cell_observations=predecessor_cells[:-1],
         )
 
 

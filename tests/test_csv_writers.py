@@ -3,26 +3,20 @@ from typing import Literal
 
 import pytest
 
+from tests.targeted_fixtures import (
+    selected_targeted_hypothesis as _selected_hypothesis_with_integration,
+)
 from xic_extractor.configuration.models import Target
 from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence, NLResult
-from xic_extractor.extraction.result_assembly import build_extraction_result
 from xic_extractor.extraction.result_models import ExtractionResult, FileResult
-from xic_extractor.extraction.targeted_peak_selection import (
-    build_production_peak_hypotheses,
-    selected_peak_hypothesis,
-)
 from xic_extractor.output.csv_writers import (
     _long_output_rows,
 )
-from xic_extractor.output.schema import TARGETED_PRODUCT_PROJECTION_HEADERS
 from xic_extractor.output.targeted_product_model import (
     TargetedProductProjection,
 )
 from xic_extractor.peak_detection.hypotheses import (
-    AuditTrail,
-    EvidenceVector,
     IntegrationResult,
-    PeakHypothesis,
 )
 from xic_extractor.peak_detection.models import (
     PeakCandidate,
@@ -79,6 +73,20 @@ def _result(*, nl: NLResult | None = None) -> ExtractionResult:
     return ExtractionResult(
         peak_result=peak_result,
         nl=nl,
+        selected_hypothesis=_selected_hypothesis_with_integration(
+            IntegrationResult(
+                rt_left_min=8.9,
+                rt_apex_min=9.0,
+                rt_right_min=9.2,
+                raw_apex_rt_min=9.03,
+                rt_width_min=0.3,
+                height_raw=500.0,
+                height_smoothed=450.0,
+                area_raw_counts_seconds=123.45,
+                area_ms1_morphology=123.45,
+                ms1_morphology_area_source=MS1_MORPHOLOGY_AREA_SOURCE,
+            )
+        ),
         target_label="WithNL",
         role="Analyte",
         istd_pair="ISTD",
@@ -268,60 +276,6 @@ def test_long_labels_name_a_conflict_without_repeating_support() -> None:
     assert row["Projection Conflict Reasons"] == "ambiguous_evidence"
 
 
-def test_csv_rows_preserve_values_with_runtime_selected_hypothesis() -> None:
-    target = _target("WithNL")
-    legacy = _result(nl=NLResult("WARN", 12.34, None, 3, 0, 2))
-    selected = selected_peak_hypothesis(
-        build_production_peak_hypotheses(
-            config=_Config(),
-            sample_name="SampleA",
-            target=target,
-            peak_result=legacy.peak_result,
-        )
-    )
-    assert selected is not None
-    legacy_peak = legacy.peak_result.peak
-    assert legacy_peak is not None
-    selected = replace(
-        selected,
-        integration=replace(
-            selected.integration,
-            area_ms1_morphology=legacy_peak.area,
-            ms1_morphology_area_source=MS1_MORPHOLOGY_AREA_SOURCE,
-        ),
-    )
-    with_selected = build_extraction_result(
-        peak_result=legacy.peak_result,
-        nl_result=legacy.nl,
-        candidate_ms2_evidence=legacy.candidate_ms2_evidence,
-        target=target,
-        candidate=legacy.peak_result.candidates[0],
-        scoring_context_builder=None,
-        selected_hypothesis=selected,
-    )
-
-    fallback_file = FileResult(sample_name="SampleA", results={"WithNL": legacy})
-    selected_file = FileResult(
-        sample_name="SampleA",
-        results={"WithNL": with_selected},
-    )
-
-    selected_long = _long_output_rows(selected_file, [target])[0]
-    fallback_long = _long_output_rows(fallback_file, [target])[0]
-    for header, fallback_value in fallback_long.items():
-        if header in {*TARGETED_PRODUCT_PROJECTION_HEADERS, "依據", "疑點"}:
-            continue
-        assert selected_long[header] == fallback_value
-    assert fallback_long["Counted Detection"] == "TRUE"
-    assert selected_long["Counted Detection"] == "FALSE"
-    assert (
-        selected_long["Projection Not Counted Reasons"] == "cid_nl_method_not_supported"
-    )
-    assert (selected_long["依據"], selected_long["疑點"]) == ("NL 偏差大", "證據單薄")
-    assert selected_long["Product State"]
-    assert selected_long["Counted Detection"] in {"TRUE", "FALSE"}
-
-
 def test_csv_rows_project_selected_integration_values_when_present() -> None:
     target = _target("WithNL")
     result = replace(
@@ -395,6 +349,7 @@ def test_not_quantifiable_row_is_blank_not_zero_or_absence():
     result = replace(
         result,
         peak_result=replace(result.peak_result, peak=None, candidates=()),
+        selected_hypothesis=None,
         targeted_product_projection=TargetedProductProjection(
             "not_counted", False, "review_required", "finalized_not_quantifiable"
         ),
@@ -406,30 +361,6 @@ def test_not_quantifiable_row_is_blank_not_zero_or_absence():
     assert row["Area"] == ""
     assert row["RT"] == ""
     assert (row["依據"], row["疑點"]) == ("不足以定量", "")
-
-
-class _Config:
-    resolver_mode = "local_minimum"
-    baseline_integration_method = "asls"
-    count_no_ms2_as_detected = False
-    ms1_morphology_smoothing_window_points = 15
-
-
-def _selected_hypothesis_with_integration(
-    integration: IntegrationResult,
-) -> PeakHypothesis:
-    return PeakHypothesis(
-        hypothesis_id="SampleA|WithNL|selected",
-        trace_group_id="SampleA|WithNL|targeted",
-        target_label="WithNL",
-        role="Analyte",
-        istd_pair="ISTD",
-        analysis_mode="targeted",
-        resolver_mode="local_minimum",
-        integration=integration,
-        evidence=EvidenceVector(reason="selected spine"),
-        audit=AuditTrail(selected=True),
-    )
 
 
 _IDENTIFIED = TargetedProductProjection(

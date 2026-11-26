@@ -55,9 +55,6 @@ def _fields(value: Any, *names: str) -> dict[str, Any]:
 def _cell_observation_content_payload(content: Any) -> dict[str, Any]:
     return {
         "sample_key": content.sample_key,
-        "group_owner_ids": list(content.group_owner_ids),
-        "group_method_subject_id": content.group_method_subject_id,
-        "group_target_label": content.group_target_label,
         "technical_state": content.technical_state,
         "method_result": content.method_result,
         "physical_peak_key": content.physical_peak_key,
@@ -681,7 +678,7 @@ def prepare_batch_alignment_explanation(
             if content in emitted_assessments:
                 return
             if (
-                content.detector_invocation_id == "untargeted-cid-nl-backfill"
+                content.evaluation_receipt.physical_query_mz is not None
                 and content.method_result == "SUPPORT"
             ):
                 if not capture_evidence:

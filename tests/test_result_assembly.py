@@ -223,28 +223,6 @@ def test_extraction_result_reports_selected_integration_values() -> None:
     assert result.reported_peak_width == pytest.approx(0.42)
 
 
-def test_extraction_result_projection_accessors_fall_back_to_legacy_peak() -> None:
-    peak_result = _peak_result_with_candidate()
-    result = build_extraction_result(
-        peak_result=peak_result,
-        nl_result=None,
-        candidate_ms2_evidence=None,
-        target=_target(),
-        candidate=peak_result.candidates[0],
-        scoring_context_builder=None,
-        selected_hypothesis=None,
-    )
-
-    peak = peak_result.peak
-    assert peak is not None
-    assert result.reported_rt == peak_result.candidates[0].selection_apex_rt
-    assert result.reported_peak_area == peak.area
-    assert result.reported_peak_intensity == peak.intensity
-    assert result.reported_peak_start == peak.peak_start
-    assert result.reported_peak_end == peak.peak_end
-    assert result.reported_peak_width == abs(peak.peak_end - peak.peak_start)
-
-
 def test_build_extraction_result_adds_targeted_product_projection() -> None:
     target = _target(is_istd=True)
     candidate = _candidate(quality_flags=())

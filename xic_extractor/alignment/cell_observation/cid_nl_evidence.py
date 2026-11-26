@@ -32,18 +32,6 @@ def resolve_cid_nl_recovered_evidence(
     return "unavailable"
 
 
-def cid_nl_supported_peaks(
-    assessment: CidNlMethodAssessment,
-) -> frozenset[PeakObservation]:
-    """The exact SUPPORT subset, never the whole candidate universe."""
-    if assessment.method_result != "SUPPORT":
-        raise CellObservationContractError("direct member assessment must be SUPPORT")
-    return frozenset(
-        relation.peak_observation.physical_identity
-        for relation in assessment.individual_support_refs
-    )
-
-
 def resolve_cid_nl_cell_evidence(
     assessment: CidNlMethodAssessment,
     observation: PeakObservation | None,

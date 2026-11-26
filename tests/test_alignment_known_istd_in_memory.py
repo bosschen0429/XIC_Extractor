@@ -8,7 +8,7 @@ import pytest
 from tests.alignment_known_istd_in_memory_fixtures import (
     _make_target,
 )
-from tests.targeted_fixtures import ScopedMs2WindowReader
+from tests.targeted_fixtures import ScopedMs2WindowReader, selected_targeted_hypothesis
 from xic_extractor.alignment.drift_evidence import (
     KnownIstdReference,
     mint_known_istd_reference_from_measurements,
@@ -23,6 +23,7 @@ from xic_extractor.configuration.execution_profile import (
 from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.targets import read_targets
 from xic_extractor.ms2_scan_models import Ms2Scan, Ms2ScanEvent
+from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_extractor.xic_models import XICTrace
 
 
@@ -212,6 +213,22 @@ def test_istd_reference_preserves_targeted_anchor_rejection(tmp_path, monkeypatc
             {
                 "ISTD": ExtractionResult(
                     peak_result=_peak_result(_candidate(rt=3.0)),
+                    selected_hypothesis=selected_targeted_hypothesis(
+                        IntegrationResult(
+                            rt_left_min=2.9,
+                            rt_apex_min=3.0,
+                            rt_right_min=3.1,
+                            raw_apex_rt_min=3.0,
+                            rt_width_min=0.2,
+                            height_raw=100.0,
+                            height_smoothed=100.0,
+                            area_raw_counts_seconds=1000.0,
+                            area_ms1_morphology=1000.0,
+                        ),
+                        sample_name=path.stem,
+                        target_label="ISTD",
+                        role="ISTD",
+                    ),
                     nl=None,
                     targeted_product_projection=projection,
                 )
@@ -253,7 +270,24 @@ def test_istd_reference_runs_raw_files_through_targeted_process_backend(
                     path.stem,
                     {
                         "ISTD": ExtractionResult(
-                            peak_result=_peak_result(_candidate(rt=rt)), nl=None
+                            peak_result=_peak_result(_candidate(rt=rt)),
+                            selected_hypothesis=selected_targeted_hypothesis(
+                                IntegrationResult(
+                                    rt_left_min=rt - 0.1,
+                                    rt_apex_min=rt,
+                                    rt_right_min=rt + 0.1,
+                                    raw_apex_rt_min=rt,
+                                    rt_width_min=0.2,
+                                    height_raw=100.0,
+                                    height_smoothed=100.0,
+                                    area_raw_counts_seconds=1000.0,
+                                    area_ms1_morphology=1000.0,
+                                ),
+                                sample_name=path.stem,
+                                target_label="ISTD",
+                                role="ISTD",
+                            ),
+                            nl=None,
                         )
                     },
                 )

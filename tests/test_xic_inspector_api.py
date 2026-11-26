@@ -684,7 +684,7 @@ def test_selected_capture_stages_preserve_each_payload_and_reject_partial_loss(
     assert output.read_bytes() == before
 
 
-def test_sample_support_origin_uses_exact_method_capture_and_observation(tmp_path):
+def test_sample_without_a_cell_keeps_evidence_but_has_no_origin(tmp_path):
     refs = {}
 
     def method_capture(writer):
@@ -717,10 +717,10 @@ def test_sample_support_origin_uses_exact_method_capture_and_observation(tmp_pat
     generate_report(report, SelectionRequest(), output)
     item = read_report_payload(output)["items"][0]
 
-    assert item["review_summary"]["origin_kinds"] == ["discovery_support"]
+    assert item["review_summary"]["origin_kinds"] == ["unavailable"]
     assert item["samples"][0]["support_origin"] == {
-        "kind": "discovery_support",
-        "label": "detect",
+        "kind": "unavailable",
+        "label": "來源未記錄",
         "method_refs": [str(refs["method"])],
         "capture_refs": [str(refs["capture"])],
         "observation_refs": ["obs-01"],

@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from xic_extractor.configuration.cid_nl_profile import PrecursorReferenceRequirement
-from xic_extractor.mass_accuracy import neutral_loss_match
 from xic_extractor.peak_detection.cid_nl_evidence import (
     CidNlEvidenceObservation,
 )
@@ -62,85 +61,27 @@ class DdaCidNlPeakSupportPolicy:
 class DdaCidNlPeakSupport:
     """Immutable method relation between one DDA event and one MS1 peak."""
 
-    sample_key: str
     evidence: CidNlEvidenceObservation
     peak_observation: PeakObservation
     candidate_peaks: tuple[PeakObservation, ...]
-    acquisition_mode: str
-    dda_scan_number: int
-    scan_rt_min: float
-    peak_rt_min: float
-    peak_rt_max: float
-    precursor_mz: float
-    peak_mz: float
-    precursor_delta_da: float
-    observed_loss_error_ppm: float
-    observed_product_mz: float
-    configured_neutral_loss_da: float
+    precursor: PrecursorLossAssessment
     policy: DdaCidNlPeakSupportPolicy
     relationship: str
-    observed_loss_error_da: float = field(init=False)
-    neutral_loss_window_da: float = field(init=False)
 
-    def __post_init__(self) -> None:
-        if (
-            isinstance(self.dda_scan_number, bool)
-            or not isinstance(self.dda_scan_number, int)
-            or self.dda_scan_number <= 0
-        ):
-            raise DdaCidNlPeakSupportContractError(
-                "dda_scan_number must be a positive integer"
-            )
-        scan_rt = _finite_float(self.scan_rt_min, field="scan_rt_min")
-        peak_rt_min = _finite_float(self.peak_rt_min, field="peak_rt_min")
-        peak_rt_max = _finite_float(self.peak_rt_max, field="peak_rt_max")
-        precursor_mz = _finite_float(self.precursor_mz, field="precursor_mz")
-        peak_mz = _finite_float(self.peak_mz, field="peak_mz")
-        precursor_delta = _finite_float(
-            self.precursor_delta_da,
-            field="precursor_delta_da",
-        )
-        observed_loss_error = _finite_float(
-            self.observed_loss_error_ppm,
-            field="observed_loss_error_ppm",
-        )
-        observed_product_mz = _finite_float(
-            self.observed_product_mz, field="observed_product_mz"
-        )
-        configured_loss_da = _finite_float(
-            self.configured_neutral_loss_da, field="configured_neutral_loss_da"
-        )
-        if peak_rt_min >= peak_rt_max:
-            raise DdaCidNlPeakSupportContractError(
-                "peak_rt_min must be less than peak_rt_max"
-            )
-        if precursor_mz <= 0.0 or peak_mz <= 0.0:
-            raise DdaCidNlPeakSupportContractError(
-                "precursor_mz and peak_mz must be positive"
-            )
-        loss_error_da, loss_window_da, _matches = neutral_loss_match(
-            precursor_mz,
-            observed_product_mz,
-            configured_loss_da,
-            self.policy.neutral_loss_tolerance_ppm,
-        )
-        object.__setattr__(self, "observed_loss_error_da", loss_error_da)
-        object.__setattr__(self, "neutral_loss_window_da", loss_window_da)
-        for field_name, value in (
-            ("scan_rt_min", scan_rt),
-            ("peak_rt_min", peak_rt_min),
-            ("peak_rt_max", peak_rt_max),
-            ("precursor_mz", precursor_mz),
-            ("peak_mz", peak_mz),
-            ("precursor_delta_da", precursor_delta),
-            ("observed_loss_error_ppm", observed_loss_error),
-        ):
-            object.__setattr__(self, field_name, value)
+    @property
+    def sample_key(self) -> str:
+        return self.evidence.sample_key
+
+    @property
+    def dda_scan_number(self) -> int:
+        return self.evidence.scan_number
+
+    @property
+    def configured_neutral_loss_da(self) -> float:
+        return self.evidence.configured_neutral_loss_da
 
 
-def _finite_float(value: object, *, field: str) -> float:
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise DdaCidNlPeakSupportContractError(f"{field} must be a finite number")
+def _finite_float(value: float, *, field: str) -> float:
     normalized = float(value)
     if not math.isfinite(normalized):
         raise DdaCidNlPeakSupportContractError(f"{field} must be a finite number")

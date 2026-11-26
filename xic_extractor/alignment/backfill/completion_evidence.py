@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from xic_extractor.acquisition_contract import TraceCoordinate
 from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSamplePeakGroupHypothesis,
 )
@@ -20,9 +19,4 @@ class BackfillCompletionProjection:
 
     sample: SampleMetadata
     group: CrossSamplePeakGroupHypothesis
-    group_center_mz: float
-    group_center_rt: float
-    query_rt: float
-    query_rt_basis: str
     backfill_assessment: CidNlMethodAssessment
-    trace_coordinate: TraceCoordinate
