@@ -32,8 +32,6 @@ class AlignmentConfig:
     backfill_enabled: bool = True
 
     def __post_init__(self) -> None:
-        if type(self.backfill_enabled) is not bool:
-            raise ValueError("backfill_enabled must be a boolean")
         _require_positive("precursor_mz_tolerance_ppm", self.precursor_mz_tolerance_ppm)
         _require_positive("preferred_rt_sec", self.preferred_rt_sec)
         _require_positive("product_mz_tolerance_ppm", self.product_mz_tolerance_ppm)
@@ -58,22 +56,17 @@ class AlignmentConfig:
 
 
 def _require_positive(name: str, value: float) -> None:
-    if (
-        isinstance(value, bool)
-        or not isinstance(value, (int, float))
-        or not math.isfinite(value)
-        or value <= 0
-    ):
+    if isinstance(value, bool) or not math.isfinite(value) or value <= 0:
         raise ValueError(f"{name} must be finite and positive")
 
 
 def _require_positive_int(name: str, value: int) -> None:
-    if type(value) is not int or value < 1:
+    if isinstance(value, bool) or value < 1:
         raise ValueError(f"{name} must be an integer >= 1")
 
 
 def _require_int_range(name: str, value: int, minimum: int, maximum: int) -> None:
-    if type(value) is not int or not minimum <= value <= maximum:
+    if isinstance(value, bool) or not minimum <= value <= maximum:
         raise ValueError(f"{name} must be an integer between {minimum} and {maximum}")
 
 
@@ -85,7 +78,6 @@ def _require_numeric_range(
 ) -> None:
     if (
         isinstance(value, bool)
-        or not isinstance(value, (int, float))
         or not math.isfinite(value)
         or not minimum <= value <= maximum
     ):

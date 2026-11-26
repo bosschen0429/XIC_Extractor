@@ -98,8 +98,6 @@ def resolve_signal_processing_profile(
 def canonical_signal_processing_profile_bytes(
     profile: SignalProcessingProfile,
 ) -> bytes:
-    if not isinstance(profile, SignalProcessingProfile):
-        raise TypeError("profile must be a SignalProcessingProfile")
     payload = {key: getattr(profile, key) for key in _PROFILE_KEYS}
     return json.dumps(
         payload,

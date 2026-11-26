@@ -95,10 +95,6 @@ def _bind_complete_decision_population(
     *,
     owner_subjects: tuple[TargetCellSubject, ...],
 ) -> tuple[ProductionCellDecision, ...]:
-    if type(decisions) is not tuple:
-        raise TargetProjectionContractError(
-            "Target decisions must be an immutable tuple"
-        )
     if any(type(decision) is not ProductionCellDecision for decision in decisions):
         raise TargetProjectionContractError(
             "Target decision population contains a partial or non-owner decision"

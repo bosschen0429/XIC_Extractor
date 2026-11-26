@@ -21,7 +21,7 @@ import pickle
 from collections.abc import Mapping
 from dataclasses import asdict, replace
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, cast, get_type_hints
 
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample.identity_models import (
@@ -222,12 +222,29 @@ def _grouping_inputs(payload: Mapping[str, Any]) -> GroupingInputs:
     return GroupingInputs(
         sample_stems=tuple(payload["sample_stems"]),
         injection_order=payload["injection_order"],
-        alignment_config=AlignmentConfig(**payload["alignment_config"]),
+        alignment_config=parse_grouping_alignment_config(payload["alignment_config"]),
         worksets=tuple(worksets),
         candidate_ids_by_owner={
             key: tuple(ids) for key, ids in payload["candidate_ids_by_owner"].items()
         },
     )
+
+
+def parse_grouping_alignment_config(value: object) -> AlignmentConfig:
+    """Admit settings from a grouping capture or JSON regroup overrides."""
+    if not isinstance(value, Mapping):
+        raise ValueError("alignment_config must be an object")
+    for name, annotation in get_type_hints(AlignmentConfig).items():
+        if name not in value:
+            continue
+        setting = value[name]
+        if annotation is bool and type(setting) is not bool:
+            raise ValueError(f"{name} must be a boolean")
+        if annotation is int and type(setting) is not int:
+            raise ValueError(f"{name} must be an integer")
+        if annotation is float and not isinstance(setting, (int, float)):
+            raise ValueError(f"{name} must be numeric")
+    return AlignmentConfig(**value)
 
 
 def _read_rt_model(value: Mapping[str, Any]) -> _RtModel:
@@ -287,6 +304,10 @@ def _read_rt_model_inputs(value: Mapping[str, Any]) -> BatchRtModelInputs:
 
 
 def _read_elution_context(value: dict[str, Any]) -> SampleElutionContext:
+    if not isinstance(value["sample_stem"], str):
+        raise ValueError(
+            "elution context requires a sample, mass, bounds and landmarks"
+        )
     landmarks = []
     for item in value["landmarks"]:
         segment = item["physical_segment"]
@@ -394,6 +415,8 @@ def _read_identity_event(value: dict[str, Any]) -> IdentityEvent:
 def _read_owner(value: dict[str, Any]) -> SampleLocalMS1Owner:
     value = dict(value)
     if (shape := value["peak_shape"]) is not None:
+        if type(shape["source_point_count"]) is not int:
+            raise ValueError("local peak shape requires a finite normalized RT grid")
         value["peak_shape"] = LocalPeakShape(
             half_window_min=shape["half_window_min"],
             intensity=tuple(shape["intensity"]),

@@ -63,8 +63,7 @@ class SampleElutionContext:
 
     def __post_init__(self) -> None:
         if (
-            not isinstance(self.sample_stem, str)
-            or not self.sample_stem.strip()
+            not self.sample_stem.strip()
             or any(
                 isinstance(value, bool)
                 or not isinstance(value, (int, float))

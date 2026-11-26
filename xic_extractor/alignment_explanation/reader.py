@@ -983,6 +983,8 @@ def read_alignment_curves(
             if codec != "zlib-json-utf8":
                 raise ExplanationError(f"unsupported curve payload codec: {codec}")
             payload_data = decode_json(blob)
+            if not isinstance(payload_data, dict):
+                raise ExplanationError("curve payload must be an object")
             payload_data.update(
                 sample_id=sample_id,
                 kind=kind,

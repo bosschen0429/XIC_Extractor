@@ -309,7 +309,10 @@ def _str_setting(
     field: str,
     default: str,
 ) -> str:
-    return cast(str, tuning.get(field, default))
+    value = tuning.get(field, default)
+    if not isinstance(value, str):
+        raise PresetError(f"{field} must be text")
+    return value
 
 
 def _validate_discovery_tuning(

@@ -27,9 +27,7 @@ class ImmutableSequence(Sequence[T], Generic[T]):
     _ends: tuple[int, ...] = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
-        if type(self.chunk_lengths) is not tuple or any(
-            type(length) is not int or length < 0 for length in self.chunk_lengths
-        ):
+        if any(type(length) is not int or length < 0 for length in self.chunk_lengths):
             raise ValueError("chunk lengths must be non-negative integers")
         if not callable(self.load_chunk):
             raise TypeError("result chunk loader must be callable")

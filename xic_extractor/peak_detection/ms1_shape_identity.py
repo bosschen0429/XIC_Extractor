@@ -42,7 +42,7 @@ class LocalPeakShape:
             or not math.isfinite(self.half_window_min)
             or self.half_window_min <= 0
             or len(self.intensity) < 5
-            or type(self.source_point_count) is not int
+            or isinstance(self.source_point_count, bool)
             or self.source_point_count < 0
             or (
                 self.half_height_point_count is not None

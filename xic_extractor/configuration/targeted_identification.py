@@ -49,14 +49,12 @@ class QuantRelativeIon:
     compare_shape: bool = True
 
     def __post_init__(self):
-        if not isinstance(self.label, str) or not self.label.strip():
+        if not self.label.strip():
             raise ValueError("position requires a non-empty label")
         for key in ("offset_mz", "ratio_min", "ratio_max"):
             require_finite_real(getattr(self, key), name=key)
         if not 0 < self.ratio_min <= self.ratio_max:
             raise ValueError("reference ratios must be positive and ordered")
-        if not isinstance(self.compare_shape, bool):
-            raise ValueError("compare_shape must be true or false")
 
 
 @dataclass(frozen=True)
@@ -214,6 +212,10 @@ def parse_delta_mass_payload(
             values = dict(row)
             if "label" not in values or not str(values.get("label", "")).strip():
                 values["label"] = ion_name(float(values["offset_mz"]))
+            if not isinstance(values["label"], str):
+                raise ValueError("position requires a non-empty label")
+            if not isinstance(values.get("compare_shape", True), bool):
+                raise ValueError("compare_shape must be true or false")
             parsed.append(
                 QuantRelativeIon(**{**values, **_numbers(values, skip={"label"})})
             )

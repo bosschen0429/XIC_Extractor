@@ -70,9 +70,7 @@ class DiscoveryEvidenceThresholds:
             raise ValueError("Discovery scan-support score thresholds must be <= 1")
         if self.scan_support_low_score_max > self.scan_support_high_score_min:
             raise ValueError("Discovery scan-support score thresholds must be ordered")
-        if isinstance(self.scan_support_target, bool) or not isinstance(
-            self.scan_support_target, int
-        ):
+        if isinstance(self.scan_support_target, bool):
             raise TypeError("scan_support_target must be a non-bool integer")
         if self.scan_support_target <= 0:
             raise ValueError("scan_support_target must be positive")

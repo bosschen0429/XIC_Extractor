@@ -41,6 +41,20 @@ def light_pair(**ion):
     }
 
 
+@pytest.mark.parametrize(
+    "invalid",
+    [
+        {"label": 42},
+        {"compare_shape": "false"},
+    ],
+)
+def test_target_details_reject_non_text_labels_and_non_boolean_shape_flags(invalid):
+    with pytest.raises(ConfigError, match="Delta Mass 設定無法讀取"):
+        create_target_list(
+            [row(delta_mass_mz="-2.0")], delta_mass=light_pair(**invalid)
+        )
+
+
 def test_negative_offsets_normalize_without_moving_quantitation():
     condition = DeltaMassCondition((QuantRelativeIon("light", -2.0),))
     pattern = condition.pattern_settings("target:1")

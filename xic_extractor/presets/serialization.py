@@ -57,9 +57,6 @@ def serialize_preset(
     effective values and validation.
     """
 
-    if not isinstance(preset, Preset):
-        raise TypeError("preset must be a Preset")
-
     merged_discovery = _merge_discovery_overrides(preset, discovery_overrides)
     effective_preset = replace(
         preset,

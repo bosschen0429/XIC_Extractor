@@ -40,11 +40,11 @@ class TraceAcquisitionCapability:
     adapter_namespace: str
 
     def __post_init__(self) -> None:
-        if not isinstance(self.acquisition_source, AcquisitionSourceIdentity):
-            raise AcquisitionContractError(
-                "acquisition_source must be an owner-minted identity"
-            )
-        _required_text(self.adapter_namespace, "adapter_namespace")
+        require_owner_normalized_text(
+            self.adapter_namespace,
+            field="adapter_namespace",
+            error_factory=AcquisitionContractError,
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,25 +56,13 @@ class TraceCoordinate:
     trace_point_count: int
 
     def __post_init__(self) -> None:
-        if not isinstance(self.capability, TraceAcquisitionCapability):
-            raise AcquisitionContractError(
-                "capability must be a TraceAcquisitionCapability"
-            )
-        if not isinstance(self.request, XICRequest):
-            raise AcquisitionContractError("request must be an XICRequest")
-        if (
-            isinstance(self.trace_point_count, bool)
-            or not isinstance(self.trace_point_count, int)
-            or self.trace_point_count < 0
-        ):
+        if isinstance(self.trace_point_count, bool) or self.trace_point_count < 0:
             raise AcquisitionContractError(
                 "trace_point_count must be a non-negative integer"
             )
         if (
             isinstance(self.first_scan, bool)
-            or not isinstance(self.first_scan, int)
             or isinstance(self.last_scan, bool)
-            or not isinstance(self.last_scan, int)
             or self.first_scan < 0
             or self.last_scan < self.first_scan
         ):
@@ -89,10 +77,6 @@ class AcquiredTrace:
     trace: XICTrace
 
     def __post_init__(self) -> None:
-        if not isinstance(self.coordinate, TraceCoordinate):
-            raise AcquisitionContractError("coordinate must be a TraceCoordinate")
-        if not isinstance(self.trace, XICTrace):
-            raise AcquisitionContractError("trace must be an XICTrace")
         rt = np.asarray(self.trace.rt)
         intensity = np.asarray(self.trace.intensity)
         if rt.ndim != 1 or intensity.ndim != 1 or rt.shape != intensity.shape:
@@ -121,14 +105,6 @@ class TraceAcquisitionBatch:
     adapter_chromatogram_call_count: int
 
     def __post_init__(self) -> None:
-        if not isinstance(self.capability, TraceAcquisitionCapability):
-            raise AcquisitionContractError(
-                "capability must be a TraceAcquisitionCapability"
-            )
-        if not isinstance(self.traces, tuple) or any(
-            not isinstance(trace, AcquiredTrace) for trace in self.traces
-        ):
-            raise AcquisitionContractError("traces must contain AcquiredTrace values")
         _nonnegative_integer(
             self.adapter_chromatogram_call_count,
             "adapter_chromatogram_call_count",
@@ -152,14 +128,9 @@ def mint_trace_acquisition_capability(
     *,
     adapter_namespace: str,
 ) -> TraceAcquisitionCapability:
-    if not isinstance(acquisition_source, AcquisitionSourceIdentity):
-        raise AcquisitionContractError(
-            "acquisition_source must be an owner-minted identity"
-        )
-    namespace = _required_text(adapter_namespace, "adapter_namespace")
     return TraceAcquisitionCapability(
         acquisition_source=acquisition_source,
-        adapter_namespace=namespace,
+        adapter_namespace=adapter_namespace,
     )
 
 
@@ -168,14 +139,6 @@ def acquire_trace_batch(
     requests: tuple[XICRequest, ...],
     adapter: BatchXICAdapter,
 ) -> TraceAcquisitionBatch:
-    if not isinstance(capability, TraceAcquisitionCapability):
-        raise AcquisitionContractError(
-            "capability must be a TraceAcquisitionCapability"
-        )
-    if not isinstance(requests, tuple) or any(
-        not isinstance(request, XICRequest) for request in requests
-    ):
-        raise AcquisitionContractError("requests must be an XICRequest tuple")
     if not requests:
         raise AcquisitionContractError("requests must be non-empty")
     call_count_before = _adapter_chromatogram_call_count(adapter)
@@ -206,12 +169,6 @@ def acquire_trace_batch(
         capability=capability,
         traces=tuple(acquired),
         adapter_chromatogram_call_count=call_count_after - call_count_before,
-    )
-
-
-def _required_text(value: object, field: str) -> str:
-    return require_owner_normalized_text(
-        value, field=field, error_factory=AcquisitionContractError
     )
 
 

@@ -129,11 +129,7 @@ class ConservativeBackfillCellDecision:
 def minimum_direct_support_count(sample_count_n: int) -> int:
     """Return K = max(2, floor(0.05 × N)) for an eligible run population."""
 
-    if (
-        isinstance(sample_count_n, bool)
-        or not isinstance(sample_count_n, int)
-        or sample_count_n < 0
-    ):
+    if isinstance(sample_count_n, bool) or sample_count_n < 0:
         raise ConservativeBackfillContractError(
             "sample_count_n must be a non-negative integer"
         )
