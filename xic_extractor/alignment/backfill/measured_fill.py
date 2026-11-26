@@ -9,7 +9,9 @@ integration bounds contain the query does. A peak that several rows localize
 goes to the row it lies nearest relative to that row's bound. Ties are broken
 by measured peak facts, never by identifiers or input order, and every choice
 between qualified alternatives is recorded as accepted competition pointing at
-the alternative. MS1-only peaks that no row takes stay single.
+the alternative. A row admits its fills best localized first while its
+precursor masses stay within the full-group tolerance. MS1-only peaks that no
+row takes stay single, and Backfill revisits the samples left empty.
 """
 
 from __future__ import annotations
@@ -249,11 +251,35 @@ def fill_rows_from_measured_peaks(
                 alternative_distance,
             )
         )
-    placed = {fill.peak.owner_id for added in fills.values() for fill in added}
+    admitted = {
+        index: kept
+        for index, added in fills.items()
+        if (kept := _admitted(rows[index], added, config.precursor_mz_tolerance_ppm))
+    }
+    placed = {fill.peak.owner_id for kept in admitted.values() for fill in kept}
     return (
         tuple(
-            _with_fills(row, fills[index], owners_by_id) if index in fills else row
+            _with_fills(row, admitted[index], owners_by_id)
+            if index in admitted
+            else row
             for index, row in enumerate(rows)
         ),
         tuple(peak for peak in peaks if peak.owner_id not in placed),
     )
+
+
+def _admitted(
+    row: CrossSamplePeakGroupHypothesis,
+    fills: Sequence[_Fill],
+    tolerance_ppm: float,
+) -> list[_Fill]:
+    """Best-localized fills first, while the row keeps its full precursor tolerance."""
+    masses = [owner.peak.mz for owner in row.owners]
+    low, high = min(masses), max(masses)
+    kept = []
+    for fill in sorted(fills, key=lambda f: (f.distance, measured_owner_key(f.peak))):
+        mz = fill.peak.peak.mz
+        if within_ppm(max(high, mz), min(low, mz), tolerance_ppm):
+            kept.append(fill)
+            low, high = min(low, mz), max(high, mz)
+    return kept

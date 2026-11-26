@@ -331,8 +331,11 @@ bound, nearest first, or else when its integration bounds contain the query. A
 peak that several rows localize goes to the row it lies nearest relative to
 that row's bound. Ties are broken by measured peak facts, and choosing among
 qualified alternatives records `accepted_competition` pointing at the
-alternative. MS1-only peaks that no row takes stay single (`unresolved`), and
-samples left empty remain for the Backfill revisit. Band consolidation, shape
+alternative. A row admits its fills best localized first while its precursor
+masses stay within the full-group tolerance; checking each fill only against
+the direct members would let two fills on opposite sides exceed it together.
+MS1-only peaks that no row takes stay single (`unresolved`), and samples left
+empty remain for the Backfill revisit. Band consolidation, shape
 consistency and contrast then see every group. Snapshot replay
 (`scripts.run_alignment regroup`) runs the same steps, treating the snapshot's
 samples as one localization cohort; the curve-dependent steps after them need

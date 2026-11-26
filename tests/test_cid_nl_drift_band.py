@@ -142,6 +142,29 @@ def test_ms1_only_peak_fills_an_ordinary_direct_row_it_lacks():
     }
 
 
+def test_fills_keep_the_row_within_the_full_precursor_tolerance():
+    """Each fill fits the direct peaks alone; together they would not. The
+    better localized one is kept and the other stays single for Backfill."""
+    offset = 0.6 * AlignmentConfig().precursor_mz_tolerance_ppm * 1e-6
+    ref = tuple(_owner(f"r{i}", "ref", apex_rt=10) for i in range(3))
+    near, far = (
+        replace(
+            _owner(s, "ms1", apex_rt=rt, precursor_mz=500 * (1 + sign * offset)),
+            primary_identity_event=None,
+        )
+        for s, rt, sign in (("near", 10, -1), ("far", 10.05, 1))
+    )
+    _, groups = replay((*ref, far))
+    assert frozenset(o.owner_id for o in (*ref, far)) in {
+        frozenset(g.owner_ids) for g in groups
+    }
+    _, groups = replay((*ref, near, far))
+    assert {frozenset(g.owner_ids) for g in groups} == {
+        frozenset(o.owner_id for o in (*ref, near)),
+        frozenset({far.owner_id}),
+    }
+
+
 def test_known_identity_row_takes_no_ms1_fill():
     """A known identity is exact; a peak it never bound cannot join it."""
     ref = tuple(_owner(f"r{i}", "ref", apex_rt=10) for i in range(21))
