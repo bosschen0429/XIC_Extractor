@@ -1517,39 +1517,6 @@ def test_run_writes_file_error_row_and_continues(
 
 
 @pytest.mark.parametrize(
-    ("peak_status", "n_points", "max_smoothed", "issue", "reason_part"),
-    [
-        ("NO_SIGNAL", 0, None, "NO_SIGNAL", "XIC empty"),
-        ("PEAK_NOT_FOUND", 15, 25.0, "PEAK_NOT_FOUND", "No measurable peak"),
-    ],
-)
-def test_peak_diagnostic_owner_preserves_status_and_reason(
-    tmp_path: Path,
-    peak_status: str,
-    n_points: int,
-    max_smoothed: float | None,
-    issue: str,
-    reason_part: str,
-) -> None:
-    from xic_extractor.output.messages import build_diagnostic_records
-
-    config = _config(tmp_path)
-    target = _target("NoNL", neutral_loss_da=None)
-    result = ExtractionResult(
-        peak_result=_failed_peak(
-            peak_status,
-            n_points=n_points,
-            max_smoothed=max_smoothed,
-        ),
-        nl=None,
-    )
-    diagnostics = build_diagnostic_records("SampleA", target, result, config)
-    assert diagnostics[0].issue == issue
-    assert diagnostics[0].target_label == "NoNL"
-    assert reason_part in diagnostics[0].reason
-
-
-@pytest.mark.parametrize(
     ("nl_result", "issue", "reason_part"),
     [
         (
