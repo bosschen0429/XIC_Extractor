@@ -219,7 +219,9 @@ def test_identity_membership_is_geometry_not_group_center_reclassification(
         for group in reversed_final.final_population
     } == expected
 
-    assert rt_anchor_observations(grouping_scope) == ()
+    observations = rt_anchor_observations(grouping_scope)
+    assert {observation.owner_id for observation in observations} == direct_ids
+    assert {observation.bootstrap_group_id for observation in observations} == {None}
 
 
 def _assessment_with_observation_only_peak(
