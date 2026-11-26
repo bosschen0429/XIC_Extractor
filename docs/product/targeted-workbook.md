@@ -86,9 +86,9 @@ decisions.
   The worklist on `摘要` and the workbench count the same result rows; the
   headline counts every worklist row. A worklist row shows the saved labels;
   a minority outcome adds no flag of its own.
-- A diagnostic event without a delivered result (a RAW file that failed to open)
-  stays on the worklist as `RAW 失敗`, because no XIC view can explain it; its
-  message stays on `診斷事件`.
+- A RAW acquisition failure stops the formal Targeted run before publication.
+  When rendering previously recorded diagnostics, a `FILE_ERROR` event without
+  a result appears on the worklist as `RAW 失敗`; its message is on `診斷事件`.
 - Every diagnostic event is kept as literal text on the hidden `診斷事件` sheet.
   The delivered XLSX is the run's only artifact, and the XIC view shows the peak
   but not why a selection was made. The sheet is for tracing a past decision,

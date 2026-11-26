@@ -80,7 +80,6 @@ NOT_COUNTED_CODES = MISSING_NL_NOT_COUNTED | {
     "missing_positive_ms1_peak",
     "identification_method_not_supported",
 }
-EXCLUSION_CODES = frozenset({"file_error"})
 OFF_PAIRED_ISTD_POSITION = "analyte_peak_off_paired_istd_position"
 SEARCHED_NO_OBSERVATION = "finalized_searched_no_observation"
 NOT_QUANTIFIABLE = "finalized_not_quantifiable"
@@ -109,9 +108,6 @@ _NL_BASES = frozenset({"NL 確認", "NL 偏差大", "未見 NL", "無 MS2", "IST
 
 def basis_label(row: Mapping[str, object]) -> str:
     """Name the one fact the saved decision rests on."""
-    exclusions = _codes(row, "Projection Exclusion Reasons")
-    if exclusions:
-        return "RAW 失敗"
     conflicts = _codes(row, "Projection Conflict Reasons")
     if SHARED_ION_REGION in conflicts:
         return _shared_ion_label(row)
