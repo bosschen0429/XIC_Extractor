@@ -872,11 +872,12 @@ def prepare_batch_alignment_explanation(
                         inference_basis=None
                         if inference_basis is None
                         else asdict(inference_basis),
-                        inference_decisions=None
-                        if inference_basis is None
-                        else [
-                            asdict(decision) for decision in group.inference_decisions
-                        ],
+                        member_risks={
+                            owner_id: asdict(risk)
+                            for owner_id, risk in group.member_risks
+                        }
+                        if isinstance(group, CrossSamplePeakGroupHypothesis)
+                        else None,
                     )
 
             report_progress("finalizing", sink.record_count, None)

@@ -22,7 +22,6 @@ from xic_extractor.alignment.sample_rt_calibration import RtEstimate
 from xic_extractor.sample_metadata import SampleMetadata
 
 if TYPE_CHECKING:
-    from xic_extractor.alignment.feature_membership_inference import BatchRtWarp
     from xic_extractor.alignment.rt_drift import RtDriftModel
     from xic_extractor.alignment.sample_rt_calibration import BatchRtCalibration
 
@@ -114,7 +113,6 @@ class SampleRtFrame:
         repr=False,
     )
     _reference: KnownIstdReference | None = field(default=None, repr=False)
-    _warp: BatchRtWarp | None = field(default=None, repr=False)
     _sample_calibration: BatchRtCalibration | None = field(default=None, repr=False)
     _drift_model: RtDriftModel | None = field(default=None, repr=False)
     _coordinate_override: Callable[[SampleLocalMS1Owner], float] | None = field(
@@ -169,15 +167,6 @@ class SampleRtFrame:
             ),
         )
 
-    def with_warp(self, warp: BatchRtWarp | None) -> SampleRtFrame:
-        return replace(
-            self,
-            _warp=warp,
-            _sample_calibration=None,
-            _drift_model=None,
-            _coordinate_override=None,
-        )
-
     def with_sample_calibration(
         self,
         calibration: BatchRtCalibration,
@@ -188,7 +177,6 @@ class SampleRtFrame:
             self,
             _sample_calibration=calibration,
             _drift_model=drift_model,
-            _warp=None,
             _coordinate_override=None,
         )
 
@@ -225,11 +213,6 @@ class SampleRtFrame:
         )
 
     @property
-    def warp_for_snapshot(self) -> BatchRtWarp | None:
-        """Expose the existing calibration payload only to the snapshot boundary."""
-        return self._warp
-
-    @property
     def calibration_for_snapshot(self) -> BatchRtCalibration | None:
         """Retain the same frozen map used by every current RT consumer."""
         return self._sample_calibration
@@ -238,7 +221,6 @@ class SampleRtFrame:
         """Attach frozen batch coordinates without changing local identity evidence."""
         return replace(
             self,
-            _warp=frozen._warp,
             _sample_calibration=frozen._sample_calibration,
             _drift_model=frozen._drift_model,
             _coordinate_override=frozen._coordinate_override,
@@ -254,8 +236,7 @@ class SampleRtFrame:
     @property
     def has_coordinates(self) -> bool:
         return (
-            self._warp is not None
-            or self._sample_calibration is not None
+            self._sample_calibration is not None
             or self._coordinate_override is not None
         )
 
@@ -328,7 +309,7 @@ class SampleRtFrame:
     def corrected_rt_min(self, owner: SampleLocalMS1Owner) -> float:
         if self._coordinate_override is not None:
             return self._coordinate_override(owner)
-        source = self._sample_calibration or self._warp
+        source = self._sample_calibration
         return (
             source.corrected_rt_min(owner)
             if source is not None
@@ -336,11 +317,11 @@ class SampleRtFrame:
         )
 
     def has_support(self, sample_stem: str) -> bool:
-        source = self._sample_calibration or self._warp
+        source = self._sample_calibration
         return source is not None and source.has_support(sample_stem)
 
     def common_rt_min(self, sample_stem: str, observed_rt: float) -> float:
-        source = self._sample_calibration or self._warp
+        source = self._sample_calibration
         return (
             source.common_rt_min(sample_stem, observed_rt)
             if source is not None
@@ -352,8 +333,6 @@ class SampleRtFrame:
         if self._sample_calibration is not None:
             sample = self._sample_calibration.samples.get(sample_stem)
             return sample.calibrated_rt(observed_rt) if sample is not None else None
-        if self._warp is not None and self._warp.has_support(sample_stem):
-            return self._warp.common_rt_min(sample_stem, observed_rt)
         return None
 
     def observed_rt_min(self, sample_stem: str, common_rt: float) -> float | None:
@@ -366,8 +345,6 @@ class SampleRtFrame:
             return common_rt + self._sample_calibration.offset_min(
                 sample_stem, common_rt
             )
-        if self._warp is not None and self._warp.has_support(sample_stem):
-            return common_rt + self._warp.offset_min(sample_stem, common_rt)
         return None
 
     def calibrated_peak_region(
@@ -422,8 +399,4 @@ class SampleRtFrame:
     def offset_min(self, sample_stem: str, rt_min: float) -> float:
         if self._sample_calibration is not None:
             return self._sample_calibration.offset_min(sample_stem, rt_min)
-        return (
-            self._warp.offset_min(sample_stem, rt_min)
-            if self._warp is not None
-            else 0.0
-        )
+        return 0.0

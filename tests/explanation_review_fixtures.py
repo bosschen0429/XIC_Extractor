@@ -286,10 +286,9 @@ def _quality_review_report(
                 disposition="completed",
                 members=members,
                 inference_basis={},
-                inference_decisions=[
-                    {"owner_id": f"member-{sid}", "accepted_risk": risk}
-                    for sid, risk in member_risks.items()
-                ],
+                member_risks={
+                    f"member-{sid}": risk for sid, risk in member_risks.items()
+                },
             )
         writer.add_cells("G1", cells)
         writer.finalize(
@@ -319,16 +318,10 @@ def _competition_review_report(
             [["S2", 500.0, 1.1], ["S3", 500.0, 1.2]],
         ],
         "equivalent_alternatives": [],
-        "selected_cost": 1.2,
-        "alternative_cost": 1.23,
-        "cost_gap": 0.03,
         "rt_basis": "raw",
         "evidence_basis": "bounded_assignment",
         "soft_contradictions": [],
         "risk_flags": [flag],
-        "selected_peer_fit": 0.25,
-        "alternative_peer_fit": 0.4,
-        "peer_fit_gap": 0.15,
         "rt_estimate": {
             "rt_min": 8.0,
             "method": "median_shift",

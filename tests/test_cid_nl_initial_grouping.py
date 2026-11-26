@@ -105,7 +105,7 @@ def test_owner_decides_membership_and_exact_exclusion_from_acquired_evidence(
         batch.jobs,
         partition_key="initial",
         initial_only=True,
-        alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+        alignment_config=AlignmentConfig(),
     )
     assert initial.succeeded, initial.failure
     sample_assessments = tuple(
@@ -128,7 +128,7 @@ def test_owner_decides_membership_and_exact_exclusion_from_acquired_evidence(
         candidates=peaks,
         observation_by_candidate=observations,
         sample_assessments=sample_assessments,
-        alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+        alignment_config=AlignmentConfig(),
         rt_frame=batch.context.rt_frame,
     )
     grouping = prepare_cid_nl_grouping(**arguments)

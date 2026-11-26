@@ -100,12 +100,15 @@ def with_peak(
     )
     return replace(
         owner,
-        peak=replace(
-            peak,
-            mz=peak.mz if mz is None else mz,
-            rt=rt,
-            intensity=intensity,
-            integration=changed,
+        hypothesis=replace(
+            owner.hypothesis,
+            peak=replace(
+                peak,
+                mz=peak.mz if mz is None else mz,
+                rt=rt,
+                intensity=intensity,
+                integration=changed,
+            ),
         ),
     )
 

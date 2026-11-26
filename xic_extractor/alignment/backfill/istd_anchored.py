@@ -21,20 +21,17 @@ from xic_extractor.alignment.backfill.conservative import (
     mint_conservative_backfill_candidate_universe,
     plan_conservative_backfill_targets,
 )
+from xic_extractor.alignment.band_grouping import group_peak_bands
+from xic_extractor.alignment.band_rt_location import BandRtLocator
 from xic_extractor.alignment.cell_observation.observations import (
     CidNlCellGroupContext,
     CidNlCellGroupSupport,
     mint_cell_observation,
 )
-from xic_extractor.alignment.cid_nl_grouping import CID_NL_GROUPING_RULES
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.cross_sample.peak_groups import (
-    construct_cross_sample_peak_group_hypotheses,
-)
 from xic_extractor.alignment.hypothesis_owner_adapter import (
     owner_from_cid_nl_assessment_support,
 )
-from xic_extractor.alignment.peak_trajectories import PeakTrajectory
 from xic_extractor.alignment.rt_frame import RtFrame
 from xic_extractor.configuration.models import Target
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
@@ -92,14 +89,14 @@ def resolve_istd_anchored_backfill(
     )
     target_identity = target.label
     groups = (
-        construct_cross_sample_peak_group_hypotheses(
+        group_peak_bands(
             owners,
             config=alignment_config,
             rt_frame=rt_frame,
             known_identity_bindings=tuple(
                 (owner.owner_id, target_identity) for owner in owners
             ),
-            rules=CID_NL_GROUPING_RULES,
+            stage="targeted",
         )
         if owners
         else ()
@@ -156,8 +153,7 @@ def resolve_istd_anchored_backfill(
         facts = assess_conservative_backfill_group(
             cells, sample_population=sample_population
         )
-        trajectory = PeakTrajectory(
-            group.owner_ids,
+        locator = BandRtLocator(
             tuple(
                 (
                     support.sample.raw_stem,
@@ -167,9 +163,9 @@ def resolve_istd_anchored_backfill(
             ),
         )
         locate_missing = (
-            trajectory.backfill_locations
+            locator.backfill_locations
             if target.is_istd
-            else trajectory.paired_istd_locations
+            else locator.paired_istd_locations
         )
         locations = locate_missing(
             tuple(

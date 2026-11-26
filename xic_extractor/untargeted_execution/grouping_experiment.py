@@ -31,7 +31,7 @@ class PreparedGroupingExperiment:
 
 
 def grouping_experiment_from_prepared(
-    prepared: Iterable[CidNlGrouping],
+    prepared: Iterable[tuple[CidNlGrouping, CidNlGrouping]],
     *,
     sample_stems: tuple[str, ...],
     injection_order: Mapping[str, int],
@@ -44,10 +44,10 @@ def grouping_experiment_from_prepared(
     groups: list[CrossSamplePeakGroupHypothesis] = []
     partition_count = 0
     candidates: dict[str, set[str]] = defaultdict(set)
-    for partition in prepared:
+    for initial, partition in prepared:
         partition_count += 1
-        for workset in partition.worksets:
-            groups.extend(workset.grouping_scope.groups)
+        for workset, final in zip(initial.worksets, partition.worksets, strict=True):
+            groups.extend(final.grouping_scope.groups)
             owners = {
                 owner.owner_id: owner
                 for group in workset.grouping_scope.groups
@@ -66,15 +66,7 @@ def grouping_experiment_from_prepared(
                     candidates[terminal.hypothesis.hypothesis_id].add(
                         terminal.candidate_id
                     )
-            bindings = tuple(
-                sorted(
-                    (owner_id, group.inference_basis.known_identity_label)
-                    for group in workset.grouping_scope.groups
-                    if group.inference_basis is not None
-                    and group.inference_basis.known_identity_label is not None
-                    for owner_id in group.owner_ids
-                )
-            )
+            bindings = workset.grouping_result.rt_frame.known_identity_bindings
             worksets.append(
                 GroupingWorkset(
                     key="|".join(
@@ -82,10 +74,8 @@ def grouping_experiment_from_prepared(
                     ),
                     owners=tuple(owners[key] for key in sorted(owners)),
                     known_identity_bindings=bindings,
-                    rt_warp=partition.rt_frame.warp_for_snapshot,
                     rt_calibration=partition.rt_frame.calibration_for_snapshot,
                     rt_drift=partition.rt_frame.drift_model,
-                    elution_contexts=workset.grouping_scope.peak_trajectories.source_contexts,
                     rt_model_inputs=rt_model_inputs,
                 )
             )

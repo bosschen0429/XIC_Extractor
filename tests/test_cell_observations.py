@@ -29,6 +29,7 @@ from tests.processing_identity_no_raw_fixture import (
 from tests.untargeted_cid_nl_no_raw_fixture import (
     build_untargeted_cid_nl_no_raw_fixture,
 )
+from xic_extractor.alignment.band_grouping import group_peak_bands
 from xic_extractor.alignment.cell_observation.observations import (
     CellObservationContractError,
     compose_final_group_cell_observation_population,
@@ -37,7 +38,6 @@ from xic_extractor.alignment.cell_observation.observations import (
 from xic_extractor.alignment.cid_nl_evidence_spine import (
     build_cid_nl_reference_spine,
 )
-from xic_extractor.alignment.cid_nl_grouping import CID_NL_GROUPING_RULES
 from xic_extractor.alignment.cid_nl_inputs import (
     CID_NL_ALIGNMENT_CONFIG,
 )
@@ -46,9 +46,6 @@ from xic_extractor.alignment.cid_nl_predecessor_cells import (
 )
 from xic_extractor.alignment.cross_sample.association import (
     build_cross_sample_association_lineage_handoff,
-)
-from xic_extractor.alignment.cross_sample.peak_groups import (
-    construct_cross_sample_peak_group_hypotheses,
 )
 from xic_extractor.alignment.hypothesis_owner_adapter import (
     compose_cid_nl_peak_hypotheses_from_assessment,
@@ -112,11 +109,10 @@ def _outside_group_fixture(
             sample=sample, assessment=assessment
         )
     )
-    groups = construct_cross_sample_peak_group_hypotheses(
+    groups = group_peak_bands(
         owners,
         config=CID_NL_ALIGNMENT_CONFIG,
         rt_frame=SampleRtFrame(),
-        rules=CID_NL_GROUPING_RULES,
     )
     assert len(groups) == len(support_centers) + 1
     return fixture, tuple(assessments), groups

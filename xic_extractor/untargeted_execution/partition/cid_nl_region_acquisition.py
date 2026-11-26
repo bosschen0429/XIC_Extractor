@@ -46,10 +46,6 @@ from xic_extractor.peak_detection.cid_nl_peak_support import (
     DdaCidNlPeakSupport,
     DdaCidNlPeakSupportPolicy,
 )
-from xic_extractor.peak_detection.elution_context import (
-    SampleElutionContext,
-    project_elution_context,
-)
 from xic_extractor.peak_detection.observations import (
     PeakObservation,
     mint_physical_peak_observations,
@@ -138,7 +134,6 @@ class CidNlSampleRegion:
     region: DiscoveryMassRegion
     coverage: tuple[RegionTraceCoverage, ...]
     peaks: tuple[PeakObservation, ...]
-    contexts: tuple[SampleElutionContext, ...]
     evidence: tuple[CidNlEvidenceObservation, ...]
     individual_relations: tuple[DdaCidNlPeakSupport, ...]
     ambiguous_relations: tuple[DdaCidNlCandidateSetRelation, ...]
@@ -431,7 +426,6 @@ def _measure_region(
     coverage = []
     measured: list[RegionSegment] = []
     distinct: list[tuple[AcquiredTrace, PhysicalPeakPopulation]] = []
-    contexts = []
     for request, trace, error in acquired:
         if trace is None:
             coverage.append(RegionTraceCoverage(request, None, error))
@@ -459,13 +453,6 @@ def _measure_region(
         if matching is not None:
             continue
         distinct.append((trace, population))
-        if context := project_elution_context(
-            population.prepared,
-            sample_stem=sample.raw_stem,
-            mz=request.mz,
-            universe=population.universe,
-        ):
-            contexts.append(context)
         for segment in population.universe.segments:
             evaluation = population.measure_segment(segment)
             if evaluation.state == "available":
@@ -529,7 +516,6 @@ def _measure_region(
         region,
         tuple(coverage),
         observations,
-        tuple(contexts),
         evidence,
         individual,
         ambiguous,

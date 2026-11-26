@@ -132,8 +132,7 @@ def publish_alignment(
                 raw_dir=raw_dir,
                 dll_dir=tmp_path,
                 output_dir=output_dir,
-                alignment_config=alignment_config
-                or AlignmentConfig(anchor_min_seed_events=1),
+                alignment_config=alignment_config or AlignmentConfig(),
                 discovery_settings=settings,
                 sample_metadata=sample_metadata or sample_metadata_for(stems),
                 known_istd_reference_workbook=known_istd_reference_workbook,

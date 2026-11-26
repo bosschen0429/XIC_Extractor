@@ -12,6 +12,7 @@ from tests.owner_peak_fixtures import trace_peak
 from tests.processing_identity_no_raw_fixture import (
     build_processing_identity_no_raw_fixture,
 )
+from xic_extractor.alignment.band_grouping import group_peak_bands
 from xic_extractor.alignment.cid_nl_predecessor_cells import (
     compose_cid_nl_predecessor_cells,
 )
@@ -24,7 +25,6 @@ from xic_extractor.alignment.cross_sample.peak_groups import (
 )
 from xic_extractor.alignment.grouping_workflow import (
     admit_cid_nl_group_backfills,
-    group_cid_nl_owners,
 )
 from xic_extractor.alignment.hypothesis_owner_adapter import (
     compose_cid_nl_peak_hypotheses_from_assessment,
@@ -203,12 +203,12 @@ def test_one_measured_lobe_keeps_one_direct_claim_or_one_backfill_winner(
             assessment=assessment,
             hypothesis=hypothesis,
         )
-    config, frame = AlignmentConfig(), SampleRtFrame()
+    config = AlignmentConfig()
+    frame = SampleRtFrame(injection_order={stem: i for i, stem in enumerate(pairs)})
     groups = tuple(
-        group_cid_nl_owners(
+        group_peak_bands(
             tuple(owners[stem] for stem in stems),
             config=config,
-            sample_universe=frozenset(pairs),
             rt_frame=frame,
         )[0]
         for stems in (("A", "B", "S") if direct else ("A", "B"), ("C", "D"))
@@ -352,7 +352,7 @@ def test_one_measured_lobe_keeps_one_direct_claim_or_one_backfill_winner(
         risk = result.backfill_membership_risks[0][2]
         assert risk.phase == "backfill"
         assert "backfill_competition" in risk.risk_flags
-        assert risk.cost_gap >= 0
+        assert risk.alternative_partition
         if unreliable:
             assert "backfill_low_localization_confidence" in risk.risk_flags
     cells = compose_cid_nl_predecessor_cells(

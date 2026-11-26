@@ -57,9 +57,9 @@ def test_crowded_doublet_keeps_both_physical_peaks_and_local_cid_lineage(
     expected_initial = {}
     expected_apices = {}
     shifts = (
-        ((0.0, 0), (0.3, 1), (0.6, 0), (0.9, 1))
+        ((0.0, 0), (0.10, 1), (0.20, 0), (0.30, 1))
         if staggered
-        else ((0.0, 0), (0.05, 1), (0.6, 0), (0.65, 1))
+        else ((0.0, 0), (0.05, 1), (0.10, 0), (0.15, 1))
     )
     for index, (shift, selected) in enumerate(shifts):
         sample = f"S{index}"
@@ -115,7 +115,7 @@ def test_crowded_doublet_keeps_both_physical_peaks_and_local_cid_lineage(
     monkeypatch.setattr(workers, "ensure_assemblies_loaded", lambda *_: None)
     adapter = UntargetedPartitionPipelineAdapter(
         plan,
-        alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+        alignment_config=AlignmentConfig(),
         max_partition_jobs=100,
         project_child=project_composed_child,
         execution=in_process_execution(),
@@ -273,7 +273,7 @@ def test_review_only_input_supplies_each_physical_member_without_cid(
     monkeypatch.setattr(workers, "ensure_assemblies_loaded", lambda *_: None)
     adapter = UntargetedPartitionPipelineAdapter(
         plan,
-        alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+        alignment_config=AlignmentConfig(),
         max_partition_jobs=100,
         project_child=project_composed_child,
         execution=in_process_execution(),

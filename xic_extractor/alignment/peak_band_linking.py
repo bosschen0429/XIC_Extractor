@@ -259,3 +259,32 @@ def competing_band_members(
             ):
                 result.append((selected, rival))
     return tuple(result)
+
+
+def band_extension_distance(
+    members: Sequence[tuple[SampleLocalMS1Owner, float]],
+    candidate: tuple[SampleLocalMS1Owner, float],
+    *,
+    injection_order: Mapping[str, int],
+    precursor_ppm: float,
+) -> float | None:
+    """Closest admissible link into a band's otherwise empty injection."""
+    owner, rt = candidate
+    rank = injection_order.get(owner.sample_stem)
+    if rank is None:
+        return None
+    mz = owner.peak.mz
+    lo = hi = mz
+    closest = None
+    for peer, peer_rt in members:
+        peer_rank = injection_order[peer.sample_stem]
+        if rank == peer_rank:
+            return None
+        lo, hi = min(lo, peer.peak.mz), max(hi, peer.peak.mz)
+        if abs(peer_rank - rank) <= MAX_INJECTION_GAP:
+            step = abs(peer_rt - rt)
+            if _within_link_step(step, MAX_CALIBRATED_RT_STEP_MIN) and (
+                closest is None or step < closest
+            ):
+                closest = step
+    return closest if within_ppm(hi, lo, precursor_ppm) else None

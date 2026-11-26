@@ -5,9 +5,6 @@ from __future__ import annotations
 import math
 from typing import cast
 
-from xic_extractor.alignment.cross_sample.peak_groups import (
-    group_member_subject_from_peak_hypothesis,
-)
 from xic_extractor.alignment.ownership_models import (
     MS1_OBSERVATION_ASSIGNMENT,
     IdentityEvent,
@@ -155,24 +152,17 @@ def owner_from_cid_nl_assessment_support(
         ),
     )
     return SampleLocalMS1Owner(
-        owner_id=hypothesis.hypothesis_id,
+        hypothesis=hypothesis,
         sample_stem=sample.raw_stem,
         raw_file=observation.generation_provenance.acquisition_source_id,
-        peak=observation,
         primary_identity_event=event,
         supporting_events=(),
         assignment_reason="cid_nl_method_assessment_unique_support",
-        cid_nl_composite_assessment=assessment
-        if assessment.method_subject.composition
-        else None,
+        assessment=assessment,
         peak_shape=prepare_local_peak_shape(
             observation.rt,
             observation.intensity,
             apex_rt_min=observation.rt_apex_min,
-        ),
-        cross_sample_member_subject=group_member_subject_from_peak_hypothesis(
-            sample=sample,
-            hypothesis=hypothesis,
         ),
     )
 
@@ -181,6 +171,7 @@ def owner_from_ms1_observation_hypothesis(
     *,
     sample: SampleMetadata,
     hypothesis: MeasuredPeakHypothesis,
+    assessment: CidNlMethodAssessment | None = None,
 ) -> SampleLocalMS1Owner:
     """Project one workflow-neutral physical MS1 observation into Alignment."""
 
@@ -190,21 +181,17 @@ def owner_from_ms1_observation_hypothesis(
         )
     observation = hypothesis.peak
     return SampleLocalMS1Owner(
-        owner_id=hypothesis.hypothesis_id,
+        hypothesis=hypothesis,
         sample_stem=sample.raw_stem,
         raw_file=observation.generation_provenance.acquisition_source_id,
-        peak=observation,
         primary_identity_event=None,
         supporting_events=(),
         assignment_reason=MS1_OBSERVATION_ASSIGNMENT,
+        assessment=assessment,
         peak_shape=prepare_local_peak_shape(
             observation.rt,
             observation.intensity,
             apex_rt_min=observation.rt_apex_min,
-        ),
-        cross_sample_member_subject=group_member_subject_from_peak_hypothesis(
-            sample=sample,
-            hypothesis=hypothesis,
         ),
     )
 

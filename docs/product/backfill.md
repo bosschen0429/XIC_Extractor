@@ -33,12 +33,12 @@ results; the Targeted production workflow only composes the two. Sample roles an
 existing sample-metadata owner; ISTDs do not add analyte SUPPORT votes.
 
 For a paired Target, confirmed same-batch peers establish the measured
-analyte-to-ISTD RT offset. `PeakTrajectory.backfill_locations` transfers that
+analyte-to-ISTD RT offset. `BandRtLocator.backfill_locations` transfers that
 offset to the current sample's credible paired ISTD, with the existing bounded
 residual tolerance. Missing paired evidence, excessive offset scatter, or
 competing confirmed groups does not authorize a Targeted recovery.
 
-For an ISTD, the same frozen direct-support group and `PeakTrajectory` locate
+For an ISTD, the same frozen direct-support group and the band locator locate
 the missing sample without requiring a paired ISTD. The same support gate and
 conservative mapper apply; recovered samples never become direct SUPPORT votes.
 
@@ -158,9 +158,9 @@ estimator. With at least two residuals, the apex tolerance is the larger of
 A residual p90 above that bound, or insufficient residuals, makes localization
 unreliable. Untargeted still evaluates qualified physical candidates already
 inside the acquired bounded window; the forecast does not select among multiple
-segments. A unique qualified candidate can enter the fixed-group comparison
-with one-quarter of its otherwise applicable RT weight and a
-`backfill_low_localization_confidence` risk. This does not expand acquisition,
+segments. A unique qualified candidate can enter the fixed-band comparison with a
+`backfill_low_localization_confidence` risk. A reliably localized candidate
+wins over an unlocated rival when both claim the same physical peak. This does not expand acquisition,
 change its integral, or relax method-specific quantitation eligibility.
 An observed trajectory position uses a 12-second bound (or the smaller
 acquisition half-window). The context fallback never expands this apex bound.
@@ -184,8 +184,8 @@ physical failure.
 
 Completed-empty evidence binds both the original group center and actual query
 RT. It validates the acquired query, not containment of the group center in a
-shifted window. Supported Backfill admission uses the same frozen coordinates
-and owner-to-band trend rule as final grouping; it does not refit the warp.
+shifted window. Supported Backfill admission reads the fixed band
+and its acquired query; it does not refit the band or move any member.
 
 Missing-position estimates use the trajectory's same-cohort observations. With
 calibrated target and neighbor support the basis is `calibrated_trajectory_fit`;
@@ -257,21 +257,14 @@ continuity; smoothing it into a peak does not supply missing acquired support.
    - insufficient group support;
    - an ineligible sample;
    - a member of a Matrix row already holds the peak;
-   - another feasible Backfill assignment wins, or blank has lower cost.
+   - another compatible candidate already claimed the peak, or the candidate
+     exceeds the fixed band's mass span.
 5. A member of an archive row writes no value and does not hold the peak.
-6. If the windows of two rows resolve the same peak, compare fixed-group
-   assignments and blank using the shared membership cost. Retain at most 64
-   candidate configurations at each bounded extension, choose the lowest cost
-   (mean peer fit resolves cost ties), then retry complete compatible group
-   bundles and local add/remove/reassignment choices until none improves it.
-   Partial RT gaps cannot permanently discard a feasible complete extension.
-   Retain a feasible alternative and its cost gap. Original members never move.
-   Conflicts between fixed original members do not create an infinite subtraction
-   baseline; all pairs involving new candidates still obey hard constraints.
-   An accepted extension of such a group carries `fixed_original_conflict`.
-   The peak supplies at most one value; equivalent choices remain visible rather than making every row blank.
-   Newly added cross-sample shape contradictions contribute soft cost and risk,
-   while mass, identity, measurement and physical uniqueness remain constraints.
+6. If two queries resolve the same peak, prefer reliable localization, then
+   the smaller distance to the acquired query, then measured peak order.
+   Record the accepted and alternative members without moving original
+   members. Shape contradictions are advisory; precursor span, method
+   compatibility and physical uniqueness still constrain admission.
 7. Direct observations and Backfill observations use the shared
    [physical-view evidence rule](#physical-peak-view-equivalence).
    Different bounds or context-dependent apices do not establish
@@ -297,12 +290,14 @@ continuity; smoothing it into a peak does not supply missing acquired support.
 ### Membership admission
 
 Initial members stay in their original groups through bounded Backfill.
-A group-bound Backfill with unique SUPPORT may add a missing sample member
-when it passes the existing feature evidence rule. The grouping owner records
+A group-bound Backfill with unique SUPPORT may add a missing-sample member
+when the candidate is compatible with the fixed band and its whole precursor
+mass span. The grouping owner records
 the admitted member and exact predecessor/successor lineage; it does not refit,
 move original members, split known ISTD bindings, or create new groups.
-Competing claims on the same physical content remain unresolved and supply no
-numeric value. Final cells retain the original cell for provenance and the
+Competing claims on the same physical content keep at most one winner, ordered
+by localization confidence and distance to the bounded query. The accepted
+cell records a competition flag. Final cells retain the original cell for provenance and the
 completed Backfill assessment/observation for the final decision and integral.
 Cell evidence uses `cell_observation` and binds unresolved SUPPORT and
 Backfill provenance explicitly. Acquisition

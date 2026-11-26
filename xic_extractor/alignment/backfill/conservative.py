@@ -18,6 +18,7 @@ from xic_extractor.alignment.backfill.cid_nl_evidence import (
     cid_nl_allows_physical_localization,
     cid_nl_backfill_block_reason,
 )
+from xic_extractor.alignment.band_rt_location import BackfillPeakLocation
 from xic_extractor.alignment.cell_observation.observations import (
     CellObservation,
     CidNlCellGroupContext,
@@ -26,7 +27,6 @@ from xic_extractor.alignment.cid_nl_grouping import has_cid_nl_activation_suppor
 from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSamplePeakGroupHypothesis,
 )
-from xic_extractor.alignment.peak_trajectories import BackfillPeakLocation
 from xic_extractor.mass_accuracy import absolute_ppm_error
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessment,

@@ -5,15 +5,11 @@ from __future__ import annotations
 import csv
 from dataclasses import replace
 from types import SimpleNamespace
-from typing import get_args
 
 import pytest
 
 from tests.membership_fixtures import cid_nl_owner, subject_anchor
 from xic_extractor.alignment.cid_nl_initial_grouping import CidNlBatchGrouping
-from xic_extractor.alignment.feature_membership_inference import (
-    FeatureMembershipBasis,
-)
 from xic_extractor.alignment.rt_anchors import (
     reaches_ordinary_anchor_quorum,
     rt_anchor_observations,
@@ -29,16 +25,6 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
 
 DR = 116.0474
 
-_SUPPLIES_RT_CALIBRATION: dict[FeatureMembershipBasis, bool] = {
-    "bidirectional_membership_agreement": True,
-    "known_identity_constraint": True,
-    "peak_trajectory": True,
-    "window_level_rt_band": False,
-    "directional_membership_disagreement": False,
-    "insufficient_cross_sample_evidence": False,
-    "known_identity_input_conflict": False,
-}
-
 
 def _subject(precursor_mz: float):
     return mint_untargeted_cid_nl_method_subject(
@@ -49,14 +35,6 @@ def _subject(precursor_mz: float):
 def _observation(sample, group, rt, *, precursor_mz=500.0):
     return subject_anchor(
         _subject(precursor_mz), sample, f"{group}-{sample}", rt, group
-    )
-
-
-def _group(group_id, owners, basis):
-    return SimpleNamespace(
-        group_hypothesis_id=group_id,
-        owners=tuple(owners),
-        inference_basis=None if basis is None else SimpleNamespace(basis=basis),
     )
 
 
@@ -80,7 +58,7 @@ def test_published_map_and_drift_are_measured_on_the_reference_population():
                 )
             )
     movers = tuple(
-        subject_anchor(_subject(m), s, f"{s}-{m}", base + (n - 5.5) * 0.1, None)
+        subject_anchor(_subject(m), s, f"{s}-{m}", base + (n - 5.5) * 0.1, f"band-{m}")
         for m, base in ((510.0, 10.0), (520.0, 22.0))
         for s, n in samples.items()
     )
@@ -94,51 +72,37 @@ def test_published_map_and_drift_are_measured_on_the_reference_population():
             at
         ) == pytest.approx(at)
     assert {a.channel for a in fitted.drift_model.anchors} == {
-        _subject(m).method_subject_id for m in (510.0, 520.0)
+        f"band-{m}" for m in (510.0, 520.0)
     }
 
 
 def test_observations_need_direct_quantifiable_support_and_agreed_groups():
-    agreed = [cid_nl_owner(s, "x", apex_rt=10.0) for s in ("a", "b", "c", "d")]
-    agreed[1] = replace(agreed[1], quantification_eligible=False)
-    agreed[2] = replace(agreed[2], primary_identity_event=None)
-    unagreed = [cid_nl_owner("a", "y", apex_rt=12.0)]
+    direct = SimpleNamespace(method_subject=_subject(500.0))
+    a, b, c, d = tuple(
+        replace(cid_nl_owner(sample, "x"), assessment=direct)
+        for sample in ("a", "b", "c", "d")
+    )
     scope = SimpleNamespace(
         groups=(
-            _group("G1", agreed, "bidirectional_membership_agreement"),
-            _group("G2", unagreed, None),
+            SimpleNamespace(
+                owners=(
+                    a,
+                    b,
+                    replace(c, quantification_eligible=False),
+                    replace(d, primary_identity_event=None),
+                ),
+                disposition="established",
+            ),
+            SimpleNamespace(
+                owners=(cid_nl_owner("a", "y", apex_rt=12.0),),
+                disposition="provisional",
+            ),
         )
     )
-    direct = SimpleNamespace(method_subject=_subject(500.0))
-    candidates = tuple(
-        SimpleNamespace(
-            peak_hypothesis_id=owner.owner_id,
-            direct_support_assessment=None if owner is agreed[3] else direct,
-        )
-        for owner in (*agreed, *unagreed)
-    )
-    observations = rt_anchor_observations(scope, candidates)
-    assert [(o.owner_id, o.bootstrap_group_id) for o in observations] == [
-        (agreed[0].owner_id, "G1"),
-        (unagreed[0].owner_id, None),
-    ]
-    assert observations[0].channel == _subject(500.0).method_subject_id
-
-
-@pytest.mark.parametrize("basis", get_args(FeatureMembershipBasis))
-def test_only_agreed_bootstrap_groups_supply_rt_calibration_anchors(basis):
-    owner = cid_nl_owner("a", "x")
-    scope = SimpleNamespace(groups=(_group("G1", (owner,), basis),))
-    candidates = (
-        SimpleNamespace(
-            peak_hypothesis_id=owner.owner_id,
-            direct_support_assessment=SimpleNamespace(method_subject=_subject(500.0)),
-        ),
-    )
-    (observation,) = rt_anchor_observations(scope, candidates)
-    assert (observation.bootstrap_group_id is not None) is (
-        _SUPPLIES_RT_CALIBRATION[basis]
-    )
+    observations = rt_anchor_observations(scope)
+    assert tuple(o.owner_id for o in observations) == (a.owner_id, b.owner_id)
+    assert observations[0].bootstrap_group_id == observations[1].bootstrap_group_id
+    assert observations[0].channel == direct.method_subject.method_subject_id
 
 
 def _knots(observations, cohorts, measured_istds=()):

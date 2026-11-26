@@ -12,6 +12,7 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
     CidNlMethodSubject,
     mint_untargeted_cid_nl_method_subject,
 )
+from xic_extractor.peak_detection.peak_hypothesis_identity import MeasuredPeakHypothesis
 
 
 def cid_nl_owner(
@@ -42,17 +43,21 @@ def cid_nl_owner(
         seed_event_count=seed_event_count,
     )
     return SampleLocalMS1Owner(
-        owner_id=f"OWN-{sample}-{name}",
+        hypothesis=MeasuredPeakHypothesis(
+            f"OWN-{sample}-{name}",
+            "dda_cid_nl",
+            measured_peak(
+                sample_key=sample,
+                mz=precursor_mz,
+                apex_rt=apex_rt,
+                start_rt=apex_rt - 0.05,
+                end_rt=apex_rt + 0.05,
+                area=1_000.0,
+                height=100.0,
+            ),
+        ),
         sample_stem=sample,
         raw_file=f"{sample}.raw",
-        peak=measured_peak(
-            mz=precursor_mz,
-            apex_rt=apex_rt,
-            start_rt=apex_rt - 0.05,
-            end_rt=apex_rt + 0.05,
-            area=1_000.0,
-            height=100.0,
-        ),
         primary_identity_event=event,
         supporting_events=supporting_events,
         assignment_reason="same_apex_window",

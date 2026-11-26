@@ -91,7 +91,7 @@ def test_curve_payload_write_and_read() -> None:
             )
 
         summary = read_alignment_explanation(final_path)
-        assert summary["schema_version"] == "alignment_evidence"
+        assert summary["schema_version"] == "alignment_evidence_bands"
         assert summary["plot_evidence_capability"] == "retained_curves"
 
         curves = read_alignment_curves(final_path, record_ids=["C1"])

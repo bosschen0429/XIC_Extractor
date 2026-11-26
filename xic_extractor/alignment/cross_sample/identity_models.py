@@ -16,18 +16,7 @@ CrossSampleGroupDisposition: TypeAlias = Literal[
     "unresolved",
     "rejected",
 ]
-CrossSampleEdgeDisposition: TypeAlias = Literal[
-    "eligible",
-    "review_only",
-    "excluded",
-]
 CrossSampleNeighborhoodStatus: TypeAlias = Literal["assessable", "unassessable"]
-CrossSampleInitialEdgeContext: TypeAlias = Literal[
-    "hard_gate",
-    "complete_link",
-    "full_batch_continuity",
-    "targeted_istd_continuity",
-]
 
 
 class CrossSampleContractError(ValueError):
@@ -78,10 +67,8 @@ def canonical_group_members(
 
 __all__ = (
     "CrossSampleContractError",
-    "CrossSampleEdgeDisposition",
     "CrossSampleGroupDisposition",
     "CrossSampleGroupMemberSubject",
-    "CrossSampleInitialEdgeContext",
     "CrossSampleNeighborhoodStatus",
     "canonical_group_members",
     "group_member_subject_from_peak_hypothesis",

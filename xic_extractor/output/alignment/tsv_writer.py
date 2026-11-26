@@ -27,7 +27,7 @@ from xic_extractor.alignment.backfill.evidence_contract import (
 from xic_extractor.alignment.cell_observation.observations import (
     FinalGroupCellObservation,
 )
-from xic_extractor.alignment.membership_selection import AcceptedMembershipRisk
+from xic_extractor.alignment.membership_risk import AcceptedMembershipRisk
 from xic_extractor.alignment.owner_group_delivery import feature_id_label
 from xic_extractor.alignment.primary_matrix_area import (
     primary_matrix_area_from_integration,

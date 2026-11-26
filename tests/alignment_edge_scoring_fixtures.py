@@ -7,6 +7,7 @@ from xic_extractor.alignment.ownership_models import (
     IdentityEvent,
     SampleLocalMS1Owner,
 )
+from xic_extractor.peak_detection.peak_hypothesis_identity import MeasuredPeakHypothesis
 
 
 def _owner(
@@ -52,17 +53,20 @@ def _owner(
             ),
         )
     return SampleLocalMS1Owner(
-        owner_id=f"OWN-{sample_stem}",
+        hypothesis=MeasuredPeakHypothesis(
+            f"OWN-{sample_stem}",
+            "dda_cid_nl",
+            measured_peak(
+                mz=precursor_mz,
+                apex_rt=owner_apex_rt,
+                start_rt=owner_apex_rt - 0.05,
+                end_rt=owner_apex_rt + 0.05,
+                area=owner_area,
+                height=100.0,
+            ),
+        ),
         sample_stem=sample_stem,
         raw_file=f"{sample_stem}.raw",
-        peak=measured_peak(
-            mz=precursor_mz,
-            apex_rt=owner_apex_rt,
-            start_rt=owner_apex_rt - 0.05,
-            end_rt=owner_apex_rt + 0.05,
-            area=owner_area,
-            height=100.0,
-        ),
         primary_identity_event=primary,
         supporting_events=support,
         assignment_reason=assignment_reason,

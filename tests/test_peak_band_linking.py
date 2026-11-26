@@ -3,6 +3,8 @@
 from dataclasses import replace
 
 from tests.membership_fixtures import cid_nl_owner
+from xic_extractor.alignment.band_grouping import band_shift_rows, group_peak_bands
+from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.peak_band_linking import (
     MAX_BOOTSTRAP_RT_STEP_MIN,
     competing_band_members,
@@ -10,6 +12,7 @@ from xic_extractor.alignment.peak_band_linking import (
     link_with_band_drift,
 )
 from xic_extractor.alignment.rt_drift import DriftAnchor, RtDriftModel
+from xic_extractor.alignment.rt_frame import SampleRtFrame
 
 
 def test_competing_peaks_keep_their_parallel_bands_without_using_owner_ids():
@@ -18,7 +21,10 @@ def test_competing_peaks_keep_their_parallel_bands_without_using_owner_ids():
     second = tuple(cid_nl_owner(sample, "late", apex_rt=10.2) for sample in order)
     owners = first + second
     renamed = tuple(
-        replace(owner, owner_id=f"renamed-{index}")
+        replace(
+            owner,
+            hypothesis=replace(owner.hypothesis, hypothesis_id=f"renamed-{index}"),
+        )
         for index, owner in enumerate(reversed(owners))
     )
     expected = {
@@ -55,8 +61,12 @@ def test_an_exact_rt_tie_uses_measured_order_not_owner_id_or_arrival_order():
     for owners in (
         (late, center, early),
         (
-            replace(early, owner_id=late.owner_id),
-            replace(late, owner_id=early.owner_id),
+            replace(
+                early, hypothesis=replace(early.hypothesis, hypothesis_id=late.owner_id)
+            ),
+            replace(
+                late, hypothesis=replace(late.hypothesis, hypothesis_id=early.owner_id)
+            ),
             center,
         ),
     ):
@@ -162,6 +172,41 @@ def test_bootstrap_wider_rt_step_crosses_a_whole_injection_jump():
     assert link_peak_bands(
         coordinates, injection_order=order, max_rt_step_min=MAX_BOOTSTRAP_RT_STEP_MIN
     ) == ((first, shifted),)
+
+
+def test_ms1_can_bridge_a_band_but_cannot_establish_a_row():
+    first = cid_nl_owner("S1", "a", apex_rt=10.0)
+    middle = replace(cid_nl_owner("S2", "b", apex_rt=10.3), primary_identity_event=None)
+    last = cid_nl_owner("S3", "c", apex_rt=10.6)
+    frame = SampleRtFrame(injection_order={"S1": 1, "S2": 2, "S3": 3})
+    (band,) = group_peak_bands(
+        (first, middle, last), config=AlignmentConfig(), rt_frame=frame
+    )
+    assert band.owners == (first, middle, last)
+    assert band.destination == "matrix"
+    (one_direct,) = group_peak_bands(
+        (first, middle, replace(last, primary_identity_event=None)),
+        config=AlignmentConfig(),
+        rt_frame=frame,
+    )
+    assert one_direct.destination == "archive"
+
+
+def test_shift_vote_counts_only_direct_peaks_and_requires_twenty_injections():
+    order = {f"S{i:02}": i for i in range(1, 21)}
+    owners = tuple(cid_nl_owner(sample, "direct", apex_rt=10.1) for sample in order)
+    frame = SampleRtFrame(injection_order=order)
+    assert band_shift_rows(owners, config=AlignmentConfig(), rt_frame=frame) == (
+        dict.fromkeys(order, 10.1),
+    )
+    assert (
+        band_shift_rows(
+            (*owners[:-1], replace(owners[-1], primary_identity_event=None)),
+            config=AlignmentConfig(),
+            rt_frame=frame,
+        )
+        == ()
+    )
 
 
 def test_drift_is_fitted_to_the_seed_and_only_relinks_known_coordinates():

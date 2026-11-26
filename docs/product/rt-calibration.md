@@ -20,10 +20,8 @@ grouping consumes this frame.
 
 ### Anchor qualification
 
-Bootstrap obtains measured anchors from consistent directional grouping
-results; ordinary bootstrap membership is not used directly as the final
-answer. Pattern seeds participate in both directions. Extensions that disagree
-between directions remain unresolved without downgrading the seed.
+Bootstrap links peaks in measured RT. Established bands supply measured anchors
+from direct, quantifiable members; bootstrap membership is not final membership.
 
 Known-ISTD reference acquisition reuses Targeted's authoritative peak selection
 and credible-anchor decisions rather than adding a separate rule that makes all
@@ -38,28 +36,16 @@ input selection.
 | Known-ISTD reference | Exact identity bindings and measured coordinates. Bootstrap comparison uses the shared fitter with ISTDs only; final calibration combines those measurements with ordinary anchors. |
 | Sample RT calibration | One frozen map per batch, fitted from its measured ISTDs and the ordinary bootstrap correspondences of the reference population without shoulder overlap. Final Grouping, Backfill localization/admission, and replay consume this map through `SampleRtFrame`. |
 | Batch drift model | Frozen batch state (B), sample shift (M) and drift anchors, measured on the same reference population; see [Drift beyond the map](#drift-beyond-the-map). |
-| Peak trajectory | Ordered correspondences and direct/MS1-only positions, used for membership constraints and sample-local localization. |
+| Band | Links measured member peaks in injection order; the final band supplies sample-local Backfill coordinates. |
 | Calibration diagnostic | Uses the same fit owner with detected-cell inputs and an interleaved held-out comparison. Its files do not alter production results. |
 
-[`rt_anchors`](../../xic_extractor/alignment/rt_anchors.py) produces the
-anchor observations once per initial grouping: an owner with direct method
-support, a primary identity event and quantification-eligible integration,
-with its method channel, apex RT and, when its bootstrap group is agreed, that
-group. Bootstrap takes measured support from the retained assessment binding,
-not nominal method-query masses projected into an observation-only owner. The
-published RT map and the [drift model](#drift-beyond-the-map) are both fitted on
-one population: the bootstrap channels of every admitted Discovery peak, plus
-the measured ISTDs. M is [voted](#drift-beyond-the-map) from the same
-population's direct-evidence rows. Removing a peak only after grouping is not
-equivalent: that peak may have set a channel center or changed which bootstrap
-correspondences agreed. Final rows and their coefficients are inferred on the
-full population.
-
-The calibration population is read from the first pass, not acquired again.
-Bootstrap groups exist only to calibrate, so they are inferred only where they
-can: not for a workset whose anchors fall short of the correspondence quorum
-below in every cohort. Such owners stay ungrouped until final grouping, and
-their anchors still reach the drift model.
+[`rt_anchors`](../../xic_extractor/alignment/rt_anchors.py) reads the direct
+measured members of each established bootstrap band. The general fit and the
+initial B/M fit use those same band correspondences; two compounds sharing a
+method channel no longer provide one mixed drift series. Only the general map
+also uses the measured ISTD coordinates. A workset without enough possible
+anchor samples in any cohort skips bootstrap linking and contributes no
+ordinary anchor; its peaks remain available to final grouping.
 
 [`sample_rt_calibration`](../../xic_extractor/alignment/sample_rt_calibration.py)
 turns each agreed bootstrap group into one ordinary correspondence and fits the
@@ -144,9 +130,8 @@ Final membership and localization explicitly use a graded query instead:
 The frozen measured support is prepared once. Each answer carries its method,
 qualified position count, measured range, model residual spread, nearest-anchor
 distance and distance outside model support. These are descriptive facts, not
-probabilities or bounds on true error. Weak estimates multiply RT costs by 0.5,
-in addition to signal-quality weighting; mass and independent shape costs are
-unchanged. Accepted membership risks retain the applied query facts in the
+probabilities or bounds on true error. The bounded map supplies band membership coordinates; the graded estimates
+remain available for Backfill forecasts and their review facts. Accepted membership risks retain the applied query facts in the
 review outputs. Weak localization uses an `estimated_` basis and remains a
 forecast, not a physical observation. Neither query changes observed RT, peak
 boundaries, area, identity, or Backfill admission rules.
@@ -293,18 +278,11 @@ more, and differently: after general calibration,
 [`rt_drift`](../../xic_extractor/alignment/rt_drift.py) freezes B and M once,
 after the general fit and before final grouping:
 
-- **Channels**: a channel is one CID-NL method subject (precursor m/z and
-  neutral loss). When a sample has exactly one
-  [anchor observation](#anchor-qualification) in that channel, its apex RT is
-  that channel's observation in that sample; several leave the sample unknown.
-  Whether the bootstrap group agreed is not consulted, so compounds that drift
-  too far to group before calibration still contribute. Grouping by channel
-  measures drift only; it does not anchor the general map.
-- **Drift anchors** are channels whose general-calibrated RT keeps a robust
-  spread of at least 12 seconds and whose residuals correlate (Spearman ≥ 0.75 over at least six common samples) with a channel
-  of another elution family. Channels whose apices coincide within 0.05 min
-  (median over the samples both observe) form one family (isotopes, adducts,
-  co-eluting ions) and vote once.
+- **Drift anchors** are bootstrap bands whose general-calibrated RT keeps a
+  robust spread of at least 12 seconds and whose residuals correlate
+  (Spearman ≥ 0.75 over at least six common samples) with another elution
+  family. Bands whose apices coincide within 0.05 min (median over shared
+  samples) form one family and vote once.
 - **M**: each drift anchor's residual is detrended by its pooled-QC trend (the
   samples' own running median along injection order when fewer than two QCs
   carry it). Anchors whose scatter around their own running trend has a robust
@@ -312,10 +290,8 @@ after the general fit and before final grouping:
   scatter, define M. M(s) is the median over families of each family's median
   offset. A sample without such an offset has unknown M, not zero. The zero of
   M is arbitrary: a constant is absorbed by the group center.
-- **Rows vote M**: channels need one peak per sample, so some samples are voted
-  by one or two families. In a batch of at least 20 samples, the peaks with
-  their own method evidence are therefore grouped once on that frozen frame,
-  over the full population. A row seen in at least 20 samples is compared with
+- **Rows vote M**: in batches of at least 20 samples, only direct peaks are
+  linked with the initial drift model over the full population. A row seen in at least 20 samples is compared with
   its eight nearest injection-order neighbours, which cancels its slow trend.
   It votes when that local offset follows the anchors' M (Theil–Sen response
   of at least 0.3, Spearman ≥ 0.75), and its vote is the offset divided by its
@@ -339,23 +315,12 @@ Final grouping uses them as follows:
   Theil–Sen (alternating for both). A coefficient is estimated only with at
   least six members having that regressor and a regressor range of at least a
   quarter of the shape range (B) or 10 seconds (M); otherwise it stays zero.
-  Each nonzero coefficient costs what a 10-second RT difference costs a pair.
-  A group keeps the cheapest feasible choice, zero included. After the initial
-  whole-band grouping, each settled group's coefficients are also a candidate
-  for every group it overlaps during per-sample and per-owner reassignment. A
-  moved owner is judged by the model of the group it joins or leaves, not by
-  how its move perturbs a refit; a refit can otherwise shift a worst pair the
-  moved owner is not part of.
-- A member with unknown B or M does not enter the fit; it keeps its general
-  coordinate with half the RT weight and is not placed in the drift-adjusted
-  frame for the population-gap constraint. It does not force the group to
-  zero coefficients.
-- Once chosen, pair costs, population gap, local trend, mean peer fit and
-  contradiction flags all use the group's adjusted coordinate. Backfill
-  admission keeps the group's coefficients and B, and a Backfill forecast is
-  fitted in the adjusted coordinate with the target's drift added back.
-- Pattern correspondence between two calibrated samples also tries each nearby
-  drift anchor's own predicted displacement; see [Alignment](alignment.md).
+  A seed keeps the fit with the least robust residual spread, preferring
+  zero or fewer coefficients on equal spread. Relinking uses that fixed seed
+  fit, never one fitted to the proposed union. A peak with an unknown used
+  regressor stays out of that relink; remaining peaks can still link without
+  the drift model. Backfill reads the accepted band's coefficients and seed
+  shape without refitting them.
 - Observed RT, peak boundaries and area are unchanged. Review rows record
   `rt_time_coefficient` and `rt_sample_shift_coefficient`; run metadata records
   `rt_drift_summary` (drift anchors, unknown-M samples, knots per RT segment,

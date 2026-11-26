@@ -28,12 +28,7 @@ from tests.untargeted_partition_fixtures import (
     fixture_assessment,
 )
 from xic_extractor import raw_reader
-from xic_extractor.alignment.cid_nl_grouping import CID_NL_GROUPING_RULES
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.edge_scoring import (
-    evaluate_owner_edge as _evaluate_owner_edge,
-)
-from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.applications.untargeted.application import run_untargeted_application
 from xic_extractor.applications.untargeted.publication import (
     UntargetedPublicationPolicy,
@@ -53,16 +48,6 @@ from xic_extractor.discovery.processing_run_spec_adapter import (
 from xic_extractor.presets.apply import apply_to_discovery
 from xic_extractor.presets.loader import load_preset
 from xic_extractor.sample_metadata import SampleMetadata
-
-
-def evaluate_owner_edge(left, right, *, config, **kwargs):
-    return _evaluate_owner_edge(
-        left,
-        right,
-        config=config,
-        method_evidence=CID_NL_GROUPING_RULES.pair_evidence(left, right, config),
-        **kwargs,
-    )
 
 
 @pytest.mark.parametrize(
@@ -144,7 +129,7 @@ def test_configured_composition_runs_discovery_to_owner_matrix(
     )
     assert len(batch.subject_batch.subjects) == 1
     install_runtime_raws(monkeypatch, sources_by_path=sources, tmp_path=tmp_path)
-    alignment_config = AlignmentConfig(anchor_min_seed_events=1)
+    alignment_config = AlignmentConfig()
     runtime = execute_dense_partition(
         batch,
         alignment_config=alignment_config,
@@ -234,68 +219,6 @@ def _assert_unsupported_exclusion_closes_exact_coverage(completed):
         and len(item.composite_assessments) == 2
         for item in exclusions
     )
-
-
-def _assert_composite_labels_cannot_grant_membership(batch, runtime):
-    from xic_extractor.alignment.feature_membership_inference import (
-        infer_feature_memberships,
-    )
-    from xic_extractor.alignment.hypothesis_owner_adapter import (
-        compose_cid_nl_peak_hypotheses_from_assessment,
-        owner_from_cid_nl_assessment_support,
-    )
-
-    owners = []
-    for result in runtime.sample_results:
-        assessment = fixture_assessment(result)
-        (hypothesis,) = compose_cid_nl_peak_hypotheses_from_assessment(
-            sample=result.job.sample,
-            assessment=assessment,
-        )
-        owners.append(
-            owner_from_cid_nl_assessment_support(
-                sample=result.job.sample,
-                assessment=assessment,
-                hypothesis=hypothesis,
-            )
-        )
-    assert (
-        evaluate_owner_edge(
-            *owners, config=AlignmentConfig(), rt_frame=SampleRtFrame()
-        ).failure_reason
-        == ""
-    )
-    unbound = tuple(
-        replace(owner, cid_nl_composite_assessment=None) for owner in owners
-    )
-    assert unbound[0].neutral_loss_tag == unbound[1].neutral_loss_tag
-    assert (
-        evaluate_owner_edge(
-            *unbound, config=AlignmentConfig(), rt_frame=SampleRtFrame()
-        ).failure_reason
-        == "product_mz_out_of_tolerance"
-    )
-    crossed = replace(
-        owners[1], cid_nl_composite_assessment=owners[0].cid_nl_composite_assessment
-    )
-    assert (
-        evaluate_owner_edge(
-            owners[0], crossed, config=AlignmentConfig(), rt_frame=SampleRtFrame()
-        ).failure_reason
-        == "product_mz_out_of_tolerance"
-    )
-
-    for population, expected_groups in (
-        (tuple(owners), 1),
-        ((owners[0], crossed), 2),
-    ):
-        inferred = infer_feature_memberships(
-            population,
-            config=AlignmentConfig(anchor_min_seed_events=1),
-            rt_frame=SampleRtFrame(),
-            rules=CID_NL_GROUPING_RULES,
-        )
-        assert len(inferred.groups) == expected_groups
 
 
 def _assert_duplicate_loss_evidence_rejected(batch, runtime):
@@ -454,7 +377,7 @@ def test_intersection_rechecks_an_observed_peak_outside_the_discovery_window(
             raw_dir=tmp_path / "raw",
             dll_dir=tmp_path,
             execution=UntargetedExecutionPolicy(profile=profile),
-            alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+            alignment_config=AlignmentConfig(),
             publication=UntargetedPublicationPolicy(emit_alignment_cells=True),
         )
     )

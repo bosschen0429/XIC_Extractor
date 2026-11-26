@@ -9,7 +9,7 @@ observations produced here for their respective bootstrap populations.
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -22,23 +22,11 @@ from xic_extractor.alignment.sample_rt_calibration import (
 )
 
 if TYPE_CHECKING:
-    from xic_extractor.alignment.feature_membership_inference import (
-        FeatureMembershipBasis,
-    )
     from xic_extractor.alignment.grouping_bootstrap import (
         InitialGroupingScope,
-        RetainedGroupingCandidate,
     )
     from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
     from xic_extractor.alignment.rt_frame import SampleRtFrame
-
-_CALIBRATION_GROUP_BASES: frozenset[FeatureMembershipBasis] = frozenset(
-    {
-        "bidirectional_membership_agreement",
-        "known_identity_constraint",
-        "peak_trajectory",
-    }
-)
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,7 +77,6 @@ def reaches_ordinary_anchor_quorum(
 
 def rt_anchor_observations(
     scope: InitialGroupingScope,
-    candidates: Sequence[RetainedGroupingCandidate],
 ) -> tuple[RtAnchorObservation, ...]:
     """Every anchor observation of one initial grouping, in group member order.
 
@@ -98,29 +85,32 @@ def rt_anchor_observations(
     establish a peak in the channel. A retained MS1-only or ambiguous member may
     still be grouped, but cannot establish other samples' RT coordinates.
     """
-    subject_by_owner = {
-        candidate.peak_hypothesis_id: candidate.direct_support_assessment.method_subject
-        for candidate in candidates
-        if candidate.direct_support_assessment is not None
-    }
-    return tuple(
-        RtAnchorObservation(
-            subject.method_subject_id,
-            subject.precursor_mz,
-            subject.neutral_loss_da,
-            owner.sample_stem,
-            owner.owner_id,
-            owner.peak.rt_apex_min,
-            group.group_hypothesis_id
-            if group.inference_basis is not None
-            and group.inference_basis.basis in _CALIBRATION_GROUP_BASES
-            else None,
+    observations: list[RtAnchorObservation] = []
+    for group in scope.groups:
+        anchors = [
+            (owner, owner.assessment.method_subject)
+            for owner in group.owners
+            if owner.assessment is not None and places_sample_on_rt_frame(owner)
+        ]
+        if len(anchors) < 2 or group.disposition != "established":
+            continue
+        band_key = min(
+            f"{subject.method_subject_id}|{owner.peak.physical_peak_key}"
+            for owner, subject in anchors
         )
-        for group in scope.groups
-        for owner in group.owners
-        if (subject := subject_by_owner.get(owner.owner_id)) is not None
-        and places_sample_on_rt_frame(owner)
-    )
+        observations.extend(
+            RtAnchorObservation(
+                subject.method_subject_id,
+                subject.precursor_mz,
+                subject.neutral_loss_da,
+                owner.sample_stem,
+                owner.owner_id,
+                owner.peak.rt_apex_min,
+                band_key,
+            )
+            for owner, subject in anchors
+        )
+    return tuple(observations)
 
 
 @dataclass(frozen=True, slots=True)

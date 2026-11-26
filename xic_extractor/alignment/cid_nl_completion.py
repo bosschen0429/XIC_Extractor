@@ -37,7 +37,6 @@ from xic_extractor.alignment.cross_sample.grouping_result import (
 )
 from xic_extractor.alignment.grouping_bootstrap import (
     InitialGroupingScope,
-    RetainedGroupingCandidate,
 )
 from xic_extractor.alignment.grouping_workflow import (
     admit_cid_nl_group_backfills,
@@ -71,7 +70,6 @@ class CidNlWorksetGrouping:
     terminal_subjects: tuple[TerminalSearchObservation, ...]
     grouping_scope: InitialGroupingScope
     grouping_result: CrossSampleGroupingResult
-    retained_candidates: tuple[RetainedGroupingCandidate, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -206,17 +204,16 @@ def _complete_cell_observations(
     retained_cell_hypotheses: dict[
         CidNlMethodAssessment, list[MeasuredPeakHypothesis]
     ] = {}
-    for candidate in grouping.retained_candidates:
-        retained_cell_hypotheses.setdefault(
-            candidate.assessment,
-            [],
-        ).append(candidate.peak_hypothesis)
+    owners = tuple(owner for group in grouping_scope.groups for owner in group.owners)
+    for owner in owners:
+        if owner.assessment is not None:
+            retained_cell_hypotheses.setdefault(owner.assessment, []).append(
+                owner.hypothesis
+            )
     retained_hypotheses = {
         key: tuple(values) for key, values in retained_cell_hypotheses.items()
     }
-    member_observations = index_physical_peaks(
-        candidate.peak_hypothesis.peak for candidate in grouping.retained_candidates
-    )
+    member_observations = index_physical_peaks(owner.peak for owner in owners)
     (
         grouping_result,
         backfilled_groups,
@@ -230,7 +227,6 @@ def _complete_cell_observations(
         alignment_config=alignment_config,
         member_observations=member_observations,
         physical_peak_views=evidence.physical_peak_views,
-        peak_trajectories=grouping_scope.peak_trajectories,
     )
     backfilled_positions = frozenset(
         (group_id, sample_id)

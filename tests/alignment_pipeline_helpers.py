@@ -5,8 +5,6 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Literal
 
-import numpy as np
-
 from tests.untargeted_partition_fixtures import ComposedChildOutputs, children_of
 from xic_extractor.alignment.cell_decision.owner import (
     NoWriteCellDecision,
@@ -14,10 +12,6 @@ from xic_extractor.alignment.cell_decision.owner import (
     NumericCellDecision,
     ProductionCellDecision,
 )
-from xic_extractor.alignment.cross_sample.identity_models import (
-    CrossSampleGroupMemberSubject,
-)
-from xic_extractor.alignment.edge_scoring import OwnerEdgeEvidence
 from xic_extractor.alignment.ownership_models import (
     IdentityEvent,
     SampleLocalMS1Owner,
@@ -38,39 +32,12 @@ from xic_extractor.output.alignment.tsv_writer import (
     untarget_sample_order,
     write_alignment_tsvs,
 )
-from xic_extractor.peak_detection.elution_context import (
-    SampleElutionContext,
-    project_elution_context,
-)
 from xic_extractor.peak_detection.hypotheses import IntegrationResult
 from xic_extractor.peak_detection.observations import PeakObservation
-from xic_extractor.peak_detection.physical_peak_evaluation import (
-    prepare_physical_signal,
-)
+from xic_extractor.peak_detection.peak_hypothesis_identity import MeasuredPeakHypothesis
 from xic_extractor.processing_identity import (
     build_local_acquisition_source_identity,
 )
-
-
-def resolved_elution_context(
-    sample: str, peaks: tuple[tuple[float, float], ...], *, mz: float = 500.0
-) -> SampleElutionContext:
-    """Separated Gaussian peaks with physical ownership, not landmark-only hints."""
-    apices = tuple(rt for rt, _ in peaks)
-    rt = np.arange(max(0.0, min(apices) - 0.5), max(apices) + 0.5, 0.005)
-    for apex in apices:
-        rt[np.argmin(abs(rt - apex))] = apex
-    signal = sum(
-        height * np.exp(-0.5 * ((rt - apex) / 0.035) ** 2) for apex, height in peaks
-    )
-    context = project_elution_context(
-        prepare_physical_signal(rt, signal), sample_stem=sample, mz=mz
-    )
-    assert context is not None
-    assert tuple(p.apex_rt for p in context.landmarks) == tuple(sorted(apices))
-    assert len({p.physical_segment for p in context.landmarks}) == len(peaks)
-    assert all(p.physical_segment is not None for p in context.landmarks)
-    return context
 
 
 def write_batch(
@@ -508,33 +475,6 @@ def matrix(sample_order: tuple[str, ...]) -> Any:
     )
 
 
-def owner_edge_evidence() -> OwnerEdgeEvidence:
-    return OwnerEdgeEvidence(
-        left_owner_id="OWN-Sample_A-000001",
-        right_owner_id="OWN-Sample_B-000001",
-        left_sample_stem="Sample_A",
-        right_sample_stem="Sample_B",
-        neutral_loss_tag="DNA_dR",
-        left_precursor_mz=500.0,
-        right_precursor_mz=500.1,
-        left_rt_min=8.5,
-        right_rt_min=8.6,
-        decision="strong_edge",
-        failure_reason="",
-        rt_raw_delta_sec=6.0,
-        rt_drift_corrected_delta_sec=1.0,
-        drift_prior_source="targeted_istd_trend",
-        rt_basis="drift_corrected",
-        injection_order_gap=1,
-        owner_quality="clean",
-        seed_support_level="strong",
-        duplicate_context="none",
-        score=100,
-        reason="strong_edge: score=100",
-        failure_allows_rt_continuity=False,
-    )
-
-
 def _integration(apex_rt: float) -> IntegrationResult:
     return IntegrationResult(
         rt_left_min=apex_rt - 0.05,
@@ -587,17 +527,10 @@ def _owner(
     )
     hypothesis_id = f"{sample_stem}|hypothesis|{suffix}"
     return SampleLocalMS1Owner(
-        owner_id=f"OWN-{sample_stem}-{suffix}",
+        hypothesis=MeasuredPeakHypothesis(hypothesis_id, "dda_cid_nl", physical_peak),
         sample_stem=sample_stem,
         raw_file=f"{sample_stem}.raw",
-        peak=physical_peak,
         primary_identity_event=event,
         supporting_events=(),
         assignment_reason="owner_exact_apex_match",
-        cross_sample_member_subject=CrossSampleGroupMemberSubject(
-            sample_key=f"test-sample:{sample_stem}",
-            subject_kind="peak_hypothesis",
-            subject_id=hypothesis_id,
-            physical_peaks=(physical_peak,),
-        ),
     )

@@ -8,7 +8,7 @@ from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSamplePartitionTransition,
     CrossSamplePeakGroupHypothesis,
 )
-from xic_extractor.alignment.membership_selection import AcceptedMembershipRisk
+from xic_extractor.alignment.membership_risk import AcceptedMembershipRisk
 from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.sample_metadata import SampleMetadata
 

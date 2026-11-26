@@ -81,7 +81,7 @@ def run_alignment_fixture(tmp_path, monkeypatch, scenario):
     sources, candidates = {}, {}
     for path, loss in zip(paths, (116.0474, 132.0423), strict=True):
         path.write_bytes(path.stem.encode())
-        center = 8.12 if scenario == "review_only" and path.stem == "S2" else 8.0
+        center = 8.48 if scenario == "review_only" and path.stem == "S2" else 8.0
         source = _FakeRaw((center,), neutral_loss_das=(loss,))
         sources[path] = source
         candidates[path.stem] = _current_candidates(
@@ -107,7 +107,6 @@ def run_alignment_fixture(tmp_path, monkeypatch, scenario):
     )
     install_runtime_raws(monkeypatch, sources_by_path=sources, tmp_path=tmp_path)
     config = AlignmentConfig(
-        anchor_min_seed_events=3 if scenario == "review_only" else 1,
         preferred_rt_sec=2.0 if scenario == "review_only" else 60.0,
     )
     runtime = execute_dense_partition(

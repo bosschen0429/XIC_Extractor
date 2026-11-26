@@ -5,13 +5,11 @@ from __future__ import annotations
 from collections import Counter, defaultdict
 from collections.abc import Mapping, Sequence
 from dataclasses import replace
-from typing import cast
+from statistics import median
 
-from xic_extractor.alignment.backfill.membership_selection import (
-    select_backfill_memberships,
-)
+from xic_extractor.alignment.band_grouping import band_rt, group_peak_bands
 from xic_extractor.alignment.band_identity import merge_one_band_groups
-from xic_extractor.alignment.cid_nl_grouping import CID_NL_GROUPING_RULES
+from xic_extractor.alignment.cid_nl_grouping import cid_nl_pair_failures
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample.grouping_result import (
     CrossSampleGroupingContractError,
@@ -24,14 +22,9 @@ from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSamplePeakGroupHypothesis,
     _expected_cross_sample_lineage,
     _hypothesis_from_owner_group,
-    construct_cross_sample_peak_group_hypotheses,
-)
-from xic_extractor.alignment.feature_membership_inference import (
-    FeatureInferenceOperationCounts,
 )
 from xic_extractor.alignment.grouping_bootstrap import (
     InitialGroupingScope,
-    RetainedGroupingCandidate,
     bootstrap_cid_nl_initial_population,
 )
 from xic_extractor.alignment.hypothesis_owner_adapter import (
@@ -39,25 +32,25 @@ from xic_extractor.alignment.hypothesis_owner_adapter import (
     owner_from_cid_nl_assessment_support,
     owner_from_ms1_observation_hypothesis,
 )
-from xic_extractor.alignment.membership_selection import MembershipComparison
-from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
-from xic_extractor.alignment.peak_trajectories import (
-    PeakTrajectories,
-    resolve_peak_trajectories,
+from xic_extractor.alignment.membership_risk import (
+    AcceptedMembershipRisk,
+    measured_members,
 )
+from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
+from xic_extractor.alignment.peak_band_linking import MAX_BAND_PRECURSOR_SPAN_PPM
 from xic_extractor.alignment.result.scientific_alignment import (
     ObservedSearchSubject,
     TerminalSearchObservation,
 )
 from xic_extractor.alignment.row_contrast import reject_low_contrast_groups
-from xic_extractor.alignment.rt_drift import ROW_MIN_SAMPLES
 from xic_extractor.alignment.rt_frame import RtFrame, SampleRtFrame
 from xic_extractor.alignment.shape_consistency import reject_inconsistent_groups
+from xic_extractor.mass_accuracy import within_ppm
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessment,
     is_ms1_only_cid_nl_backfill_assessment,
 )
-from xic_extractor.peak_detection.elution_context import SampleElutionContext
+from xic_extractor.peak_detection.ms1_shape_identity import compare_local_peak_shapes
 from xic_extractor.peak_detection.observations import (
     PeakObservation,
 )
@@ -127,12 +120,11 @@ def build_targeted_cross_sample_groups(
         owners.append(owner)
         selected_by_id[sample_id] = selected
 
-    groups = construct_cross_sample_peak_group_hypotheses(
-        tuple(owners),
+    groups = group_peak_bands(
+        owners,
         config=alignment_config,
-        sample_universe=frozenset(sample.raw_stem for sample in samples),
         rt_frame=rt_frame,
-        rules=CID_NL_GROUPING_RULES,
+        stage="targeted",
     )
     population = tuple(sorted(groups, key=lambda group: group.group_hypothesis_id))
     if tuple(sorted(owner.owner_id for owner in owners)) != tuple(
@@ -156,9 +148,7 @@ def build_initial_cid_nl_cross_sample_groups(
     samples: tuple[SampleMetadata, ...],
     sample_assessments: tuple[tuple[SampleMetadata, CidNlMethodAssessment], ...],
     alignment_config: AlignmentConfig,
-    elution_contexts: Sequence[SampleElutionContext] = (),
     rt_frame: SampleRtFrame,
-    operation_counts_sink: list[FeatureInferenceOperationCounts] | None = None,
     retained_hypotheses_by_assessment: Mapping[
         CidNlMethodAssessment, tuple[MeasuredPeakHypothesis, ...]
     ]
@@ -166,16 +156,12 @@ def build_initial_cid_nl_cross_sample_groups(
 ) -> tuple[
     InitialGroupingScope,
     CrossSampleGroupingResult,
-    tuple[RetainedGroupingCandidate, ...],
 ]:
-    """Infer stable CID-NL groups without producing unused RT trajectories."""
-    grouping_scope, retained_candidates, rt_frame = bootstrap_cid_nl_initial_population(
+    """Link CID-NL peaks in raw RT to supply batch calibration anchors."""
+    grouping_scope, rt_frame = bootstrap_cid_nl_initial_population(
         sample_assessments=sample_assessments,
         alignment_config=alignment_config,
-        sample_universe=frozenset(sample.raw_stem for sample in samples),
         rt_frame=rt_frame,
-        elution_contexts=elution_contexts,
-        operation_counts_sink=operation_counts_sink,
         retained_hypotheses_by_assessment=retained_hypotheses_by_assessment,
     )
     groups = grouping_scope.groups
@@ -187,44 +173,21 @@ def build_initial_cid_nl_cross_sample_groups(
         ),
         rt_frame=rt_frame,
     )
-    return grouping_scope, result, retained_candidates
+    return grouping_scope, result
 
 
 def regroup_cid_nl_cross_sample_groups(
     *,
     samples: tuple[SampleMetadata, ...],
     grouping_scope: InitialGroupingScope,
-    grouping_result: CrossSampleGroupingResult,
     alignment_config: AlignmentConfig,
     rt_frame: SampleRtFrame,
-    operation_counts_sink: list[FeatureInferenceOperationCounts] | None = None,
 ) -> tuple[InitialGroupingScope, CrossSampleGroupingResult]:
     """Reconsider every ordinary owner after the batch anchor warp is known."""
     owners = tuple(owner for group in grouping_scope.groups for owner in group.owners)
-    trajectories = resolve_peak_trajectories(
-        owners,
-        grouping_scope.peak_trajectories.source_contexts,
-        config=alignment_config,
-        injection_order=rt_frame.injection_order,
-        rt_frame=rt_frame,
-    )
-    groups = reject_low_contrast_groups(
-        reject_inconsistent_groups(
-            merge_one_band_groups(
-                group_cid_nl_owners(
-                    owners,
-                    config=alignment_config,
-                    sample_universe=frozenset(sample.raw_stem for sample in samples),
-                    rt_frame=rt_frame,
-                    operation_counts_sink=operation_counts_sink,
-                    peak_trajectories=trajectories,
-                ),
-                config=alignment_config,
-            )
-        )
-    )
+    groups = finalize_cid_nl_bands(owners, config=alignment_config, rt_frame=rt_frame)
     population = tuple(sorted(groups, key=lambda group: group.group_hypothesis_id))
-    scope = replace(grouping_scope, groups=groups, peak_trajectories=trajectories)
+    scope = replace(grouping_scope, groups=groups)
     result = CrossSampleGroupingResult(
         samples=samples,
         partition_transition=_partition_transition(
@@ -235,72 +198,27 @@ def regroup_cid_nl_cross_sample_groups(
     return scope, result
 
 
-def group_cid_nl_owners(
+def finalize_cid_nl_bands(
     owners: Sequence[SampleLocalMS1Owner],
     *,
     config: AlignmentConfig,
-    sample_universe: frozenset[str],
     rt_frame: RtFrame,
     known_identity_bindings: Sequence[tuple[str, str]] = (),
-    operation_counts_sink: list[FeatureInferenceOperationCounts] | None = None,
-    peak_trajectories: PeakTrajectories | None = None,
 ) -> tuple[CrossSamplePeakGroupHypothesis, ...]:
-    """Consume inferred membership."""
-    return construct_cross_sample_peak_group_hypotheses(
-        tuple(owners),
-        accept_competition=True,
-        config=config,
-        sample_universe=sample_universe,
-        rt_frame=rt_frame,
-        known_identity_bindings=known_identity_bindings,
-        operation_counts_sink=operation_counts_sink,
-        peak_trajectories=peak_trajectories or PeakTrajectories(),
-        rules=CID_NL_GROUPING_RULES,
+    """Share the complete final membership decision with the replay reader."""
+    return reject_low_contrast_groups(
+        reject_inconsistent_groups(
+            merge_one_band_groups(
+                group_peak_bands(
+                    owners,
+                    config=config,
+                    rt_frame=rt_frame,
+                    known_identity_bindings=known_identity_bindings,
+                ),
+                config=config,
+            )
+        )
     )
-
-
-def direct_evidence_rt_rows(
-    owners: Sequence[SampleLocalMS1Owner],
-    contexts: Sequence[SampleElutionContext],
-    *,
-    config: AlignmentConfig,
-    sample_universe: frozenset[str],
-    rt_frame: SampleRtFrame,
-) -> tuple[dict[str, float], ...]:
-    """Rows of peaks with their own method evidence, as frame RT per sample.
-
-    Only these peaks are grouped, with the batch's frozen frame. The rows vote
-    the batch's sample shift; see ``refine_sample_shift``.
-    """
-    direct = tuple(
-        owner for owner in owners if not CID_NL_GROUPING_RULES.method_unobserved(owner)
-    )
-    if len(direct) < ROW_MIN_SAMPLES:
-        return ()
-    trajectories = resolve_peak_trajectories(
-        direct,
-        contexts,
-        config=config,
-        injection_order=rt_frame.injection_order,
-        rt_frame=rt_frame,
-    )
-    by_id = {owner.owner_id: owner for owner in direct}
-    rows = []
-    for group in group_cid_nl_owners(
-        direct,
-        config=config,
-        sample_universe=sample_universe,
-        rt_frame=rt_frame,
-        peak_trajectories=trajectories,
-    ):
-        row = {
-            by_id[owner_id].sample_stem: estimate.rt_min
-            for owner_id in group.owner_ids
-            if (estimate := rt_frame.membership_coordinate(by_id[owner_id])) is not None
-        }
-        if len(row) >= ROW_MIN_SAMPLES:
-            rows.append(row)
-    return tuple(rows)
 
 
 def admit_cid_nl_group_backfills(
@@ -314,7 +232,6 @@ def admit_cid_nl_group_backfills(
     alignment_config: AlignmentConfig,
     member_observations: Mapping[PeakObservation, PeakObservation],
     physical_peak_views: Mapping[PeakObservation, PhysicalPeakView] | None = None,
-    peak_trajectories: PeakTrajectories | None = None,
 ) -> tuple[
     CrossSampleGroupingResult,
     tuple[CrossSamplePeakGroupHypothesis, ...],
@@ -364,7 +281,9 @@ def admit_cid_nl_group_backfills(
             sample_id,
             hypothesis.peak.physical_identity,
         )
-        if any(member.sample_key == sample_id for member in group.member_subjects):
+        if group.destination != "matrix" or any(
+            member.sample_key == sample_id for member in group.member_subjects
+        ):
             continue
         proposals.append((group_id, physical_key, owner, hypothesis, assessment))
     if not proposals:
@@ -411,50 +330,129 @@ def admit_cid_nl_group_backfills(
             or compare_physical_peak_views(views[i], views[j]) == "same"
         )
     )
-    comparison = MembershipComparison(
-        tuple(
-            {
-                owner.owner_id: owner
-                for owner in (
-                    *(owner for group in groups for owner in group.owners),
-                    *(p[2] for p in eligible),
-                )
-            }.values()
-        ),
-        rules=CID_NL_GROUPING_RULES,
-        config=alignment_config,
-        rt_frame=result.rt_frame,
-        trajectories=peak_trajectories or PeakTrajectories(),
-        fixed_coefficients={
-            tuple(sorted(group.owner_ids)): group.inference_basis.rt_drift
-            for group in groups
-            if group.inference_basis is not None
-        },
+    precursor_ppm = min(
+        alignment_config.precursor_mz_tolerance_ppm, MAX_BAND_PRECURSOR_SPAN_PPM
     )
-    low_localization = {
-        i
-        for i, proposal in enumerate(eligible)
-        if (evaluation := proposal[3].peak.physical_evaluation) is not None
-        and evaluation.question.selection_policy_version
-        == PHYSICAL_PEAK_UNLOCATED_BACKFILL_POLICY
-    }
-    for owner_id in {eligible[index][2].owner_id for index in low_localization}:
-        comparison.rt_weights[owner_id] *= 0.25
-    selected, risks = select_backfill_memberships(
-        comparison=comparison,
-        original_groups={g.group_hypothesis_id: g.owner_ids for g in groups},
-        proposals=tuple((p[0], p[2].owner_id) for p in eligible),
-        conflicts=conflicts,
-    )
-    for index in selected & low_localization:
-        risks[index] = replace(
-            risks[index],
-            risk_flags=tuple(
-                sorted(
-                    (*risks[index].risk_flags, "backfill_low_localization_confidence")
-                )
-            ),
+    spans = {
+        group.group_hypothesis_id: (
+            min(owner.peak.mz for owner in group.owners),
+            max(owner.peak.mz for owner in group.owners),
         )
+        for group in groups
+        if group.owners
+    }
+    ranked = []
+    group_keys = {}
+    centers: dict[str, float] = {}
+    for i, (group_id, _, owner, hypothesis, _) in enumerate(eligible):
+        group = by_id[group_id]
+        if any(
+            any(cid_nl_pair_failures(peer, owner, alignment_config))
+            for peer in group.owners
+        ):
+            continue
+        evaluation = hypothesis.peak.physical_evaluation
+        if evaluation is None:
+            if group_id not in centers:
+                centers[group_id] = median(
+                    band_rt(peer, result.rt_frame) for peer in group.owners
+                )
+            distance = abs(band_rt(owner, result.rt_frame) - centers[group_id])
+            if distance * 60.0 > alignment_config.preferred_rt_sec:
+                continue
+            unlocated = True
+        else:
+            question = evaluation.question
+            rt = owner.peak.rt_apex_min
+            window = question.search_rt_window
+            if window is not None and not window[0] <= rt <= window[1]:
+                continue
+            distance = abs(rt - question.query_rt_min)
+            unlocated = (
+                question.selection_policy_version
+                == PHYSICAL_PEAK_UNLOCATED_BACKFILL_POLICY
+            )
+        if group_id not in group_keys:
+            group_keys[group_id] = measured_members(group.owners)
+        low, high = spans[group_id]
+        mz = owner.peak.mz
+        if not within_ppm(max(high, mz), min(low, mz), precursor_ppm):
+            continue
+        ranked.append(
+            (
+                unlocated,
+                distance,
+                group_keys[group_id],
+                owner.peak.measured_order_key,
+                i,
+            )
+        )
+    ranked.sort(key=lambda item: item[:-1])
+    rivals = defaultdict(list)
+    allowed = {item[-1] for item in ranked}
+    for a, b in conflicts:
+        if a in allowed and b in allowed:
+            rivals[a].append(b)
+            rivals[b].append(a)
+    selected: set[int] = set()
+    ranks_by_index = {item[-1]: rank for rank, item in enumerate(ranked)}
+    accepted_by_group: dict[str, list[SampleLocalMS1Owner]] = defaultdict(list)
+    for _, _, _, _, i in ranked:
+        group_id, _, owner, _, _ = eligible[i]
+        if any(j in selected for j in rivals[i]):
+            continue
+        lo, hi = spans[group_id]
+        lo, hi = min(lo, owner.peak.mz), max(hi, owner.peak.mz)
+        if not within_ppm(hi, lo, precursor_ppm):
+            continue
+        spans[group_id] = lo, hi
+        selected.add(i)
+        accepted_by_group[group_id].append(owner)
+    risks = {}
+    for unlocated, _, _, _, i in ranked:
+        if i not in selected:
+            continue
+        group_id, _, owner, _, _ = eligible[i]
+        peers = (*by_id[group_id].owners, *accepted_by_group[group_id])
+        alternatives = sorted(rivals[i], key=ranks_by_index.__getitem__)
+        flags: list[str] = []
+        alternative_partition = None
+        if alternatives:
+            other_group_id, _, other_owner, _, _ = eligible[alternatives[0]]
+            alternative_partition = (
+                measured_members((*by_id[other_group_id].owners, other_owner)),
+            )
+            flags.extend(("accepted_competition", "backfill_competition"))
+        if unlocated:
+            flags.append("backfill_low_localization_confidence")
+        shape_disagreement = owner.peak_shape is not None and any(
+            peer.peak_shape is not None
+            and (
+                similarity := compare_local_peak_shapes(
+                    owner.peak_shape, peer.peak_shape
+                ).similarity
+            )
+            is not None
+            and similarity < alignment_config.min_peak_shape_similarity
+            for peer in peers
+            if peer is not owner
+        )
+        if shape_disagreement:
+            flags.append("accepted_contradiction")
+        if flags:
+            risks[i] = AcceptedMembershipRisk(
+                status="accepted",
+                phase="backfill",
+                selected_owners=measured_members(peers),
+                alternative_partition=alternative_partition,
+                equivalent_alternatives=(),
+                rt_basis="unlocated" if unlocated else "band_location",
+                evidence_basis="fixed_band_backfill",
+                soft_contradictions=("shape_disagreement",)
+                if shape_disagreement
+                else (),
+                risk_flags=tuple(sorted(flags)),
+            )
     selected_cells = {(eligible[i][0], eligible[i][1][0]) for i in selected}
     rejected_cells = frozenset(
         (group, sample)
@@ -485,20 +483,18 @@ def admit_cid_nl_group_backfills(
                 evidence=group.evidence,
                 center=(group.group_center_mz, group.group_center_rt),
                 inference_basis=group.inference_basis,
-                inference_decisions=group.inference_decisions,
+                member_risks=group.member_risks,
+                drift_reference=group.drift_reference,
                 one_band=group.one_band,
             )
-            admitted.extend(
-                cast(CrossSampleGroupMemberSubject, owner.cross_sample_member_subject)
-                for owner in owners
-            )
+            admitted.extend(owner.cross_sample_member_subject for owner in owners)
         completed.append(successor)
         successor_ids[group.group_hypothesis_id] = successor.group_hypothesis_id
     result = replace(
         result,
         backfill_membership_risks=tuple(
             (successor_ids[eligible[i][0]], eligible[i][1][0], risks[i])
-            for i in sorted(selected)
+            for i in sorted(risks)
         ),
     )
     if not admitted:

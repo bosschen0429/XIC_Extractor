@@ -742,7 +742,7 @@ def test_cell_identity_binds_full_provisional_group_membership(
         )
         sample_assessments.append((sample, assessment))
 
-    config = AlignmentConfig(anchor_min_seed_events=1)
+    config = AlignmentConfig()
     single = build_cid_nl_reference_spine(
         target=fixture.target,
         sample_assessments=(sample_assessments[0],),
@@ -779,7 +779,7 @@ def test_non_support_cell_rejects_group_from_another_target(tmp_path: Path) -> N
     spine = build_cid_nl_reference_spine(
         target=fixture.target,
         sample_assessments=((fixture.sample("support"), support_assessment),),
-        config=AlignmentConfig(anchor_min_seed_events=1),
+        config=AlignmentConfig(),
     )
     assert spine.group is not None
     hold_assessment = mint_cid_nl_method_assessment(
@@ -883,7 +883,7 @@ def test_multi_scan_owner_projection_is_order_neutral_across_samples(
             (fixture.sample("a"), first),
             (fixture.sample("b"), reverse),
         ),
-        config=AlignmentConfig(anchor_min_seed_events=1),
+        config=AlignmentConfig(),
     )
 
     assert spine.group is not None

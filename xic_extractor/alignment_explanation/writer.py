@@ -365,30 +365,24 @@ class ExplanationReportWriter:
         disposition: str,
         members: Sequence[Mapping[str, Any]],
         inference_basis: Mapping[str, Any] | None = None,
-        inference_decisions: Sequence[Mapping[str, Any]] | None = None,
+        member_risks: Mapping[str, Mapping[str, Any]] | None = None,
     ) -> None:
         row_id = self._record_id()
         for member in members:
             self._member(member, initial=row_id, final=None)
-        owners = {member["subject_id"]: member["sample_key"] for member in members}
-        decisions = []
-        for decision in inference_decisions or ():
-            risk = decision.get("accepted_risk")
-            owner = decision.get("owner_id")
-            if risk is not None and isinstance(owner, str) and owner in owners:
-                row = self._members[owners[owner], owner]
+            subject_id = member["subject_id"]
+            risk = (member_risks or {}).get(subject_id)
+            if risk is not None:
+                row = self._members[member["sample_key"], subject_id]
                 row[5] = _compressed(
                     self._risk_references({**risk, "risk_flags": None})
                 )
                 row[6] = json.dumps(list(risk["risk_flags"]), ensure_ascii=False)
-                decision = {**decision, "accepted_risk": None}
-            decisions.append(decision)
         self._initial_groups.append(
             [
                 row_id,
                 disposition,
                 None if inference_basis is None else _compressed(inference_basis),
-                None if inference_decisions is None else _compressed(decisions),
             ]
         )
 
@@ -574,7 +568,7 @@ class ExplanationReportWriter:
         )
         db.executemany("INSERT INTO groups VALUES (?,?,?,?,?,?)", self._groups.values())
         db.executemany(
-            "INSERT INTO initial_groups VALUES (?,?,?,?)", self._initial_groups
+            "INSERT INTO initial_groups VALUES (?,?,?)", self._initial_groups
         )
         db.executemany(
             "INSERT INTO members VALUES (?,?,?,?,?,?,?,?,?)",

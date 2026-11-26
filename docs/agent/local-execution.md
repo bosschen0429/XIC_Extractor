@@ -122,8 +122,9 @@ first three flags below.
 
 The Backfill, pairing and Matrix inputs are the compressed pickle of the formal
 objects that stage consumes, so replay sees exactly what the full run handed it.
-The grouping input is JSON without chromatograms, because parallel regroup loads
-it in every worker. Each matches only the code that captured it, and a pickle
+The grouping input is JSON with selected peak subtraces, not the original
+acquisition traces or method assessments. Replay covers band linking, not
+envelope consolidation or shape/contrast checks. Each matches only the code that captured it, and a pickle
 runs code when loaded: replay captures you made yourself, and capture again
 after upstream code changes. A capture in an earlier format is rejected with a
 request to capture it again.

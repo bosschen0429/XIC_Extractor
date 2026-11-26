@@ -3,8 +3,8 @@
 General calibration moves every compound at one RT together. A few compounds
 also follow the batch's chromatographic state (B, a smooth trend along
 injection order) and a sample-specific shift (M) that only some compounds
-feel. One accumulator collects each method channel's unique peaks; against
-the frozen general map it finds the channels that drift beyond it and freezes
+feel. The accumulator collects the established bootstrap bands; against
+the frozen general map it finds the bands that drift beyond it and freezes
 their B shapes and M before final grouping. Groups then fit two coefficients
 against them.
 Everything here is an in-memory calculation on measured RTs.
@@ -12,7 +12,6 @@ Everything here is an in-memory calculation on measured RTs.
 
 from __future__ import annotations
 
-from bisect import bisect_left, bisect_right
 from collections import defaultdict
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -33,7 +32,6 @@ _MIN_COMMON_SAMPLES = 6
 _FAMILY_RT_MIN = 0.05
 _FAMILY_SEARCH_MIN = 5.0
 _SHAPE_BANDWIDTH_MIN = 1.0
-_TRACK_RT_WINDOW_MIN = 2.0 * _SHAPE_BANDWIDTH_MIN
 
 
 @dataclass(frozen=True, slots=True)
@@ -156,37 +154,6 @@ class RtDriftModel:
 
         return lookup
 
-    def displacement_lookup(self) -> Callable[[float, str, str], tuple[float, ...]]:
-        """Prepare anchors' drift once; the lookup returns second-minus-first
-        displacements predicted by each anchor near an RT."""
-        prepared = sorted(
-            (
-                (
-                    anchor.reference_rt_min,
-                    self.sample_offsets(anchor.coefficients, anchor.shape),
-                )
-                for anchor in self.anchors
-            ),
-            key=lambda item: item[0],
-        )
-        references = [reference for reference, _ in prepared]
-
-        def displacements(rt_min: float, first: str, second: str) -> tuple[float, ...]:
-            def relative_rt(reference: float) -> float:
-                return reference - rt_min
-
-            values = set()
-            low = bisect_left(references, -_TRACK_RT_WINDOW_MIN, key=relative_rt)
-            high = bisect_right(references, _TRACK_RT_WINDOW_MIN, key=relative_rt)
-            for _, offsets in prepared[low:high]:
-                if first in offsets and second in offsets:
-                    value = offsets[second] - offsets[first]
-                    if value:
-                        values.add(value)
-            return tuple(sorted(values))
-
-        return displacements
-
     def sample_offsets(
         self, coefficients: DriftCoefficients, batch_state: Mapping[str, float]
     ) -> dict[str, float]:
@@ -215,13 +182,15 @@ class BatchRtModelAccumulator:
         self._cohorts = sample_cohorts
         self._orders = injection_order
         self._qc = qc_samples
-        self._observed: dict[tuple[str, str], dict[str, float]] = defaultdict(dict)
+        self._observed: dict[str, dict[str, float]] = defaultdict(dict)
+        self._owner_ids: dict[str, set[str]] = defaultdict(set)
 
     def add_observations(self, observations: Iterable[RtAnchorObservation]) -> None:
         for item in observations:
-            self._observed[(item.channel, item.sample_stem)][item.owner_id] = (
-                item.rt_min
-            )
+            band = item.bootstrap_group_id
+            if band is not None:
+                self._observed[band][item.sample_stem] = item.rt_min
+                self._owner_ids[band].add(item.owner_id)
 
     def freeze(
         self,
@@ -229,20 +198,15 @@ class BatchRtModelAccumulator:
         shift_rows: Iterable[Mapping[str, float]] = (),
     ) -> RtDriftModel:
         """Freeze B shapes and M against the general map, once per batch."""
-        channels: dict[str, dict[str, float]] = defaultdict(dict)
-        owners: dict[str, set[str]] = defaultdict(set)
-        for (channel, sample), by_owner in sorted(self._observed.items()):
-            if len(by_owner) == 1:
-                ((owner_id, rt),) = by_owner.items()
-                channels[channel][sample] = rt
-                owners[channel].add(owner_id)
         return fit_rt_drift_model(
-            channels,
+            self._observed,
             calibration,
             injection_order=self._orders,
             sample_cohorts=self._cohorts,
             qc_samples=self._qc,
-            channel_owner_ids={key: frozenset(value) for key, value in owners.items()},
+            channel_owner_ids={
+                key: frozenset(value) for key, value in self._owner_ids.items()
+            },
             shift_rows=shift_rows,
         )
 

@@ -3,6 +3,7 @@ from xic_extractor.alignment.ownership_models import (
     IdentityEvent,
     SampleLocalMS1Owner,
 )
+from xic_extractor.peak_detection.peak_hypothesis_identity import MeasuredPeakHypothesis
 
 
 def test_sample_local_owner_exposes_primary_and_supporting_events():
@@ -32,17 +33,20 @@ def test_sample_local_owner_exposes_primary_and_supporting_events():
     )
 
     owner = SampleLocalMS1Owner(
-        owner_id="OWN-s1-000001",
+        hypothesis=MeasuredPeakHypothesis(
+            "OWN-s1-000001",
+            "dda_cid_nl",
+            measured_peak(
+                mz=242.114,
+                apex_rt=12.593,
+                start_rt=12.55,
+                end_rt=12.64,
+                area=12345.0,
+                height=1000.0,
+            ),
+        ),
         sample_stem="s1",
         raw_file="s1.raw",
-        peak=measured_peak(
-            mz=242.114,
-            apex_rt=12.593,
-            start_rt=12.55,
-            end_rt=12.64,
-            area=12345.0,
-            height=1000.0,
-        ),
         primary_identity_event=primary,
         supporting_events=(support,),
         assignment_reason="same_apex_window",
@@ -67,17 +71,20 @@ def test_sample_local_owner_censors_endpoint_apex_even_without_explicit_flag():
     )
 
     owner = SampleLocalMS1Owner(
-        owner_id="OWN-s1-000001",
+        hypothesis=MeasuredPeakHypothesis(
+            "OWN-s1-000001",
+            "dda_cid_nl",
+            measured_peak(
+                mz=242.114,
+                apex_rt=12.55,
+                start_rt=12.55,
+                end_rt=12.64,
+                area=12345.0,
+                height=1000.0,
+            ),
+        ),
         sample_stem="s1",
         raw_file="s1.raw",
-        peak=measured_peak(
-            mz=242.114,
-            apex_rt=12.55,
-            start_rt=12.55,
-            end_rt=12.64,
-            area=12345.0,
-            height=1000.0,
-        ),
         primary_identity_event=event,
         supporting_events=(),
         assignment_reason="adapter_projection",

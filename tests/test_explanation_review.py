@@ -410,7 +410,6 @@ def test_accepted_competition_roundtrip_keeps_sample_attribution_and_values(tmp_
     stored = _cells(report)
     assert stored["G1", "S1"]["membership_risks"] == []
     risk = stored["G1", "S2"]["membership_risks"][0]
-    assert risk["cost_gap"] == 0.03
     assert risk["alternative_partition"] == [
         [["S1", 500.0, 1.0]],
         [["S2", 500.0, 1.1], ["S3", 500.0, 1.2]],
@@ -423,91 +422,9 @@ def test_accepted_competition_roundtrip_keeps_sample_attribution_and_values(tmp_
     assert matrix.read_bytes() == original
 
 
-@pytest.mark.parametrize("full_audit", (False, True))
-def test_produced_membership_risk_reaches_final_samples(
-    tmp_path, monkeypatch, full_audit
-):
-    from dataclasses import asdict, replace
-
-    from xic_extractor.alignment.cid_nl_grouping import CID_NL_GROUPING_RULES
-    from xic_extractor.alignment.feature_membership_inference import (
-        infer_feature_memberships,
-    )
-    from xic_extractor.alignment.rt_frame import SampleRtFrame
-    from xic_extractor.alignment.sample_rt_calibration import (
-        RtCalibrationPolicy,
-        build_batch_rt_calibration,
-    )
-
-    completed, candidates, matrix, config = run_alignment_fixture(
-        tmp_path, monkeypatch, "positive"
-    )
-    calibration = build_batch_rt_calibration(
-        {"early": {"S1": 7, "S2": 7.1, "S3": 7}, "late": {"S1": 9, "S2": 9.1, "S3": 9}},
-        sample_stems=("S1", "S2", "S3"),
-        prior_injections={},
-        policy=RtCalibrationPolicy(),
-    )
-    groups = []
-    for group in completed.initial_groups:
-        inferred = infer_feature_memberships(
-            group.owners,
-            rules=CID_NL_GROUPING_RULES,
-            config=config,
-            rt_frame=SampleRtFrame().with_sample_calibration(calibration),
-        )
-        assert len(inferred.groups) == 1
-        assert set(inferred.groups[0].owner_ids) == {o.owner_id for o in group.owners}
-        groups.append(replace(group, inference_decisions=inferred.sparse_decisions))
-    completed = replace(completed, initial_groups=tuple(groups))
-    risks = {
-        d.owner_id: d.accepted_risk
-        for group in completed.initial_groups
-        for d in group.inference_decisions
-        if d.accepted_risk is not None
-    }
-    assert len(risks) == 2
-    assert all(risk.selected_peer_fit is not None for risk in risks.values())
-    for group in completed.initial_groups:
-        for owner in group.owners:
-            estimate = risks[owner.owner_id].rt_estimate
-            assert estimate.method == "median_shift"
-            assert estimate.anchor_count == 2
-            assert estimate.rt_min == pytest.approx(
-                owner.peak.integration.rt_apex_min
-                - (0.1 if owner.sample_stem == "S2" else 0)
-            )
-    expected = {
-        member.sample_key: json.loads(json.dumps(asdict(risks[member.subject_id])))
-        for group in completed.initial_groups
-        for member in group.member_subjects
-    }
-    original = matrix.read_bytes()
-    report = write_alignment_explanation(
-        tmp_path / "produced.sqlite",
-        full_audit=full_audit,
-        completed=completed,
-        children=children_of(completed.application_result),
-        **explanation_discovery_facts(completed),
-        peaks_by_sample=candidates,
-        matrix_path=matrix,
-        alignment_config=config,
-    )
-    cells = _cells(report).values()
-    assert {
-        cell["sample_key"]: cell["membership_risks"][0] for cell in cells
-    } == expected
-    assert matrix.read_bytes() == original
-
-
 @pytest.mark.parametrize(
     "field,value",
     (
-        ("cost_gap", "0.03"),
-        ("selected_cost", True),
-        ("selected_peer_fit", "0.25"),
-        ("alternative_peer_fit", True),
-        ("peer_fit_gap", "0.15"),
         ("alternative_partition", ["not-a-group"]),
         ("soft_contradictions", "shape_disagreement"),
         ("rt_estimate", "median_shift"),
@@ -544,6 +461,32 @@ def test_production_publication_automatically_includes_recorded_risk(
     completed, candidates, _, config = run_alignment_fixture(
         tmp_path, monkeypatch, "positive"
     )
+    from dataclasses import replace
+
+    from tests.owner_peak_fixtures import with_peak
+    from xic_extractor.alignment.band_grouping import group_peak_bands
+    from xic_extractor.alignment.rt_frame import SampleRtFrame
+
+    (group,) = completed.initial_groups
+    owner = group.owners[0]
+    rival = with_peak(
+        owner,
+        apex_rt=owner.peak.rt_apex_min + 0.2,
+        start_rt=owner.peak.rt_left_min + 0.2,
+        end_rt=owner.peak.rt_right_min + 0.2,
+    )
+    rival = replace(rival, hypothesis=replace(rival.hypothesis, hypothesis_id="rival"))
+    bands = group_peak_bands(
+        (*group.owners, rival),
+        config=config,
+        rt_frame=SampleRtFrame(
+            injection_order={o.sample_stem: i for i, o in enumerate(group.owners)}
+        ),
+    )
+    (admitted,) = tuple(band for band in bands if band.destination == "matrix")
+    assert admitted.owner_ids == group.owner_ids
+    assert admitted.member_risks
+    completed = replace(completed, initial_groups=(admitted,))
     completed = completed.bind_publication_inputs(
         peaks_by_sample=candidates,
         **explanation_discovery_facts(completed),
@@ -566,7 +509,7 @@ def test_production_publication_automatically_includes_recorded_risk(
     assert evidence.summary["retention"] == "review"
     cells = list(_cells(outputs.evidence.report_path).values())
     assert len(cells) == 2
-    assert all(cell["membership_risks"] for cell in cells)
+    assert sum(bool(cell["membership_risks"]) for cell in cells) == 1
     assert all(cell["value"] > 0 for cell in cells)
 
 

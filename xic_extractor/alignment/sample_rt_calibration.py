@@ -671,15 +671,12 @@ class BatchRtCalibrationAccumulator:
         self._channels: dict[str, dict[str, AnchorChannel]] = {}
 
     def add_observations(self, observations: Sequence[RtAnchorObservation]) -> None:
-        """Each agreed bootstrap group is one correspondence, keyed by its
-        smallest owner ID; observations outside such a group do not calibrate.
-        """
+        """Each bootstrap band is one calibrating correspondence."""
         by_group: dict[str, list[RtAnchorObservation]] = defaultdict(list)
         for observation in observations:
             if observation.bootstrap_group_id is not None:
                 by_group[observation.bootstrap_group_id].append(observation)
-        for anchors in by_group.values():
-            key = min(anchor.owner_id for anchor in anchors)
+        for key, anchors in by_group.items():
             self._observations[key] = {
                 anchor.sample_stem: anchor.rt_min for anchor in anchors
             }

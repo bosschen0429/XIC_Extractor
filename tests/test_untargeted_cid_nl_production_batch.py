@@ -39,14 +39,14 @@ def test_completed_empty_recovery_preserves_each_compatible_source_subject(
     backfill_enabled: bool,
 ) -> None:
     """An empty initial search leaves the cell blank with or without Backfill.
-    The 21 ppm-apart source subjects retain their own ions and support one row.
+    The 8 ppm-apart source subjects retain their own ions and support one row.
     """
     stems = ("SupportA1", "SupportA2", "SupportB1", "SupportB2", "Missing")
     settings = replace(SETTINGS, precursor_mz_tolerance_ppm=20.0)
     paths = raw_paths(tmp_path, stems)
     raws: dict[str, _FakeRaw] = {}
     peaks: dict[str, tuple] = {}
-    precursors = (500.0, 500.0, 500.0105, 500.0105)
+    precursors = (500.0, 500.0, 500.004, 500.004)
     for stem, precursor_mz in zip(stems[:4], precursors, strict=True):
         raws[stem] = _FakeRaw(
             (7.98,), scan_precursor_mz=precursor_mz, neutral_loss_das=(116.0474,)
@@ -68,7 +68,6 @@ def test_completed_empty_recovery_preserves_each_compatible_source_subject(
         settings=settings,
         alignment_config=AlignmentConfig(
             precursor_mz_tolerance_ppm=30.0,
-            anchor_min_seed_events=1,
             product_mz_tolerance_ppm=30.0,
             backfill_enabled=backfill_enabled,
         ),
@@ -423,7 +422,7 @@ def test_known_istd_reference_joins_drifting_samples_in_one_row(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Without the reference, 60 ppm and 1.067 min apart stay two one-sample groups,
+    """Without the reference, 1.067 min apart stay two one-sample groups,
     which are reviewed but not published to the Matrix. The known ISTD reference
     binds both samples and closes one row whose cells keep each sample's own drifted
     apex and area.
@@ -436,7 +435,7 @@ def test_known_istd_reference_joins_drifting_samples_in_one_row(
     paths = raw_paths(tmp_path, stems)
     raws = {}
     for i, (stem, precursor_mz, observed_loss) in enumerate(
-        zip(stems, (500.0, 500.03), (116.0474, 116.0474005), strict=True)
+        zip(stems, (500.0, 500.004), (116.0474, 116.0474005), strict=True)
     ):
         raw = _FakeRaw(
             (8.0,), scan_precursor_mz=precursor_mz, neutral_loss_das=(observed_loss,)
@@ -466,7 +465,7 @@ def test_known_istd_reference_joins_drifting_samples_in_one_row(
             "ISTD Pair",
         ]
     )
-    targets.append(["known", "ISTD", 500.015, 7, 10, 40, 116.0474, 20, 50, ""])
+    targets.append(["known", "ISTD", 500.002, 7, 10, 40, 116.0474, 20, 50, ""])
     results = workbook.create_sheet("XIC Results")
     results.append(["SampleName", "Target", "Role", "RT", "Area"])
     for i, stem in enumerate(stems):

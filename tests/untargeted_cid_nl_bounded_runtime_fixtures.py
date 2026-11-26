@@ -164,7 +164,7 @@ def entry_scenario(tmp_path, scenario, sample_count=4):
         raws={path.stem: raw for path, raw in raws.items()},
         peaks=peaks,
         settings=settings,
-        alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+        alignment_config=AlignmentConfig(),
         known_istd_reference_workbook=(
             known_istd_workbook(tmp_path / "reference.xlsx", stems)
             if scenario == "istd"

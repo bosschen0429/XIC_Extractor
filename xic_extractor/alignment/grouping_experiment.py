@@ -5,26 +5,16 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 
+from xic_extractor.alignment.band_grouping import band_shift_rows, group_peak_bands
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSamplePeakGroupHypothesis,
 )
-from xic_extractor.alignment.feature_membership_inference import (
-    BatchRtWarp,
-)
-from xic_extractor.alignment.grouping_workflow import (
-    direct_evidence_rt_rows,
-    group_cid_nl_owners,
-)
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
-from xic_extractor.alignment.peak_trajectories import (
-    resolve_peak_trajectories,
-)
 from xic_extractor.alignment.rt_anchors import BatchRtModelInputs, fit_batch_rt_model
 from xic_extractor.alignment.rt_drift import RtDriftModel
 from xic_extractor.alignment.rt_frame import RtFrame, SampleRtFrame
 from xic_extractor.alignment.sample_rt_calibration import BatchRtCalibration
-from xic_extractor.peak_detection.elution_context import SampleElutionContext
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,8 +24,6 @@ class GroupingWorkset:
     key: str
     owners: tuple[SampleLocalMS1Owner, ...]
     known_identity_bindings: tuple[tuple[str, str], ...]
-    rt_warp: BatchRtWarp | None
-    elution_contexts: tuple[SampleElutionContext, ...] = ()
     rt_calibration: BatchRtCalibration | None = None
     rt_drift: RtDriftModel | None = None
     rt_model_inputs: BatchRtModelInputs | None = None
@@ -75,7 +63,7 @@ def replay_grouping(
     config: AlignmentConfig | None = None,
     rt_coordinates: RtFrame | None = None,
 ) -> tuple[CrossSamplePeakGroupHypothesis, ...]:
-    """Reuse membership and post-grouping rules without acquisition or Backfill."""
+    """Replay band membership before envelope/shape checks or Backfill."""
     sample_universe = frozenset(inputs.sample_stems)
     base_frame = SampleRtFrame(
         injection_order=inputs.injection_order, sample_universe=sample_universe
@@ -88,26 +76,17 @@ def replay_grouping(
         override = None
     groups: list[CrossSamplePeakGroupHypothesis] = []
     for workset in inputs.worksets:
-        frame = override or base_frame.with_warp(workset.rt_warp)
+        frame = override or base_frame
         if override is None and workset.rt_calibration is not None:
             frame = frame.with_sample_calibration(
                 workset.rt_calibration, workset.rt_drift
             )
-        trajectories = resolve_peak_trajectories(
-            workset.owners,
-            workset.elution_contexts,
-            config=config or inputs.alignment_config,
-            injection_order=inputs.injection_order,
-            rt_frame=frame,
-        )
         groups.extend(
-            group_cid_nl_owners(
+            group_peak_bands(
                 workset.owners,
                 config=config or inputs.alignment_config,
-                sample_universe=sample_universe,
                 rt_frame=frame,
                 known_identity_bindings=workset.known_identity_bindings,
-                peak_trajectories=trajectories,
             )
         )
     return tuple(groups)
@@ -133,14 +112,10 @@ def refit_rt_models(inputs: GroupingInputs) -> GroupingInputs:
             row
             for other in inputs.worksets
             if other.rt_model_inputs is model_inputs
-            for row in direct_evidence_rt_rows(
+            for row in band_shift_rows(
                 other.owners,
-                other.elution_contexts,
                 config=inputs.alignment_config,
-                sample_universe=sample_universe,
-                rt_frame=base_frame.with_warp(other.rt_warp).with_sample_calibration(
-                    calibration, drift
-                ),
+                rt_frame=base_frame.with_sample_calibration(calibration, drift),
             )
         ]
         fitted[id(model_inputs)] = fit_batch_rt_model(model_inputs, shift_rows=rows)

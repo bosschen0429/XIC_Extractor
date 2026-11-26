@@ -23,12 +23,14 @@ from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+from xic_extractor.alignment.cid_nl_grouping import has_cid_nl_activation_support
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSamplePeakGroupHypothesis,
     _hypothesis_from_owner_group,
 )
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
+from xic_extractor.alignment.peak_band_linking import MAX_BAND_PRECURSOR_SPAN_PPM
 from xic_extractor.mass_accuracy import within_ppm
 from xic_extractor.peak_detection.observations import PeakObservation
 from xic_extractor.peak_detection.physical_peak_evaluation import peak_envelope
@@ -143,8 +145,9 @@ def merge_one_band_groups(
         return tuple(groups)
     merged: list[CrossSamplePeakGroupHypothesis] = []
     absorbed: set[int] = set()
+    visited: set[int] = set()
     for start in sorted(links):
-        if start in absorbed:
+        if start in visited:
             continue
         component, frontier = {start}, [start]
         while frontier:
@@ -152,8 +155,16 @@ def merge_one_band_groups(
                 if neighbour not in component:
                     component.add(neighbour)
                     frontier.append(neighbour)
-        absorbed |= component
-        merged.append(_merged_group([established[index] for index in component]))
+        visited |= component
+        combined = _merged_group(
+            [established[index] for index in sorted(component)],
+            precursor_ppm=min(
+                config.precursor_mz_tolerance_ppm, MAX_BAND_PRECURSOR_SPAN_PPM
+            ),
+        )
+        if combined is not None:
+            absorbed |= component
+            merged.append(combined)
     kept = [
         group
         for group in groups
@@ -164,23 +175,39 @@ def merge_one_band_groups(
 
 def _merged_group(
     parts: Sequence[CrossSamplePeakGroupHypothesis],
-) -> CrossSamplePeakGroupHypothesis:
+    *,
+    precursor_ppm: float,
+) -> CrossSamplePeakGroupHypothesis | None:
     by_sample: dict[str, SampleLocalMS1Owner] = {}
     for part in parts:
         for owner in part.owners:
             held = by_sample.get(owner.sample_stem)
-            if held is None or (owner.peak.rt_apex_min, owner.owner_id) < (
-                held.peak.rt_apex_min,
-                held.owner_id,
+            if (
+                held is None
+                or owner.peak.measured_order_key < held.peak.measured_order_key
             ):
                 by_sample[owner.sample_stem] = owner
+    members = tuple(sorted(by_sample.values(), key=lambda owner: owner.sample_stem))
+    mzs = [owner.peak.mz for owner in members]
+    if (
+        not within_ppm(max(mzs), min(mzs), precursor_ppm)
+        or sum(has_cid_nl_activation_support(owner) for owner in members) < 2
+    ):
+        return None
+    kept_ids = {owner.owner_id for owner in members}
     largest = max(parts, key=lambda part: (len(part.owners), -part.group_center_rt))
     return _hypothesis_from_owner_group(
-        tuple(sorted(by_sample.values(), key=lambda owner: owner.owner_id)),
+        members,
         disposition="established",
         evidence=";".join(sorted({part.evidence for part in parts if part.evidence}))
         + ";one_band",
         inference_basis=largest.inference_basis,
-        inference_decisions=largest.inference_decisions,
+        member_risks=tuple(
+            (owner_id, risk)
+            for part in parts
+            for owner_id, risk in part.member_risks
+            if owner_id in kept_ids
+        ),
+        drift_reference=largest.drift_reference,
         one_band=True,
     )

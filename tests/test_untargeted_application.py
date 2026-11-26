@@ -309,7 +309,7 @@ def test_pipeline_publishes_projected_children_and_cleans_up(
     )
 
     plan, _ = _plan(tmp_path, monkeypatch)
-    config = AlignmentConfig(anchor_min_seed_events=1)
+    config = AlignmentConfig()
     candidates = load_plan_inputs(plan)
 
     def execute(name, project_child):
@@ -341,9 +341,9 @@ def test_pipeline_publishes_projected_children_and_cleans_up(
     matrix_path = output_dir / "alignment_matrix.tsv"
     report_path = output_dir / "alignment_explanation.sqlite"
     has_membership_risk = any(
-        decision.accepted_risk is not None and decision.accepted_risk.risk_flags
+        risk.risk_flags
         for group in completed.initial_groups
-        for decision in group.inference_decisions
+        for _, risk in group.member_risks
     )
     reference = tmp_path / "reference.sqlite"
 
