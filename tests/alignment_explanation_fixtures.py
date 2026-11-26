@@ -25,7 +25,7 @@ def explanation_summary(values, *, review_only=False):
         **values,
     }
     summary["samples"] = [
-        {"sample_stem": sample["sample_key"], **sample} for sample in summary["samples"]
+        {"sample_label": sample["raw_stem"], **sample} for sample in summary["samples"]
     ]
     return summary
 
@@ -93,7 +93,7 @@ def run_alignment_fixture(tmp_path, monkeypatch, scenario):
         raw_paths=paths,
         sample_metadata=tuple(
             SampleMetadata(
-                sample_name=p.stem,
+                sample_label=p.stem,
                 raw_stem=p.stem,
                 injection_order=i + 1,
                 sample_role="sample",

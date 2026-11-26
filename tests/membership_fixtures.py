@@ -31,7 +31,7 @@ def cid_nl_owner(
     """
     event = IdentityEvent(
         candidate_id=f"{sample}-{name}-primary",
-        sample_stem=sample,
+        raw_stem=sample,
         raw_file=f"{sample}.raw",
         neutral_loss_tag="DNA_dR",
         precursor_mz=precursor_mz,
@@ -43,7 +43,7 @@ def cid_nl_owner(
     )
     return SampleLocalMS1Owner(
         owner_id=f"OWN-{sample}-{name}",
-        sample_stem=sample,
+        raw_stem=sample,
         raw_file=f"{sample}.raw",
         peak=measured_peak(
             mz=precursor_mz,
@@ -73,7 +73,7 @@ def agreed_group_observations(
                 precursor_tolerance_ppm=10.0,
                 neutral_loss_da=116.0474,
             ),
-            owner.sample_stem,
+            owner.raw_stem,
             owner.owner_id,
             owner.peak.integration.rt_apex_min,
             f"group-{index}",
@@ -85,7 +85,7 @@ def agreed_group_observations(
 
 def subject_anchor(
     subject: CidNlMethodSubject,
-    sample_stem: str,
+    raw_stem: str,
     owner_id: str,
     rt_min: float,
     bootstrap_group_id: str | None,
@@ -95,7 +95,7 @@ def subject_anchor(
         subject.method_subject_id,
         subject.precursor_mz,
         subject.neutral_loss_da,
-        sample_stem,
+        raw_stem,
         owner_id,
         rt_min,
         bootstrap_group_id,

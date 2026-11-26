@@ -124,7 +124,7 @@ def test_generate_report_sample_strategy_success() -> None:
 
 
 def test_group_query_keeps_unlinked_stored_cells_scoped_and_readable(tmp_path):
-    stored_cell = {"sample_key": "S2", "source": "", "value": None}
+    stored_cell = {"raw_stem": "S2", "source": "", "value": None}
 
     def other_group_and_hold(writer):
         writer.add_final_group(
@@ -133,7 +133,7 @@ def test_group_query_keeps_unlinked_stored_cells_scoped_and_readable(tmp_path):
         writer.add_cells("G2", [{**stored_cell, "variant": "not_searched"}])
         writer.add_assessment(
             {
-                "sample_key": "S1",
+                "raw_stem": "S1",
                 "method_subject_id": "M1",
                 "method_result": "HOLD",
                 "reason_codes": [
@@ -148,7 +148,7 @@ def test_group_query_keeps_unlinked_stored_cells_scoped_and_readable(tmp_path):
         tmp_path,
         candidate={"method_subject_id": "M1", "neutral_loss_tag": "dR"},
         cells=[
-            {"sample_key": "S1", "variant": "numeric", "value": 1000.0},
+            {"raw_stem": "S1", "variant": "numeric", "value": 1000.0},
             {**stored_cell, "variant": "not_searched"},
         ],
         extend=other_group_and_hold,
@@ -164,11 +164,11 @@ def test_group_query_keeps_unlinked_stored_cells_scoped_and_readable(tmp_path):
     samples = {sample["sample_id"]: sample for sample in item["samples"]}
 
     assert set(samples) == {"S1", "S2"}
-    assert samples["S2"]["sample_stem"] == "s2"
+    assert samples["S2"]["sample_label"] == "s2"
     assert samples["S2"]["quantitative_value"] is None
     assert samples["S2"]["note"] == "未在此位置搜尋"
     assert samples["S2"]["risk_labels"] == []
-    assert {witness["sample_key"] for witness in item["witnesses"]} == {"S1"}
+    assert {witness["raw_stem"] for witness in item["witnesses"]} == {"S1"}
     assert {curve["sample_id"] for curve in item["curves"]} == {"S1"}
 
     assert item["group_counts"] == {
@@ -211,7 +211,7 @@ def test_unrelated_hold_does_not_become_a_cell_risk_after_record_renumbering(
         for code in ("no_unique_qualifying_relation", "insufficient_method_evidence"):
             writer.add_assessment(
                 {
-                    "sample_key": "S1",
+                    "raw_stem": "S1",
                     "method_subject_id": "subject-C1",
                     "method_result": "HOLD",
                     "reason_codes": [code],
@@ -350,8 +350,8 @@ def test_normalized_sample_scope_semantics() -> None:
         db_path, _, _ = create_inspector_report(
             tmp,
             samples=[
-                {"sample_stem": "b_sample", "sample_key": "S_B"},
-                {"sample_stem": "a_sample", "sample_key": "S_A"},
+                {"sample_label": "b_sample", "raw_stem": "S_B"},
+                {"sample_label": "a_sample", "raw_stem": "S_A"},
             ],
         )
         out_html = tmp / "report.html"
@@ -461,7 +461,7 @@ def test_row_curves_follow_exact_witnesses_and_shared_payload_is_read_once(
         return result
 
     monkeypatch.setattr(cid_nl, "read_alignment_curves", read)
-    assert read_evidence_summary(report)["samples"][0]["sample_key"] == "S1"
+    assert read_evidence_summary(report)["samples"][0]["raw_stem"] == "S1"
     assert reads == []
     output = tmp_path / "shared.html"
     import time
@@ -550,15 +550,15 @@ def test_real_source_query_uses_one_scoped_candidate_observation(tmp_path):
     item = read_report_payload(output)["items"][0]
     assert json.loads(item["id"])[-1] == "1"
     assert [w["candidate_id"] for w in item["matched_refs"]] == ["C1"]
-    assert [w["sample_key"] for w in item["witnesses"]] == ["S1"]
+    assert [w["raw_stem"] for w in item["witnesses"]] == ["S1"]
 
 
 def test_source_strata_use_only_selected_samples_actual_cells(tmp_path):
     report, _, _ = create_inspector_report(
         tmp_path,
         cells=[
-            {"sample_key": "S1", "variant": "numeric", "value": 1000.0},
-            {"sample_key": "S2", "variant": "unavailable", "value": None},
+            {"raw_stem": "S1", "variant": "numeric", "value": 1000.0},
+            {"raw_stem": "S2", "variant": "unavailable", "value": None},
         ],
     )
     full = tmp_path / "full.html"
@@ -696,7 +696,7 @@ def test_sample_without_a_cell_keeps_evidence_but_has_no_origin(tmp_path):
         )
         writer.add_assessment(
             {
-                "sample_key": "S1",
+                "raw_stem": "S1",
                 "method_subject_id": "M1",
                 "detector_invocation_id": "untargeted-cid-nl-real-data:local_minimum",
                 "method_result": "SUPPORT",
@@ -737,7 +737,7 @@ def test_recovery_origin_survives_zero_terminal_final_cell_binding(tmp_path):
         )
         writer.add_assessment(
             {
-                "sample_key": "S1",
+                "raw_stem": "S1",
                 "method_subject_id": "M1",
                 "detector_invocation_id": "untargeted-cid-nl-backfill",
                 "method_result": "SUPPORT",
@@ -752,7 +752,7 @@ def test_recovery_origin_survives_zero_terminal_final_cell_binding(tmp_path):
         group={
             "members": [
                 {
-                    "sample_key": "S1",
+                    "raw_stem": "S1",
                     "subject_kind": "peak_hypothesis",
                     "subject_id": "hypothesis-01",
                     "physical_peak_keys": ["obs-01"],
@@ -783,9 +783,9 @@ def test_recovery_origin_survives_zero_terminal_final_cell_binding(tmp_path):
 
 
 def test_backfill_curve_is_not_shown_on_rows_sharing_its_method_subject(tmp_path):
-    def backfill_curve(sample_key, peak):
+    def backfill_curve(raw_stem, peak):
         payload = inspector_curve_payload(
-            sample_key, None, peak, kind="backfill_observation", apex_rt=1.5
+            raw_stem, None, peak, kind="backfill_observation", apex_rt=1.5
         )
         payload["provenance"]["method_subject_id"] = "M1"
         return payload
@@ -802,13 +802,13 @@ def test_backfill_curve_is_not_shown_on_rows_sharing_its_method_subject(tmp_path
             "G2",
             [
                 {
-                    "sample_key": "S1",
+                    "raw_stem": "S1",
                     "variant": "numeric",
                     "value": 500.0,
                     "support_origin": "backfilled",
                     "observation_ids": ["obs-bf"],
                 },
-                {"sample_key": "S2", "variant": "numeric", "value": 900.0},
+                {"raw_stem": "S2", "variant": "numeric", "value": 900.0},
             ],
         )
         writer.add_curve_payload(
@@ -922,8 +922,8 @@ def test_sample_answers_keep_null_zero_and_unknown_distinct(
     report, _, _ = create_inspector_report(
         tmp_path,
         cells=[
-            {"sample_key": "S1", "variant": "unavailable", "value": None},
-            {"sample_key": "S2", "variant": "numeric", "value": 0},
+            {"raw_stem": "S1", "variant": "unavailable", "value": None},
+            {"raw_stem": "S2", "variant": "numeric", "value": 0},
         ],
     )
 
@@ -1034,13 +1034,13 @@ def test_source_labels_explain_recorded_group_and_sample_outcome(
     row = {"route": {"destination": destination, "reason": state}}
     cells = [
         {
-            "sample_key": "S1",
+            "raw_stem": "S1",
             "variant": "numeric",
             "value": 1000.0,
             "source": source_code,
         },
         {
-            "sample_key": "S2",
+            "raw_stem": "S2",
             "variant": "numeric",
             "value": 700.0,
             "source": source_code,
@@ -1084,7 +1084,7 @@ def _create_nearest_mz_db(directory, rows):
     report = directory / "nearby.sqlite"
     matrix = directory / "matrix.tsv"
     matrix.write_text("saved matrix", encoding="utf-8")
-    samples = [{"sample_key": sid, "sample_stem": sid} for sid in ("S1", "S2")]
+    samples = [{"raw_stem": sid, "sample_label": sid} for sid in ("S1", "S2")]
     with ExplanationReportWriter(report, review_only=True) as writer:
         writer.declare_samples(samples)
         for row in rows:
@@ -1101,7 +1101,7 @@ def _create_nearest_mz_db(directory, rows):
                 rid,
                 [
                     {
-                        "sample_key": sid,
+                        "raw_stem": sid,
                         "variant": "unresolved" if row.get("unresolved") else "numeric",
                         "value": None if row.get("unresolved") else 10,
                     }
@@ -1221,7 +1221,7 @@ def test_nearest_mz_applies_rt_eligibility_without_replacing_display_witness(tmp
     assert multi["precursor_mz"] == 140
     assert multi["rt_apex_min"] == 20
     assert multi["mz_distance"] == pytest.approx(16.6)
-    assert [w["sample_key"] for w in multi["matched_refs"]] == ["S2"]
+    assert [w["raw_stem"] for w in multi["matched_refs"]] == ["S2"]
     assert prepared.missing_rt_count == 1
     scoped = prepare_report(
         report,
@@ -1409,7 +1409,8 @@ def test_target_role_rejects_portable_curve_bundles(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "old_schema", ["alignment_explanation", "alignment_explanation_review"]
+    "old_schema",
+    ["alignment_explanation", "alignment_explanation_review", "alignment_evidence"],
 )
 def test_old_explanation_requires_rerun(tmp_path: Path, old_schema: str) -> None:
     path, _matrix, _digest = create_inspector_report(tmp_path)
@@ -1418,16 +1419,23 @@ def test_old_explanation_requires_rerun(tmp_path: Path, old_schema: str) -> None
             connection.execute("SELECT payload FROM run").fetchone()[0]
         )
         summary["schema_version"] = old_schema
-        summary["query_index_version"] = 2
-        connection.execute("DROP TABLE run")
-        connection.execute("CREATE TABLE metadata (key TEXT PRIMARY KEY, payload TEXT)")
-        connection.execute(
-            "INSERT INTO metadata VALUES ('summary', ?)", (json.dumps(summary),)
-        )
-        connection.execute(
-            "ALTER TABLE samples RENAME COLUMN sample_key "
-            "TO canonical_sample_identity_id"
-        )
+        if old_schema == "alignment_evidence":
+            connection.execute("UPDATE run SET payload=?", (json.dumps(summary),))
+            connection.execute(
+                "ALTER TABLE samples RENAME COLUMN raw_stem TO sample_key"
+            )
+            connection.execute(
+                "ALTER TABLE samples RENAME COLUMN sample_label TO sample_stem"
+            )
+        else:
+            summary["query_index_version"] = 2
+            connection.execute("DROP TABLE run")
+            connection.execute(
+                "CREATE TABLE metadata (key TEXT PRIMARY KEY, payload TEXT)"
+            )
+            connection.execute(
+                "INSERT INTO metadata VALUES ('summary', ?)", (json.dumps(summary),)
+            )
     with pytest.raises(InspectorError, match="重新執行 Alignment") as error:
         generate_report(path, SelectionRequest(), tmp_path / "review.html")
     assert error.value.code == 4

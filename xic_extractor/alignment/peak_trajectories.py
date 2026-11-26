@@ -294,7 +294,7 @@ class PeakTrajectory:
 
     def locate(
         self,
-        sample_stem: str,
+        raw_stem: str,
         *,
         rt_frame: RtFrame,
         backfill_half_window_min: float,
@@ -306,12 +306,10 @@ class PeakTrajectory:
         positions. The query stays in the target sample's RT coordinates;
         fitting never supplies method eligibility.
         """
-        if sample_stem in self._positions:
-            return PeakLocation(
-                self._positions[sample_stem], "trajectory_observed", True
-            )
+        if raw_stem in self._positions:
+            return PeakLocation(self._positions[raw_stem], "trajectory_observed", True)
         return self._estimate(
-            sample_stem,
+            raw_stem,
             rt_frame=rt_frame,
             backfill_half_window_min=backfill_half_window_min,
             drift_offsets=drift_offsets,
@@ -319,17 +317,15 @@ class PeakTrajectory:
 
     def _estimate(
         self,
-        sample_stem: str,
+        raw_stem: str,
         *,
         rt_frame: RtFrame,
         backfill_half_window_min: float,
         drift_offsets: Mapping[str, float] | None = None,
     ) -> PeakLocation:
-        order = rt_frame.injection_order.get(sample_stem)
-        cohort = rt_frame.sample_cohorts.get(sample_stem)
-        offsets = (
-            drift_offsets if drift_offsets and sample_stem in drift_offsets else None
-        )
+        order = rt_frame.injection_order.get(raw_stem)
+        cohort = rt_frame.sample_cohorts.get(raw_stem)
+        offsets = drift_offsets if drift_offsets and raw_stem in drift_offsets else None
         nearest = sorted(
             (
                 (sample, rt)
@@ -372,9 +368,8 @@ class PeakTrajectory:
         )
         if common_available:
             target_estimate = rt_frame.estimate_observed_rt(
-                sample_stem,
-                fitted.query_rt
-                + (offsets[sample_stem] if offsets is not None else 0.0),
+                raw_stem,
+                fitted.query_rt + (offsets[raw_stem] if offsets is not None else 0.0),
             )
             if target_estimate is not None:
                 weak = target_estimate.rt_weight < 1.0 or any(
@@ -467,7 +462,7 @@ class PeakTrajectories:
                     for sample, rt in self.tracks[index].sample_apices
                 )
             )
-        points.update((owner.sample_stem, owner.peak.rt_apex_min) for owner in owners)
+        points.update((owner.raw_stem, owner.peak.rt_apex_min) for owner in owners)
         return PeakTrajectory(tuple(sorted(requested)), tuple(sorted(points.items())))
 
     def owner_track_indices(self) -> dict[str, int]:
@@ -635,7 +630,7 @@ class _LocalizationLinks:
                 continue
             contradicted.update(
                 node
-                for node in by_sample[owner.sample_stem]
+                for node in by_sample[owner.raw_stem]
                 if node != bound
                 and not left <= self.nodes[node].landmark.apex_rt <= right
             )
@@ -1147,7 +1142,7 @@ def _local_patterns(
     by_sample: dict[str, list[SampleElutionContext]] = defaultdict(list)
     for context in contexts:
         if context.landmarks:
-            by_sample[context.sample_stem].append(context)
+            by_sample[context.raw_stem].append(context)
     context_indexes = {
         sample: _MassIndex(
             [context.mz for context in rows], config.precursor_mz_tolerance_ppm
@@ -1171,8 +1166,8 @@ def _local_patterns(
         peaks = context.landmarks
         indices = []
         nearby_masses = {
-            by_sample[context.sample_stem][index].mz
-            for index in context_indexes[context.sample_stem].candidates(context.mz)
+            by_sample[context.raw_stem][index].mz
+            for index in context_indexes[context.raw_stem].candidates(context.mz)
         }
         for peak in peaks[start:end]:
             same = next(
@@ -1181,7 +1176,7 @@ def _local_patterns(
                     for index in sorted(
                         index
                         for mz in nearby_masses
-                        for index in nodes_by_mass[(context.sample_stem, mz)]
+                        for index in nodes_by_mass[(context.raw_stem, mz)]
                     )
                     if within_ppm(
                         nodes[index].mz, context.mz, config.precursor_mz_tolerance_ppm
@@ -1193,11 +1188,11 @@ def _local_patterns(
             )
             if same is None:
                 same = len(nodes)
-                nodes.append(_Node(context.sample_stem, context.mz, peak))
-                nodes_by_mass[(context.sample_stem, context.mz)].append(same)
+                nodes.append(_Node(context.raw_stem, context.mz, peak))
+                nodes_by_mass[(context.raw_stem, context.mz)].append(same)
             indices.append(same)
         key = tuple(indices)
-        patterns[key] = _Pattern(context.sample_stem, context.mz, key)
+        patterns[key] = _Pattern(context.raw_stem, context.mz, key)
         selected = tuple(zip(indices, peaks[start:end], strict=True))
         for position, (first, left) in enumerate(selected):
             for second, right in selected[position + 1 :]:
@@ -1215,16 +1210,16 @@ def _local_patterns(
     for owner in sorted(
         owners,
         key=lambda item: (
-            item.sample_stem,
+            item.raw_stem,
             item.peak.rt_apex_min,
             item.owner_id,
         ),
     ):
-        context_index = context_indexes.get(owner.sample_stem)
+        context_index = context_indexes.get(owner.raw_stem)
         if context_index is None:
             continue
         candidate_contexts = (
-            by_sample[owner.sample_stem][index]
+            by_sample[owner.raw_stem][index]
             for index in context_index.candidates(owner.peak.mz)
         )
         available = [
@@ -1273,7 +1268,7 @@ def _local_patterns(
     for context in sorted(
         contexts,
         key=lambda item: (
-            item.sample_stem,
+            item.raw_stem,
             -(item.rt_end - item.rt_start),
             item.mz,
             context_order[id(item)],
@@ -1300,7 +1295,7 @@ def _local_patterns(
             ):
                 continue
             center = _pattern_center(
-                context.sample_stem,
+                context.raw_stem,
                 (peaks[start], peaks[end - 1]),
                 rt_frame,
             )

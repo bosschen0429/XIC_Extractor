@@ -53,15 +53,13 @@ class RtFrame(Protocol):
 
     def corrected_rt_min(self, owner: SampleLocalMS1Owner) -> float: ...
 
-    def has_support(self, sample_stem: str) -> bool: ...
+    def has_support(self, raw_stem: str) -> bool: ...
 
-    def common_rt_min(self, sample_stem: str, observed_rt: float) -> float: ...
+    def common_rt_min(self, raw_stem: str, observed_rt: float) -> float: ...
 
-    def calibrated_rt_min(
-        self, sample_stem: str, observed_rt: float
-    ) -> float | None: ...
+    def calibrated_rt_min(self, raw_stem: str, observed_rt: float) -> float | None: ...
 
-    def observed_rt_min(self, sample_stem: str, common_rt: float) -> float | None: ...
+    def observed_rt_min(self, raw_stem: str, common_rt: float) -> float | None: ...
 
     def calibrated_peak_region(
         self, owner: SampleLocalMS1Owner
@@ -71,15 +69,13 @@ class RtFrame(Protocol):
         self, owner: SampleLocalMS1Owner
     ) -> RtEstimate | None: ...
 
-    def estimate_rt(
-        self, sample_stem: str, observed_rt: float
-    ) -> RtEstimate | None: ...
+    def estimate_rt(self, raw_stem: str, observed_rt: float) -> RtEstimate | None: ...
 
     def estimate_observed_rt(
-        self, sample_stem: str, common_rt: float
+        self, raw_stem: str, common_rt: float
     ) -> RtEstimate | None: ...
 
-    def offset_min(self, sample_stem: str, rt_min: float) -> float: ...
+    def offset_min(self, raw_stem: str, rt_min: float) -> float: ...
 
     def corrected_pair_delta_sec(
         self,
@@ -292,15 +288,15 @@ class SampleRtFrame:
         right: SampleLocalMS1Owner,
     ) -> float | None:
         if self._sample_calibration is not None:
-            a = self.calibrated_rt_min(left.sample_stem, left.peak.rt_apex_min)
-            b = self.calibrated_rt_min(right.sample_stem, right.peak.rt_apex_min)
+            a = self.calibrated_rt_min(left.raw_stem, left.peak.rt_apex_min)
+            b = self.calibrated_rt_min(right.raw_stem, right.peak.rt_apex_min)
             return abs(a - b) * 60.0 if a is not None and b is not None else None
         if self._drift is None:
             return None
         if isinstance(self._drift, KnownIstdOwnerLookup):
             return self._drift.corrected_pair_delta_sec(left, right)
-        left_delta = self._drift.sample_delta_min(left.sample_stem)
-        right_delta = self._drift.sample_delta_min(right.sample_stem)
+        left_delta = self._drift.sample_delta_min(left.raw_stem)
+        right_delta = self._drift.sample_delta_min(right.raw_stem)
         if left_delta is None or right_delta is None:
             return None
         left_corrected_rt = left.peak.rt_apex_min - left_delta
@@ -335,39 +331,37 @@ class SampleRtFrame:
             else owner.peak.rt_apex_min
         )
 
-    def has_support(self, sample_stem: str) -> bool:
+    def has_support(self, raw_stem: str) -> bool:
         source = self._sample_calibration or self._warp
-        return source is not None and source.has_support(sample_stem)
+        return source is not None and source.has_support(raw_stem)
 
-    def common_rt_min(self, sample_stem: str, observed_rt: float) -> float:
+    def common_rt_min(self, raw_stem: str, observed_rt: float) -> float:
         source = self._sample_calibration or self._warp
         return (
-            source.common_rt_min(sample_stem, observed_rt)
+            source.common_rt_min(raw_stem, observed_rt)
             if source is not None
             else observed_rt
         )
 
-    def calibrated_rt_min(self, sample_stem: str, observed_rt: float) -> float | None:
+    def calibrated_rt_min(self, raw_stem: str, observed_rt: float) -> float | None:
         """A bounded common coordinate, distinct from an unsupported raw RT."""
         if self._sample_calibration is not None:
-            sample = self._sample_calibration.samples.get(sample_stem)
+            sample = self._sample_calibration.samples.get(raw_stem)
             return sample.calibrated_rt(observed_rt) if sample is not None else None
-        if self._warp is not None and self._warp.has_support(sample_stem):
-            return self._warp.common_rt_min(sample_stem, observed_rt)
+        if self._warp is not None and self._warp.has_support(raw_stem):
+            return self._warp.common_rt_min(raw_stem, observed_rt)
         return None
 
-    def observed_rt_min(self, sample_stem: str, common_rt: float) -> float | None:
+    def observed_rt_min(self, raw_stem: str, common_rt: float) -> float | None:
         if self._sample_calibration is not None:
-            sample = self._sample_calibration.samples.get(sample_stem)
+            sample = self._sample_calibration.samples.get(raw_stem)
             if sample is None or not sample.knots:
                 return None
             if not sample.knots[0][1] <= common_rt <= sample.knots[-1][1]:
                 return None
-            return common_rt + self._sample_calibration.offset_min(
-                sample_stem, common_rt
-            )
-        if self._warp is not None and self._warp.has_support(sample_stem):
-            return common_rt + self._warp.offset_min(sample_stem, common_rt)
+            return common_rt + self._sample_calibration.offset_min(raw_stem, common_rt)
+        if self._warp is not None and self._warp.has_support(raw_stem):
+            return common_rt + self._warp.offset_min(raw_stem, common_rt)
         return None
 
     def calibrated_peak_region(
@@ -382,7 +376,7 @@ class SampleRtFrame:
         if self._sample_calibration is None:
             return None
         start, apex, end = (
-            self.calibrated_rt_min(owner.sample_stem, value)
+            self.calibrated_rt_min(owner.raw_stem, value)
             for value in (
                 owner.peak.rt_left_min,
                 owner.peak.rt_apex_min,
@@ -397,33 +391,31 @@ class SampleRtFrame:
         """Final membership consumes estimates without widening strong support."""
         if self._coordinate_override is not None:
             return RtEstimate(self._coordinate_override(owner), "diagnostic_override")
-        return self.estimate_rt(owner.sample_stem, owner.peak.rt_apex_min)
+        return self.estimate_rt(owner.raw_stem, owner.peak.rt_apex_min)
 
-    def estimate_rt(self, sample_stem: str, observed_rt: float) -> RtEstimate | None:
+    def estimate_rt(self, raw_stem: str, observed_rt: float) -> RtEstimate | None:
         if self._sample_calibration is not None:
-            sample = self._sample_calibration.samples.get(sample_stem)
+            sample = self._sample_calibration.samples.get(raw_stem)
             return sample.estimate_rt(observed_rt) if sample is not None else None
-        calibrated = self.calibrated_rt_min(sample_stem, observed_rt)
+        calibrated = self.calibrated_rt_min(raw_stem, observed_rt)
         return (
             RtEstimate(calibrated, "retained_map") if calibrated is not None else None
         )
 
     def estimate_observed_rt(
-        self, sample_stem: str, common_rt: float
+        self, raw_stem: str, common_rt: float
     ) -> RtEstimate | None:
         if self._sample_calibration is not None:
-            sample = self._sample_calibration.samples.get(sample_stem)
+            sample = self._sample_calibration.samples.get(raw_stem)
             return (
                 sample.estimate_observed_rt(common_rt) if sample is not None else None
             )
-        observed = self.observed_rt_min(sample_stem, common_rt)
+        observed = self.observed_rt_min(raw_stem, common_rt)
         return RtEstimate(observed, "retained_map") if observed is not None else None
 
-    def offset_min(self, sample_stem: str, rt_min: float) -> float:
+    def offset_min(self, raw_stem: str, rt_min: float) -> float:
         if self._sample_calibration is not None:
-            return self._sample_calibration.offset_min(sample_stem, rt_min)
+            return self._sample_calibration.offset_min(raw_stem, rt_min)
         return (
-            self._warp.offset_min(sample_stem, rt_min)
-            if self._warp is not None
-            else 0.0
+            self._warp.offset_min(raw_stem, rt_min) if self._warp is not None else 0.0
         )

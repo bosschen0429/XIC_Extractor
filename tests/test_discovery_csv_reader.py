@@ -173,7 +173,7 @@ def test_read_discovery_candidates_csv_parses_full_candidate_row(
     assert candidate.ms1_search_rt_max == pytest.approx(9.08)
     assert candidate.query_rt_min == pytest.approx(8.47)
     assert candidate.ms1_apex_mz is None
-    assert candidate.sample_stem == "Sample_1"
+    assert candidate.raw_stem == "Sample_1"
     assert candidate.best_ms2_scan_id == 6095
     assert candidate.neutral_loss_tag == "DNA_dR"
     assert candidate.precursor_mz_basis == "scan_precursor"
@@ -210,7 +210,7 @@ def test_read_discovery_candidates_csv_unescapes_known_formula_fields(
     (candidate,) = read_discovery_peaks_csv(csv_path)
 
     assert candidate.peak_id == "=Sample@mz500.123456_rt8.4800"
-    assert candidate.sample_stem == "=Sample"
+    assert candidate.raw_stem == "=Sample"
 
 
 def test_readers_reject_missing_required_columns(tmp_path: Path) -> None:
@@ -456,7 +456,7 @@ def _discovery_input_batch(
         candidate_csvs[stem] = path
         raw_files[stem] = raw_path
         receipts[stem] = mint_discovery_peak_universe_receipt(
-            sample_stem=stem,
+            raw_stem=stem,
             acquisition_source=source,
             peak_csv=path,
             peaks=candidates,

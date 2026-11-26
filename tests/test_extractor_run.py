@@ -181,7 +181,7 @@ def test_run_no_nl_reference_selects_each_samples_component(
             acquired = acquire(*args, **kwargs)
             for file in acquired.file_results:
                 peak_result = file.results[target.label].peak_result
-                anchor_rt = expected[file.sample_name][0] - 1.0
+                anchor_rt = expected[file.raw_stem][0] - 1.0
                 assert peak_result.candidate_scores
                 for score in peak_result.candidate_scores:
                     assert score.evidence_facts is not None
@@ -194,12 +194,12 @@ def test_run_no_nl_reference_selects_each_samples_component(
         monkeypatch.setattr(extractor, "acquire", acquire_with_anchor_evidence)
     output = extractor.run(config, targets)
 
-    assert {file.sample_name for file in output.file_results} == set(expected)
+    assert {file.raw_stem for file in output.file_results} == set(expected)
     assert all(file.error is None for file in output.file_results)
     areas = {}
     for file in output.file_results:
         result = file.results[target.label]
-        reference_apex = expected[file.sample_name][0]
+        reference_apex = expected[file.raw_stem][0]
         measured_apex = reference_apex
         assert result.reported_rt == pytest.approx(measured_apex, abs=0.03)
         if pair_state == "credible":
@@ -211,7 +211,7 @@ def test_run_no_nl_reference_selects_each_samples_component(
             assert result.reported_peak_start < measured_apex
             assert result.reported_peak_end > reference_apex
             single_lobe_area = (
-                expected[file.sample_name][1] * 0.06 * np.sqrt(2 * np.pi) * 60
+                expected[file.raw_stem][1] * 0.06 * np.sqrt(2 * np.pi) * 60
             )
             assert result.reported_peak_start > reference_apex - 0.15
             assert result.reported_peak_area == pytest.approx(
@@ -238,7 +238,7 @@ def test_run_no_nl_reference_selects_each_samples_component(
             result.reported_peak_start == physical.answer.selected_segment.left_rt_min
         )
         assert result.reported_peak_end == physical.answer.selected_segment.right_rt_min
-        areas[file.sample_name] = result.reported_peak_area
+        areas[file.raw_stem] = result.reported_peak_area
     assert areas["SampleB"] == pytest.approx(areas["SampleA"] * 2.5, rel=0.01)
 
 
@@ -300,7 +300,7 @@ def test_process_file_opens_raw_with_expected_acquisition_source(
         expected_acquisition_source=expectation,
     )
 
-    assert file_result.sample_name == "SampleA"
+    assert file_result.raw_stem == "SampleA"
     assert diagnostics == []
     assert captured == {
         "path": raw_path,
@@ -478,7 +478,7 @@ def test_serial_backend_keeps_sorted_raw_output_order(
 
     output = acquire(config, targets)
 
-    assert [file_result.sample_name for file_result in output.file_results] == [
+    assert [file_result.raw_stem for file_result in output.file_results] == [
         "A",
         "B",
     ]
@@ -527,8 +527,8 @@ def test_per_file_result_primitive_returns_worker_payload_and_is_pickleable(
 
     restored = pickle.loads(pickle.dumps(result))
     assert restored.raw_index == 7
-    assert restored.sample_name == "SampleA"
-    assert restored.file_result.sample_name == "SampleA"
+    assert restored.raw_stem == "SampleA"
+    assert restored.file_result.raw_stem == "SampleA"
     assert restored.diagnostics == []
     assert restored.file_result.results["Analyte"].peak_result.peak is not None
     provenance = restored.file_result.results[
@@ -571,7 +571,7 @@ def test_per_file_result_primitive_captures_file_errors(
     )
 
     assert result.raw_index == 2
-    assert result.sample_name == "Bad"
+    assert result.raw_stem == "Bad"
     assert result.file_result.error is not None
     assert "file locked" in result.file_result.error
     assert not hasattr(result, "error")

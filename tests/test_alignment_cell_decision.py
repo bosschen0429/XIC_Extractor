@@ -226,7 +226,7 @@ def test_group_closed_state_table_maps_owner_observations_without_reason_parsing
         decision_owner._decide_group(
             observation,
             is_member=any(
-                member.sample_key == observation.sample_key
+                member.raw_stem == observation.raw_stem
                 for member in observation.group.member_subjects
             ),
         )
@@ -266,7 +266,7 @@ def test_group_hold_counterexample_distinguishes_observed_and_zero_candidate(
         detector_invocation_id="gaussian15:s4:cell-decision-negative",
         evaluation_receipt=_completed_receipt(),
     )
-    source = next(item for item in spine.cells if item.sample_key == sample.sample_name)
+    source = next(item for item in spine.cells if item.raw_stem == sample.raw_stem)
     negative_cell = mint_cell_observation(
         sample=sample,
         target=fixture.target,
@@ -436,13 +436,13 @@ def test_group_split_nonmember_maps_exact_not_searched_closure(
 
 def _censored_peak(
     fixture: Any,
-    sample_stem: str,
+    raw_stem: str,
     *,
     mz: float = PRECURSOR_MZ,
     apex_rt: float = 8.0,
     **_kwargs: Any,
 ) -> Any:
-    sample = fixture.sample(sample_stem)
+    sample = fixture.sample(raw_stem)
     source = fixture.source(sample)
     rt = np.arange(401, dtype=float) / 100.0 + apex_rt - 2.0
     intensity = np.zeros(401)
@@ -457,7 +457,7 @@ def _censored_peak(
         query_rt_min=apex_rt,
     )
     trace = Trace.from_arrays(
-        sample_name=sample_stem,
+        raw_stem=raw_stem,
         mz=mz,
         rt=rt,
         intensity=intensity,

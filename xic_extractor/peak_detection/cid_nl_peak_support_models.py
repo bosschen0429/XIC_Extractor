@@ -52,8 +52,8 @@ class DdaCidNlPeakSupport:
     relationship: str
 
     @property
-    def sample_key(self) -> str:
-        return self.evidence.sample_key
+    def raw_stem(self) -> str:
+        return self.evidence.raw_stem
 
     @property
     def dda_scan_number(self) -> int:

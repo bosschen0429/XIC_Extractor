@@ -151,7 +151,7 @@ def _drift_owners(shift_sec, names=None):
 
 def _membership(owners):
     result = _infer_common_rt(owners, {f"s{i}": i for i in range(len(_DRIFT_SECONDS))})
-    measured = {o.owner_id: o.sample_stem for o in owners}
+    measured = {o.owner_id: o.raw_stem for o in owners}
     return {frozenset(measured[key] for key in g.owner_ids) for g in result.groups}
 
 
@@ -203,7 +203,7 @@ def test_population_gap_uses_corrected_not_measured_rt():
         rules=CID_NL_GROUPING_RULES,
         config=AlignmentConfig(),
         rt_frame=SampleRtFrame().with_coordinate_override(
-            lambda owner: 10 + int(owner.sample_stem) / 60
+            lambda owner: 10 + int(owner.raw_stem) / 60
         ),
     )
     assert len(result.groups) == 1
@@ -345,7 +345,7 @@ def test_competition_selects_one_without_losing_other_owners():
     )
     result = infer(owners)
     assert sorted(len(g.owner_ids) for g in result.groups) == [1, 2]
-    decision = next(d for d in result.sparse_decisions if d.sample_stem == "b")
+    decision = next(d for d in result.sparse_decisions if d.raw_stem == "b")
     assert decision.accepted_risk.alternative_partition
     assert "accepted_competition" in decision.accepted_risk.risk_flags
     assert sorted(o for g in result.groups for o in g.owner_ids) == sorted(
@@ -386,7 +386,7 @@ def test_equal_worst_pair_cost_selects_better_average_peer_fit(reverse):
             for i, owner in enumerate(reversed(owners))
         )
     measured = {
-        o.owner_id: (o.sample_stem, o.peak.integration.rt_apex_min) for o in owners
+        o.owner_id: (o.raw_stem, o.peak.integration.rt_apex_min) for o in owners
     }
     result = infer(owners)
     earlier = next(
@@ -407,7 +407,7 @@ def test_non_equivalent_choice_does_not_depend_on_id_or_input_order():
 
     def selected(items):
         by_id = {
-            o.owner_id: (o.sample_stem, o.peak.integration.rt_apex_min) for o in items
+            o.owner_id: (o.raw_stem, o.peak.integration.rt_apex_min) for o in items
         }
         return {frozenset(by_id[i] for i in g.owner_ids) for g in infer(items).groups}
 

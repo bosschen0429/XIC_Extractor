@@ -17,7 +17,7 @@ def test_timing_recorder_records_stage_metrics_and_writes_json(tmp_path: Path) -
 
     with recorder.stage(
         "discover.ms2_events",
-        sample_stem="Sample_A",
+        raw_stem="Sample_A",
         metrics={"seed_count": 0},
     ) as stage:
         stage.metrics["seed_count"] = 3
@@ -26,7 +26,7 @@ def test_timing_recorder_records_stage_metrics_and_writes_json(tmp_path: Path) -
     assert len(recorder.records) == 1
     record = recorder.records[0]
     assert record.stage == "discover.ms2_events"
-    assert record.sample_stem == "Sample_A"
+    assert record.raw_stem == "Sample_A"
     assert record.elapsed_sec == pytest.approx(2.5)
     assert record.metrics == {
         "seed_count": 3,
@@ -68,7 +68,7 @@ def test_timing_recorder_summarizes_raw_xic_locality() -> None:
     recorder.record(
         "alignment.build_owners.extract_xic",
         elapsed_sec=2.0,
-        sample_stem="S1",
+        raw_stem="S1",
         metrics={
             "extract_xic_count": 10,
             "extract_xic_batch_count": 5,
@@ -79,7 +79,7 @@ def test_timing_recorder_summarizes_raw_xic_locality() -> None:
     recorder.record(
         "alignment.owner_backfill.extract_xic",
         elapsed_sec=1.0,
-        sample_stem="S1",
+        raw_stem="S1",
         metrics={
             "extract_xic_count": 100,
             "extract_xic_batch_count": 2,
@@ -345,7 +345,7 @@ def test_timing_recorder_live_history_is_bounded_and_heartbeat_is_latest(
     )
     for index in range(4):
         recorder.record(f"stage-{index}", elapsed_sec=1.0)
-    recorder.heartbeat(stage="sample", sample_stem="S4", completed=4, total=4)
+    recorder.heartbeat(stage="sample", raw_stem="S4", completed=4, total=4)
 
     payload = json.loads(live_path.read_text(encoding="utf-8"))
     assert [row["stage"] for row in payload["recent_records"]] == [

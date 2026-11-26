@@ -203,7 +203,7 @@ def peak_signal_digest(peak: PeakObservation) -> str:
 
     return hashlib.blake2b(
         repr(
-            (peak.sample_key, peak.mz, peak.rt, peak.intensity, peak.integration)
+            (peak.raw_stem, peak.mz, peak.rt, peak.intensity, peak.integration)
         ).encode("utf-8"),
         digest_size=16,
     ).hexdigest()
@@ -250,8 +250,8 @@ def project_untarget_child_rows(
             raise ValueError("group centre m/z is not finite")
         tag, product_mz, loss_da, has_anchor = _cell_context_facts(evidence)
         candidate_ids = {
-            sample_stem: candidate_id
-            for sample_stem, cell, observation in zip(
+            raw_stem: candidate_id
+            for raw_stem, cell, observation in zip(
                 sample_order, cells, evidence, strict=True
             )
             if (
@@ -298,11 +298,11 @@ def project_untarget_child_rows(
             "backfill",
             (
                 {
-                    **_cell_fields(sample_stem, cell, candidate_ids),
+                    **_cell_fields(raw_stem, cell, candidate_ids),
                     "backfill_query_rt_min": format_value(query_min),
                     "backfill_query_rt_max": format_value(query_max),
                 }
-                for sample_stem, cell in zip(sample_order, cells, strict=True)
+                for raw_stem, cell in zip(sample_order, cells, strict=True)
                 for query_min, query_max in (cell.backfill_query_bounds,)
                 if cell.origin is not None and query_min is not None
             ),
@@ -310,8 +310,8 @@ def project_untarget_child_rows(
         emit(
             "cells",
             (
-                _cell_fields(sample_stem, cell, candidate_ids)
-                for sample_stem, cell in zip(sample_order, cells, strict=True)
+                _cell_fields(raw_stem, cell, candidate_ids)
+                for raw_stem, cell in zip(sample_order, cells, strict=True)
             ),
         )
         emit(
@@ -320,8 +320,8 @@ def project_untarget_child_rows(
                 {
                     **group_columns,
                     **{
-                        sample_stem: cell_status(cell)
-                        for sample_stem, cell in zip(sample_order, cells, strict=True)
+                        raw_stem: cell_status(cell)
+                        for raw_stem, cell in zip(sample_order, cells, strict=True)
                     },
                 },
             ),
@@ -456,7 +456,7 @@ def _cells_in_sample_order(
     by_stem = {cell.subject.canonical_sample.raw_stem: cell for cell in canonical_cells}
     if len(by_stem) != len(canonical_cells) or set(by_stem) != set(sample_order):
         raise ValueError("writer projection crossed canonical sample order")
-    return tuple(by_stem[sample_stem] for sample_stem in sample_order)
+    return tuple(by_stem[raw_stem] for raw_stem in sample_order)
 
 
 def _member_direct_peaks(
@@ -469,7 +469,7 @@ def _member_direct_peaks(
         member_peaks = {
             peak
             for member in observation.group.member_subjects
-            if member.sample_key == observation.sample_key
+            if member.raw_stem == observation.raw_stem
             for peak in member.physical_peaks
         }
         for direct in observation.direct_observations:
@@ -555,7 +555,7 @@ def _selected_cell_source(
             "direct writer cell requires one source MeasuredPeakHypothesis identity"
         )
     return direct_candidate_ids.get(
-        (decision.subject.canonical_sample.sample_name, hypothesis_ids[0])
+        (decision.subject.canonical_sample.raw_stem, hypothesis_ids[0])
     )
 
 
@@ -567,7 +567,7 @@ def _direct_candidate_ids(
     for subject in scientific_core.terminal_subjects:
         if type(subject) is not ObservedSearchSubject:
             continue
-        key = (subject.sample_key, subject.hypothesis.hypothesis_id)
+        key = (subject.raw_stem, subject.hypothesis.hypothesis_id)
         previous = observed_subjects.get(key)
         if previous is not None and previous.hypothesis != subject.hypothesis:
             raise ValueError(
@@ -587,7 +587,7 @@ def cell_status(decision: ProductionCellDecision) -> str:
 
 
 def _cell_fields(
-    sample_stem: str,
+    raw_stem: str,
     cell: ProductionCellDecision,
     candidate_ids: Mapping[str, str],
 ) -> dict[str, object]:
@@ -600,7 +600,7 @@ def _cell_fields(
     )
     return {
         "feature_id": "",
-        "sample_stem": sample_stem,
+        "sample_stem": raw_stem,
         "status": cell_status(cell),
         "area": format_value(cell.value),
         "primary_matrix_area_source": cell.source or missing_area_reason,
@@ -625,7 +625,7 @@ def _cell_fields(
         "low_signal_to_noise": quality.low_signal_to_noise
         if quality is not None and quality.low_signal_to_noise is not None
         else "",
-        "source_candidate_id": candidate_ids.get(sample_stem, ""),
+        "source_candidate_id": candidate_ids.get(raw_stem, ""),
     }
 
 

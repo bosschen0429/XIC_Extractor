@@ -54,7 +54,7 @@ def test_unique_dda_event_resolves_to_one_physical_peak(
 
     support = _resolve(fixture, evidence, peak)
 
-    assert support.sample_key == (fixture.sample.sample_name)
+    assert support.raw_stem == (fixture.sample.raw_stem)
     assert support.dda_scan_number == 42
     assert support.evidence == evidence
     assert support.peak_observation == peak
@@ -399,7 +399,7 @@ def _peak(
 ) -> PeakObservation:
     acquisition_source = source
     trace = Trace.from_arrays(
-        sample_name=sample.raw_stem,
+        raw_stem=sample.raw_stem,
         mz=mz,
         rt=(7.7, 7.9, 8.0, 8.1, 8.3),
         intensity=(0.0, 50.0, apex_intensity, 50.0, 0.0),
@@ -433,17 +433,17 @@ def _peak(
 def _identity_fixture(
     tmp_path: Path,
     *,
-    sample_key: str = "sample-a",
+    raw_stem: str = "sample-a",
 ) -> _IdentityFixture:
-    source_path = tmp_path / f"{sample_key}.synthetic"
-    source_path.write_bytes(f"synthetic-no-raw-{sample_key}".encode())
+    source_path = tmp_path / f"{raw_stem}.synthetic"
+    source_path.write_bytes(f"synthetic-no-raw-{raw_stem}".encode())
     source = build_acquisition_source_identity(
         source_path,
         acquisition_format="synthetic_no_raw",
-        observation_namespace=f"synthetic:{sample_key}",
+        observation_namespace=f"synthetic:{raw_stem}",
     )
     return _IdentityFixture(
-        sample=SampleMetadata(sample_name=sample_key, raw_stem=sample_key),
+        sample=SampleMetadata(sample_label=raw_stem, raw_stem=raw_stem),
         source=source,
     )
 

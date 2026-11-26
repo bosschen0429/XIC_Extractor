@@ -79,7 +79,7 @@ class KnownIdentityMembershipConstraint:
 @dataclass(frozen=True, slots=True)
 class SparseFeatureDecision:
     direction: DecisionDirection
-    sample_stem: str
+    raw_stem: str
     owner_id: str
     feature_key: str | None
     state: SparseDecisionState
@@ -141,24 +141,24 @@ class BatchRtWarp:
     knots_by_sample: tuple[tuple[str, tuple[tuple[float, float], ...]], ...]
     anchor_group_count: int
 
-    def has_support(self, sample_stem: str) -> bool:
+    def has_support(self, raw_stem: str) -> bool:
         """Distinguish an unsupported identity transform from measured zero."""
-        return bool(self._knots(sample_stem))
+        return bool(self._knots(raw_stem))
 
-    def offset_min(self, sample_stem: str, rt_min: float) -> float:
-        return _interpolated_offset(self._knots(sample_stem), rt_min)
+    def offset_min(self, raw_stem: str, rt_min: float) -> float:
+        return _interpolated_offset(self._knots(raw_stem), rt_min)
 
     def corrected_rt_min(self, owner: SampleLocalMS1Owner) -> float:
-        return self.common_rt_min(owner.sample_stem, owner.peak.rt_apex_min)
+        return self.common_rt_min(owner.raw_stem, owner.peak.rt_apex_min)
 
-    def common_rt_min(self, sample_stem: str, observed_rt: float) -> float:
-        knots = self._knots(sample_stem)
+    def common_rt_min(self, raw_stem: str, observed_rt: float) -> float:
+        knots = self._knots(raw_stem)
         return observed_rt - _interpolated_offset(
             tuple((rt + offset, offset) for rt, offset in knots), observed_rt
         )
 
-    def _knots(self, sample_stem: str) -> tuple[tuple[float, float], ...]:
-        return dict(self.knots_by_sample).get(sample_stem, ())
+    def _knots(self, raw_stem: str) -> tuple[tuple[float, float], ...]:
+        return dict(self.knots_by_sample).get(raw_stem, ())
 
 
 def _interpolated_offset(

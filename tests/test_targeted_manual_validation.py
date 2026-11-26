@@ -99,7 +99,7 @@ def test_read_manual_truth_parses_dna_rna_two_raw_blocks(tmp_path: Path) -> None
 
     rows = read_manual_truth(workbook)
 
-    assert [(row.sheet, row.sample_name, row.target) for row in rows] == [
+    assert [(row.sheet, row.raw_stem, row.target) for row in rows] == [
         ("DNA", "NoSplit", "5-hmdC"),
         ("DNA", "Split", "5-hmdC"),
         ("RNA", "NoSplit", "m6A"),
@@ -371,7 +371,7 @@ def test_run_cases_executes_each_case_once_with_current_config(
     cases = [
         module.ManualValidationCase(
             name=name,
-            sample_name=name,
+            raw_stem=name,
             raw_path=tmp_path / f"{name}.raw",
             targets_path=tmp_path / f"{name}.csv",
         )
@@ -414,7 +414,7 @@ def test_main_writes_workbook_with_injected_runner(tmp_path: Path, monkeypatch) 
     ) -> list[module.ProgramPeakRow]:
         return [
             module.ProgramPeakRow(
-                case.sample_name,
+                case.raw_stem,
                 "TargetA",
                 False,
                 10.01,
@@ -474,7 +474,7 @@ def test_main_applies_parallel_overrides_to_one_current_run(
         seen.append(execution)
         return [
             module.ProgramPeakRow(
-                case.sample_name,
+                case.raw_stem,
                 "TargetA",
                 False,
                 10.01,

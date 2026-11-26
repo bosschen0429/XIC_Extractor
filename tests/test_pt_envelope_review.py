@@ -110,7 +110,7 @@ def test_real_review_entry_adds_envelope_without_changing_saved_candidates(
     )
     candidates = tuple(
         DeltaMassCandidate(
-            sample_stem=sample,
+            raw_stem=sample,
             method_label="Pt pattern",
             pattern_id="pt",
             candidate_id=sample,
@@ -146,7 +146,7 @@ def test_real_review_entry_adds_envelope_without_changing_saved_candidates(
     raw = tmp_path / "raw"
     raw.mkdir()
     for c in candidates:
-        (raw / f"{c.sample_stem}.raw").touch()
+        (raw / f"{c.raw_stem}.raw").touch()
     calls = []
 
     class Reader:
@@ -200,7 +200,7 @@ def test_real_review_entry_adds_envelope_without_changing_saved_candidates(
         == 0
     )
     review = decode_delta_mass_review(json.loads(output.read_text()))
-    by_sample = {c.sample_stem: c for c in review.candidates}
+    by_sample = {c.raw_stem: c for c in review.candidates}
     assert by_sample["pt-like"].envelope.spread == pytest.approx(1)
     assert by_sample["organic-like"].envelope.spread > 10
     assert all(

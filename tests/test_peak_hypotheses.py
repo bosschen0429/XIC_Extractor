@@ -25,12 +25,12 @@ def test_hypothesis_id_is_deterministic() -> None:
     )
 
     first = hypothesis_audit_id(
-        sample_name="SampleA",
+        raw_stem="SampleA",
         target_label="Analyte",
         candidate=candidate,
     )
     second = hypothesis_audit_id(
-        sample_name="SampleA",
+        raw_stem="SampleA",
         target_label="Analyte",
         candidate=candidate,
     )
@@ -57,7 +57,7 @@ def test_build_peak_hypotheses_marks_selected_and_rejected_candidates() -> None:
     )
 
     hypotheses = build_peak_hypotheses(
-        sample_name="SampleA",
+        raw_stem="SampleA",
         target_label="Analyte",
         role="Analyte",
         istd_pair="ISTD",
@@ -94,7 +94,7 @@ def test_hypothesis_selection_reference_comes_from_detection_result() -> None:
     )
 
     hypothesis = build_peak_hypotheses(
-        sample_name="SampleA",
+        raw_stem="SampleA",
         target_label="Analyte",
         role="Analyte",
         istd_pair="",
@@ -167,7 +167,7 @@ def test_build_peak_hypotheses_projects_scorer_facts_to_successor_evidence() -> 
     )
 
     hypothesis = build_peak_hypotheses(
-        sample_name="SampleA",
+        raw_stem="SampleA",
         target_label="Analyte",
         role="Analyte",
         istd_pair="ISTD",
@@ -238,7 +238,7 @@ def test_build_peak_hypotheses_scan_indices_match_bounded_baseline_interval() ->
     )
 
     hypothesis = build_peak_hypotheses(
-        sample_name="SampleA",
+        raw_stem="SampleA",
         target_label="Analyte",
         role="Analyte",
         istd_pair="",
@@ -264,7 +264,7 @@ def test_build_peak_hypotheses_rejects_retired_linear_edge_baseline_override() -
 
     with pytest.raises(ValueError, match="retired; use asls"):
         build_peak_hypotheses(
-            sample_name="SampleA",
+            raw_stem="SampleA",
             target_label="Analyte",
             role="Analyte",
             istd_pair="",
@@ -286,7 +286,7 @@ def test_build_peak_hypotheses_accepts_shared_trace_group() -> None:
         candidates=(selected,),
     )
     trace = Trace.from_arrays(
-        sample_name="SampleA",
+        raw_stem="SampleA",
         mz=269.1388,
         rt=[8.0, 8.5, 9.0],
         intensity=[10.0, 80.0, 20.0],
@@ -300,7 +300,7 @@ def test_build_peak_hypotheses_accepts_shared_trace_group() -> None:
     )
 
     hypothesis = build_peak_hypotheses(
-        sample_name="SampleA",
+        raw_stem="SampleA",
         target_label="Analyte",
         role="Analyte",
         istd_pair="",
@@ -325,7 +325,7 @@ def test_build_peak_hypotheses_returns_empty_without_candidate_intervals() -> No
 
     assert (
         build_peak_hypotheses(
-            sample_name="SampleA",
+            raw_stem="SampleA",
             target_label="Analyte",
             role="Analyte",
             istd_pair="",
@@ -423,7 +423,7 @@ def test_legacy_integration_records_raw_interval_sigma_without_redefining_area()
         candidates=(selected,),
     )
     hypothesis = build_peak_hypotheses(
-        sample_name="S1",
+        raw_stem="S1",
         target_label="A",
         role="Analyte",
         istd_pair="",

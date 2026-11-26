@@ -79,7 +79,7 @@ def test_isomers_at_one_mass_are_two_peaks_on_one_channel() -> None:
     assert all(
         peak.peak_id
         == build_discovery_peak_id(
-            sample_stem=peak.sample_stem,
+            raw_stem=peak.raw_stem,
             xic_mz=channel.mz,
             peak_rt_min=peak.query_rt_min,
         )

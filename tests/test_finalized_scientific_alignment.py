@@ -64,7 +64,7 @@ def test_finalizer_closes_exact_core_with_terminal_subject_variants(
     assert result.canonical_samples == tuple(
         sorted(
             scope.samples,
-            key=lambda sample: sample.sample_name,
+            key=lambda sample: sample.raw_stem,
         )
     )
     assert result.grouping_result is receipt
@@ -177,7 +177,7 @@ def _finalization_inputs(
             CaptureCandidateBinding(
                 candidate_id=candidate_id,
                 method_subject_id=method_subject.method_subject_id,
-                sample_key=sample.sample_name,
+                raw_stem=sample.raw_stem,
             )
             for candidate_id, sample in zip(candidate_ids, fixture.samples, strict=True)
         ),
@@ -187,18 +187,18 @@ def _finalization_inputs(
     terminals = (
         ObservedSearchSubject(
             candidate_id=candidate_ids[0],
-            sample_key=observed_sample.sample_name,
+            raw_stem=observed_sample.raw_stem,
             hypothesis=compose_ms1_observation_peak_hypothesis(
                 peak_observation=measured_peak(
                     mz=method_subject.precursor_mz,
                     apex_rt=8.0,
-                    sample_key=observed_sample.sample_name,
+                    raw_stem=observed_sample.raw_stem,
                 )
             ),
         ),
         *(
             SearchedNoObservationSubject(
-                candidate_id=candidate_id, sample_key=sample.sample_name
+                candidate_id=candidate_id, raw_stem=sample.raw_stem
             )
             for candidate_id, sample in zip(
                 candidate_ids[1:], fixture.samples[1:], strict=True

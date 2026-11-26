@@ -275,7 +275,7 @@ def test_explanation_metadata_fixture_does_not_load_runtime_or_test_modules():
             explanation_summary, curve_provenance,
         )
 
-        explanation_summary({'samples': [{'sample_key': 'S1'}]})
+        explanation_summary({'samples': [{'raw_stem': 'S1'}]})
         curve_provenance()
         assert not any(name.startswith('tests.test_') for name in sys.modules)
         assert not any(name.startswith('xic_extractor.untargeted_execution')

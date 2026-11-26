@@ -69,7 +69,7 @@ def _seed(
 ) -> DiscoveryEvent:
     return DiscoveryEvent(
         raw_file=RAW_FILE,
-        sample_stem="TumorBC2312_DNA",
+        raw_stem="TumorBC2312_DNA",
         scan_number=scan_number,
         rt=rt,
         precursor_mz=precursor_mz,

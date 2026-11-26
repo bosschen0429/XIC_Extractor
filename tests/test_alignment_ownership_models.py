@@ -8,7 +8,7 @@ from xic_extractor.alignment.ownership_models import (
 def test_sample_local_owner_exposes_primary_and_supporting_events():
     primary = IdentityEvent(
         candidate_id="s1#6095",
-        sample_stem="s1",
+        raw_stem="s1",
         raw_file="s1.raw",
         neutral_loss_tag="DNA_dR",
         precursor_mz=242.114,
@@ -20,7 +20,7 @@ def test_sample_local_owner_exposes_primary_and_supporting_events():
     )
     support = IdentityEvent(
         candidate_id="s1#6096",
-        sample_stem="s1",
+        raw_stem="s1",
         raw_file="s1.raw",
         neutral_loss_tag="DNA_dR",
         precursor_mz=242.1141,
@@ -33,7 +33,7 @@ def test_sample_local_owner_exposes_primary_and_supporting_events():
 
     owner = SampleLocalMS1Owner(
         owner_id="OWN-s1-000001",
-        sample_stem="s1",
+        raw_stem="s1",
         raw_file="s1.raw",
         peak=measured_peak(
             mz=242.114,
@@ -55,7 +55,7 @@ def test_sample_local_owner_exposes_primary_and_supporting_events():
 def test_sample_local_owner_censors_endpoint_apex_even_without_explicit_flag():
     event = IdentityEvent(
         candidate_id="s1#6095",
-        sample_stem="s1",
+        raw_stem="s1",
         raw_file="s1.raw",
         neutral_loss_tag="DNA_dR",
         precursor_mz=242.114,
@@ -68,7 +68,7 @@ def test_sample_local_owner_censors_endpoint_apex_even_without_explicit_flag():
 
     owner = SampleLocalMS1Owner(
         owner_id="OWN-s1-000001",
-        sample_stem="s1",
+        raw_stem="s1",
         raw_file="s1.raw",
         peak=measured_peak(
             mz=242.114,

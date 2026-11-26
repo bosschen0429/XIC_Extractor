@@ -358,7 +358,7 @@ def _measured_peak(
     question = evaluation.question
     window = captured.acquired_trace.coordinate.request
     peak_id = build_discovery_peak_id(
-        sample_stem=representative.sample_stem,
+        raw_stem=representative.raw_stem,
         xic_mz=ion_mz,
         peak_rt_min=question.query_rt_min,
     )
@@ -367,7 +367,7 @@ def _measured_peak(
     )
     peak = DiscoveryPeak(
         peak_id=peak_id,
-        sample_stem=representative.sample_stem,
+        raw_stem=representative.raw_stem,
         peak_mz=peak_mz,
         neutral_loss_tag=representative.neutral_loss_tag,
         best_ms2_scan_id=representative.scan_number,
@@ -472,7 +472,7 @@ def _seed_subject_id(event: DiscoveryEvent) -> str:
     """One physical search per NL event."""
     return (
         "discovery-physical-work:"
-        f"{event.sample_stem}:{event.scan_number}:"
+        f"{event.raw_stem}:{event.scan_number}:"
         f"{float(event.precursor_mz).hex()}:{float(event.product_mz).hex()}"
     )
 

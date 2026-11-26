@@ -53,7 +53,7 @@ def _diagnostics_to_rows(
 ) -> list[dict[str, str]]:
     return [
         {
-            "SampleName": record.sample_name,
+            "SampleName": record.raw_stem,
             "Target": record.target_label,
             "Issue": record.issue,
             "Reason": record.reason,

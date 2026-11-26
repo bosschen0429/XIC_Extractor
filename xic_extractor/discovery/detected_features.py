@@ -55,7 +55,7 @@ class DetectedFeature:
     matching.
     """
 
-    sample_stem: str
+    raw_stem: str
     feature_id: str
     source_feature_row_id: str | None
     mz: float
@@ -75,7 +75,7 @@ DetectedFeatureIdentity = tuple[str, str]
 def detected_feature_identity(feature: DetectedFeature) -> DetectedFeatureIdentity:
     """Return the canonical sample-local identity for one detected feature."""
 
-    return (feature.sample_stem, feature.feature_id)
+    return (feature.raw_stem, feature.feature_id)
 
 
 def validate_unique_detected_feature_identities(
@@ -99,8 +99,8 @@ def validate_unique_detected_feature_identities(
         seen.add(identity)
     if duplicates:
         rendered = ", ".join(
-            f"({sample_stem!r}, {feature_id!r})"
-            for sample_stem, feature_id in sorted(duplicates)
+            f"({raw_stem!r}, {feature_id!r})"
+            for raw_stem, feature_id in sorted(duplicates)
         )
         raise ValueError(
             f"{source_label}: duplicate detected feature identity "
@@ -177,7 +177,7 @@ def _parse_detected_feature(
     row: Mapping[str, str | None], *, path: Path, row_index: int
 ) -> DetectedFeature:
     row_label = _row_label(path, row_index)
-    sample_stem = required_row_text(row.get("sample_stem"), "sample_stem", row_label)
+    raw_stem = required_row_text(row.get("sample_stem"), "sample_stem", row_label)
     feature_id = required_row_text(row.get("feature_id"), "feature_id", row_label)
     trace_quality = required_row_text(
         row.get("trace_quality"), "trace_quality", row_label
@@ -185,7 +185,7 @@ def _parse_detected_feature(
     source = required_row_text(row.get("source"), "source", row_label)
 
     return DetectedFeature(
-        sample_stem=sample_stem,
+        raw_stem=raw_stem,
         feature_id=feature_id,
         source_feature_row_id=_optional_text(row.get("source_feature_row_id")),
         mz=_required_finite_float(row.get("mz"), "mz", row_label),
@@ -214,7 +214,7 @@ def _parse_detected_feature(
 
 def _detected_feature_row(feature: DetectedFeature) -> dict[str, object]:
     return {
-        "sample_stem": feature.sample_stem,
+        "sample_stem": feature.raw_stem,
         "feature_id": feature.feature_id,
         "source_feature_row_id": feature.source_feature_row_id,
         "mz": feature.mz,
@@ -259,8 +259,8 @@ def _validate_detected_feature(
     *,
     row_label: str,
 ) -> dict[str, object]:
-    sample_stem = _required_feature_text(
-        feature.sample_stem,
+    raw_stem = _required_feature_text(
+        feature.raw_stem,
         "sample_stem",
         row_label,
     )
@@ -290,8 +290,8 @@ def _validate_detected_feature(
         row_label=row_label,
     )
     row = _detected_feature_row(feature)
+    row["sample_stem"] = raw_stem
     row.update(
-        sample_stem=sample_stem,
         feature_id=feature_id,
         trace_quality=trace_quality,
         source=source,

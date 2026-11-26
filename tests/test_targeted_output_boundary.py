@@ -238,7 +238,7 @@ def test_formal_entry_retains_the_method_universe_and_publishes_its_decision(
         for item in assessments
     )
     rendered = {
-        file.sample_name: file.results[target.label]
+        file.raw_stem: file.results[target.label]
         for file in execution.active_output.file_results
     }
     if with_signal:
@@ -269,8 +269,8 @@ def test_formal_entry_retains_the_method_universe_and_publishes_its_decision(
     headers = rows[0]
     workbook_rows = {row[0]: dict(zip(headers, row, strict=True)) for row in rows[1:]}
     assert set(workbook_rows) == set(scales)
-    for sample_name, result in rendered.items():
-        row = workbook_rows[sample_name]
+    for raw_stem, result in rendered.items():
+        row = workbook_rows[raw_stem]
         assert row["Area"] == (
             round(result.reported_peak_area, 2) if with_signal else "ND"
         )
@@ -372,7 +372,7 @@ def test_publication_returns_concrete_public_result_models(
 
         for file_result in output.file_results:
             source = build_local_acquisition_source_identity(
-                config.data_dir / f"{file_result.sample_name}.raw",
+                config.data_dir / f"{file_result.raw_stem}.raw",
                 acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
                 observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
             )
@@ -397,7 +397,7 @@ def test_publication_returns_concrete_public_result_models(
     )
 
     assert len(published.output.file_results) == 2
-    by_sample = {fr.sample_name: fr for fr in published.output.file_results}
+    by_sample = {fr.raw_stem: fr for fr in published.output.file_results}
     assert set(by_sample.keys()) == {"SampleA", "SampleB"}
 
     ext_a = by_sample["SampleA"].results[target.label]
@@ -543,7 +543,7 @@ def test_service_publishes_finalized_numeric_values_without_counting_detection(
                 replace(extraction, candidate_ms2_evidence=evidence), target
             ),
             target=target,
-            sample_name=file_result.sample_name,
+            raw_stem=file_result.raw_stem,
         )
         projection = policy_result.targeted_product_projection
         assert projection is not None
@@ -610,10 +610,10 @@ def test_service_publishes_finalized_numeric_values_without_counting_detection(
         workbook.close()
     assert set(long_rows) == set(workbook_rows) == set(decisions)
     rendered = {
-        item.sample_name: item.results[target.label]
+        item.raw_stem: item.results[target.label]
         for item in execution.active_output.file_results
     }
-    for sample_name, decision in decisions.items():
+    for raw_stem, decision in decisions.items():
         integration = decision.evidence.hypothesis.peak.integration
         expected_values = {
             "RT": (integration.rt_apex_min, 4),
@@ -625,30 +625,25 @@ def test_service_publishes_finalized_numeric_values_without_counting_detection(
                 4,
             ),
         }
-        projection = rendered[sample_name].targeted_product_projection
+        projection = rendered[raw_stem].targeted_product_projection
         assert projection is not None and projection.counted_detection is False
-        assert rendered[sample_name].reported_peak_area == decision.value
+        assert rendered[raw_stem].reported_peak_area == decision.value
         for field, (value, digits) in expected_values.items():
             expected_text = f"{value:.{digits}f}"
-            assert long_rows[sample_name][field] == expected_text
-            assert workbook_rows[sample_name][field] == float(expected_text)
-        for row in (long_rows[sample_name], workbook_rows[sample_name]):
+            assert long_rows[raw_stem][field] == expected_text
+            assert workbook_rows[raw_stem][field] == float(expected_text)
+        for row in (long_rows[raw_stem], workbook_rows[raw_stem]):
             assert row["依據"] == ("未見 NL" if nl_status == "NL_FAIL" else "無 MS2")
             assert row["疑點"] == "證據單薄"
             assert row["Counted Detection"] == "FALSE"
-        assert long_rows[sample_name]["Product State"] == "not_counted"
-        assert long_rows[sample_name]["Review State"] == "review_required"
+        assert long_rows[raw_stem]["Product State"] == "not_counted"
+        assert long_rows[raw_stem]["Review State"] == "review_required"
         assert (
-            long_rows[sample_name]["Projection Not Counted Reasons"]
-            == not_counted_reason
+            long_rows[raw_stem]["Projection Not Counted Reasons"] == not_counted_reason
         )
-        assert (
-            long_rows[sample_name]["Projection Reason"] == projection.projection_reason
-        )
+        assert long_rows[raw_stem]["Projection Reason"] == projection.projection_reason
         for field in ("Int", "IntSmoothed"):
-            assert workbook_rows[sample_name][field] == float(
-                long_rows[sample_name][field]
-            )
+            assert workbook_rows[raw_stem][field] == float(long_rows[raw_stem][field])
 
 
 def test_service_publishes_no_numeric_for_finalized_no_observation(
@@ -661,7 +656,7 @@ def test_service_publishes_no_numeric_for_finalized_no_observation(
     assert original_trace is not None
     rt = np.asarray(original_trace.rt)
     trace = Trace.from_arrays(
-        sample_name="SampleA",
+        raw_stem="SampleA",
         mz=target.mz,
         rt=rt,
         intensity=np.zeros_like(rt),
@@ -816,7 +811,7 @@ def test_workbench_summary_consumes_the_finalized_publication_view(
             target,
         ),
         target=target,
-        sample_name="SampleA",
+        raw_stem="SampleA",
     )
     assert policy_result.targeted_product_projection is not None
     assert policy_result.targeted_product_projection.counted_detection is False
@@ -948,7 +943,7 @@ def test_concurrent_non_replacing_publications_are_collision_atomic(
             output,
             diagnostics=[
                 DiagnosticRecord(
-                    sample_name="SampleA",
+                    raw_stem="SampleA",
                     target_label="",
                     issue="FILE_ERROR",
                     reason=marker,
@@ -1321,8 +1316,7 @@ def test_service_accepts_raw_order_that_differs_from_canonical_order(
         [target],
         excel_output_path=config.output_csv.with_suffix(".xlsx"),
         injection_order={
-            sample_name: index
-            for index, sample_name in enumerate(sample_names, start=1)
+            raw_stem: index for index, raw_stem in enumerate(sample_names, start=1)
         },
     )
 
@@ -1343,7 +1337,7 @@ def test_service_accepts_raw_order_that_differs_from_canonical_order(
     assert execution.published_paths
     assert (
         tuple(
-            sample.sample_name
+            sample.raw_stem
             for sample in execution.finalized_results[0].canonical_samples
         )
         != sample_names
@@ -1578,7 +1572,7 @@ def test_formal_targeted_backfill_uses_confirmed_peers_and_paired_istd(
             results_by_sample=tuple(
                 sorted(
                     context.results_by_sample,
-                    key=lambda item: item[0].sample_name,
+                    key=lambda item: item[0].raw_stem,
                     reverse=True,
                 )
             ),
@@ -1645,7 +1639,7 @@ def test_formal_targeted_backfill_uses_confirmed_peers_and_paired_istd(
         [(d.reason_codes, d.group_facts.direct_support_count_s) for d in decisions],
         [
             (
-                f.sample_name,
+                f.raw_stem,
                 [
                     (
                         label,
@@ -1693,9 +1687,7 @@ def test_formal_targeted_backfill_uses_confirmed_peers_and_paired_istd(
         assert row["PeakStart"] == pytest.approx(candidate.rt_left_min, abs=5e-5)
         assert row["PeakEnd"] == pytest.approx(candidate.rt_right_min, abs=5e-5)
         rendered = next(
-            f
-            for f in execution.active_output.file_results
-            if f.sample_name == "SampleC"
+            f for f in execution.active_output.file_results if f.raw_stem == "SampleC"
         ).results["Analyte"]
         assert rendered.quality_flags == ()
         assert rendered.reported_peak_start == candidate.rt_left_min
@@ -1712,7 +1704,7 @@ def test_formal_targeted_backfill_uses_confirmed_peers_and_paired_istd(
         assert row["依據"] == ("回填" if istd_backfill else "ISTD 位置")
         assert row["疑點"] == ("無 MS2、訊號缺口" if gap_review else "無 MS2")
         assert any(
-            (record.sample_name, record.target_label, record.issue)
+            (record.raw_stem, record.target_label, record.issue)
             == ("SampleC", "Analyte", "BACKFILL_ACCEPTED")
             for record in execution.active_output.diagnostics
         )
@@ -1823,8 +1815,7 @@ def test_paired_position_rejects_remote_nl_peak_in_workbook_and_inspector(
         )
     )
     results = {
-        f.sample_name: f.results["Analyte"]
-        for f in execution.active_output.file_results
+        f.raw_stem: f.results["Analyte"] for f in execution.active_output.file_results
     }
     near, far = results["Near"], results["Far"]
     assert far.reported_rt is None
@@ -1833,7 +1824,7 @@ def test_paired_position_rejects_remote_nl_peak_in_workbook_and_inspector(
     assert far.reported_peak_end is None
     assert not far.targeted_product_projection.counted_detection
     assert any(
-        record.sample_name == "Far"
+        record.raw_stem == "Far"
         and record.issue == "OFF_ISTD_POSITION"
         and "2.100" in record.reason
         for record in execution.active_output.diagnostics
@@ -1861,7 +1852,7 @@ def test_paired_position_rejects_remote_nl_peak_in_workbook_and_inspector(
     assert rows["Spike"]["Counted Detection"] == "FALSE"
     assert rows["Spike"]["Area"] == "ND"
     assert any(
-        record.sample_name == "Spike"
+        record.raw_stem == "Spike"
         and record.issue == "PAIRED_POSITION_SUPPORT_REJECTED"
         and "insufficient_original_xic_support" in record.reason
         for record in execution.active_output.diagnostics
@@ -1906,7 +1897,7 @@ def test_publication_lists_samples_in_injection_order(tmp_path: Path) -> None:
     )
 
     files = published.output.file_results
-    assert [fr.sample_name for fr in files] == ["SampleB", "SampleA"]
+    assert [fr.raw_stem for fr in files] == ["SampleB", "SampleA"]
     areas = [fr.results[target.label].reported_peak_area for fr in files]
     assert areas[0] == pytest.approx(areas[1] * 2.5, rel=1e-2)
 
@@ -2013,7 +2004,7 @@ def test_istd_backfill_keeps_a_drifting_target_as_one_group(
     def acquire(*args, **kwargs):
         output = pipeline.run_pipeline(*args, **kwargs)
         acquired.update(
-            {f.sample_name: f.results[istd.label] for f in output.file_results}
+            {f.raw_stem: f.results[istd.label] for f in output.file_results}
         )
         return output
 
@@ -2054,7 +2045,7 @@ def test_istd_backfill_keeps_a_drifting_target_as_one_group(
     assert rows["S3", istd.label]["Counted Detection"] == "TRUE"
     assert rows["S3", istd.label]["RT"] == pytest.approx(2.6, abs=0.01)
     published = next(
-        f for f in execution.active_output.file_results if f.sample_name == "S3"
+        f for f in execution.active_output.file_results if f.raw_stem == "S3"
     ).results[istd.label]
     assert not published.selected_cid_nl_supported
     assert published.candidate_ms2_evidence.nl_status == (
@@ -2062,7 +2053,7 @@ def test_istd_backfill_keeps_a_drifting_target_as_one_group(
     )
     assert rows["S3", analyte.label]["Counted Detection"] == "TRUE"
     paired = next(
-        f for f in execution.active_output.file_results if f.sample_name == "S3"
+        f for f in execution.active_output.file_results if f.raw_stem == "S3"
     ).results[analyte.label]
     assert not paired.selected_cid_nl_supported
     assert "paired_istd_identity" in paired.targeted_product_projection.support_reasons

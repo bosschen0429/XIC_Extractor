@@ -35,7 +35,7 @@ class UntargetedCandidateExclusion:
 
     candidate_id: str
     method_subject_id: str
-    sample_key: str
+    raw_stem: str
     peak_status: PeakStatus
     reason_code: Literal[
         "discovery_candidate_not_search_eligible",
@@ -147,7 +147,7 @@ FinalizedApplicationResult: TypeAlias = (
 
 
 def _sample_sort_key(sample: SampleMetadata) -> str:
-    return sample.sample_name
+    return sample.raw_stem
 
 
 __all__ = (

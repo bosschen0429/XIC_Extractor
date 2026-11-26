@@ -96,7 +96,7 @@ def test_crowded_doublet_keeps_both_physical_peaks_and_local_cid_lineage(
         raw_paths=paths,
         sample_metadata=tuple(
             SampleMetadata(
-                sample_name=path.stem,
+                sample_label=path.stem,
                 raw_stem=path.stem,
                 injection_order=index + 1,
                 sample_role="sample",
@@ -159,8 +159,7 @@ def test_crowded_doublet_keeps_both_physical_peaks_and_local_cid_lineage(
     groups = sorted(groups, key=lambda group: group.group_center_rt)
     for lobe, group in enumerate(groups):
         assert {
-            owner.sample_stem: owner.peak.integration.rt_apex_min
-            for owner in group.owners
+            owner.raw_stem: owner.peak.integration.rt_apex_min for owner in group.owners
         } == pytest.approx(
             {sample: apices[lobe] for sample, apices in expected_apices.items()},
             abs=0.005,
@@ -185,11 +184,9 @@ def test_crowded_doublet_keeps_both_physical_peaks_and_local_cid_lineage(
     cells = tuple(written_cells(writer))
     assert len(cells) == 8
     group_lobes = {group.group_hypothesis_id: lobe for lobe, group in enumerate(groups)}
-    for row, sample_stem, cell in cells:
-        expected_apex = expected_apices[sample_stem][
-            group_lobes[row.group_hypothesis_id]
-        ]
-        direct = expected_apex == expected_initial[sample_stem]
+    for row, raw_stem, cell in cells:
+        expected_apex = expected_apices[raw_stem][group_lobes[row.group_hypothesis_id]]
+        direct = expected_apex == expected_initial[raw_stem]
         assert cell_status(cell) == ("detected" if direct else "backfilled")
         assert cell.selected_integration.rt_apex_min == pytest.approx(
             expected_apex, abs=0.005
@@ -254,7 +251,7 @@ def test_review_only_input_supplies_each_physical_member_without_cid(
         raw_paths=paths,
         sample_metadata=tuple(
             SampleMetadata(
-                sample_name=path.stem,
+                sample_label=path.stem,
                 raw_stem=path.stem,
                 injection_order=index + 1,
                 sample_role="sample",
@@ -326,11 +323,11 @@ def test_review_only_input_supplies_each_physical_member_without_cid(
     cells = tuple(written_cells(writer))
     sources = written_source_candidates(tmp_path / "written", writer)
     assert len(cells) == 21
-    for row, sample_stem, cell in cells:
+    for row, raw_stem, cell in cells:
         apex = group_apex[row.group_hypothesis_id]
-        if sample_stem == "S6":
-            assert not sources[row.group_hypothesis_id, sample_stem]
-        direct = sample_stem in samples[2 * group_apices.index(apex) :][:2]
+        if raw_stem == "S6":
+            assert not sources[row.group_hypothesis_id, raw_stem]
+        direct = raw_stem in samples[2 * group_apices.index(apex) :][:2]
         assert cell_status(cell) == ("detected" if direct else "backfilled")
         assert cell.selected_integration.rt_apex_min == pytest.approx(apex, abs=0.005)
         assert cell.value is not None and cell.value > 0

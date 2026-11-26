@@ -23,12 +23,12 @@ TimingObserver = Callable[[Mapping[str, object]], None]
 class TimingRecord:
     stage: str
     elapsed_sec: float
-    sample_stem: str = ""
+    raw_stem: str = ""
     metrics: dict[str, JsonMetric] = field(default_factory=dict)
 
     def to_json_dict(self) -> dict[str, object]:
         return {
-            "sample_stem": self.sample_stem,
+            "sample_stem": self.raw_stem,
             "stage": self.stage,
             "elapsed_sec": self.elapsed_sec,
             "metrics": dict(self.metrics),
@@ -149,7 +149,7 @@ class TimingRecorder:
         stage: str,
         *,
         elapsed_sec: float,
-        sample_stem: str = "",
+        raw_stem: str = "",
         metrics: Mapping[str, object] | None = None,
     ) -> None:
         if not self.enabled:
@@ -158,7 +158,7 @@ class TimingRecorder:
             TimingRecord(
                 stage=stage,
                 elapsed_sec=max(0.0, elapsed_sec),
-                sample_stem=sample_stem,
+                raw_stem=raw_stem,
                 metrics=_clean_metrics(metrics or {}),
             ),
             span_kind="caller",
@@ -170,7 +170,7 @@ class TimingRecorder:
         self,
         *,
         stage: str,
-        sample_stem: str = "",
+        raw_stem: str = "",
         completed: int | None = None,
         total: int | None = None,
         **values: object,
@@ -185,8 +185,8 @@ class TimingRecorder:
             return
 
         progress: dict[str, object] = {"stage": stage}
-        if sample_stem:
-            progress["sample_stem"] = sample_stem
+        if raw_stem:
+            progress["sample_stem"] = raw_stem
         if completed is not None:
             progress["completed"] = completed
         if total is not None:
@@ -234,7 +234,7 @@ class TimingRecorder:
         }
         self.heartbeat(
             stage=stage if isinstance(stage, str) else event_name,
-            sample_stem=sample if isinstance(sample, str) else "",
+            raw_stem=sample if isinstance(sample, str) else "",
             completed=completed if isinstance(completed, int) else None,
             total=total if isinstance(total, int) else None,
             **extras,
@@ -279,7 +279,7 @@ class TimingRecorder:
         self,
         stage: str,
         *,
-        sample_stem: str = "",
+        raw_stem: str = "",
         metrics: Mapping[str, object] | None = None,
     ) -> Iterator[TimingStage]:
         scope = TimingStage(_clean_metrics(metrics or {}))
@@ -308,7 +308,7 @@ class TimingRecorder:
                 TimingRecord(
                     stage=stage,
                     elapsed_sec=max(0.0, elapsed),
-                    sample_stem=sample_stem,
+                    raw_stem=raw_stem,
                     metrics=_clean_metrics(scope.metrics),
                 ),
                 span_kind="wall",

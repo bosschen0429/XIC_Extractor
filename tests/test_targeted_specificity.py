@@ -178,7 +178,7 @@ def extract(tmp_path, raw, target_row, delta_mass, *, acquire_ms2=False):
         reference_rt=None,
         sample_window=None
         if acquire_ms2
-        else Ms2Window(sample_key="sample", rt_min=0, rt_max=4, events=()),
+        else Ms2Window(raw_stem="sample", rt_min=0, rt_max=4, events=()),
         results=results,
         diagnostics=[],
     )

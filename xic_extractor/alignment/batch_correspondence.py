@@ -715,9 +715,7 @@ def batch_feature(
     for owner in group.owners:
         observed = owner.peak.rt_apex_min
         sample = (
-            calibration.samples.get(owner.sample_stem)
-            if calibration is not None
-            else None
+            calibration.samples.get(owner.raw_stem) if calibration is not None else None
         )
         estimate = sample.estimate_rt(observed) if sample is not None else None
         positions.append(observed if estimate is None else estimate.rt_min)
@@ -727,7 +725,7 @@ def batch_feature(
         neutral_loss_tag=group.neutral_loss_tag,
         precursor_mz=group.group_center_mz,
         reference_rt_min=float(median(positions)),
-        sample_count=len({owner.sample_stem for owner in group.owners}),
+        sample_count=len({owner.raw_stem for owner in group.owners}),
         known_identity_label=None
         if group.inference_basis is None
         else group.inference_basis.known_identity_label,

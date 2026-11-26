@@ -9,7 +9,7 @@ from tests.processing_identity_no_raw_fixture import (
 )
 
 
-def _member(fixture, sample_stem: str, **peak_kwargs):
+def _member(fixture, raw_stem: str, **peak_kwargs):
     from xic_extractor.alignment.cross_sample.peak_groups import (
         group_member_subject_from_peak_hypothesis,
     )
@@ -18,10 +18,10 @@ def _member(fixture, sample_stem: str, **peak_kwargs):
     )
 
     hypothesis = compose_ms1_observation_peak_hypothesis(
-        peak_observation=cid_nl_peak(fixture, sample_stem, **peak_kwargs),
+        peak_observation=cid_nl_peak(fixture, raw_stem, **peak_kwargs),
     )
     return group_member_subject_from_peak_hypothesis(
-        sample=fixture.sample(sample_stem),
+        sample=fixture.sample(raw_stem),
         hypothesis=hypothesis,
     )
 
@@ -30,7 +30,7 @@ def _subjects(tmp_path, *sample_stems: str):
     fixture = build_processing_identity_no_raw_fixture(
         tmp_path, sample_stems=sample_stems
     )
-    subjects = tuple(_member(fixture, sample_stem) for sample_stem in sample_stems)
+    subjects = tuple(_member(fixture, raw_stem) for raw_stem in sample_stems)
     return fixture, subjects
 
 

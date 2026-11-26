@@ -128,7 +128,7 @@ def _untarget_projection_inputs(
                                 for group in predecessor_groups
                                 for member in group.member_subjects
                             ),
-                            key=lambda member: member.sample_key,
+                            key=lambda member: member.raw_stem,
                         )
                     ),
                 ),
@@ -174,7 +174,7 @@ def _untarget_projection_inputs(
             CaptureCandidateBinding(
                 candidate_id=candidate_id,
                 method_subject_id=fixture.method_subject.method_subject_id,
-                sample_key=sample.sample_name,
+                raw_stem=sample.raw_stem,
             )
             for candidate_id, sample in zip(candidate_ids, fixture.samples, strict=True)
         ),
@@ -182,17 +182,17 @@ def _untarget_projection_inputs(
     terminals = (
         ObservedSearchSubject(
             candidate_id=candidate_ids[0],
-            sample_key=observed_sample.sample_name,
+            raw_stem=observed_sample.raw_stem,
             hypothesis=compose_ms1_observation_peak_hypothesis(
                 peak_observation=measured_peak(
                     mz=fixture.method_subject.precursor_mz,
                     apex_rt=8.0,
-                    sample_key=observed_sample.sample_name,
+                    raw_stem=observed_sample.raw_stem,
                 )
             ),
         ),
         SearchedNoObservationSubject(
-            candidate_id=candidate_ids[1], sample_key=empty_sample.sample_name
+            candidate_id=candidate_ids[1], raw_stem=empty_sample.raw_stem
         ),
     )
     alignment = finalizer_owner.finalize_scientific_alignment(
@@ -223,36 +223,36 @@ def _completed_projection(tmp_path, monkeypatch, *, disposition, numeric=False):
 
 def _support_input(
     fixture: UntargetedCidNlNoRawFixture,
-    sample_stem: str,
+    raw_stem: str,
     *,
     scan_number: int,
     height: float,
 ) -> UntargetedCidNlAssessmentInput:
-    peak = cid_nl_peak(fixture, sample_stem, height=height)
+    peak = cid_nl_peak(fixture, raw_stem, height=height)
     evidence = cid_nl_evidence(
         fixture,
-        sample_stem,
+        raw_stem,
         scan_number=scan_number,
         scan_rt_min=8.0,
     )
     support = cid_nl_unique_support(
         fixture,
-        sample_stem,
+        raw_stem,
         peak=peak,
         evidence=evidence,
     )
     assessment = mint_cid_nl_method_assessment(
-        sample=fixture.sample(sample_stem),
-        acquisition_source=fixture.source(fixture.sample(sample_stem)),
+        sample=fixture.sample(raw_stem),
+        acquisition_source=fixture.source(fixture.sample(raw_stem)),
         method_subject=fixture.method_subject,
-        detector_invocation_id=f"gaussian15:{sample_stem}",
+        detector_invocation_id=f"gaussian15:{raw_stem}",
         evaluation_receipt=_completed_receipt(),
         candidate_peaks=(peak,),
         evidence_refs=(evidence,),
         individual_support_refs=(support,),
     )
     return UntargetedCidNlAssessmentInput(
-        sample=fixture.sample(sample_stem),
+        sample=fixture.sample(raw_stem),
         assessment=assessment,
     )
 

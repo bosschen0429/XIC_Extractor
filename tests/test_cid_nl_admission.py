@@ -167,7 +167,7 @@ def test_held_rows_never_become_alignment_roots(tmp_path, monkeypatch, with_supp
         signal_processing_profile=TEST_PROFILE,
         sample_metadata=tuple(
             SampleMetadata(
-                sample_name=stem,
+                sample_label=stem,
                 raw_stem=stem,
                 injection_order=i + 1,
                 sample_role="sample",
@@ -189,7 +189,7 @@ def test_held_rows_never_become_alignment_roots(tmp_path, monkeypatch, with_supp
         observation = physical_backfill_observation(
             sample=sample,
             trace=Trace(
-                sample_name="Overlap",
+                raw_stem="Overlap",
                 mz=500.0,
                 rt=raw.rt,
                 intensity=raw.intensity,
@@ -291,7 +291,7 @@ def test_alignment_measurement_decides_admission_through_the_whole_run(
         signal_processing_profile=TEST_PROFILE,
         sample_metadata=tuple(
             SampleMetadata(
-                sample_name=stem,
+                sample_label=stem,
                 raw_stem=stem,
                 injection_order=i + 1,
                 sample_role="sample",
@@ -386,7 +386,7 @@ def test_alignment_rejects_raw_replaced_after_discovery_without_recalibration(
             signal_processing_profile=TEST_PROFILE,
             sample_metadata=tuple(
                 SampleMetadata(
-                    sample_name=stem,
+                    sample_label=stem,
                     raw_stem=stem,
                     injection_order=i + 1,
                     sample_role="sample",
@@ -461,7 +461,7 @@ def test_peak_without_its_representative_event_row_fails_at_alignment_input(
         signal_processing_profile=TEST_PROFILE,
         sample_metadata=tuple(
             SampleMetadata(
-                sample_name=stem,
+                sample_label=stem,
                 raw_stem=stem,
                 injection_order=i + 1,
                 sample_role="sample",

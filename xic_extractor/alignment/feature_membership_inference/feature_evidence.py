@@ -43,7 +43,7 @@ class _FeatureTrack:
             key=f"{direction}:{owner.owner_id}",
             seed=owner,
             last=owner,
-            sample_stems={owner.sample_stem},
+            sample_stems={owner.raw_stem},
             precursor_min=owner.peak.mz,
             precursor_max=owner.peak.mz,
             method=rules.feature_envelope(owner),
@@ -53,7 +53,7 @@ class _FeatureTrack:
     def add(self, owner: SampleLocalMS1Owner) -> None:
         self.method.add(owner)
         self.members.append(owner)
-        self.sample_stems.add(owner.sample_stem)
+        self.sample_stems.add(owner.raw_stem)
         self.precursor_min = min(self.precursor_min, owner.peak.mz)
         self.precursor_max = max(self.precursor_max, owner.peak.mz)
         self.last = owner
@@ -179,7 +179,7 @@ def _feature_hard_reason(
     *,
     rt_frame: RtFrame | None = None,
 ) -> tuple[str, float]:
-    if owner.sample_stem in track.sample_stems:
+    if owner.raw_stem in track.sample_stems:
         return "same_sample", math.inf
     identity_failure, measurement_failure = track.method.failures(owner, config)
     if identity_failure:

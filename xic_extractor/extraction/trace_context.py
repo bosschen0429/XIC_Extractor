@@ -6,7 +6,7 @@ from xic_extractor.peak_detection.traces import Trace, TraceGroup, targeted_trac
 
 def targeted_extraction_trace_group(
     *,
-    sample_name: str,
+    raw_stem: str,
     target: Target,
     config: ExtractionConfig,
     rt: object,
@@ -16,7 +16,7 @@ def targeted_extraction_trace_group(
     expected_rt_min: float | None,
 ) -> TraceGroup:
     trace = Trace.from_arrays(
-        sample_name=sample_name,
+        raw_stem=raw_stem,
         mz=target.mz,
         rt=rt,
         intensity=intensity,

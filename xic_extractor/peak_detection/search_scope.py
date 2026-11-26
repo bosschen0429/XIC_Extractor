@@ -24,7 +24,7 @@ class CaptureCandidateBinding:
 
     candidate_id: str
     method_subject_id: str
-    sample_key: str
+    raw_stem: str
 
 
 @dataclass(frozen=True, slots=True)

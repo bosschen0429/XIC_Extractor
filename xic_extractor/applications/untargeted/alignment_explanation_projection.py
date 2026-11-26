@@ -54,7 +54,7 @@ def _fields(value: Any, *names: str) -> dict[str, Any]:
 
 def _cell_observation_content_payload(content: Any) -> dict[str, Any]:
     return {
-        "sample_key": content.sample_key,
+        "raw_stem": content.raw_stem,
         "technical_state": content.technical_state,
         "method_result": content.method_result,
         "physical_peak_key": content.physical_peak_key,
@@ -69,7 +69,7 @@ def _cell_observation_content_payload(content: Any) -> dict[str, Any]:
 def _final_cell_observation_payload(observation: Any) -> dict[str, Any]:
     return {
         "evidence_states": observation.evidence_states,
-        "sample_key": (observation.canonical_sample.sample_name),
+        "raw_stem": (observation.canonical_sample.raw_stem),
         "predecessor_cells": [
             {"content": _cell_observation_content_payload(ref)}
             for ref in observation.predecessor_cells
@@ -193,7 +193,7 @@ def _emit_curve_payload(
 def _signal_digest(content: Any) -> str:
     """Digest of the selected raw signal that identifies one physical peak."""
     return hashlib.blake2b(
-        repr((content.sample_key, content.mz, content.rt, content.intensity)).encode(
+        repr((content.raw_stem, content.mz, content.rt, content.intensity)).encode(
             "utf-8"
         ),
         digest_size=16,
@@ -282,14 +282,14 @@ def project_alignment_explanation_child(
         sink.writes.append(
             (
                 "locate",
-                (content.sample_key, key, _peak_coordinates(content)),
+                (content.raw_stem, key, _peak_coordinates(content)),
                 {"digest": _signal_digest(content)},
             )
         )
         return key
 
     for terminal in core.terminal_subjects:
-        key = terminal.candidate_id, terminal.sample_key
+        key = terminal.candidate_id, terminal.raw_stem
         if not isinstance(terminal, ObservedSearchSubject):
             sink.add_terminal(*key, variant=terminal.variant)
             continue
@@ -327,9 +327,6 @@ def project_alignment_explanation_child(
         if centers.setdefault(gid, center) != center:
             raise ValueError(f"one group has two inspection centres: {gid}")
     frame = sample_rt_frame
-    sample_stems = {
-        sample.sample_name: sample.raw_stem for sample in child.canonical_samples
-    }
     group_positions = {}
     for group in core.final_population:
         peaks = [
@@ -340,11 +337,7 @@ def project_alignment_explanation_child(
             estimate.rt_min
             for peak in peaks
             if frame is not None
-            and (
-                estimate := frame.estimate_rt(
-                    sample_stems[peak.sample_key], peak.rt_apex_min
-                )
-            )
+            and (estimate := frame.estimate_rt(peak.raw_stem, peak.rt_apex_min))
             is not None
         ]
         if raw_positions:
@@ -377,14 +370,14 @@ def project_alignment_explanation_child(
             else None
         )
         gid = final_cell.group_hypothesis_id
-        positions[gid, final_cell.sample_key] = (
+        positions[gid, final_cell.raw_stem] = (
             estimate.rt_min if estimate is not None else raw_position
         )
     for group in core.final_population:
         position = centers.get(group.group_hypothesis_id)
         members = [
             {
-                **_fields(member, "sample_key", "subject_kind", "subject_id"),
+                **_fields(member, "raw_stem", "subject_kind", "subject_id"),
                 "physical_peak_keys": [locate(peak) for peak in member.physical_peaks],
             }
             for member in group.member_subjects
@@ -415,7 +408,7 @@ def project_alignment_explanation_child(
                 "membership_risks": risks_by_group_sample.get(
                     (
                         group_id,
-                        decision.subject.canonical_sample.sample_name,
+                        decision.subject.canonical_sample.raw_stem,
                     ),
                     [],
                 ),
@@ -433,13 +426,13 @@ def project_alignment_explanation_child(
             trace = cast("PeakObservation", decision.value_peak).source_trace
             sink.set_cell_curve(
                 group_id,
-                decision.subject.canonical_sample.sample_name,
+                decision.subject.canonical_sample.raw_stem,
                 encode_review_curve(trace.rt, trace.intensity),
             )
         for cell in cells:
-            cell_position = positions.get((group_id, cell["sample_key"]))
+            cell_position = positions.get((group_id, cell["raw_stem"]))
             if cell_position is not None:
-                sink.set_cell_position(group_id, cell["sample_key"], cell_position)
+                sink.set_cell_position(group_id, cell["raw_stem"], cell_position)
     return tuple(sink.writes)
 
 
@@ -607,14 +600,14 @@ def prepare_batch_alignment_explanation(
         }
         sink.declare_samples(
             [
-                {"sample_key": sample.sample_name, "sample_stem": stem}
-                for stem, sample in samples.items()
+                {"raw_stem": sample.raw_stem, "sample_label": sample.sample_label}
+                for sample in samples.values()
             ]
         )
         located_peaks: dict[str, str] = {}
 
         def add_located_peak(
-            sample_key: str,
+            raw_stem: str,
             key: str,
             coordinates: tuple[float, float, float],
             *,
@@ -627,12 +620,12 @@ def prepare_batch_alignment_explanation(
             """
             if located_peaks.setdefault(key, digest) != digest:
                 raise ValueError(f"distinct physical peaks share one locator: {key}")
-            sink.add_peak(sample_key, key, coordinates)
+            sink.add_peak(raw_stem, key, coordinates)
 
         def locate(content: Any) -> str:
             key: str = content.physical_peak_key
             add_located_peak(
-                content.sample_key,
+                content.raw_stem,
                 key,
                 _peak_coordinates(content),
                 digest=_signal_digest(content),
@@ -681,14 +674,14 @@ def prepare_batch_alignment_explanation(
                         _emit_curve_payload(
                             sink,
                             peak,
-                            content.sample_key,
+                            content.raw_stem,
                             kind="backfill_observation",
                         )
             sink.add_assessment(
                 {
                     **_fields(
                         content,
-                        "sample_key",
+                        "raw_stem",
                         "acquisition_source_id",
                         "provider_id",
                         "method_id",
@@ -718,7 +711,7 @@ def prepare_batch_alignment_explanation(
             memberships = dict(subjects.candidate_memberships)
             measured_mz = batch.ms1_apex_mz_by_candidate or {}
             for stem, declared in batch.peaks_by_sample.items():
-                sid = samples[stem].sample_name
+                sid = stem
                 for candidate in phase_items("candidates", declared):
                     key = candidate.peak_id, sid
                     subject_id = memberships[candidate.peak_id]
@@ -736,7 +729,7 @@ def prepare_batch_alignment_explanation(
                 "capture_evidence",
                 capture_evidence if full_audit or curve_mz_ranges else (),
             ):
-                sid = evidence.sample_key
+                sid = evidence.raw_stem
                 stage = (
                     "backfill_observation"
                     if evidence.capture_stage == "method_backfill"
@@ -780,7 +773,7 @@ def prepare_batch_alignment_explanation(
                 emit_assessment(assessment, bool(capture_evidence))
 
             for excluded in phase_items("exclusions", application.excluded_candidates):
-                key = excluded.candidate_id, excluded.sample_key
+                key = excluded.candidate_id, excluded.raw_stem
                 refs = (*excluded.method_assessments, *excluded.composite_assessments)
                 sink.add_exclusion(*key, excluded.reason_code)
                 for assessment in refs:
@@ -861,7 +854,7 @@ def prepare_batch_alignment_explanation(
                         members=[
                             {
                                 **_fields(
-                                    member, "sample_key", "subject_kind", "subject_id"
+                                    member, "raw_stem", "subject_kind", "subject_id"
                                 ),
                                 "physical_peak_keys": [
                                     locate(peak) for peak in member.physical_peaks
@@ -887,11 +880,8 @@ def prepare_batch_alignment_explanation(
                 **_RUN_CONTRACT_SUMMARY,
                 "processing_attempt_id": reference.processing_attempt_id,
                 "samples": [
-                    {
-                        "sample_stem": stem,
-                        "sample_key": (sample.sample_name),
-                    }
-                    for stem, sample in samples.items()
+                    {"raw_stem": sample.raw_stem, "sample_label": sample.sample_label}
+                    for sample in samples.values()
                 ],
                 "acquisition_sources": [
                     asdict(source)

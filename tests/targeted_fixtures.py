@@ -24,15 +24,15 @@ from xic_extractor.peak_detection.physical_peak_models import (
 def selected_targeted_hypothesis(
     integration: IntegrationResult,
     *,
-    sample_name: str = "SampleA",
+    raw_stem: str = "SampleA",
     target_label: str = "WithNL",
     role: str = "Analyte",
     istd_pair: str = "",
 ) -> PeakHypothesis:
     """A selected owner measurement for presentation and anchor fixtures."""
     return PeakHypothesis(
-        hypothesis_id=f"{sample_name}|{target_label}|selected",
-        trace_group_id=f"{sample_name}|{target_label}|targeted",
+        hypothesis_id=f"{raw_stem}|{target_label}|selected",
+        trace_group_id=f"{raw_stem}|{target_label}|targeted",
         target_label=target_label,
         role=role,
         istd_pair=istd_pair,

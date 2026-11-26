@@ -308,7 +308,7 @@ def _coverage_context(
 ) -> _CoverageContext:
     samples = tuple(
         SampleMetadata(
-            sample_name=sample,
+            sample_label=sample,
             raw_stem=sample,
             injection_order=index,
             sample_role="sample",
@@ -325,12 +325,12 @@ def _coverage_context(
 
 def _fixture(tmp_path: Path, *, sample_stems: tuple[str, ...]) -> _Fixture:
     fixture = _Fixture(_coverage_context(tmp_path, sample_order=sample_stems))
-    for sample_stem, sample in fixture.samples.items():
-        original = _owner(sample_stem, f"association-{sample_stem}")
+    for raw_stem, sample in fixture.samples.items():
+        original = _owner(raw_stem, f"association-{raw_stem}")
         member = original.cross_sample_member_subject
         assert member is not None
-        fixture.members[sample_stem] = CrossSampleGroupMemberSubject(
-            sample_key=sample.sample_name,
+        fixture.members[raw_stem] = CrossSampleGroupMemberSubject(
+            raw_stem=sample.raw_stem,
             subject_kind=member.subject_kind,
             subject_id=member.subject_id,
             physical_peaks=member.physical_peaks,

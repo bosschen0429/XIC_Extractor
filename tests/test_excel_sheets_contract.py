@@ -104,7 +104,7 @@ def _run_pipeline(
             file_results=run_output.file_results,
             diagnostics=[
                 DiagnosticRecord(
-                    sample_name="SampleA",
+                    raw_stem="SampleA",
                     target_label="Analyte",
                     issue="NL_FAIL",
                     reason="forced diagnostic",

@@ -145,9 +145,9 @@ def test_review_positive_reliability_never_enters_clean_benchmark_points() -> No
         strict_targeted_reliability=False,
     )
 
-    assert [point.sample_stem for point in reliability_summary.clean_points] == ["S1"]
+    assert [point.raw_stem for point in reliability_summary.clean_points] == ["S1"]
     assert reliability_summary.review_positive_count == 1
-    assert [point.sample_stem for point in benchmark_points] == ["S1"]
+    assert [point.raw_stem for point in benchmark_points] == ["S1"]
 
 
 def test_benchmark_treats_selected_r_tag_istd_as_active_when_configured(

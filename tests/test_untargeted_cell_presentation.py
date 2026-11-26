@@ -10,7 +10,7 @@ from xic_inspector.sources.cid_nl_presentation import blank_reason
 def test_three_cell_questions_keep_origins_values_and_real_risks(tmp_path):
     cells = [
         {
-            "sample_key": "S1",
+            "raw_stem": "S1",
             "value": 123.0,
             "variant": "numeric",
             "support_origin": "detected",
@@ -23,7 +23,7 @@ def test_three_cell_questions_keep_origins_values_and_real_risks(tmp_path):
             ],
         },
         {
-            "sample_key": "S2",
+            "raw_stem": "S2",
             "value": 456.0,
             "variant": "numeric",
             "support_origin": "backfilled",
@@ -31,7 +31,7 @@ def test_three_cell_questions_keep_origins_values_and_real_risks(tmp_path):
             "reason_codes": ["no_unique_qualifying_relation"],
         },
         {
-            "sample_key": "S3",
+            "raw_stem": "S3",
             "value": None,
             "variant": "unavailable",
             "support_origin": "unavailable",
@@ -42,7 +42,7 @@ def test_three_cell_questions_keep_origins_values_and_real_risks(tmp_path):
     report, matrix, _ = create_inspector_report(
         tmp_path,
         samples=[
-            {"sample_key": sid, "sample_stem": f"Display {sid}"}
+            {"raw_stem": sid, "sample_label": f"Display {sid}"}
             for sid in ("S1", "S2", "S3")
         ],
         cells=cells,
@@ -69,7 +69,7 @@ def test_three_cell_questions_keep_origins_values_and_real_risks(tmp_path):
     assert samples["S2"]["risk_labels"] == [] and "note" not in samples["S2"]
     assert samples["S3"]["note"] == "找過，沒有 MS1 峰也沒有 MS2 支持"
     assert [s.get("quantitative_value") for s in samples.values()] == [123, 456, None]
-    assert {s["sample_stem"] for s in samples.values()} == {
+    assert {s["sample_label"] for s in samples.values()} == {
         "Display S1",
         "Display S2",
         "Display S3",
@@ -143,5 +143,5 @@ S1, S2, S2_OTHER, S3 = (
 def test_competition_names_what_the_alternative_does_with_this_peak(risks, expected):
     from xic_inspector.sources.cid_nl_presentation import competition_groups
 
-    cell = {"sample_key": "S2", "membership_risks": risks}
+    cell = {"raw_stem": "S2", "membership_risks": risks}
     assert competition_groups(cell) == expected

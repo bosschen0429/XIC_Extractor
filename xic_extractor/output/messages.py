@@ -31,7 +31,7 @@ _TAILING_THRESHOLD: float = 2.0
 
 @dataclass(frozen=True)
 class DiagnosticRecord:
-    sample_name: str
+    raw_stem: str
     target_label: str
     issue: DiagnosticIssue
     reason: str
@@ -58,7 +58,7 @@ class ExtractionResultLike(Protocol):
 
 
 def build_diagnostic_records(
-    sample_name: str,
+    raw_stem: str,
     target: Target,
     result: ExtractionResultLike,
     config: ExtractionConfig,
@@ -74,21 +74,21 @@ def build_diagnostic_records(
         peak_reason = f"Physical peak {evaluation.state}: {evaluation.reason}"
         records.append(
             DiagnosticRecord(
-                sample_name=sample_name,
+                raw_stem=raw_stem,
                 target_label=target.label,
                 issue=result.peak_result.status,
                 reason=peak_reason,
             )
         )
 
-    records.extend(build_ms2_diagnostic_records(sample_name, target, result, config))
+    records.extend(build_ms2_diagnostic_records(raw_stem, target, result, config))
 
     if result.peak_result.status == "OK" and result.peak_result.peak is not None:
         peak = result.peak_result.peak
         if result.peak_result.n_prominent_peaks > 1:
             records.append(
                 DiagnosticRecord(
-                    sample_name=sample_name,
+                    raw_stem=raw_stem,
                     target_label=target.label,
                     issue="MULTI_PEAK",
                     reason=_multi_peak_reason(result),
@@ -99,7 +99,7 @@ def build_diagnostic_records(
         if left_half > 0 and (right_half / left_half) > _TAILING_THRESHOLD:
             records.append(
                 DiagnosticRecord(
-                    sample_name=sample_name,
+                    raw_stem=raw_stem,
                     target_label=target.label,
                     issue="TAILING",
                     reason=_tailing_reason(peak),
@@ -110,7 +110,7 @@ def build_diagnostic_records(
 
 
 def build_ms2_diagnostic_records(
-    sample_name: str,
+    raw_stem: str,
     target: Target,
     result: ExtractionResultLike,
     config: ExtractionConfig,
@@ -121,7 +121,7 @@ def build_ms2_diagnostic_records(
     if issue is not None:
         records.append(
             DiagnosticRecord(
-                sample_name=sample_name,
+                raw_stem=raw_stem,
                 target_label=target.label,
                 issue=cast(DiagnosticIssue, issue),
                 reason=_nl_reason(target, result, config),

@@ -51,7 +51,7 @@ class CidNlBackfillQuestion:
     not choose a new group, query window or revisit policy.
     """
 
-    sample_key: str
+    raw_stem: str
     group: CrossSamplePeakGroupHypothesis
     method_subject: CidNlMethodSubject
     localization: BackfillPeakLocation | None = None
@@ -89,7 +89,6 @@ def plan_grouped_cid_nl_backfills(
     backfill_half_window_min: float,
 ) -> tuple[CidNlBackfillQuestion, ...]:
     """Resolve subject, trajectory and window facts from frozen workset membership."""
-    samples = {sample.sample_name: sample for sample in sample_population}
     rt_frame = rt_frame.for_sample_stems(
         frozenset(sample.raw_stem for sample in sample_population)
     )
@@ -125,9 +124,9 @@ def plan_grouped_cid_nl_backfills(
                 group.owners
             )
             locations = trajectory.backfill_locations(
-                tuple(samples[sample_id].raw_stem for sample_id in sorted(target_ids)),
+                tuple(sorted(target_ids)),
                 reference_samples=frozenset(
-                    owner.sample_stem
+                    owner.raw_stem
                     for owner in group.owners
                     if has_cid_nl_activation_support(owner)
                 ),
@@ -137,13 +136,13 @@ def plan_grouped_cid_nl_backfills(
             )
             questions.extend(
                 CidNlBackfillQuestion(
-                    sample_key=sample_id,
+                    raw_stem=raw_stem,
                     group=group,
                     method_subject=subject,
-                    localization=locations[samples[sample_id].raw_stem],
+                    localization=locations[raw_stem],
                     observed_apex_tolerance_sec=alignment_config.owner_apex_close_sec,
                 )
-                for sample_id in sorted(target_ids)
+                for raw_stem in sorted(target_ids)
             )
     return tuple(questions)
 
@@ -180,11 +179,11 @@ def plan_subject_cid_nl_backfills(
         rules=CID_NL_GROUPING_RULES,
     )
     return tuple(
-        CidNlBackfillQuestion(sample_id, group, method_subject)
+        CidNlBackfillQuestion(raw_stem, group, method_subject)
         for group, target_ids in plan_conservative_backfill_targets(
             groups, sample_population=sample_population
         )
-        for sample_id in sorted(target_ids)
+        for raw_stem in sorted(target_ids)
     )
 
 

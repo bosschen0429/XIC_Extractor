@@ -238,7 +238,7 @@ def assess_sample_regions(
         candidate_by_peak = {p: cid for cid, p in bound}
         captures = tuple(
             RetainedCaptureEvidence(
-                sample_key=sample.sample_name,
+                raw_stem=sample.raw_stem,
                 processing_attempt_id=processing_attempt_id,
                 method_subject_id=key,
                 candidate_id=candidate_by_peak.get(peak),

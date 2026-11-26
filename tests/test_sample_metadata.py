@@ -70,24 +70,22 @@ def test_sample_metadata_rejects_duplicate_raw_stem() -> None:
         )
 
 
-def test_sample_metadata_rejects_sample_name_raw_stem_alias_collision() -> None:
-    with pytest.raises(SampleMetadataError, match="sample metadata alias collision"):
-        parse_sample_metadata(
-            [
-                _row(sample_name="S1", raw_stem="Raw1", injection_order="1"),
-                _row(sample_name="Raw1", raw_stem="Raw2", injection_order="1"),
-            ]
-        )
+def test_sample_metadata_allows_repeated_labels_equal_to_another_raw_stem() -> None:
+    rows = parse_sample_metadata(
+        [
+            _row(sample_name="Raw2", raw_stem="Raw1"),
+            _row(sample_name="Raw2", raw_stem="Raw2"),
+        ]
+    )
+    assert [(row.raw_stem, row.sample_label) for row in rows] == [
+        ("Raw1", "Raw2"),
+        ("Raw2", "Raw2"),
+    ]
 
 
-def test_sample_metadata_rejects_raw_stem_sample_name_alias_collision() -> None:
-    with pytest.raises(SampleMetadataError, match="sample metadata alias collision"):
-        parse_sample_metadata(
-            [
-                _row(sample_name="Raw1", raw_stem="Raw2"),
-                _row(sample_name="S1", raw_stem="Raw1"),
-            ]
-        )
+def test_metadata_label_does_not_supply_a_missing_raw_stem() -> None:
+    with pytest.raises(SampleMetadataError, match="raw_stem is required"):
+        parse_sample_metadata([_row(sample_name="Raw1", raw_stem="")])
 
 
 def test_sample_metadata_allows_exclusion_without_a_reason() -> None:
@@ -132,6 +130,7 @@ def _row(**overrides: str) -> dict[str, str]:
     row = {header: "" for header in SAMPLE_METADATA_COLUMNS}
     row["schema_version"] = SAMPLE_METADATA_SCHEMA_VERSION
     row["sample_role"] = "unknown"
+    row["raw_stem"] = overrides.get("sample_name", "")
     row.update(overrides)
     return row
 

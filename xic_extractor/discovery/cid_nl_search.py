@@ -43,22 +43,18 @@ def search_cid_nl_sample(
     measurement_observer: Callable[[_DiscoveryMs1Measurements], None] | None = None,
 ) -> _DiscoveryMs1AcquisitionResult:
     """Execute the bound tags/composition; physical processing knows neither."""
-    with timing_recorder.stage(
-        "discover.ms2_events", sample_stem=raw_file.stem
-    ) as stage:
+    with timing_recorder.stage("discover.ms2_events", raw_stem=raw_file.stem) as stage:
         events = collect_strict_nl_events(raw, raw_file=raw_file, settings=settings)
         stage.metrics["event_count"] = len(events)
     with timing_recorder.stage(
-        "discover.ion_grouping", sample_stem=raw_file.stem
+        "discover.ion_grouping", raw_stem=raw_file.stem
     ) as stage:
         measured = read_parent_ms1_observations(
             raw, events, tolerance_ppm=settings.precursor_mz_tolerance_ppm
         )
         ions = build_discovery_ions(measured, settings=settings)
         stage.metrics["ion_count"] = len(ions)
-    with timing_recorder.stage(
-        "discover.ms1_capture", sample_stem=raw_file.stem
-    ) as stage:
+    with timing_recorder.stage("discover.ms1_capture", raw_stem=raw_file.stem) as stage:
         result = capture_ms1_peaks(
             raw,
             ions,

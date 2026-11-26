@@ -63,7 +63,7 @@ DISCOVERY_BATCH_INDEX_COLUMNS = (
 class DiscoveryPeakUniverseReceipt:
     """One Discovery-owned, content-bound peak-universe receipt."""
 
-    sample_stem: str
+    raw_stem: str
     acquisition_source: AcquisitionSourceIdentity
     peak_count: int
     peak_csv_schema_version: str
@@ -74,7 +74,7 @@ class DiscoveryPeakUniverseReceipt:
 
 def mint_discovery_peak_universe_receipt(
     *,
-    sample_stem: str,
+    raw_stem: str,
     acquisition_source: AcquisitionSourceIdentity,
     peak_csv: Path,
     peaks: Sequence[DiscoveryPeak],
@@ -86,7 +86,7 @@ def mint_discovery_peak_universe_receipt(
 
     artifact = fingerprint_file_content(peak_csv)
     return DiscoveryPeakUniverseReceipt(
-        sample_stem=sample_stem,
+        raw_stem=raw_stem,
         acquisition_source=acquisition_source,
         peak_count=len(peaks),
         peak_csv_schema_version=(DISCOVERY_PEAK_CSV_SCHEMA_VERSION),
@@ -117,7 +117,7 @@ def validate_discovery_peak_universe(
 ) -> tuple[DiscoveryPeak, ...]:
     """Check the parsed population against its file receipt."""
 
-    ordered = _canonical_peaks(peaks, sample_stem=receipt.sample_stem)
+    ordered = _canonical_peaks(peaks, raw_stem=receipt.raw_stem)
     if len(ordered) != receipt.peak_count:
         raise IdentityContractError("peak count does not match the Discovery receipt")
     return ordered
@@ -159,7 +159,7 @@ def discovery_receipt_index_fields(
 def discovery_receipt_from_index_fields(
     row: Mapping[str, str],
     *,
-    sample_stem: str,
+    raw_stem: str,
     peak_count: int,
 ) -> DiscoveryPeakUniverseReceipt:
     """Reconstruct and validate one batch-index receipt."""
@@ -194,8 +194,8 @@ def discovery_receipt_from_index_fields(
             observation_namespace=observation_namespace,
         )
         return DiscoveryPeakUniverseReceipt(
-            sample_stem=require_owner_normalized_text(
-                sample_stem,
+            raw_stem=require_owner_normalized_text(
+                raw_stem,
                 field="sample_stem",
                 error_factory=lambda _msg: IdentityContractError(
                     "sample_stem must be non-empty normalized text"
@@ -224,13 +224,13 @@ def discovery_receipt_from_index_fields(
 def _canonical_peaks(
     peaks: Sequence[DiscoveryPeak],
     *,
-    sample_stem: str,
+    raw_stem: str,
 ) -> tuple[DiscoveryPeak, ...]:
     ordered = tuple(sorted(peaks, key=lambda item: item.peak_id))
     peak_ids = tuple(item.peak_id for item in ordered)
     if len(peak_ids) != len(set(peak_ids)):
         raise IdentityContractError("peak universe IDs must be unique")
-    if any(item.sample_stem != sample_stem for item in ordered):
+    if any(item.raw_stem != raw_stem for item in ordered):
         raise IdentityContractError("peak universe contains a different sample")
     return ordered
 

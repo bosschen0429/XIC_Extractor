@@ -4,11 +4,9 @@ from xic_extractor.configuration.models import Target
 from xic_extractor.output.messages import DiagnosticRecord
 
 
-def istd_anchor_missing_diagnostic(
-    sample_name: str, target: Target
-) -> DiagnosticRecord:
+def istd_anchor_missing_diagnostic(raw_stem: str, target: Target) -> DiagnosticRecord:
     return DiagnosticRecord(
-        sample_name=sample_name,
+        raw_stem=raw_stem,
         target_label=target.label,
         issue="ISTD_ANCHOR_MISSING",
         reason=(

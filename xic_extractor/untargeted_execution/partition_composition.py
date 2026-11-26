@@ -454,7 +454,7 @@ def _build_production_composition_inputs(
             result.job.method_subject.method_subject_id, []
         ).append(result)
     for results in results_by_subject.values():
-        results.sort(key=lambda result: result.job.sample.sample_name)
+        results.sort(key=lambda result: result.job.sample.raw_stem)
     final_method_assessments = [
         assessment
         for result in sample_results
@@ -496,7 +496,7 @@ def _build_production_composition_inputs(
             sorted(
                 assessments,
                 key=lambda pair: (
-                    pair[0].sample_name,
+                    pair[0].raw_stem,
                     subject_order[pair[1].method_subject.method_subject_id],
                 ),
             )
@@ -512,7 +512,7 @@ def _build_production_composition_inputs(
         group_backfills = {
             (
                 group.group_hypothesis_id,
-                sample_result.job.sample.sample_name,
+                sample_result.job.sample.raw_stem,
                 sample_result.job.method_subject.method_subject_id,
             ): (sample_result.job.sample, backfill.assessment)
             for subject in subject_workset

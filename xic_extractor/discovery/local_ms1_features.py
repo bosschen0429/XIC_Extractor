@@ -73,12 +73,12 @@ class _PeakRegion:
 def build_local_ms1_feature_table(
     index: tuple[MS1Scan, ...],
     *,
-    sample_stem: str,
+    raw_stem: str,
     settings: LocalMs1FeatureSettings | None = None,
 ) -> tuple[DetectedFeature, ...]:
     """Build chromatographic features from centroid ions, not profile samples."""
-    sample_stem = sample_stem.strip()
-    if not sample_stem:
+    raw_stem = raw_stem.strip()
+    if not raw_stem:
         raise ValueError("sample_stem must contain non-whitespace text")
     resolved = settings or LocalMs1FeatureSettings()
     validate_ms1_scan_index(index, require_nonempty=True)
@@ -113,10 +113,10 @@ def build_local_ms1_feature_table(
             if quality == "FAIL":
                 continue
             feature_index = len(features) + 1
-            feature_id = f"{sample_stem}|local_ms1_feature|{feature_index:06d}"
+            feature_id = f"{raw_stem}|local_ms1_feature|{feature_index:06d}"
             features.append(
                 DetectedFeature(
-                    sample_stem=sample_stem,
+                    raw_stem=raw_stem,
                     feature_id=feature_id,
                     source_feature_row_id=None,
                     mz=float(region.mzs[region.apex_index]),
@@ -138,7 +138,7 @@ def build_local_ms1_feature_table(
 
     features.sort(
         key=lambda item: (
-            item.sample_stem,
+            item.raw_stem,
             item.rt_apex_min,
             item.mz,
             item.feature_id,
@@ -146,10 +146,10 @@ def build_local_ms1_feature_table(
     )
     sorted_features: list[DetectedFeature] = []
     for index_id, feature in enumerate(features, start=1):
-        feature_id = f"{sample_stem}|local_ms1_feature|{index_id:06d}"
+        feature_id = f"{raw_stem}|local_ms1_feature|{index_id:06d}"
         sorted_features.append(
             DetectedFeature(
-                sample_stem=feature.sample_stem,
+                raw_stem=feature.raw_stem,
                 feature_id=feature_id,
                 source_feature_row_id=None,
                 mz=feature.mz,

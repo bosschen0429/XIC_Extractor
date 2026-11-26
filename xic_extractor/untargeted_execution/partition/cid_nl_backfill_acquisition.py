@@ -164,7 +164,7 @@ def _validate_backfill_target(model: UntargetedCidNlBackfillTarget) -> None:
 class UntargetedCidNlBackfillTraceBatch:
     """One sample-local backfill phase with exact group-to-trace attribution."""
 
-    sample_key: str
+    raw_stem: str
     acquisition_source_id: str
     targets: tuple[UntargetedCidNlBackfillTarget, ...]
     requests: tuple[XICRequest, ...]
@@ -323,7 +323,7 @@ def acquire_untargeted_cid_nl_backfill_trace_batch(
         acquire_trace_batch(capability, tuple(unique), RawSuperWindowSource(raw))
     )
     return UntargetedCidNlBackfillTraceBatch(
-        sample_key=sample.sample_name,
+        raw_stem=sample.raw_stem,
         acquisition_source_id=source.acquisition_source_id,
         targets=targets,
         requests=requests,
@@ -427,7 +427,7 @@ def backfill_untargeted_cid_nl_sample_subject(
         (context_request, context_acquired),
     ):
         trace = trace_from_xic_request(
-            sample_name=sample.sample_name,
+            raw_stem=sample.raw_stem,
             request=capture_request,
             xic_trace=capture_acquired.trace,
             source=f"{_ADAPTER_NAMESPACE}.backfill:{NATIVE_SCAN_COORDINATE_KIND}",
@@ -505,7 +505,7 @@ def backfill_untargeted_cid_nl_sample_subject(
         acquisition=acquisition,
         capture_evidence=tuple(
             RetainedCaptureEvidence(
-                sample_key=sample.sample_name,
+                raw_stem=sample.raw_stem,
                 processing_attempt_id=processing_attempt_id,
                 method_subject_id=method_subject.method_subject_id,
                 candidate_id=None,
@@ -678,7 +678,7 @@ def reuse_cid_nl_backfill_peak(
         acquisition=None,
         capture_evidence=(
             RetainedCaptureEvidence(
-                sample_key=sample.sample_name,
+                raw_stem=sample.raw_stem,
                 processing_attempt_id=record.processing_attempt_id,
                 method_subject_id=target.method_subject.method_subject_id,
                 candidate_id=None,

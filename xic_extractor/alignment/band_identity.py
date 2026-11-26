@@ -86,8 +86,8 @@ def _relation(first: _Member, second: _Member) -> str:
 def _one_band(
     early: CrossSamplePeakGroupHypothesis, late: CrossSamplePeakGroupHypothesis
 ) -> bool:
-    early_by_sample = {owner.sample_stem: owner.peak for owner in early.owners}
-    late_by_sample = {owner.sample_stem: owner.peak for owner in late.owners}
+    early_by_sample = {owner.raw_stem: owner.peak for owner in early.owners}
+    late_by_sample = {owner.raw_stem: owner.peak for owner in late.owners}
     log_ratios = []
     for sample in sorted(early_by_sample.keys() & late_by_sample.keys()):
         first = _member(early_by_sample[sample])
@@ -168,12 +168,12 @@ def _merged_group(
     by_sample: dict[str, SampleLocalMS1Owner] = {}
     for part in parts:
         for owner in part.owners:
-            held = by_sample.get(owner.sample_stem)
+            held = by_sample.get(owner.raw_stem)
             if held is None or (owner.peak.rt_apex_min, owner.owner_id) < (
                 held.peak.rt_apex_min,
                 held.owner_id,
             ):
-                by_sample[owner.sample_stem] = owner
+                by_sample[owner.raw_stem] = owner
     largest = max(parts, key=lambda part: (len(part.owners), -part.group_center_rt))
     return _hypothesis_from_owner_group(
         tuple(sorted(by_sample.values(), key=lambda owner: owner.owner_id)),

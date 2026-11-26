@@ -100,7 +100,7 @@ def _view(
     peak = trace_peak(
         sample=sample,
         trace=Trace.from_arrays(
-            sample_name=stem,
+            raw_stem=stem,
             mz=mz,
             rt=rt,
             intensity=raw,
@@ -250,7 +250,7 @@ def test_one_measured_lobe_keeps_one_direct_claim_or_one_backfill_winner(
         backfills[
             (
                 group.group_hypothesis_id,
-                sample.sample_name,
+                sample.raw_stem,
                 assessment.method_subject.method_subject_id,
             )
         ] = (sample, assessment)
@@ -379,7 +379,7 @@ def test_one_measured_lobe_keeps_one_direct_claim_or_one_backfill_winner(
         rejected_backfill_cells=contested,
     )
     sample_cells = [
-        cell for cell in cells if cell.sample_key == fixture.sample("S").sample_name
+        cell for cell in cells if cell.raw_stem == fixture.sample("S").raw_stem
     ]
     assert len(sample_cells) == 2
     numeric_sources = [

@@ -149,7 +149,7 @@ def test_same_ion_valleys_remain_separate_under_supported_sample_drift(
     monkeypatch.setattr(_OPEN_RAW_SEAM, lambda path, *_a, **_kw: Raw(path.stem))
     workbook = tmp_path / "output" / "correspondence.xlsx"
     output = _run_formal_selection(config, targets, workbook_path=workbook)
-    results = {file.sample_name: file.results for file in output.file_results}
+    results = {file.raw_stem: file.results for file in output.file_results}
     unit_area = 10000 * 0.7 * math.sqrt(2 * math.pi) * 60
     for sample, shift, scale in (("Reference", 0, 1), ("Shifted", -2, 2)):
         left, right = results[sample]["T0"], results[sample]["T1"]
@@ -189,11 +189,11 @@ def test_same_ion_valleys_remain_separate_under_supported_sample_drift(
         config, list(reversed(targets)), reverse_samples=True
     )
     assert {
-        (file.sample_name, label): (result.reported_rt, result.reported_peak_area)
+        (file.raw_stem, label): (result.reported_rt, result.reported_peak_area)
         for file in reversed_output.file_results
         for label, result in file.results.items()
     } == {
-        (file.sample_name, label): (result.reported_rt, result.reported_peak_area)
+        (file.raw_stem, label): (result.reported_rt, result.reported_peak_area)
         for file in output.file_results
         for label, result in file.results.items()
     }
@@ -507,7 +507,7 @@ def test_peer_alternate_band_cannot_replace_unquantifiable_target(
 
     monkeypatch.setattr(_OPEN_RAW_SEAM, lambda path, *_a, **_kw: Raw(path.stem))
     output = _run(config, targets)
-    results = {f.sample_name: f.results["Main"] for f in output.file_results}
+    results = {f.raw_stem: f.results["Main"] for f in output.file_results}
     for sample, center, amplitude in (("Treated", 10.3, 12000), ("Dose", 10.5, 18000)):
         assert results[sample].reported_rt == pytest.approx(center, abs=0.03)
         expected_area = amplitude * 0.1 * np.sqrt(2 * np.pi) * 60
@@ -666,7 +666,7 @@ def test_batch_context_uses_supported_bodies_and_retention_uncertainty(
         targets,
         acquisition_sources_by_sample=snapshot.acquisition_sources_by_sample(),
     )
-    results = {f.sample_name: f.results["Main"] for f in output.file_results}
+    results = {f.raw_stem: f.results["Main"] for f in output.file_results}
     sigma = 0.4
     plateau_edge = sigma * math.sqrt(2 * math.log(2))
     unit_area = plateau_edge + sigma * math.sqrt(2 * math.pi) * math.erfc(
@@ -1176,16 +1176,16 @@ def test_run_multi_sample_preserves_sample_attribution_and_ordering(
     assert len(output.file_results) == 2
     res_a = output.file_results[0].results["Analyte"].peak_result.peak
     assert res_a.rt == pytest.approx(8.50, abs=0.05)
-    assert output.file_results[1].sample_name == "SampleB"
+    assert output.file_results[1].raw_stem == "SampleB"
     res_b = output.file_results[1].results["Analyte"].peak_result.peak
     assert res_b.rt == pytest.approx(9.50, abs=0.05)
 
     assert len(output.file_results) == 2
-    assert output.file_results[0].sample_name == "SampleA"
+    assert output.file_results[0].raw_stem == "SampleA"
     assert float(_result_row(output, targets, "Analyte", 0)["RT"]) == pytest.approx(
         8.50, abs=0.05
     )
-    assert output.file_results[1].sample_name == "SampleB"
+    assert output.file_results[1].raw_stem == "SampleB"
     assert float(_result_row(output, targets, "Analyte", 1)["RT"]) == pytest.approx(
         9.50, abs=0.05
     )
@@ -1318,7 +1318,7 @@ def test_run_loads_scoring_inputs_from_config_paths(
 
     output = _run(config, targets)
 
-    assert [result.sample_name for result in output.file_results] == ["SampleA"]
+    assert [result.raw_stem for result in output.file_results] == ["SampleA"]
 
 
 def test_run_falls_back_to_main_pass_when_prepass_returns_none(
@@ -1491,7 +1491,7 @@ def test_acquisition_records_file_error_and_continues(
 
     output = _run(config, targets)
 
-    assert output.file_results[1].sample_name == "Good"
+    assert output.file_results[1].raw_stem == "Good"
     diagnostics = _diagnostics_to_rows(output.diagnostics)
     assert diagnostics[0]["SampleName"] == "Bad"
     assert diagnostics[0]["Target"] == ""
@@ -1600,7 +1600,7 @@ def test_run_reports_progress_and_stops_between_files(
     )
 
     assert progress_calls == [(1, 2, "A.raw")]
-    assert [file_result.sample_name for file_result in output.file_results] == ["A"]
+    assert [file_result.raw_stem for file_result in output.file_results] == ["A"]
 
 
 def test_paired_analyte_uses_strict_anchor_peak_selection(
@@ -2193,7 +2193,7 @@ def _run(config: ExtractionConfig, targets: list[Target], **kwargs):
 
 def _result_row(output, targets, label, sample_index=0):
     rows = _run_output_to_long_rows(output, targets)
-    sample = output.file_results[sample_index].sample_name
+    sample = output.file_results[sample_index].raw_stem
     return next(
         row for row in rows if row["SampleName"] == sample and row["Target"] == label
     )

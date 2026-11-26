@@ -36,7 +36,7 @@ def test_completed_values_project_to_exact_group_sample_positions(
         alignment.final_population, key=lambda group: group.group_hypothesis_id
     )
     observations = {
-        (item.group_hypothesis_id, item.sample_key): item
+        (item.group_hypothesis_id, item.raw_stem): item
         for item in alignment.cell_observations
     }
     assert sum(len(cells) for _group, cells in group_cells) == len(observations)
@@ -50,7 +50,7 @@ def test_completed_values_project_to_exact_group_sample_positions(
             subject = decision.subject
             evidence = observations[
                 subject.group_hypothesis_id,
-                subject.canonical_sample.sample_name,
+                subject.canonical_sample.raw_stem,
             ]
             assert decision.evidence is evidence
             assert subject.group is group
@@ -119,7 +119,7 @@ def test_projection_requires_answers_for_the_exact_observation_population(
     elif variant == "extra":
         changed["other-observation"] = next(iter(changed.values()))
     else:
-        group, sample_key = next(iter(changed))
-        changed[group, sample_key + "-other"] = changed.pop((group, sample_key))
+        group, raw_stem = next(iter(changed))
+        changed[group, raw_stem + "-other"] = changed.pop((group, raw_stem))
     with pytest.raises(UntargetProjectionContractError, match="missing|extra|crossed"):
         project_untarget_matrix(alignment, changed)

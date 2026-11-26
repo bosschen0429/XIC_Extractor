@@ -107,7 +107,7 @@ def build_cid_nl_reference_spine(
     assert subject is not None
     if not sample_assessments:
         raise CidNlEvidenceSpineError("sample_assessments must be non-empty")
-    ordered = tuple(sorted(sample_assessments, key=lambda item: item[0].sample_name))
+    ordered = tuple(sorted(sample_assessments, key=lambda item: item[0].raw_stem))
     support_inputs: list[
         tuple[
             SampleMetadata,
@@ -209,12 +209,12 @@ def build_cid_nl_reference_spine(
     except CellObservationContractError as exc:
         raise CidNlEvidenceSpineError(str(exc)) from exc
     hypothesis_by_sample_id = {
-        sample.sample_name: (peak, hypothesis)
+        sample.raw_stem: (peak, hypothesis)
         for sample, _, peak, hypothesis in support_inputs
     }
     cells: list[CellObservation] = []
     for sample, assessment in ordered:
-        support_pair = hypothesis_by_sample_id.get(sample.sample_name)
+        support_pair = hypothesis_by_sample_id.get(sample.raw_stem)
         peak_observation = None
         peak_hypothesis = None
         if support_pair is not None:

@@ -84,14 +84,14 @@ def test_curve_payload_write_and_read() -> None:
                 explanation_summary(
                     {
                         "processing_attempt_id": "att-1",
-                        "samples": [{"sample_stem": "s1", "sample_key": "S1"}],
+                        "samples": [{"sample_label": "s1", "raw_stem": "S1"}],
                     },
                     review_only=writer.review_only,
                 )
             )
 
         summary = read_alignment_explanation(final_path)
-        assert summary["schema_version"] == "alignment_evidence"
+        assert summary["schema_version"] == "alignment_evidence_raw_stem"
         assert summary["plot_evidence_capability"] == "retained_curves"
 
         curves = read_alignment_curves(final_path, record_ids=["C1"])
@@ -140,7 +140,7 @@ def test_actual_observation_apex_is_retained_in_query_metadata(tmp_path, monkeyp
         for terminal in child.scientific_core.terminal_subjects:
             hypothesis = getattr(terminal, "hypothesis", None)
             if hypothesis is not None:
-                expected[(terminal.candidate_id, terminal.sample_key)] = [
+                expected[(terminal.candidate_id, terminal.raw_stem)] = [
                     {
                         "physical_peak_key": (ref.physical_peak_key),
                         "rt_apex_min": ref.integration.rt_apex_min,

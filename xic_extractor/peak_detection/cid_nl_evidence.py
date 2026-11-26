@@ -36,7 +36,7 @@ class CidNlEvidenceObservation:
     ``scan_precursor_mz`` retains the actual selected scan value.
     """
 
-    sample_key: str
+    raw_stem: str
     acquisition_source_id: str
     acquisition_mode: str
     scan_number: int
@@ -176,7 +176,7 @@ def cid_nl_evidence_observation(
     if product_intensity <= 0.0:
         raise CidNlEvidenceContractError("product_intensity must be positive")
     return CidNlEvidenceObservation(
-        sample_key=sample.sample_name,
+        raw_stem=sample.raw_stem,
         acquisition_source_id=acquisition_source.acquisition_source_id,
         acquisition_mode=ACQUISITION_MODE,
         scan_number=scan_number,

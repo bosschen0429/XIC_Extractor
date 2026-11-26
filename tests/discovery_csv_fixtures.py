@@ -10,7 +10,7 @@ from xic_extractor.discovery.models import DiscoveryEvent, DiscoveryPeak
 def _peak(**overrides: object) -> DiscoveryPeak:
     peak = DiscoveryPeak(
         peak_id="Sample_1@mz258.108512_rt7.8412",
-        sample_stem="Sample_1",
+        raw_stem="Sample_1",
         peak_mz=258.108512345,
         neutral_loss_tag="DNA_dR",
         best_ms2_scan_id=6095,

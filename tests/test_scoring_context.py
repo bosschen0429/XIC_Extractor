@@ -35,7 +35,7 @@ def test_istd_context_uses_expected_rt_prior() -> None:
 
     builder = factory(
         target=_target(label="ISTD-A", is_istd=True, istd_pair=""),
-        sample_name="S2",
+        raw_stem="S2",
         rt=np.linspace(9.7, 10.3, 7),
         intensity=np.array([0.0, 1.0, 4.0, 7.0, 4.0, 1.0, 0.0]),
         prepared_result=_prepared(
@@ -64,7 +64,7 @@ def test_scoring_context_uses_configured_ms1_morphology_smoothing_window() -> No
 
     builder = factory(
         target=_target(label="ISTD-A", is_istd=True, istd_pair=""),
-        sample_name="S2",
+        raw_stem="S2",
         rt=np.linspace(9.7, 10.3, 9),
         intensity=np.array([0.0, 1.0, 4.0, 7.0, 10.0, 7.0, 4.0, 1.0, 0.0]),
         prepared_result=_prepared(
@@ -88,7 +88,7 @@ def test_analyte_context_keeps_shape_ratio_with_expected_rt() -> None:
 
     builder = factory(
         target=_target(label="Analyte-A", is_istd=False, istd_pair="ISTD-A"),
-        sample_name="S2",
+        raw_stem="S2",
         rt=np.linspace(9.9, 10.5, 7),
         intensity=np.array([0.0, 1.0, 4.0, 8.0, 4.0, 1.0, 0.0]),
         prepared_result=_prepared(
@@ -115,7 +115,7 @@ def test_context_without_other_sample_data_uses_expected_rt() -> None:
 
     builder = factory(
         target=_target(label="Analyte-A", is_istd=False, istd_pair="ISTD-A"),
-        sample_name="S-missing",
+        raw_stem="S-missing",
         rt=np.linspace(9.9, 10.5, 7),
         intensity=np.array([0.0, 1.0, 4.0, 8.0, 4.0, 1.0, 0.0]),
         prepared_result=_prepared(
@@ -140,7 +140,7 @@ def test_scoring_context_uses_complete_candidate_ms2_evidence() -> None:
     candidate = _candidate(apex_index=3, apex_rt=10.0, intensity=7.0)
     builder = factory(
         target=_target(label="Analyte-A", is_istd=False, istd_pair=""),
-        sample_name="S2",
+        raw_stem="S2",
         rt=np.linspace(9.9, 10.5, 7),
         intensity=np.array([0.0, 1.0, 4.0, 8.0, 4.0, 1.0, 0.0]),
         prepared_result=_prepared(
@@ -173,7 +173,7 @@ def test_scoring_context_keeps_trigger_without_strict_nl_match() -> None:
     )
     builder = factory(
         target=_target(label="Analyte-A", is_istd=False, istd_pair=""),
-        sample_name="S2",
+        raw_stem="S2",
         rt=np.linspace(9.9, 10.5, 7),
         intensity=np.array([0.0, 1.0, 4.0, 8.0, 4.0, 1.0, 0.0]),
         prepared_result=_prepared(
@@ -206,7 +206,7 @@ def test_scoring_context_copies_candidate_ms2_trace_strength() -> None:
     )
     builder = factory(
         target=_target(label="Analyte-A", is_istd=False, istd_pair=""),
-        sample_name="S2",
+        raw_stem="S2",
         rt=np.linspace(9.9, 10.5, 7),
         intensity=np.array([0.0, 1.0, 4.0, 8.0, 4.0, 1.0, 0.0]),
         prepared_result=_prepared(
@@ -278,7 +278,7 @@ def test_strict_nl_candidate_beats_candidate_with_trigger_but_failed_nl() -> Non
 
     builder = factory(
         target=_target(label="Analyte-A", is_istd=False, istd_pair=""),
-        sample_name="S2",
+        raw_stem="S2",
         rt=np.linspace(9.8, 10.4, 7),
         intensity=np.array([0.0, 1.0, 4.0, 8.0, 7.0, 1.0, 0.0]),
         prepared_result=_prepared(

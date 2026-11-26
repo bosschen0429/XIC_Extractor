@@ -124,7 +124,7 @@ def build_item_evidence(
         for sid, cell in sorted(group.cells.items() if kind == "row" and group else ())
         if sid in scope
     ]
-    cells_by_sample = {cell["sample_key"]: cell for cell in cells}
+    cells_by_sample = {cell["raw_stem"]: cell for cell in cells}
     witnesses = _witnesses(evidence, kind, identifier, gid, group, scoped)
 
     triggers: list[dict[str, Any]] = []
@@ -285,7 +285,7 @@ def _witnesses(
     """Each scoped candidate's terminal observation that the group kept."""
     members_by_sample: dict[str, set[str]] = {}
     for member in group.members if group is not None else ():
-        members_by_sample.setdefault(member["sample_key"], set()).update(
+        members_by_sample.setdefault(member["raw_stem"], set()).update(
             member["physical_peak_keys"]
         )
     witnesses: list[Witness] = []
@@ -299,14 +299,14 @@ def _witnesses(
         ] or [{}]
         witnesses.extend(
             Witness(
-                sample_key=sid,
+                raw_stem=sid,
                 candidate_id=cid,
                 group_hypothesis_id=gid,
                 row_key_id=identifier if kind == "row" else None,
                 precursor_mz=candidate.fields["precursor_mz"],
                 rt_apex_min=observation.get("rt_apex_min"),
                 observation_id=observation.get("physical_peak_key"),
-                sample_stem=candidate.fields["sample_stem"],
+                sample_label=candidate.fields["sample_label"],
             )
             for observation in observations
         )
@@ -317,12 +317,12 @@ def _support_observation_refs(sample_id, members, witnesses, cell):
     refs = {
         witness.observation_id
         for witness in witnesses
-        if witness.sample_key == sample_id and witness.observation_id
+        if witness.raw_stem == sample_id and witness.observation_id
     }
     refs.update(
         peak
         for member in members
-        if member["sample_key"] == sample_id
+        if member["raw_stem"] == sample_id
         for peak in member["physical_peak_keys"]
     )
     refs.update(cell["observation_ids"] if cell is not None else ())
@@ -352,7 +352,7 @@ def _support_origin(sample_id, observation_refs, cell, curves, assessments):
     methods = [
         (ref, facts)
         for ref, (facts, _) in assessments.items()
-        if facts["sample_key"] == sample_id
+        if facts["raw_stem"] == sample_id
         and facts["method_result"] == "SUPPORT"
         and observation_set.intersection(facts["candidate_physical_peak_keys"])
     ]
@@ -379,7 +379,7 @@ class CidNlSource:
         self.summary = summary
         self.attempt_id = summary.get("processing_attempt_id", "")
         self.sample_labels = {
-            sample["sample_key"]: sample["sample_stem"]
+            sample["raw_stem"]: sample["sample_label"]
             for sample in summary.get("samples", [])
         }
         self.rt_calibration = read_calibration(summary["sample_rt_calibration"])
@@ -450,7 +450,7 @@ class CidNlSource:
                     capture["record_id"]
                 )
             for witness in item.witnesses:
-                refs = refs_by_sample.setdefault(witness.sample_key, set())
+                refs = refs_by_sample.setdefault(witness.raw_stem, set())
                 if witness.observation_id:
                     refs.add(witness.observation_id)
                 elif item.kind == "candidate":
@@ -471,7 +471,7 @@ class CidNlSource:
                 for curve in raw_curves
             }
             promised = {
-                (w.sample_key, w.observation_id)
+                (w.raw_stem, w.observation_id)
                 for view in views
                 for w in view.item.witnesses
                 if w.observation_id
@@ -527,9 +527,9 @@ class CidNlSource:
                     relationship_members=[
                         {
                             "subject_id": member["subject_id"],
-                            "sample_id": member["sample_key"],
+                            "sample_id": member["raw_stem"],
                             "sample_label": self.sample_labels.get(
-                                member["sample_key"], member["sample_key"]
+                                member["raw_stem"], member["raw_stem"]
                             ),
                         }
                         for member in view.members
@@ -539,9 +539,9 @@ class CidNlSource:
         return rendered
 
     def _project_curves(self, item, raw_curves, captures):
-        keys = {(w.candidate_id, w.sample_key) for w in item.witnesses}
+        keys = {(w.candidate_id, w.raw_stem) for w in item.witnesses}
         observation_keys = {
-            (w.observation_id, w.sample_key) for w in item.witnesses if w.observation_id
+            (w.observation_id, w.raw_stem) for w in item.witnesses if w.observation_id
         }
         capture_keys = {
             (capture["sample_id"], capture["payload_id"]) for capture in captures
@@ -564,7 +564,7 @@ class CidNlSource:
                 {
                     witness.candidate_id
                     for witness in item.witnesses
-                    if witness.sample_key == curve.get("sample_id")
+                    if witness.raw_stem == curve.get("sample_id")
                     and witness.observation_id
                     and witness.observation_id == curve.get("physical_peak_key")
                 }
@@ -633,7 +633,7 @@ def _decision_refs(view: ItemEvidence, sample_id: str) -> list[CardRef]:
 
 def _card_scope(item: CanonicalItem, card: Card) -> tuple[list[str], list[str]]:
     """The item samples and candidates a card shows it concerns."""
-    recorded_sample = card.facts.get("sample_key", card.facts.get("sample_id"))
+    recorded_sample = card.facts.get("raw_stem", card.facts.get("sample_id"))
     if recorded_sample is not None:
         sample_ids = [recorded_sample] if recorded_sample in item.sample_ids else []
     else:
@@ -642,7 +642,7 @@ def _card_scope(item: CanonicalItem, card: Card) -> tuple[list[str], list[str]]:
     recorded_candidate = card.facts.get("candidate_id")
     if recorded_candidate is not None and any(
         witness.candidate_id == recorded_candidate
-        and (recorded_sample is None or witness.sample_key == recorded_sample)
+        and (recorded_sample is None or witness.raw_stem == recorded_sample)
         for witness in item.witnesses
     ):
         candidate_ids.add(recorded_candidate)

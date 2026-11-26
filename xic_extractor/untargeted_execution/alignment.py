@@ -83,7 +83,7 @@ def prepare_untargeted_alignment_inputs(
         )
 
     ordered_raw_paths = tuple(
-        raw_paths[sample_stem] for sample_stem in discovery_batch.sample_order
+        raw_paths[raw_stem] for raw_stem in discovery_batch.sample_order
     )
     if sample_metadata is not None:
         by_stem = {row.raw_stem: row for row in sample_metadata}

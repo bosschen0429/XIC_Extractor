@@ -23,7 +23,7 @@ MS1_OBSERVATION_ASSIGNMENT = "ms1_observation_hypothesis"
 @dataclass(frozen=True)
 class IdentityEvent:
     candidate_id: str
-    sample_stem: str
+    raw_stem: str
     raw_file: str
     neutral_loss_tag: str
     precursor_mz: float
@@ -38,7 +38,7 @@ class IdentityEvent:
 @dataclass(frozen=True)
 class SampleLocalMS1Owner:
     owner_id: str
-    sample_stem: str
+    raw_stem: str
     raw_file: str
     peak: PeakObservation
     primary_identity_event: IdentityEvent | None

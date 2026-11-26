@@ -267,7 +267,7 @@ def test_discovery_retained_physical_peak_cardinality(
         replace(
             _seed(scan_number=scan, rt=seed_rt, precursor_mz=mz, product_mz=product),
             raw_file=raw_path,
-            sample_stem=raw_path.stem,
+            raw_stem=raw_path.stem,
             precursor_mz_basis=basis,
         )
         for scan, seed_rt, mz, product in zip(

@@ -318,7 +318,7 @@ def test_csv_to_excel_retains_multi_peak_selection_and_candidate_count(
         config.diagnostics_csv,
         [
             {
-                "SampleName": record.sample_name,
+                "SampleName": record.raw_stem,
                 "Target": record.target_label,
                 "Issue": record.issue,
                 "Reason": record.reason,
@@ -353,7 +353,7 @@ def _sheet_records(ws):
 
 
 def _long_row(
-    sample_name: str,
+    raw_stem: str,
     target: str,
     rt: str,
     area: str,
@@ -367,8 +367,8 @@ def _long_row(
     doubts: str = "",
 ) -> dict[str, str]:
     row = {
-        "SampleName": sample_name,
-        "Group": "Tumor" if sample_name.startswith("Tumor") else "QC",
+        "SampleName": raw_stem,
+        "Group": "Tumor" if raw_stem.startswith("Tumor") else "QC",
         "Target": target,
         "Role": role,
         "ISTD Pair": istd_pair,

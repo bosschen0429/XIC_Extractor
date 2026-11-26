@@ -22,7 +22,7 @@ class MS2WindowSource(MS2ScanSource, Protocol):
 def acquire_ms2_window(
     raw: MS2WindowSource,
     *,
-    sample_key: str,
+    raw_stem: str,
     rt_min: float,
     rt_max: float,
     precursor_scope: Ms2PrecursorScope | None = None,
@@ -37,7 +37,7 @@ def acquire_ms2_window(
         else raw.read_ms2_window(rt_min, rt_max, precursor_scope=precursor_scope)
     )
     return Ms2Window(
-        sample_key=sample_key,
+        raw_stem=raw_stem,
         rt_min=rt_min,
         rt_max=rt_max,
         events=events,

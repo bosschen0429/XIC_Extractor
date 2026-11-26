@@ -113,8 +113,8 @@ def select_analysis_set(
     recorded it: header sample name, role, and batch. The timeline owns
     injection order. ``overrides`` are RAW-keyed annotations from 上機資訊 or
     the workbench: a known role replaces the header role, and group, batch,
-    preparation, matrix, and exclusion fields fill in. They never rename a
-    sample or change its order.
+    preparation, matrix, and exclusion fields fill in. Neither annotations
+    nor sequence labels change RAW identity or order.
 
     ``analysis`` names whose membership rules apply; ``None`` lists the RAW
     without deciding membership, so nothing is analyzed and nothing blocks.
@@ -168,15 +168,23 @@ def select_analysis_set(
         )
     entries: list[AnalysisSetEntry] = []
     analyzed_stems: set[str] = set()
-    names: set[str] = set()
-    raw_aliases = {injection.raw_stem for injection in timeline} | {
-        row.raw_stem for row in (unopened_context or {}).values()
-    }
+    matched_stems = set(sequence.matched_raw_stems) if sequence is not None else set()
+    labels_by_stem = (
+        {
+            row.raw_stem: row.sample_label
+            for row in sequence.rows
+            if row.raw_stem in matched_stems
+        }
+        if sequence is not None
+        else {}
+    )
     for injection in timeline:
         copy_path = _local_copy_path(injection)
         raw_stem = injection.raw_stem
         header = header_rows[copy_path]
-        name = _sample_name(header.sample_name, raw_stem, names, raw_aliases)
+        label = labels_by_stem.get(raw_stem, header.sample_label.strip())
+        if not label or label.lower() in {"unknown", "sample"}:
+            label = raw_stem
         row = rows.get(raw_stem.casefold())
         if row is not None and row.sample_role is not None:
             role: SampleRole = row.sample_role
@@ -202,7 +210,7 @@ def select_analysis_set(
                 raw_path=Path(copy_path),
                 copy_paths=tuple(Path(path) for path in injection.copy_paths),
                 metadata=SampleMetadata(
-                    sample_name=name,
+                    sample_label=label,
                     raw_stem=raw_stem,
                     injection_order=injection.injection_order,
                     sample_role=role,
@@ -222,7 +230,7 @@ def select_analysis_set(
             AnalysisSetEntry(
                 raw_path=Path(path),
                 copy_paths=(Path(path),),
-                metadata=replace(row, sample_name=row.raw_stem, injection_order=None),
+                metadata=replace(row, injection_order=None),
                 role_source="sample_metadata",
                 context_reason="excluded" if row.excluded else "role",
             )
@@ -232,26 +240,6 @@ def select_analysis_set(
         sequence,
         tuple(Path(path) for path in unopened_context or ()),
     )
-
-
-def _sample_name(
-    header_name: str, raw_stem: str, taken: set[str], raw_aliases: set[str]
-) -> str:
-    """Reserve every RAW lookup alias before choosing header display names."""
-    name = header_name.strip()
-    if (
-        not name
-        or name.lower() in {"unknown", "sample"}
-        or name in taken
-        or (name in raw_aliases and name != raw_stem)
-    ):
-        name = raw_stem
-    suffix = 2
-    while name in taken or (name in raw_aliases and name != raw_stem):
-        name = f"{raw_stem}__{suffix}"
-        suffix += 1
-    taken.add(name)
-    return name
 
 
 def _metadata_by_stem(rows: Sequence[SampleMetadata]) -> dict[str, SampleMetadata]:

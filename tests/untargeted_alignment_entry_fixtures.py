@@ -68,7 +68,7 @@ def sample_metadata_for(
         overrides.get(
             stem,
             SampleMetadata(
-                sample_name=stem,
+                sample_label=stem,
                 raw_stem=stem,
                 injection_order=index,
                 sample_role="sample",
@@ -172,7 +172,7 @@ def publish_alignment(
         if len(windows := handle.chromatogram_windows) != len(set(windows))
     }
     assert repeated == {}, repeated
-    stages = Counter((r.stage, r.sample_stem) for r in recorder.records)
+    stages = Counter((r.stage, r.raw_stem) for r in recorder.records)
     assert [stage for stage, count in stages.items() if count > 1] == []
     return output_dir
 

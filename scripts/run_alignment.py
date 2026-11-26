@@ -694,16 +694,16 @@ def _validate_launch_artifacts(
     require_all_raw: bool,
 ) -> dict[str, Path]:
     missing_peak_csvs = tuple(
-        (sample_stem, peak_csv)
-        for sample_stem, peak_csv in discovery_batch.peak_csvs.items()
+        (raw_stem, peak_csv)
+        for raw_stem, peak_csv in discovery_batch.peak_csvs.items()
         if not peak_csv.is_file()
     )
     if missing_peak_csvs:
-        sample_stem, peak_csv = missing_peak_csvs[0]
+        raw_stem, peak_csv = missing_peak_csvs[0]
         suffix = _truncated_count_suffix(len(missing_peak_csvs))
         raise ValueError(
             "peak CSV does not exist for discovery sample "
-            f"{sample_stem}: {peak_csv}{suffix}"
+            f"{raw_stem}: {peak_csv}{suffix}"
         )
 
     if not require_all_raw:
@@ -715,9 +715,9 @@ def _validate_launch_artifacts(
         raw_dir=raw_dir,
     )
     missing_raw_samples = tuple(
-        sample_stem
-        for sample_stem in discovery_batch.sample_order
-        if sample_stem not in resolved_raw_paths
+        raw_stem
+        for raw_stem in discovery_batch.sample_order
+        if raw_stem not in resolved_raw_paths
     )
     if missing_raw_samples:
         sample_text = ", ".join(missing_raw_samples[:5])

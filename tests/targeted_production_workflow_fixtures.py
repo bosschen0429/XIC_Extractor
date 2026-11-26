@@ -62,21 +62,21 @@ def production_case(
     config.data_dir.mkdir()
     file_results = []
     scales = sample_peak_scales or {}
-    for sample_name in sample_names:
-        raw_path = config.data_dir / f"{sample_name}.raw"
-        raw_path.write_bytes(sample_name.encode())
+    for raw_stem in sample_names:
+        raw_path = config.data_dir / f"{raw_stem}.raw"
+        raw_path.write_bytes(raw_stem.encode())
         source = build_local_acquisition_source_identity(
             raw_path,
             acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
             observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
         )
-        scale = scales.get(sample_name, 1.0)
+        scale = scales.get(raw_stem, 1.0)
         rt = np.linspace(1.0, 2.0, 101)
         intensity = (10.0 + 1000.0 * np.exp(-((rt - 1.5) ** 2) / 0.002)) * scale
         if secondary_peak:
             intensity += 300.0 * scale * np.exp(-((rt - 1.8) ** 2) / 0.0005)
         trace = Trace.from_arrays(
-            sample_name=sample_name,
+            raw_stem=raw_stem,
             mz=target.mz,
             rt=rt,
             intensity=intensity,
@@ -87,7 +87,7 @@ def production_case(
         peak_result = physical_peak_result(rt, intensity, config, preferred_rt=1.5)
         hypotheses = build_peak_hypotheses(
             analysis_mode="targeted",
-            sample_name=sample_name,
+            raw_stem=raw_stem,
             target_label=target.label,
             role="Analyte",
             istd_pair="",
@@ -116,7 +116,7 @@ def production_case(
         )
         file_results.append(
             FileResult(
-                sample_name=sample_name,
+                raw_stem=raw_stem,
                 results={
                     target.label: ExtractionResult(
                         peak_result=peak_result,

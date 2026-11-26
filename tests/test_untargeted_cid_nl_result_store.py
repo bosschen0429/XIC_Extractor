@@ -445,10 +445,10 @@ def test_preserved_index_reads_one_record_in_a_separate_process(tmp_path, monkey
         (batch.jobs[0]._request_subjects, batch.subject_batch),
     )
     jobs_by_sample = {
-        job.sample.sample_name: tuple(
+        job.sample.raw_stem: tuple(
             candidate
             for candidate in batch.jobs
-            if candidate.sample.sample_name == job.sample.sample_name
+            if candidate.sample.raw_stem == job.sample.raw_stem
         )
         for job in batch.jobs
     }
@@ -481,7 +481,7 @@ def test_preserved_index_reads_one_record_in_a_separate_process(tmp_path, monkey
         )[0]
         assert isinstance(job, UntargetedPartitionJob)
         print(
-            job.sample.sample_name
+            job.sample.raw_stem
             + ":"
             + job.method_subject.method_subject_id
         )
@@ -493,7 +493,7 @@ def test_preserved_index_reads_one_record_in_a_separate_process(tmp_path, monkey
     for partition_index, cohort in enumerate(cohorts):
         position = len(cohort) - 1
         job = cohort[position]
-        expected = job.sample.sample_name + ":" + job.method_subject.method_subject_id
+        expected = job.sample.raw_stem + ":" + job.method_subject.method_subject_id
         completed = subprocess.run(
             [
                 sys.executable,

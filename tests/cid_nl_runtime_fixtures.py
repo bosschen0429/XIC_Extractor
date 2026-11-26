@@ -63,7 +63,7 @@ def build_discovery_receipts(
             observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
         )
         receipts[raw_path.stem] = mint_discovery_peak_universe_receipt(
-            sample_stem=raw_path.stem,
+            raw_stem=raw_path.stem,
             acquisition_source=source,
             peak_csv=candidate_csv,
             peaks=candidates,

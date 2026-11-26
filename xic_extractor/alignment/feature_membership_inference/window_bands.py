@@ -50,7 +50,7 @@ class _NearestInjectionMedians:
     ) -> _NearestInjectionMedians:
         grouped: dict[int, list[SampleLocalMS1Owner]] = defaultdict(list)
         for owner in members:
-            order = injection_order.get(owner.sample_stem)
+            order = injection_order.get(owner.raw_stem)
             if order is not None:
                 grouped[order].append(owner)
         orders = tuple(sorted(grouped))
@@ -70,7 +70,7 @@ class _NearestInjectionMedians:
         *,
         exclude_owner_id: str | None = None,
     ) -> float | None:
-        target_order = self.injection_order.get(target.sample_stem)
+        target_order = self.injection_order.get(target.raw_stem)
         if target_order is None:
             return None
         right = bisect_left(self.orders, target_order)
@@ -128,7 +128,7 @@ def _join_window_bands(
     Only summaries and incident links of the changed band are recomputed.
     """
     samples = {
-        key: {owner.sample_stem for owner in group} for key, group in members.items()
+        key: {owner.raw_stem for owner in group} for key, group in members.items()
     }
     roots = {owner.owner_id: key for key, group in members.items() for owner in group}
     links: dict[str, dict[str, tuple[float, str, str]]] = {key: {} for key in members}
@@ -314,12 +314,12 @@ def _bridge_separated_window_bands(
         if len(bands) < 2:
             return
         samples = {
-            key: {owner.sample_stem for owner in group} for key, group in bands.items()
+            key: {owner.raw_stem for owner in group} for key, group in bands.items()
         }
         spans = {
             key: (
-                min(orders[owner.sample_stem] for owner in group),
-                max(orders[owner.sample_stem] for owner in group),
+                min(orders[owner.raw_stem] for owner in group),
+                max(orders[owner.raw_stem] for owner in group),
             )
             for key, group in bands.items()
         }
@@ -423,7 +423,7 @@ def _window_band_candidate(
     shape_conflicts: dict[str, set[str]] | None = None,
 ) -> _Candidate | None:
     """One shared local-trend rule for singleton assignment and Backfill admission."""
-    if owner.sample_stem in {item.sample_stem for item in band}:
+    if owner.raw_stem in {item.raw_stem for item in band}:
         return None
     if trajectories is not None and not trajectories.permits_membership(
         (owner.owner_id, *(item.owner_id for item in band))
@@ -448,7 +448,7 @@ def _window_band_candidate(
     else:
         expected = statistics.median(corrected_rt[item.owner_id] for item in band)
         nearest_gap = min(
-            abs(orders[owner.sample_stem] - orders[item.sample_stem]) for item in band
+            abs(orders[owner.raw_stem] - orders[item.raw_stem]) for item in band
         )
         tolerance_sec = min(
             120.0,
@@ -552,7 +552,7 @@ def _assign_window_singletons(
             weak[owner.owner_id] = "alternative_bands_have_near_equal_cost"
             continue
         if row_candidates:
-            by_sample[owner.sample_stem].append(owner)
+            by_sample[owner.raw_stem].append(owner)
             candidates_by_owner[owner.owner_id] = tuple(row_candidates)
     for sample in sorted(by_sample, key=lambda stem: (orders[stem], stem)):
         for owner in by_sample[sample]:

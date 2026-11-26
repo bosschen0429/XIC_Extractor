@@ -196,9 +196,8 @@ def prepare_cid_nl_grouping(
             assessment.method_subject.method_subject_id, []
         ).append((sample, assessment))
     for results in results_by_subject.values():
-        results.sort(key=lambda pair: pair[0].sample_name)
+        results.sort(key=lambda pair: pair[0].raw_stem)
     peak_by_id = {peak.peak_id: peak for peak in candidates}
-    sample_by_stem = {sample.raw_stem: sample for sample in samples}
     unsupported_subjects = {}
     for subject in subject_batch.subjects:
         subject_assessments = tuple(
@@ -223,7 +222,7 @@ def prepare_cid_nl_grouping(
         CaptureCandidateBinding(
             candidate_id=candidate_id,
             method_subject_id=method_subject_id,
-            sample_key=observation_by_candidate[candidate_id].sample_key,
+            raw_stem=observation_by_candidate[candidate_id].raw_stem,
         )
         for candidate_id, method_subject_id in subject_batch.candidate_memberships
         if candidate_id in observation_by_candidate
@@ -233,7 +232,7 @@ def prepare_cid_nl_grouping(
         UntargetedCandidateExclusion(
             candidate_id=candidate_id,
             method_subject_id=method_subject_id,
-            sample_key=sample_by_stem[peak_by_id[candidate_id].sample_stem].sample_name,
+            raw_stem=peak_by_id[candidate_id].raw_stem,
             peak_status=peak_by_id[candidate_id].status,
             reason_code=(
                 "composite_requirement_not_supported"
@@ -289,7 +288,7 @@ def prepare_cid_nl_grouping(
     bindings_by_subject: dict[str, list[CaptureCandidateBinding]] = {}
     for binding in bindings:
         bindings_by_subject.setdefault(binding.method_subject_id, []).append(binding)
-    sample_by_id = {sample.sample_name: sample for sample in samples}
+    sample_by_id = {sample.raw_stem: sample for sample in samples}
     sample_universe = frozenset(sample.raw_stem for sample in samples)
     if known_istd_reference is not None:
         known_istd_reference = known_istd_reference.prepare_batch(
@@ -342,10 +341,10 @@ def prepare_cid_nl_grouping(
                 subject.method_subject_id, ()
             )
         )
-        assessments = tuple(sorted(assessments, key=lambda pair: pair[0].sample_name))
+        assessments = tuple(sorted(assessments, key=lambda pair: pair[0].raw_stem))
         assessment_by_sample_subject = {
             (
-                sample.sample_name,
+                sample.raw_stem,
                 subject.method_subject_id,
             ): assessment
             for subject in subject_workset
@@ -359,7 +358,7 @@ def prepare_cid_nl_grouping(
                 assessment=assessment_by_sample_subject[key],
             )
             for key in dict.fromkeys(
-                (binding.sample_key, binding.method_subject_id)
+                (binding.raw_stem, binding.method_subject_id)
                 for binding in child_bindings
             )
         }
@@ -371,7 +370,7 @@ def prepare_cid_nl_grouping(
         for binding in child_bindings:
             observation = observation_by_candidate[binding.candidate_id]
             hypotheses = hypotheses_by_sample_subject[
-                (binding.sample_key, binding.method_subject_id)
+                (binding.raw_stem, binding.method_subject_id)
             ]
             matches = tuple(
                 hypothesis
@@ -383,7 +382,7 @@ def prepare_cid_nl_grouping(
             terminal_subjects.append(
                 ObservedSearchSubject(
                     candidate_id=binding.candidate_id,
-                    sample_key=binding.sample_key,
+                    raw_stem=binding.raw_stem,
                     hypothesis=matches[0],
                 )
             )

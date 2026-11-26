@@ -76,7 +76,7 @@ def test_split_halves_with_a_stable_ratio_become_one_band() -> None:
     (merged,) = merge_one_band_groups(groups, config=_CONFIG)
 
     assert merged.one_band and merged.disposition == "established"
-    assert sorted(owner.sample_stem for owner in merged.owners) == [
+    assert sorted(owner.raw_stem for owner in merged.owners) == [
         "S1",
         "S2",
         "S3",

@@ -153,13 +153,13 @@ def resolve_targeted_istd_backfill(
     if not (target.is_istd or target.istd_pair) or not assessments:
         return IstdAnchoredBackfill.none()
     assessment_by_sample = {
-        sample.sample_name: assessment for sample, assessment in assessments
+        sample.raw_stem: assessment for sample, assessment in assessments
     }
-    sample_by_id = {sample.sample_name: sample for sample in population.samples}
+    sample_by_id = {sample.raw_stem: sample for sample in population.samples}
     direct_supports = tuple(
         CidNlCellGroupSupport(
-            sample=sample_by_id[item.sample_key],
-            assessment=assessment_by_sample[item.sample_key],
+            sample=sample_by_id[item.raw_stem],
+            assessment=assessment_by_sample[item.raw_stem],
             hypothesis=item.hypothesis,
         )
         for item in population.terminal_subjects

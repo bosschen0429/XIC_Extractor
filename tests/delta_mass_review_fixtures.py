@@ -98,7 +98,7 @@ def write_discovery(directory: Path) -> tuple[str, ...]:
         candidate_id = f"{sample}|{base}"
         candidates.append(
             DeltaMassCandidate(
-                sample_stem=sample,
+                raw_stem=sample,
                 method_label=settings.method_label,
                 pattern_id=settings.pattern_id,
                 candidate_id=candidate_id,
@@ -131,7 +131,7 @@ def write_discovery(directory: Path) -> tuple[str, ...]:
     write_delta_mass_outputs(
         directory, candidates, {"method": asdict(settings)}, settings
     )
-    for sample in {c.sample_stem for c in candidates}:
+    for sample in {c.raw_stem for c in candidates}:
         sample_dir = directory / sample
         sample_dir.mkdir()
         write_detected_features_csv(
@@ -152,7 +152,7 @@ def write_discovery(directory: Path) -> tuple[str, ...]:
                     "external",
                 )
                 for c in candidates
-                if c.sample_stem == sample
+                if c.raw_stem == sample
                 for p in c.positions
             ),
         )
@@ -165,7 +165,7 @@ def review_fixture() -> DeltaMassReview:
         candidates.append(
             ReviewCandidate(
                 candidate_id=f"{sample}|{base}",
-                sample_stem=sample,
+                raw_stem=sample,
                 method_label="Three positions",
                 pattern_id="three-position",
                 status="candidate",

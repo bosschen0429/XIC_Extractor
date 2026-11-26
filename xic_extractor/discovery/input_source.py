@@ -31,7 +31,7 @@ from xic_extractor.discovery.models import (
 @dataclass(frozen=True, slots=True)
 class CandidateLocation:
     candidate_id: str
-    sample_stem: str
+    raw_stem: str
     peak_mz: float
     neutral_loss_tag: str
     admitted: bool
@@ -164,7 +164,7 @@ class DiscoveryInputSource(Mapping[str, tuple[DiscoveryPeak, ...]]):
                 peak_id = _machine_field(row, "peak_id")
                 if peak_id:
                     location = self.locations.get(peak_id)
-                    if location is None or location.sample_stem != stem:
+                    if location is None or location.raw_stem != stem:
                         raise ValueError(
                             f"{path}: row {row_number}: event locates an unknown "
                             f"peak {peak_id!r}"
@@ -197,7 +197,7 @@ class DiscoveryInputSource(Mapping[str, tuple[DiscoveryPeak, ...]]):
         neutral_loss_by_tag: Mapping[str, float],
     ) -> tuple[DiscoveryEvent, ...]:
         """The event-table rows locating one peak, attached or not."""
-        stem = self.locations[candidate.peak_id].sample_stem
+        stem = self.locations[candidate.peak_id].raw_stem
         rows = self._event_rows.get(candidate.peak_id, [])
         if not rows:
             return ()
@@ -221,7 +221,7 @@ class DiscoveryInputSource(Mapping[str, tuple[DiscoveryPeak, ...]]):
                         location.row_number,
                         row,
                         raw_file=raw_file,
-                        sample_stem=stem,
+                        raw_stem=stem,
                         neutral_loss_by_tag=neutral_loss_by_tag,
                     ).event
                 )
@@ -247,7 +247,7 @@ class DiscoveryInputSource(Mapping[str, tuple[DiscoveryPeak, ...]]):
         selected: dict[str, list[CandidateLocation]] = {}
         for cid in candidate_ids:
             location = self.locations[cid]
-            selected.setdefault(location.sample_stem, []).append(location)
+            selected.setdefault(location.raw_stem, []).append(location)
         result: dict[str, tuple[DiscoveryPeak, ...]] = {
             stem: () for stem in self.batch.sample_order
         }

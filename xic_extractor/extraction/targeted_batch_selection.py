@@ -86,7 +86,7 @@ def complete_targeted_candidate_batch(
     output: RunOutput, config: ExtractionConfig
 ) -> RunOutput:
     assessments = {
-        (file.sample_name, label): assessment
+        (file.raw_stem, label): assessment
         for file in output.file_results
         for label, result in file.results.items()
         if (assessment := result.targeted_candidate_assessment) is not None
@@ -104,13 +104,13 @@ def complete_targeted_candidate_batch(
     diagnostics = [
         d
         for d in output.diagnostics
-        if (d.sample_name, d.target_label) not in replaced_keys
+        if (d.raw_stem, d.target_label) not in replaced_keys
         or d.issue == "ISTD_ANCHOR_MISSING"
     ]
     for file in output.file_results:
         results = dict(file.results)
         for label, captured in file.results.items():
-            assessment = assessments.get((file.sample_name, label))
+            assessment = assessments.get((file.raw_stem, label))
             if assessment is None:
                 continue
             if assessment.target.is_istd:
@@ -118,7 +118,7 @@ def complete_targeted_candidate_batch(
             trace = assessment.trace_group.primary_trace
             builder = factory(
                 target=assessment.target,
-                sample_name=file.sample_name,
+                raw_stem=file.raw_stem,
                 rt=trace.rt,
                 intensity=trace.intensity,
                 prepared_result=assessment.prepared_result,
@@ -127,7 +127,7 @@ def complete_targeted_candidate_batch(
                 target_reference_rt=assessment.preferred_rt,
                 candidate_ms2_evidence_builder=assessment.candidate_ms2_evidence.get,
             )
-            population = batch.population_by_cell[(file.sample_name, label)]
+            population = batch.population_by_cell[(file.raw_stem, label)]
             context_selection = batch.select(population)
             selected_region = context_selection.selected_region
             peak_result = assessment.score_selected_segment(
@@ -215,11 +215,11 @@ def complete_targeted_candidate_batch(
             results[label] = result
             diagnostics.extend(
                 build_diagnostic_records(
-                    file.sample_name, assessment.target, result, config
+                    file.raw_stem, assessment.target, result, config
                 )
             )
             paired_rejection = paired_anchor_mismatch_diagnostic(
-                file.sample_name,
+                file.raw_stem,
                 assessment.target,
                 result.peak_result,
                 reference_rt=assessment.paired_istd_anchor_rt,
@@ -229,7 +229,7 @@ def complete_targeted_candidate_batch(
             if paired_rejection is not None:
                 diagnostics.append(paired_rejection)
         for label, result in tuple(results.items()):
-            assessment = assessments.get((file.sample_name, label))
+            assessment = assessments.get((file.raw_stem, label))
             if assessment is None or result.reported_peak_area is None:
                 continue
             target = assessment.target
@@ -238,9 +238,7 @@ def complete_targeted_candidate_batch(
                 for other_label, other in results.items()
                 if other_label != label
                 and other.reported_peak_area is not None
-                and (
-                    other_assessment := assessments.get((file.sample_name, other_label))
-                )
+                and (other_assessment := assessments.get((file.raw_stem, other_label)))
                 is not None
                 and within_both_mz_tolerances(
                     target.mz,
@@ -255,7 +253,7 @@ def complete_targeted_candidate_batch(
                     quote(label, safe="") for label in shared_with
                 )
                 different_reference = any(
-                    assessments[(file.sample_name, other)].preferred_rt
+                    assessments[(file.raw_stem, other)].preferred_rt
                     != assessment.preferred_rt
                     for other in shared_with
                 )

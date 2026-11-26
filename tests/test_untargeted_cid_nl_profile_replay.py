@@ -138,7 +138,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     for retained, source in zip(
         persisted_capture_evidence, runtime_captures, strict=True
     ):
-        assert retained.sample_key == source.sample_key
+        assert retained.raw_stem == source.raw_stem
         assert retained.candidate_id == source.candidate_id
         assert retained.capture_stage == source.capture_stage
         assert retained.physical_evaluation is not None
@@ -256,7 +256,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
                 for group in child.scientific_core.final_population
             ) == [1, 3]
             sample_id_by_stem = {
-                sample.raw_stem: sample.sample_name
+                sample.raw_stem: sample.raw_stem
                 for sample in child.scientific_core.canonical_samples
             }
             joint_group = next(
@@ -264,7 +264,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
                 for group in child.scientific_core.final_population
                 if len(group.member_subjects) == 3
             )
-            assert {member.sample_key for member in joint_group.member_subjects} == {
+            assert {member.raw_stem for member in joint_group.member_subjects} == {
                 sample_id_by_stem["S2"],
                 sample_id_by_stem["S3"],
                 sample_id_by_stem["S4"],
@@ -273,12 +273,12 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
                 cell
                 for cell in child.scientific_core.cell_observations
                 if cell.group_hypothesis_id == joint_group.group_hypothesis_id
-                and cell.sample_key == sample_id_by_stem["S3"]
+                and cell.raw_stem == sample_id_by_stem["S3"]
             )
             (joint_cell,) = joint_final_cell.predecessor_cells
             assert any(
                 support.assessment is joint_cell.method_assessment
-                and support.sample.sample_name == sample_id_by_stem["S3"]
+                and support.sample.raw_stem == sample_id_by_stem["S3"]
                 for support in joint_cell.group_context.supports
             )
             assert len(written_groups(writer)) == 3
@@ -291,7 +291,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
                 cell
                 for cell in child.scientific_core.cell_observations
                 if cell.group_hypothesis_id == joint_group.group_hypothesis_id
-                and cell.sample_key == sample_id_by_stem["S4"]
+                and cell.raw_stem == sample_id_by_stem["S4"]
             )
             (local_peak,) = s4_cell.ms1_only_group_observations
             assert local_peak.mz == pytest.approx(307.10847543945314, abs=1e-10)
@@ -344,15 +344,15 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
                 for group in child.scientific_core.final_population
             ) == [2]
             selected_cells = tuple(
-                (sample_stem, cell)
-                for _row, sample_stem, cell in written_cells(writer)
+                (raw_stem, cell)
+                for _row, raw_stem, cell in written_cells(writer)
                 if cell.selected_integration
             )
-            assert {sample_stem for sample_stem, _cell in selected_cells} == set(
+            assert {raw_stem for raw_stem, _cell in selected_cells} == set(
                 inputs.sample_stems
             )
-            for sample_stem, cell in selected_cells:
-                peak = inputs.physical_peaks[sample_stem]
+            for raw_stem, cell in selected_cells:
+                peak = inputs.physical_peaks[raw_stem]
                 assert cell.value == peak.area_counts_seconds
                 assert cell.selected_integration is not None
                 assert cell.selected_integration.rt_apex_min == peak.apex_rt_min
@@ -360,22 +360,20 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             return
     cells = tuple(written_cells(writer))
     assert len(cells) == len(case.group_sizes) * len(inputs.sample_stems)
-    for _row, sample_stem, cell in cells:
+    for _row, raw_stem, cell in cells:
         if cell.selected_integration is None:
             assert inputs.separate_groups
             assert cell.value is None
             continue
-        peak = inputs.physical_peaks[sample_stem]
+        peak = inputs.physical_peaks[raw_stem]
         assert cell.value == peak.area_counts_seconds
         assert cell.selected_integration.area_raw_counts_seconds != cell.value
         assert cell.selected_integration.rt_apex_min == peak.apex_rt_min
         assert cell.selected_integration.height_smoothed > peak.height
     expected_row_count = sum(size > 1 for size in case.group_sizes)
     assert len(matrix_rows) == expected_row_count
-    for sample_stem, peak in inputs.physical_peaks.items():
-        sample_values = [
-            float(row[sample_stem]) for row in matrix_rows if row[sample_stem]
-        ]
+    for raw_stem, peak in inputs.physical_peaks.items():
+        sample_values = [float(row[raw_stem]) for row in matrix_rows if row[raw_stem]]
         assert sample_values == pytest.approx(
             [peak.area_counts_seconds] if expected_row_count else []
         )
@@ -384,8 +382,8 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         assert (
             len(
                 {
-                    sources[row.group_hypothesis_id, sample_stem] or None
-                    for row, sample_stem, _cell in written_cells(writer)
+                    sources[row.group_hypothesis_id, raw_stem] or None
+                    for row, raw_stem, _cell in written_cells(writer)
                 }
             )
             == 2
@@ -597,7 +595,7 @@ def test_profile_replay_retains_positive_and_empty_backfill_evidence(
             _emit_curve_payload(
                 sink,
                 evidence.observation_ref,
-                evidence.sample_key,
+                evidence.raw_stem,
                 kind="backfill_observation",
                 trace=evidence.trace,
                 evaluation=evidence.physical_evaluation,

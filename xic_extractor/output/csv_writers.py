@@ -82,7 +82,7 @@ class FileResultLike(Protocol):
     def sample_metadata(self) -> SampleMetadata | None: ...
 
     @property
-    def sample_name(self) -> str: ...
+    def raw_stem(self) -> str: ...
 
     @property
     def results(self) -> Mapping[str, ExtractionResultLike]: ...
@@ -94,7 +94,7 @@ def _long_output_rows(
     rows: list[dict[str, str]] = []
     for target in targets:
         row = {
-            "SampleName": file_result.sample_name,
+            "SampleName": file_result.raw_stem,
             "Group": resolve_sample_group(file_result.sample_metadata),
             "Target": target.label,
             "Role": "ISTD" if target.is_istd else "Analyte",

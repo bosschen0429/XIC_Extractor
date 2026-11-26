@@ -69,7 +69,9 @@ def _write_csv(
 
 def _row(value: object, columns: tuple[str, ...]) -> dict[str, str]:
     return {
-        column: format_discovery_csv_value(column, getattr(value, column))
+        column: format_discovery_csv_value(
+            column, getattr(value, "raw_stem" if column == "sample_stem" else column)
+        )
         for column in columns
     }
 

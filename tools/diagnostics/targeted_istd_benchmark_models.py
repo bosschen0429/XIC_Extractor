@@ -44,7 +44,7 @@ class TargetDefinition:
 
 @dataclass(frozen=True)
 class TargetedPoint:
-    sample_stem: str
+    raw_stem: str
     target_label: str
     rt: float | None
     area: float | None
@@ -56,7 +56,7 @@ class TargetedPoint:
 
 @dataclass(frozen=True)
 class TargetedReliabilityPoint:
-    sample_stem: str
+    raw_stem: str
     target_label: str
     reliability_state: str
     risk_reasons: tuple[str, ...] = ()
@@ -76,7 +76,7 @@ class AlignmentFeature:
 @dataclass(frozen=True)
 class AlignmentCell:
     feature_id: str
-    sample_stem: str
+    raw_stem: str
     status: str
     area: float | None
     apex_rt: float | None

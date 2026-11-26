@@ -102,7 +102,7 @@ def read_analysis_set(
             unopened[str(path.resolve())] = replace(
                 annotation,
                 sample_role=annotation.sample_role
-                or infer_sample_role(None, sample_name=path.stem),
+                or infer_sample_role(None, sample_text=path.stem),
                 batch_id=annotation.batch_id or root.name,
             )
             continue
@@ -129,16 +129,16 @@ def read_analysis_set(
             if isinstance(outcome, Exception):
                 unread_errors[str(path.resolve())] = str(outcome)
                 unread[str(path.resolve())] = SampleMetadata(
-                    sample_name=path.stem,
+                    sample_label=path.stem,
                     raw_stem=path.stem,
-                    sample_role=infer_sample_role(None, sample_name=path.stem),
+                    sample_role=infer_sample_role(None, sample_text=path.stem),
                     batch_id=root.name,
                 )
                 continue
             header, role, header_name = outcome
             headers.append(header)
             header_rows[header.raw_path] = SampleMetadata(
-                sample_name=header_name,
+                sample_label=header_name,
                 raw_stem=path.stem,
                 sample_role=role,
                 batch_id=root.name,
@@ -196,7 +196,7 @@ def _analysis_header(
     if cached is not None:
         return cached
     header, sample = read_raw_headers(path, dll_dir)
-    facts = (header, _raw_sample_role(path, sample), str(sample.sample_name or ""))
+    facts = (header, _raw_sample_role(path, sample), str(sample.sample_label or ""))
     _ANALYSIS_HEADER_CACHE[key] = facts
     return facts
 
@@ -204,10 +204,10 @@ def _analysis_header(
 def _raw_sample_role(path: Path, sample: RawSampleHeader) -> SampleRole:
     return infer_sample_role(
         sample.sample_type,
-        sample_name=path.stem,
+        sample_text=path.stem,
         comment=" ".join(
             (
-                sample.sample_name,
+                sample.sample_label,
                 PureWindowsPath(sample.instrument_method).stem,
                 sample.comment,
             )

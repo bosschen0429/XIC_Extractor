@@ -105,7 +105,7 @@ def _owners(case: str) -> tuple[tuple[SampleLocalMS1Owner, ...], dict[str, int]]
         }
         event = IdentityEvent(
             candidate_id=f"{case}:{sample}:{index}",
-            sample_stem=sample,
+            raw_stem=sample,
             raw_file=f"{sample}.raw",
             neutral_loss_tag="DNA_dR",
             precursor_mz=mz,
@@ -118,7 +118,7 @@ def _owners(case: str) -> tuple[tuple[SampleLocalMS1Owner, ...], dict[str, int]]
         owners.append(
             SampleLocalMS1Owner(
                 owner_id=f"{case}:{index}",
-                sample_stem=sample,
+                raw_stem=sample,
                 raw_file=f"{sample}.raw",
                 peak=measured_peak(
                     mz=mz,
@@ -280,7 +280,7 @@ def test_unrelated_calibration_preserves_unsupported_raw_pattern(
         )
     )
     assert all(
-        frame.calibrated_rt_min(owner.sample_stem, owner.peak.integration.rt_apex_min)
+        frame.calibrated_rt_min(owner.raw_stem, owner.peak.integration.rt_apex_min)
         is None
         for owner in raw_owners
     )
@@ -355,7 +355,7 @@ def test_retained_m298_configuration_preserves_sample_occupancy(
     }
     by_id = {owner.owner_id: owner for owner in owners}
     assert all(
-        len({by_id[key].sample_stem for key in group.owner_ids}) == len(group.owner_ids)
+        len({by_id[key].raw_stem for key in group.owner_ids}) == len(group.owner_ids)
         for group in result.groups
     )
 
@@ -459,7 +459,7 @@ def test_peak_shape_contradiction_is_soft_only_for_final_membership(
                 PeakTrajectory(
                     tuple(owner.owner_id for owner in owners),
                     tuple(
-                        (owner.sample_stem, owner.peak.integration.rt_apex_min)
+                        (owner.raw_stem, owner.peak.integration.rt_apex_min)
                         for owner in owners
                     ),
                 ),
@@ -541,7 +541,7 @@ def test_peak_regions_need_overlap_not_mutual_apex_containment(
         injection_order={"left": 0, "right": 1}
     ).with_sample_calibration(
         BatchRtCalibration.from_coordinate_knots(
-            tuple((owner.sample_stem, ((9.0, 9.0), (11.0, 11.0))) for owner in owners)
+            tuple((owner.raw_stem, ((9.0, 9.0), (11.0, 11.0))) for owner in owners)
         )
     )
     result = infer_feature_memberships(
@@ -582,7 +582,7 @@ def test_final_mixed_frame_comparison_does_not_relax_backfill_regions():
         )
     )
     frame = SampleRtFrame(
-        injection_order={owner.sample_stem: i for i, owner in enumerate(owners)}
+        injection_order={owner.raw_stem: i for i, owner in enumerate(owners)}
     ).with_sample_calibration(
         BatchRtCalibration.from_coordinate_knots(
             (
@@ -636,10 +636,10 @@ def test_region_separation_is_soft_for_final_and_strict_for_backfill(bootstrap):
         )
     )
     frame = SampleRtFrame(
-        injection_order={owner.sample_stem: i for i, owner in enumerate(owners)}
+        injection_order={owner.raw_stem: i for i, owner in enumerate(owners)}
     ).with_sample_calibration(
         BatchRtCalibration.from_coordinate_knots(
-            tuple((owner.sample_stem, ((9.0, 9.0), (11.0, 11.0))) for owner in owners)
+            tuple((owner.raw_stem, ((9.0, 9.0), (11.0, 11.0))) for owner in owners)
         )
     )
     result = infer_feature_memberships(
@@ -789,20 +789,18 @@ def test_tissue_rt_outlier_has_no_feasible_same_group_alternative() -> None:
     )
     by_id = {owner.owner_id: owner for owner in owners}
     assert {
-        frozenset(by_id[owner_id].sample_stem for owner_id in group.owner_ids)
+        frozenset(by_id[owner_id].raw_stem for owner_id in group.owner_ids)
         for group in result.groups
     } == {
         frozenset(
-            owner.sample_stem
-            for owner in owners
-            if owner.sample_stem != "NormalBC2302_DNA"
+            owner.raw_stem for owner in owners if owner.raw_stem != "NormalBC2302_DNA"
         ),
         frozenset(("NormalBC2302_DNA",)),
     }
     separate = next(
         decision
         for decision in result.sparse_decisions
-        if decision.sample_stem == "NormalBC2302_DNA"
+        if decision.raw_stem == "NormalBC2302_DNA"
     )
     assert separate.state == "birth"
     assert separate.accepted_risk.alternative_partition is None
@@ -820,7 +818,7 @@ def test_pattern_and_unobserved_context_samples_extend_one_trajectory(reverse) -
     ]
     contexts = [
         SampleElutionContext(
-            sample_stem=sample,
+            raw_stem=sample,
             mz=500.0,
             rt_start=9.0,
             rt_end=12.0,
@@ -863,7 +861,7 @@ def test_bootstrap_pattern_seed_extends_to_an_unobserved_context_sample() -> Non
     ]
     contexts = [
         SampleElutionContext(
-            sample_stem=sample,
+            raw_stem=sample,
             mz=500.0,
             rt_start=9.0,
             rt_end=12.0,
@@ -1043,7 +1041,7 @@ def test_single_sample_pattern_does_not_split_a_bootstrap_band() -> None:
     orders = {sample: index for index, sample in enumerate("abcdef")} | {"x": 9}
     contexts = [
         SampleElutionContext(
-            sample_stem=sample,
+            raw_stem=sample,
             mz=500.0,
             rt_start=9.0,
             rt_end=12.0,
@@ -1082,7 +1080,7 @@ def test_directional_extension_disagreement_keeps_the_pattern_seed() -> None:
     orders = {"a": 0, "b": 1, "c": 2}
     contexts = [
         SampleElutionContext(
-            sample_stem=sample,
+            raw_stem=sample,
             mz=500.0,
             rt_start=9.0,
             rt_end=13.0,
@@ -1121,7 +1119,7 @@ def test_directional_competition_does_not_demote_an_assigned_pattern_seed(
     ]
     contexts = [
         SampleElutionContext(
-            sample_stem=sample,
+            raw_stem=sample,
             mz=500.0,
             rt_start=9.0,
             rt_end=12.0,
@@ -1300,13 +1298,11 @@ def test_full85_bands_preserve_coherent_members_and_separate_rt_outlier(
     )
     for group in result.groups:
         stems = [
-            owner.sample_stem for owner in owners if owner.owner_id in group.owner_ids
+            owner.raw_stem for owner in owners if owner.owner_id in group.owner_ids
         ]
         assert len(stems) == len(set(stems))
     if case == "special_334069":
-        required = {
-            owner.owner_id for owner in owners if orders[owner.sample_stem] != 82
-        }
+        required = {owner.owner_id for owner in owners if orders[owner.raw_stem] != 82}
         assert len(required) == 70
         assert any(
             group.disposition == "assigned" and required <= set(group.owner_ids)
@@ -1381,7 +1377,7 @@ def test_nearby_mass_outlier_cannot_cut_a_clean_band() -> None:
     outlier_event = replace(
         owners[0].primary_identity_event,
         candidate_id="mass-window-outlier",
-        sample_stem="mass-window-outlier",
+        raw_stem="mass-window-outlier",
         raw_file="mass-window-outlier.raw",
         precursor_mz=266.097693,
         product_mz=150.050293,
@@ -1389,7 +1385,7 @@ def test_nearby_mass_outlier_cannot_cut_a_clean_band() -> None:
     outlier = replace(
         with_peak(owners[0], mz=266.097693, apex_rt=30.0, start_rt=29.95, end_rt=30.05),
         owner_id="mass-window-outlier",
-        sample_stem="mass-window-outlier",
+        raw_stem="mass-window-outlier",
         raw_file="mass-window-outlier.raw",
         primary_identity_event=outlier_event,
     )
@@ -1431,13 +1427,13 @@ def test_local_trend_does_not_override_full85_rt_population_separation() -> None
         rt_frame=SampleRtFrame(injection_order=(orders or {})).with_warp(shifted),
         rules=CID_NL_GROUPING_RULES,
     )
-    by_id = {owner.owner_id: owner.sample_stem for owner in owners}
+    by_id = {owner.owner_id: owner.raw_stem for owner in owners}
     assert {
         frozenset(by_id[key] for key in group.owner_ids) for group in result.groups
     } == {
         frozenset((shifted_sample,)),
         frozenset(
-            owner.sample_stem for owner in owners if owner.sample_stem != shifted_sample
+            owner.raw_stem for owner in owners if owner.raw_stem != shifted_sample
         ),
     }
 
@@ -1446,7 +1442,7 @@ def test_equal_band_competition_selects_and_records_the_alternative() -> None:
     def make(sample: str, name: str, rt: float) -> SampleLocalMS1Owner:
         event = IdentityEvent(
             candidate_id=name,
-            sample_stem=sample,
+            raw_stem=sample,
             raw_file=f"{sample}.raw",
             neutral_loss_tag="DNA_dR",
             precursor_mz=500.0,
@@ -1458,7 +1454,7 @@ def test_equal_band_competition_selects_and_records_the_alternative() -> None:
         )
         return SampleLocalMS1Owner(
             owner_id=name,
-            sample_stem=sample,
+            raw_stem=sample,
             raw_file=f"{sample}.raw",
             peak=measured_peak(
                 mz=500.0,
@@ -1496,7 +1492,7 @@ def test_sparse_feature_uses_warp_only_across_distant_injections() -> None:
     def make(sample: str, order: int, rt: float) -> SampleLocalMS1Owner:
         event = IdentityEvent(
             candidate_id=sample,
-            sample_stem=sample,
+            raw_stem=sample,
             raw_file=f"{sample}.raw",
             neutral_loss_tag="DNA_dR",
             precursor_mz=500.0,
@@ -1508,7 +1504,7 @@ def test_sparse_feature_uses_warp_only_across_distant_injections() -> None:
         )
         return SampleLocalMS1Owner(
             owner_id=sample,
-            sample_stem=sample,
+            raw_stem=sample,
             raw_file=f"{sample}.raw",
             peak=measured_peak(
                 mz=500.0,

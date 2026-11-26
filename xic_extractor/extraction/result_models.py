@@ -162,7 +162,7 @@ class ExtractionResult:
 
 @dataclass
 class FileResult:
-    sample_name: str
+    raw_stem: str
     results: dict[str, ExtractionResult]
     group: str | None = None
     error: str | None = None
@@ -178,6 +178,6 @@ class RunOutput:
 @dataclass
 class RawFileExtractionResult:
     raw_index: int
-    sample_name: str
+    raw_stem: str
     file_result: FileResult
     diagnostics: list[DiagnosticRecord]

@@ -126,7 +126,7 @@ def _acquired_modulation_observed(raw: np.ndarray) -> bool:
 
 @dataclass(frozen=True)
 class TargetedPopulationContext:
-    sample_name: str
+    raw_stem: str
     target_label: str
     mz: float
     ppm_tol: float
@@ -291,13 +291,13 @@ class TargetedBatchContext:
 
     @cached_property
     def population_by_cell(self) -> dict[tuple[str, str], TargetedPopulationContext]:
-        return {(p.sample_name, p.target_label): p for p in self.populations}
+        return {(p.raw_stem, p.target_label): p for p in self.populations}
 
     @cached_property
     def _populations_by_sample(self) -> dict[str, list[TargetedPopulationContext]]:
         samples: dict[str, list[TargetedPopulationContext]] = {}
         for population in self.populations:
-            samples.setdefault(population.sample_name, []).append(population)
+            samples.setdefault(population.raw_stem, []).append(population)
         return samples
 
     @cached_property
@@ -323,7 +323,7 @@ class TargetedBatchContext:
         self,
     ) -> dict[tuple[str, str], tuple[tuple[float, float], ...]]:
         return {
-            (p.sample_name, p.target_label): self._retention_intervals(p)
+            (p.raw_stem, p.target_label): self._retention_intervals(p)
             for p in self.populations
         }
 
@@ -331,7 +331,7 @@ class TargetedBatchContext:
         self, population: TargetedPopulationContext
     ) -> tuple[tuple[float, float], ...]:
         return self._retention_by_cell.get(
-            (population.sample_name, population.target_label), ()
+            (population.raw_stem, population.target_label), ()
         )
 
     def _retention_intervals(
@@ -339,7 +339,7 @@ class TargetedBatchContext:
     ) -> tuple[tuple[float, float], ...]:
         anchors = tuple(
             p
-            for p in self._populations_by_sample[population.sample_name]
+            for p in self._populations_by_sample[population.raw_stem]
             if p.target_label in self._seeded_targets
             and not _same_ion(p, population)
             and p.calibration_region is not None
@@ -418,7 +418,7 @@ class TargetedBatchContext:
         self,
     ) -> dict[tuple[str, str], frozenset[PhysicalSegment]]:
         return {
-            (p.sample_name, p.target_label): self._conflicting_segments(p)
+            (p.raw_stem, p.target_label): self._conflicting_segments(p)
             for p in self.populations
         }
 
@@ -442,7 +442,7 @@ class TargetedBatchContext:
         supported = self.retention_intervals(population)
         anchors = tuple(
             (p, region)
-            for p in self._populations_by_sample[population.sample_name]
+            for p in self._populations_by_sample[population.raw_stem]
             if p.target_label in self._seeded_targets and not _same_ion(p, population)
             if (region := p.calibration_region) is not None
             and any(
@@ -451,9 +451,9 @@ class TargetedBatchContext:
         )
         transfers = []
         for peer in self._populations_by_target[population.target_label]:
-            if peer.sample_name == population.sample_name:
+            if peer.raw_stem == population.raw_stem:
                 continue
-            chosen = self._local_choices[(peer.sample_name, peer.target_label)]
+            chosen = self._local_choices[(peer.raw_stem, peer.target_label)]
             peer_supported = self.retention_intervals(peer)
             if (
                 chosen is None
@@ -467,7 +467,7 @@ class TargetedBatchContext:
             displacements = []
             for anchor, region in anchors:
                 other = self.population_by_cell.get(
-                    (peer.sample_name, anchor.target_label)
+                    (peer.raw_stem, anchor.target_label)
                 )
                 other_region = other.calibration_region if other is not None else None
                 if other is None or other_region is None:
@@ -495,7 +495,7 @@ class TargetedBatchContext:
         return (
             region.segment
             in self._conflicting_segments_by_cell[
-                (population.sample_name, population.target_label)
+                (population.raw_stem, population.target_label)
             ]
         )
 
@@ -545,8 +545,8 @@ class TargetedBatchContext:
         peers = tuple(
             (p, r)
             for p in self._populations_by_target[population.target_label]
-            if p.sample_name != population.sample_name
-            if (r := self._local_choices[(p.sample_name, p.target_label)]) is not None
+            if p.raw_stem != population.raw_stem
+            if (r := self._local_choices[(p.raw_stem, p.target_label)]) is not None
             and self._identity_specific(p, r)
         )
         reference = self.reference_rt(population)
@@ -576,7 +576,7 @@ class TargetedBatchContext:
     @cached_property
     def _local_choices(self) -> dict[tuple[str, str], TargetedRegionContext | None]:
         return {
-            (p.sample_name, p.target_label): self._local_choice(p)
+            (p.raw_stem, p.target_label): self._local_choice(p)
             for p in self.populations
         }
 
@@ -611,7 +611,7 @@ class TargetedBatchContext:
                 if population.reference_istd_rt_min is None
                 else ()
             )
-            references[(population.sample_name, population.target_label)] = (
+            references[(population.raw_stem, population.target_label)] = (
                 population.reference_rt_min
                 + median((left + right) / 2 for left, right in intervals)
                 if intervals
@@ -624,7 +624,7 @@ class TargetedBatchContext:
     def reference_rt(self, population: TargetedPopulationContext) -> float:
         """A sample-local ranking prior, not a hard admissibility window."""
         return self._reference_rts_by_cell[
-            (population.sample_name, population.target_label)
+            (population.raw_stem, population.target_label)
         ]
 
     def reference_rts(self, population: TargetedPopulationContext) -> tuple[float, ...]:
@@ -633,7 +633,7 @@ class TargetedBatchContext:
             sorted(
                 {
                     self.reference_rt(p)
-                    for p in self._populations_by_sample[population.sample_name]
+                    for p in self._populations_by_sample[population.raw_stem]
                     if _same_ion(p, population)
                 }
             )

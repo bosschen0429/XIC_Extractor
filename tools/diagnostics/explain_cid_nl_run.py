@@ -83,7 +83,7 @@ def main(argv: list[str] | None = None) -> int:
                 feature_id=args.group_id,
                 candidate_id=args.candidate_id,
             )
-            samples = sorted({location.sample_key for location in curves.locations})
+            samples = sorted({location.raw_stem for location in curves.locations})
             bundle, unusable = review_curve_bundle(
                 Path(args.report),
                 curves,
@@ -164,7 +164,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(f"Attempt: {result['processing_attempt_id']}")
         for candidate in examples:
-            print(f"  {candidate['sample_stem']}: {candidate['candidate_id']}")
+            print(f"  {candidate['raw_stem']}: {candidate['candidate_id']}")
         reasons = sorted(
             result["reason_counts"].items(), key=lambda item: (-item[1], item[0])
         )

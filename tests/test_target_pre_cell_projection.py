@@ -77,14 +77,14 @@ def test_projects_closed_row_binding_and_complete_cell_population(
     )
     assert len(projection.subjects) == len(scope.samples)
     assert tuple(subject.sample for subject in projection.subjects) == tuple(
-        sorted(scope.samples, key=lambda sample: sample.sample_name)
+        sorted(scope.samples, key=lambda sample: sample.raw_stem)
     )
     assert all(subject.target is scope.target for subject in projection.subjects)
     assert all(
         subject.row_binding is projection.binding for subject in projection.subjects
     )
     assert all(
-        subject.terminal_subject.sample_key == subject.sample.sample_name
+        subject.terminal_subject.raw_stem == subject.sample.raw_stem
         for subject in projection.subjects
     )
 
@@ -153,9 +153,9 @@ def test_reversed_sample_order_and_no_observation_are_preserved(tmp_path: Path) 
     projection = project_target_pre_cell(result)
 
     assert projection.binding.variant == "bound"
-    assert tuple(
-        subject.sample.sample_name for subject in projection.subjects
-    ) == tuple(sample.sample_name for sample in result.canonical_samples)
+    assert tuple(subject.sample.raw_stem for subject in projection.subjects) == tuple(
+        sample.raw_stem for sample in result.canonical_samples
+    )
     subjects_by_sample = {
         subject.sample.raw_stem: subject for subject in projection.subjects
     }

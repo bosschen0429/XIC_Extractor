@@ -148,7 +148,7 @@ def test_backfill_batch_retains_shape_contradictions_as_soft_risk(
         values = 1000 * np.exp(-0.5 * (offsets / width) ** 2)
         source = fixture.source(sample)
         trace = Trace.from_arrays(
-            sample_name=name,
+            raw_stem=name,
             mz=500.0,
             rt=offsets + 8,
             intensity=values,
@@ -238,7 +238,7 @@ def test_backfill_batch_retains_shape_contradictions_as_soft_risk(
         backfills[
             (
                 group.group_hypothesis_id,
-                fixture.sample(name).sample_name,
+                fixture.sample(name).raw_stem,
                 assessments[name].method_subject.method_subject_id,
             )
         ] = (fixture.sample(name), assessments[name])
@@ -261,7 +261,7 @@ def test_backfill_batch_retains_shape_contradictions_as_soft_risk(
             "shape_disagreement" in risk.soft_contradictions
             for _, _, risk in grouping.backfill_membership_risks
         )
-    assert {owner.sample_stem for owner in successor.owners} == (
+    assert {owner.raw_stem for owner in successor.owners} == (
         {"reference1", "reference2"} | accepted
     )
     assert set(references).issubset(successor.owners)
@@ -312,7 +312,7 @@ def test_backfill_query_and_empty_completion_keep_sample_rt_separate_from_group(
         raw_paths=paths,
         sample_metadata=tuple(
             SampleMetadata(
-                sample_name=path.stem,
+                sample_label=path.stem,
                 raw_stem=path.stem,
                 injection_order=i,
                 sample_role="sample",
@@ -373,10 +373,10 @@ def test_backfill_query_and_empty_completion_keep_sample_rt_separate_from_group(
         assert not attempt.assessment.candidate_peaks
     completed = complete_dense_partition(batch, result, alignment_config=config)
     writer = completed.application_result
-    for _row, sample_stem, cell in written_cells(writer):
-        if sample_stem not in {"Early", "Late"}:
+    for _row, raw_stem, cell in written_cells(writer):
+        if raw_stem not in {"Early", "Late"}:
             continue
-        apex = 8.0 + shifts[sample_stem]
+        apex = 8.0 + shifts[raw_stem]
         if empty:
             assert cell.value is None
             assert cell.backfill_query_bounds == pytest.approx(
@@ -416,7 +416,7 @@ def test_rejected_discovery_input_cannot_supply_backfill_support(
         **(
             {
                 context_stem: SampleMetadata(
-                    sample_name=context_stem,
+                    sample_label=context_stem,
                     raw_stem=context_stem,
                     injection_order=stems.index(context_stem) + 1,
                     sample_role="sample" if outcome == "excluded" else "blank",
@@ -691,7 +691,7 @@ def test_shared_ms1_only_backfill_peak_is_not_written_to_two_rows(
         for risk in cell["membership_risks"]
         if risk["phase"] == "initial"
         and "accepted_competition" in risk["risk_flags"]
-        and cell["sample_key"] == "Missing"
+        and cell["raw_stem"] == "Missing"
     ]
     assert len(competing) == 1
     ((cell, risk),) = competing
@@ -709,7 +709,7 @@ def test_shared_ms1_only_backfill_peak_is_not_written_to_two_rows(
             for sample in item["samples"]
             if any("可能" in name for name in sample["risk_labels"])
         }
-        assert flagged == {cell["sample_key"]}
+        assert flagged == {cell["raw_stem"]}
 
 
 @pytest.mark.parametrize(
@@ -971,7 +971,7 @@ def test_full_alignment_captures_competing_rows_and_single_batch_matrix(
         application.run_untargeted_application(
             changed_request, UntargetedExecutionContext(timing_recorder=recorder)
         )
-        stages = Counter((r.stage, r.sample_stem) for r in recorder.records)
+        stages = Counter((r.stage, r.raw_stem) for r in recorder.records)
         assert [stage for stage, count in stages.items() if count > 1] == []
 
     run(

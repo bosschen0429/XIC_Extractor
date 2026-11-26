@@ -48,7 +48,7 @@ def test_factory_scores_analyte_against_current_sample_reference(
     intensity = np.array([0.0, 1.0, 4.0, 8.0, 4.0, 1.0, 0.0])
     builder = factory(
         target=_target(label="Analyte-A", is_istd=False, istd_pair="ISTD-A"),
-        sample_name=sample,
+        raw_stem=sample,
         rt=rt,
         intensity=intensity,
         prepared_result=_prepared(rt, intensity),
@@ -146,7 +146,7 @@ def test_same_prepared_shape_is_shared_by_analyte_and_selected_istd(
     )
     ctx = factory(
         target=target,
-        sample_name="SampleA",
+        raw_stem="SampleA",
         rt=rt,
         intensity=intensity,
         prepared_result=prepared_result,
@@ -174,7 +174,7 @@ def test_missing_paired_width_retains_neutral_width_quality() -> None:
     )
     ctx = factory(
         target=target,
-        sample_name="SampleA",
+        raw_stem="SampleA",
         rt=rt,
         intensity=_gaussian(rt),
         prepared_result=_prepared(rt, _gaussian(rt)),
@@ -204,7 +204,7 @@ def test_missing_prepared_shape_keeps_quality_unknown(
     factory = build_scoring_context_factory(config=_config())
     ctx = factory(
         target=_target(label="Analyte-A", is_istd=False, istd_pair="ISTD-A"),
-        sample_name="SampleA",
+        raw_stem="SampleA",
         rt=rt,
         intensity=intensity,
         prepared_result=prepared_result,
@@ -257,7 +257,7 @@ def test_rebuilt_factories_share_physical_baseline_and_raw_noise(
         factory = build_scoring_context_factory(config=_config())
         builder = factory(
             target=_target(label="A", is_istd=False, istd_pair=""),
-            sample_name="S",
+            raw_stem="S",
             rt=rt,
             intensity=raw,
             prepared_result=result,
@@ -309,7 +309,7 @@ def test_missing_baseline_never_triggers_another_solve(monkeypatch, absence):
     candidate = _quality_candidate(15)
     ctx = factory(
         target=_target(label="A", is_istd=False, istd_pair=""),
-        sample_name="S",
+        raw_stem="S",
         rt=rt,
         intensity=raw,
         prepared_result=result,
@@ -349,7 +349,7 @@ def test_morphology_failure_does_not_change_raw_signal_quality(monkeypatch, erro
     factory = build_scoring_context_factory(config=_config())
     ctx = factory(
         target=_target(label="A", is_istd=False, istd_pair=""),
-        sample_name="S",
+        raw_stem="S",
         rt=rt,
         intensity=raw,
         prepared_result=result,

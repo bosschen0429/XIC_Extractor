@@ -103,7 +103,7 @@ def identification_evidence_rows(run_output, targets):
                 continue
             result = file.results.get(target.label)
             common = {
-                "SampleName": file.sample_name,
+                "SampleName": file.raw_stem,
                 "Target": target.label,
                 "Specificity": target_specificity(target),
             }

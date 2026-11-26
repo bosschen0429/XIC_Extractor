@@ -13,7 +13,7 @@ AnalysisMode = Literal["targeted", "untargeted"]
 
 @dataclass(frozen=True)
 class Trace:
-    sample_name: str
+    raw_stem: str
     mz: float
     rt: NDArray[np.float64]
     intensity: NDArray[np.float64]
@@ -27,7 +27,7 @@ class Trace:
     def from_arrays(
         cls,
         *,
-        sample_name: str,
+        raw_stem: str,
         mz: float,
         rt: object,
         intensity: object,
@@ -47,7 +47,7 @@ class Trace:
             raise ValueError("Trace arrays must be matching 1D arrays")
         validate_xic_window(rt_min, rt_max, ppm_tol)
         return cls(
-            sample_name=sample_name,
+            raw_stem=raw_stem,
             mz=mz,
             rt=rt_array,
             intensity=intensity_array,
@@ -66,7 +66,7 @@ class Trace:
 @dataclass(frozen=True)
 class TraceGroup:
     trace_group_id: str
-    sample_name: str
+    raw_stem: str
     analysis_mode: AnalysisMode
     context_id: str
     traces: tuple[Trace, ...]
@@ -85,14 +85,14 @@ class TraceGroup:
 
 def trace_from_xic_request(
     *,
-    sample_name: str,
+    raw_stem: str,
     request: XICRequest,
     xic_trace: XICTrace,
     source: str = "",
     acquisition_source_id: str = "",
 ) -> Trace:
     return Trace(
-        sample_name=sample_name,
+        raw_stem=raw_stem,
         mz=request.mz,
         rt=xic_trace.rt,
         intensity=xic_trace.intensity,
@@ -117,8 +117,8 @@ def targeted_trace_group(
     istd_pair: str = "",
 ) -> TraceGroup:
     return TraceGroup(
-        trace_group_id="|".join((trace.sample_name, target_label)),
-        sample_name=trace.sample_name,
+        trace_group_id="|".join((trace.raw_stem, target_label)),
+        raw_stem=trace.raw_stem,
         analysis_mode="targeted",
         context_id=target_label,
         traces=(trace,),
@@ -143,8 +143,8 @@ def untargeted_trace_group(
     observed_neutral_loss_da: float | None = None,
 ) -> TraceGroup:
     return TraceGroup(
-        trace_group_id="|".join((trace.sample_name, family_id, "untargeted")),
-        sample_name=trace.sample_name,
+        trace_group_id="|".join((trace.raw_stem, family_id, "untargeted")),
+        raw_stem=trace.raw_stem,
         analysis_mode="untargeted",
         context_id=family_id,
         traces=(trace,),

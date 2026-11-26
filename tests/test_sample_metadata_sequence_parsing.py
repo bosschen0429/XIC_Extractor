@@ -132,7 +132,7 @@ def test_parse_xlsx_sequence(tmp_path: Path) -> None:
     assert rows[0].batch_id == "BatchA"
 
     assert rows[1].injection_order == 2
-    assert rows[1].sample_name == "Patient_01_DNA"
+    assert rows[1].sample_label == "Patient_01_DNA"
     assert rows[1].raw_stem == "P01_DNA"
     assert rows[1].sample_role == "sample"
 
@@ -190,7 +190,7 @@ def test_parse_tabular_sequence_resolves_exact_alias_collisions(
 
     assert [
         (
-            row.sample_name,
+            row.sample_label,
             row.raw_stem,
             row.injection_order,
             row.sample_role,

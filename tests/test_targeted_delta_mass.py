@@ -309,7 +309,7 @@ def test_delta_mass_reaches_finalized_workbook_and_readonly_inspector(
         )
     )
     by_sample = {
-        file.sample_name: file.results[target.label]
+        file.raw_stem: file.results[target.label]
         for file in execution.active_output.file_results
     }
     assert by_sample["one"].targeted_product_projection.counted_detection

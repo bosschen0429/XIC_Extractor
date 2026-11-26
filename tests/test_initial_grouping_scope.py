@@ -24,7 +24,7 @@ def _group(
         group_from_members(
             member_subjects=(
                 CrossSampleGroupMemberSubject(
-                    sample_key="sample",
+                    raw_stem="sample",
                     subject_kind="peak_hypothesis",
                     subject_id=group_id,
                     physical_peaks=(),

@@ -107,7 +107,7 @@ class RtEstimate:
 
 @dataclass(frozen=True)
 class SampleRtCalibration:
-    sample_stem: str
+    raw_stem: str
     status: str
     knots: tuple[tuple[float, float], ...]
     front_shift_min: float | None
@@ -238,19 +238,19 @@ class BatchRtCalibration:
 
     def corrected_rt_min(self, owner: SampleLocalMS1Owner) -> float:
         """Use a bounded sample calibration, retaining raw RT outside its span."""
-        return self.common_rt_min(owner.sample_stem, owner.peak.rt_apex_min)
+        return self.common_rt_min(owner.raw_stem, owner.peak.rt_apex_min)
 
-    def has_support(self, sample_stem: str) -> bool:
-        sample = self.samples.get(sample_stem)
+    def has_support(self, raw_stem: str) -> bool:
+        sample = self.samples.get(raw_stem)
         return sample is not None and bool(sample.knots)
 
-    def common_rt_min(self, sample_stem: str, observed_rt: float) -> float:
-        sample = self.samples.get(sample_stem)
+    def common_rt_min(self, raw_stem: str, observed_rt: float) -> float:
+        sample = self.samples.get(raw_stem)
         calibrated = sample.calibrated_rt(observed_rt) if sample else None
         return observed_rt if calibrated is None else calibrated
 
-    def offset_min(self, sample_stem: str, common_rt: float) -> float:
-        sample = self.samples.get(sample_stem)
+    def offset_min(self, raw_stem: str, common_rt: float) -> float:
+        sample = self.samples.get(raw_stem)
         observed = (
             interpolate_calibrated_rt_min(
                 common_rt,
@@ -361,7 +361,7 @@ def ordinary_anchor_min_samples(cohort_size: int) -> int:
 
 
 def fit_sample_rt_calibration(
-    sample_stem: str,
+    raw_stem: str,
     points: Sequence[tuple[float, float]],
     *,
     fraction: float,
@@ -409,7 +409,7 @@ def fit_sample_rt_calibration(
             float(median(fit_residuals)) if fit_residuals else None,
         )
     return SampleRtCalibration(
-        sample_stem=sample_stem,
+        raw_stem=raw_stem,
         status=_sample_status(fitted, usable),
         knots=fitted if usable else (),
         front_shift_min=None,
@@ -681,10 +681,10 @@ class BatchRtCalibrationAccumulator:
         for anchors in by_group.values():
             key = min(anchor.owner_id for anchor in anchors)
             self._observations[key] = {
-                anchor.sample_stem: anchor.rt_min for anchor in anchors
+                anchor.raw_stem: anchor.rt_min for anchor in anchors
             }
             self._channels[key] = {
-                anchor.sample_stem: (anchor.precursor_mz, anchor.neutral_loss_da)
+                anchor.raw_stem: (anchor.precursor_mz, anchor.neutral_loss_da)
                 for anchor in anchors
             }
 

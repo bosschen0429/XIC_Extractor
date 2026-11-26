@@ -66,7 +66,7 @@ def _owner_handoff_for_cells(
 
 def _support_assessment(
     fixture: Any,
-    sample_stem: str,
+    raw_stem: str,
     *,
     suffix: str,
     apex_rt: float,
@@ -75,7 +75,7 @@ def _support_assessment(
 ):
     peak = cid_nl_peak(
         fixture,
-        sample_stem,
+        raw_stem,
         apex_rt=apex_rt,
         rt_left_min=apex_rt - 0.1,
         rt_right_min=apex_rt + 0.1,
@@ -83,7 +83,7 @@ def _support_assessment(
     evidence_refs = tuple(
         cid_nl_evidence(
             fixture,
-            sample_stem,
+            raw_stem,
             scan_number=scan_number + index,
             scan_rt_min=apex_rt,
         )
@@ -92,17 +92,17 @@ def _support_assessment(
     support_refs = tuple(
         cid_nl_unique_support(
             fixture,
-            sample_stem,
+            raw_stem,
             peak=peak,
             evidence=evidence,
         )
         for evidence in evidence_refs
     )
     return mint_cid_nl_method_assessment(
-        sample=fixture.sample(sample_stem),
-        acquisition_source=fixture.source(fixture.sample(sample_stem)),
+        sample=fixture.sample(raw_stem),
+        acquisition_source=fixture.source(fixture.sample(raw_stem)),
         target=fixture.target,
-        detector_invocation_id=f"gaussian15:{sample_stem}:{suffix}",
+        detector_invocation_id=f"gaussian15:{raw_stem}:{suffix}",
         evaluation_receipt=_completed_receipt(),
         candidate_peaks=(peak,),
         evidence_refs=evidence_refs,
@@ -121,7 +121,7 @@ def _coverage_for_groups(
     cells = {
         (
             cell.group_context.group.group_hypothesis_id,
-            cell.sample_key,
+            cell.raw_stem,
         ): cell
         for cell in predecessor_cells
     }
@@ -136,7 +136,7 @@ def _coverage_for_groups(
         )
         for group in groups
         for sample in samples
-        for cell in (cells.get((group.group_hypothesis_id, sample.sample_name)),)
+        for cell in (cells.get((group.group_hypothesis_id, sample.raw_stem)),)
     )
     return BackfillEvaluationCoverageBatch(
         groups=groups, samples=samples, positions=positions

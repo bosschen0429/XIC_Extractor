@@ -116,7 +116,7 @@ def test_numbered_source_names_are_not_reassigned_by_order():
         SampleMetadata("Second", "QC_1", injection_order=2),
     ]
     report = match_sample_metadata(rows, ["QC_1", "QC_2"])
-    assert [(r.raw_stem, r.sample_name) for r in report.rows] == [
+    assert [(r.raw_stem, r.sample_label) for r in report.rows] == [
         ("QC_1", "Second"),
         ("QC_2", "First"),
     ]
@@ -138,3 +138,13 @@ def test_alias_collisions_do_not_claim_a_raw_by_iteration_order():
     report = match_sample_metadata(rows, ["SampleA"])
     assert report.matched_raw_stems == ()
     assert report.ambiguous_sequence_names == ("Sample A", "Sample_A")
+
+
+def test_sequence_does_not_use_a_label_for_a_blank_raw_file_column(tmp_path):
+    from xic_extractor.sample_metadata import SampleMetadataError
+
+    sequence = tmp_path / "sequence.csv"
+    sequence.write_text("Order,File Name,Sample Name\n1,,Raw1\n", encoding="utf-8")
+
+    with pytest.raises(SampleMetadataError, match="RAW file name is required"):
+        load_and_match_sample_metadata(sequence, ["Raw1"])

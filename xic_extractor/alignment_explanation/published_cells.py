@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .reader import (
-    read_explanation_metadata,
     read_row_cell_values,
 )
 from .storage import EXPLANATION_ARTIFACT_NAME
@@ -40,23 +39,16 @@ def read_published_cells(alignment_dir: Path) -> tuple[PublishedCell, ...]:
         if record["matrix_row_index"]
     }
     explanation = alignment_dir / EXPLANATION_ARTIFACT_NAME
-    summary = read_explanation_metadata(explanation)
-    samples = {
-        sample["sample_key"]: sample["sample_stem"] for sample in summary["samples"]
-    }
     cells = []
-    for group, sample_key, value, origin, apex in read_row_cell_values(
-        explanation, rows
-    ):
+    for group, raw_stem, value, origin, apex in read_row_cell_values(explanation, rows):
         if value is None:
             continue
         row, row_mz = rows[group]
-        sample = samples[sample_key]
         cells.append(
             PublishedCell(
                 row=row,
                 row_mz=row_mz,
-                sample=sample,
+                sample=raw_stem,
                 origin=origin,
                 apex_rt_min=apex,
                 feature_id=group,

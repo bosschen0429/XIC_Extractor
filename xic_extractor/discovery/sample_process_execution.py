@@ -54,7 +54,7 @@ class DiscoverySampleProcessJob:
 @dataclass(frozen=True)
 class DiscoverySampleProcessResult:
     sample_index: int
-    sample_stem: str
+    raw_stem: str
     publication: output_publication.PublishedDiscoverySample
     timing_records: tuple[TimingRecord, ...]
     measurement_observations: tuple[dict[str, object], ...]
@@ -64,7 +64,7 @@ class DiscoverySampleProcessResult:
 @dataclass(frozen=True)
 class DiscoverySampleProcessError:
     sample_index: int
-    sample_stem: str
+    raw_stem: str
     raw_name: str
     message: str
     timing_records: tuple[TimingRecord, ...] = ()
@@ -165,7 +165,7 @@ def run_discovery_batch_process(
             return
         completed += 1
         if progress_callback is not None:
-            progress_callback(completed, len(jobs), result.sample_stem)
+            progress_callback(completed, len(jobs), result.raw_stem)
 
     report = execute_process_jobs(
         jobs,
@@ -193,7 +193,7 @@ def run_discovery_batch_process(
         expected_job = jobs_by_sample_index.get(observed.sample_index)
         if (
             expected_job is None
-            or observed.sample_stem != expected_job.acquisition_input.raw_path.stem
+            or observed.raw_stem != expected_job.acquisition_input.raw_path.stem
         ):
             raise ValueError(
                 "Discovery process result does not match a submitted sample job"
@@ -201,14 +201,14 @@ def run_discovery_batch_process(
         _observe_pickle_payload_bytes(
             timing_recorder,
             observed,
-            scope=observed.sample_stem,
+            scope=observed.raw_stem,
             source="discovery.process_job.result",
         )
         for record in observed.timing_records:
             timing_recorder.record(
                 record.stage,
                 elapsed_sec=record.elapsed_sec,
-                sample_stem=record.sample_stem,
+                raw_stem=record.raw_stem,
                 metrics=record.metrics,
             )
         for observation in observed.measurement_observations:
@@ -223,11 +223,11 @@ def run_discovery_batch_process(
                 availability=str(observation.get("availability", "measured")),
                 reason=str(observation.get("reason", "")),
             )
-        record_unavailable_raw_open(timing_recorder, observed.sample_stem)
+        record_unavailable_raw_open(timing_recorder, observed.raw_stem)
         record_discovery_ms1_measurements(
             timing_recorder,
             observed.ms1_measurements,
-            observed.sample_stem,
+            observed.raw_stem,
             unavailable_reason=(
                 "process result carries no owner acquisition batch receipts"
             ),
@@ -235,12 +235,12 @@ def run_discovery_batch_process(
     if report.first_failure is not None:
         failure = cast(DiscoverySampleProcessError, report.first_failure)
         completed_samples = tuple(
-            result.sample_stem
+            result.raw_stem
             for result in report.completed_results
             if isinstance(result, DiscoverySampleProcessResult)
         )
         failed_samples = tuple(
-            result.sample_stem
+            result.raw_stem
             for result in report.observed_results
             if isinstance(result, DiscoverySampleProcessError)
         )
@@ -265,11 +265,11 @@ def run_discovery_batch_process(
         raise DiscoveryProcessExecutionError(
             DiscoverySampleProcessError(
                 sample_index=-1,
-                sample_stem="",
+                raw_stem="",
                 raw_name="",
                 message="parallel Discovery result census is incomplete",
             ),
-            completed_sample_stems=tuple(result.sample_stem for result in results),
+            completed_sample_stems=tuple(result.raw_stem for result in results),
             failed_sample_stems=(),
             cancelled_job_count=len(report.cancelled_job_ordinals),
             in_flight_job_count=len(report.in_flight_job_ordinals),
@@ -359,7 +359,7 @@ def run_discovery_sample_process_job(
         )
         return DiscoverySampleProcessResult(
             sample_index=job.sample_index,
-            sample_stem=raw_path.stem,
+            raw_stem=raw_path.stem,
             publication=publication,
             timing_records=recorder.records,
             measurement_observations=portable_worker_observations(recorder),
@@ -386,7 +386,7 @@ def _discovery_process_error(
     raw_path = job.acquisition_input.raw_path
     return DiscoverySampleProcessError(
         sample_index=job.sample_index,
-        sample_stem=raw_path.stem,
+        raw_stem=raw_path.stem,
         raw_name=raw_path.name,
         message=f"{type(exc).__name__}: {exc}",
         timing_records=timing_records,

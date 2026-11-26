@@ -147,16 +147,16 @@ def test_identity_membership_is_geometry_not_group_center_reclassification(
     )
     sample_assessments = tuple(
         (
-            fixture.sample(sample_stem),
+            fixture.sample(raw_stem),
             _assessment_with_observation_only_peak(
                 fixture,
-                sample_stem=sample_stem,
+                raw_stem=raw_stem,
                 direct_apex_rt=direct_apex_rt,
                 observed_apex_rt=observed_apex_rt,
                 scan_number=scan_number,
             ),
         )
-        for sample_stem, direct_apex_rt, observed_apex_rt, scan_number in (
+        for raw_stem, direct_apex_rt, observed_apex_rt, scan_number in (
             ("early", 7.80, 8.40, 201),
             ("late", 7.82, 8.88, 202),
         )
@@ -237,22 +237,22 @@ def test_identity_membership_is_geometry_not_group_center_reclassification(
 def _assessment_with_observation_only_peak(
     fixture,
     *,
-    sample_stem: str,
+    raw_stem: str,
     direct_apex_rt: float,
     observed_apex_rt: float,
     scan_number: int,
 ):
-    sample = fixture.sample(sample_stem)
+    sample = fixture.sample(raw_stem)
     direct_peak = cid_nl_peak(
         fixture,
-        sample_stem,
+        raw_stem,
         apex_rt=direct_apex_rt,
         rt_left_min=direct_apex_rt - 0.1,
         rt_right_min=direct_apex_rt + 0.1,
     )
     observed_peak = cid_nl_peak(
         fixture,
-        sample_stem,
+        raw_stem,
         apex_rt=observed_apex_rt,
         rt_left_min=observed_apex_rt - 0.1,
         rt_right_min=observed_apex_rt + 0.1,
@@ -260,13 +260,13 @@ def _assessment_with_observation_only_peak(
     peaks = (direct_peak, observed_peak)
     evidence = cid_nl_evidence(
         fixture,
-        sample_stem,
+        raw_stem,
         scan_number=scan_number,
         scan_rt_min=direct_apex_rt,
     )
     support = cid_nl_unique_support(
         fixture,
-        sample_stem,
+        raw_stem,
         peak=direct_peak,
         evidence=evidence,
         candidate_peaks=peaks,
@@ -275,7 +275,7 @@ def _assessment_with_observation_only_peak(
         sample=sample,
         acquisition_source=fixture.source(sample),
         target=fixture.target,
-        detector_invocation_id=f"gaussian15:{sample_stem}",
+        detector_invocation_id=f"gaussian15:{raw_stem}",
         evaluation_receipt=CidNlEvaluationReceipt(
             query_rt_min=7.5,
             query_rt_max=9.2,
@@ -386,7 +386,7 @@ def test_supported_identity_uses_independent_relation_masses_per_sample(
             hypothesis=hypothesis,
         )
         projected[stem] = owner
-        assert owner.sample_stem == stem
+        assert owner.raw_stem == stem
         assert owner.owner_id == hypothesis.hypothesis_id
         assert owner.peak is peak
         assert owner.peak.mz == physical_mz

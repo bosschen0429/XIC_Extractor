@@ -294,13 +294,13 @@ def test_inferred_evidence_rejects_unbound_or_crossed_precursor_provenance(
 def test_s1_to_s5_truth_table_preserves_orthogonal_axes(tmp_path: Path) -> None:
     fixture, assessments = _truth_table_fixture(tmp_path)
 
-    by_sample = {assessment.sample_key: assessment for assessment in assessments}
+    by_sample = {assessment.raw_stem: assessment for assessment in assessments}
 
-    assert by_sample[fixture.sample("s1").sample_name].method_result == ("SUPPORT")
-    assert by_sample[fixture.sample("s2").sample_name].method_result == ("HOLD")
-    assert by_sample[fixture.sample("s3").sample_name].method_result == ("REJECT")
-    assert by_sample[fixture.sample("s4").sample_name].method_result == ("HOLD")
-    s5 = by_sample[fixture.sample("s5").sample_name]
+    assert by_sample[fixture.sample("s1").raw_stem].method_result == ("SUPPORT")
+    assert by_sample[fixture.sample("s2").raw_stem].method_result == ("HOLD")
+    assert by_sample[fixture.sample("s3").raw_stem].method_result == ("REJECT")
+    assert by_sample[fixture.sample("s4").raw_stem].method_result == ("HOLD")
+    s5 = by_sample[fixture.sample("s5").raw_stem]
     assert s5.technical_state == "unsupported"
     assert s5.method_result is None
     assert all(not hasattr(assessment, "peak_hypothesis") for assessment in assessments)
@@ -758,7 +758,7 @@ def test_cell_identity_binds_full_provisional_group_membership(
     combined_a = next(
         cell
         for cell in combined.cells
-        if cell.sample_key == sample_assessments[0][0].sample_name
+        if cell.raw_stem == sample_assessments[0][0].raw_stem
     )
 
     assert single.group.group_hypothesis_id != combined.group.group_hypothesis_id
@@ -925,15 +925,15 @@ def test_failed_attempt_cannot_become_reject_or_human_unassessable(
 
 def _measured_evidence(
     fixture,
-    sample_stem: str,
+    raw_stem: str,
     *,
     scan_number: int,
     loss_error_ppm: float,
 ):
     observed_loss = NEUTRAL_LOSS_DA * (1.0 + loss_error_ppm / 1_000_000.0)
     return cid_nl_evidence_observation(
-        sample=fixture.sample(sample_stem),
-        acquisition_source=fixture.source(fixture.sample(sample_stem)),
+        sample=fixture.sample(raw_stem),
+        acquisition_source=fixture.source(fixture.sample(raw_stem)),
         scan_number=scan_number,
         precursor_mz=PRECURSOR_MZ,
         product_mz=PRECURSOR_MZ - observed_loss,
@@ -947,15 +947,15 @@ def _measured_evidence(
 
 def _support_assessment(
     fixture,
-    sample_stem: str,
+    raw_stem: str,
     *,
     scan_losses: tuple[tuple[int, float], ...],
 ):
-    peak = cid_nl_peak(fixture, sample_stem)
+    peak = cid_nl_peak(fixture, raw_stem)
     evidence_refs = tuple(
         _measured_evidence(
             fixture,
-            sample_stem,
+            raw_stem,
             scan_number=scan_number,
             loss_error_ppm=loss_error_ppm,
         )
@@ -964,17 +964,17 @@ def _support_assessment(
     support_refs = tuple(
         cid_nl_unique_support(
             fixture,
-            sample_stem,
+            raw_stem,
             peak=peak,
             evidence=evidence,
         )
         for evidence in evidence_refs
     )
     return mint_cid_nl_method_assessment(
-        sample=fixture.sample(sample_stem),
-        acquisition_source=fixture.source(fixture.sample(sample_stem)),
+        sample=fixture.sample(raw_stem),
+        acquisition_source=fixture.source(fixture.sample(raw_stem)),
         target=fixture.target,
-        detector_invocation_id=f"gaussian15:{sample_stem}:aggregate",
+        detector_invocation_id=f"gaussian15:{raw_stem}:aggregate",
         evaluation_receipt=_completed_receipt(),
         candidate_peaks=(peak,),
         evidence_refs=evidence_refs,
@@ -1003,7 +1003,7 @@ def test_monoisotopic_canonical_evidence_binds_vendor_metadata(tmp_path):
             for field in fields(observed)
             if field.name
             not in {
-                "sample_key",
+                "raw_stem",
                 "acquisition_source_id",
                 "acquisition_mode",
                 "precursor_mz_basis",

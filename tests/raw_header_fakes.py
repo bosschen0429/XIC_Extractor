@@ -32,7 +32,7 @@ def install_fake_raw_headers(monkeypatch: pytest.MonkeyPatch) -> None:
             end_time_min=10.0,
             instrument_method="",
         )
-        return header, infer_sample_role(None, sample_name=path.stem), path.stem
+        return header, infer_sample_role(None, sample_text=path.stem), path.stem
 
     monkeypatch.setattr("xic_extractor.raw_sequence._analysis_header", analysis_header)
 

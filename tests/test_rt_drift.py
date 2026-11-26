@@ -201,7 +201,7 @@ def test_membership_does_not_depend_on_owner_ids_or_input_order():
     forward, _ = _groups(owners)
     renamed = tuple(
         cid_nl_owner(
-            owner.sample_stem,
+            owner.raw_stem,
             "drift" if "drift" in owner.owner_id else "flat",
             apex_rt=owner.peak.integration.rt_apex_min,
         )

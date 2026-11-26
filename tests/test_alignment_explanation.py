@@ -82,7 +82,7 @@ def test_candidate_measured_mz_roundtrip_without_center_fallback(
         candidate = read_alignment_explanation(report, candidate_id=cid)["candidates"][
             0
         ]
-        assert candidate["sample_stem"] == stem
+        assert candidate["sample_label"] == stem
         assert candidate["ms1_apex_mz"] == expected
         assert (
             candidate["precursor_mz"]
@@ -127,7 +127,7 @@ def test_owner_facts_survive_persisted_candidate_query(tmp_path, monkeypatch, sc
     assessment = next(
         item
         for item in completed.method_assessments
-        if item.sample_key == detail["candidates"][0]["sample_key"]
+        if item.raw_stem == detail["candidates"][0]["raw_stem"]
     )
     retained = detail["method_assessments"][0]
     assert retained["reason_codes"] == list(assessment.reason_codes)
@@ -167,7 +167,7 @@ def test_owner_facts_survive_persisted_candidate_query(tmp_path, monkeypatch, sc
                 json.dumps(
                     [
                         {
-                            "sample_key": (member.sample_key),
+                            "raw_stem": (member.raw_stem),
                             "subject_kind": member.subject_kind,
                             "subject_id": member.subject_id,
                             "physical_peak_keys": [
@@ -268,8 +268,8 @@ def test_a_fully_detected_row_reviews_its_same_mz_peaks(tmp_path, monkeypatch):
 
     assert all(location.physical_peak_key for location in curves.locations)
     assert (curves.row_mz, curves.row_ppm) == (500.0, 10.0)
-    assert {peak.sample_key for peak in curves.same_mz_peaks} == {
-        location.sample_key for location in curves.locations
+    assert {peak.raw_stem for peak in curves.same_mz_peaks} == {
+        location.raw_stem for location in curves.locations
     }
 
 
@@ -418,7 +418,7 @@ def test_explanation_progress_failure_does_not_publish_report(tmp_path, monkeypa
 
 def test_exact_candidate_loads_only_its_evidence_across_samples(tmp_path, monkeypatch):
     reports = []
-    samples = [{"sample_key": key, "sample_stem": key} for key in ("A", "B")]
+    samples = [{"raw_stem": key, "sample_label": key} for key in ("A", "B")]
     for unrelated in (0, 20):
         path = tmp_path / f"report-{unrelated}.sqlite"
         with ExplanationReportWriter(path) as writer:
@@ -474,7 +474,7 @@ def test_exact_candidate_loads_only_its_evidence_across_samples(tmp_path, monkey
         result = read_alignment_explanation(report, candidate_id="same")
         counts.append(len(fetched))
         assert [
-            (row["sample_key"], row["precursor_mz"]) for row in result["candidates"]
+            (row["raw_stem"], row["precursor_mz"]) for row in result["candidates"]
         ] == [("A", 400), ("B", 401)]
         summary = read_alignment_explanation(report)
         fetched.clear()
@@ -493,7 +493,7 @@ def test_exact_candidate_loads_only_its_evidence_across_samples(tmp_path, monkey
     with_examples, examples = read_summary_with_examples(reports[-1])
     assert with_examples == plain
     assert examples == [
-        {"candidate_id": f"other-{i}", "sample_stem": "A"} for i in (0, 1, 10, 11, 12)
+        {"candidate_id": f"other-{i}", "raw_stem": "A"} for i in (0, 1, 10, 11, 12)
     ]
     assert len(fetched) == summary_rows + 5
 
@@ -501,7 +501,7 @@ def test_exact_candidate_loads_only_its_evidence_across_samples(tmp_path, monkey
 def test_incremental_report_deduplicates_and_aborts_conflicts(tmp_path):
     report = tmp_path / "stream.sqlite"
     summary = explanation_summary(
-        {"samples": [{"sample_key": "s"}], "neutral_loss_by_tag": {"A": 116.0474}}
+        {"samples": [{"raw_stem": "s"}], "neutral_loss_by_tag": {"A": 116.0474}}
     )
     with ExplanationReportWriter(report) as writer:
         writer.declare_samples(summary["samples"])
@@ -522,7 +522,7 @@ def test_incremental_report_deduplicates_and_aborts_conflicts(tmp_path):
     assert [
         (
             candidate["candidate_id"],
-            candidate["sample_key"],
+            candidate["raw_stem"],
             candidate["method_subject_id"],
             candidate["peak_status"],
             candidate["exclusion_reason"],
@@ -563,7 +563,7 @@ def test_repeated_curve_record_is_stored_once_and_relates_only_its_candidate(
 ):
     report = tmp_path / "normalized.sqlite"
     with ExplanationReportWriter(report) as writer:
-        writer.declare_samples([{"sample_key": "S1", "sample_stem": "S1"}])
+        writer.declare_samples([{"raw_stem": "S1", "sample_label": "S1"}])
         for candidate_id, subject in (("C1", "M1"), ("C2", "M2"), ("C3", "M3")):
             writer.add_candidate(
                 candidate_id,
@@ -606,7 +606,7 @@ def test_report_rejects_terminal_without_a_candidate(tmp_path):
     report = tmp_path / "missing-candidate.sqlite"
     with pytest.raises(KeyError, match="missing"):
         with ExplanationReportWriter(report) as writer:
-            writer.declare_samples([{"sample_key": "S1", "sample_stem": "S1"}])
+            writer.declare_samples([{"raw_stem": "S1", "sample_label": "S1"}])
             writer.add_terminal("missing", "S1", variant="observed")
             writer.finalize(explanation_summary({}))
     assert not report.exists()
@@ -617,7 +617,7 @@ def test_indexed_query_preserves_many_groups_and_skips_unrelated_payloads(tmp_pa
     report = tmp_path / "indexed.sqlite"
     with ExplanationReportWriter(report) as writer:
         writer.declare_samples(
-            [{"sample_key": s, "sample_stem": s} for s in ("s1", "s2")]
+            [{"raw_stem": s, "sample_label": s} for s in ("s1", "s2")]
         )
         for cid, sid, subject in (
             ("a", "s1", "Ma"),
@@ -642,7 +642,7 @@ def test_indexed_query_preserves_many_groups_and_skips_unrelated_payloads(tmp_pa
 
         def member(sid, cid, *peaks):
             return {
-                "sample_key": sid,
+                "raw_stem": sid,
                 "subject_id": f"h-{cid}",
                 "subject_kind": "peak_hypothesis",
                 "physical_peak_keys": [f"p-{cid}", *peaks],

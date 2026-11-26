@@ -68,7 +68,7 @@ def _finalized_case(
         CaptureCandidateBinding(
             candidate_id=f"candidate-{sample.raw_stem}",
             method_subject_id=method_subject.method_subject_id,
-            sample_key=sample.sample_name,
+            raw_stem=sample.raw_stem,
         )
         for sample in scope_samples
     )
@@ -105,7 +105,7 @@ def _finalized_case(
         sample.raw_stem: next(
             member
             for member in predecessor.member_subjects
-            if member.sample_key == sample.sample_name
+            if member.raw_stem == sample.raw_stem
         )
         for sample in fixture.samples
     }
@@ -154,7 +154,7 @@ def _finalized_case(
             terminals.append(
                 ObservedSearchSubject(
                     candidate_id=candidate_id,
-                    sample_key=(sample.sample_name),
+                    raw_stem=(sample.raw_stem),
                     hypothesis=hypothesis,
                 )
             )
@@ -162,7 +162,7 @@ def _finalized_case(
             terminals.append(
                 SearchedNoObservationSubject(
                     candidate_id=candidate_id,
-                    sample_key=(sample.sample_name),
+                    raw_stem=(sample.raw_stem),
                 )
             )
     cell_observations = compose_final_group_cell_observation_population(
@@ -173,7 +173,7 @@ def _finalized_case(
         canonical_samples=tuple(
             sorted(
                 scope.samples,
-                key=lambda sample: sample.sample_name,
+                key=lambda sample: sample.raw_stem,
             )
         ),
         terminal_subjects=tuple(

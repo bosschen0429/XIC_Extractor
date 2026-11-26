@@ -97,7 +97,7 @@ def test_cells_with_values_show_their_run_curves_without_raw(tmp_path, monkeypat
     )
     group_id = detail["groups"][0]["feature_id"]
     curves = read_review_curves(reports["review"], feature_id=group_id)
-    saved = {loc.sample_key for loc in curves.locations if loc.curve is not None}
+    saved = {loc.raw_stem for loc in curves.locations if loc.curve is not None}
     assert saved == {"S1", "S2"}
     assert not curves.needs_raw(saved)
 
@@ -120,7 +120,7 @@ def test_cells_with_values_show_their_run_curves_without_raw(tmp_path, monkeypat
     )
     bundle = read_curve_bundle(path)
     audit = _full_audit_curves(reports["audit"])
-    keys = {loc.sample_key: loc.physical_peak_key for loc in curves.locations}
+    keys = {loc.raw_stem: loc.physical_peak_key for loc in curves.locations}
     traces = bundle.transitions[0].traces
     assert {trace.sample_id for trace in traces} == {"S1", "S2"}
     for trace in traces:
@@ -142,7 +142,7 @@ def test_saved_curves_stay_with_their_own_cell(tmp_path):
     matrix = tmp_path / "matrix.tsv"
     matrix.write_text("saved matrix", encoding="utf-8")
     report = tmp_path / "review.sqlite"
-    samples = [{"sample_key": s, "sample_stem": s} for s in ("S1", "S2", "S3")]
+    samples = [{"raw_stem": s, "sample_label": s} for s in ("S1", "S2", "S3")]
     saved = {
         "S1": ((7.9, 8.0, 8.1), (10.0, 30.0, 10.0)),
         "S2": ((8.0, 8.1, 8.2, 8.3), (5.0, 50.0, 40.0, 5.0)),
@@ -164,7 +164,7 @@ def test_saved_curves_stay_with_their_own_cell(tmp_path):
             "G1",
             [
                 {
-                    "sample_key": sid,
+                    "raw_stem": sid,
                     "variant": "numeric" if sid in saved else "unavailable",
                     "value": 100.0 if sid in saved else None,
                     "apex_rt_min": {"S1": 8.0, "S2": 8.1}.get(sid),
@@ -190,7 +190,7 @@ def test_saved_curves_stay_with_their_own_cell(tmp_path):
 
     curves = read_review_curves(report, feature_id="G1")
 
-    assert {loc.sample_key: loc.curve for loc in curves.locations} == {
+    assert {loc.raw_stem: loc.curve for loc in curves.locations} == {
         **saved,
         "S3": None,
     }
@@ -485,7 +485,7 @@ def test_a_row_reads_every_row_at_its_mz_once_per_raw(tmp_path, monkeypatch):
     )
     curves = read_review_curves(report, feature_id="G1")
     assert {
-        (peak.feature_id, peak.sample_key, peak.apex_rt_min)
+        (peak.feature_id, peak.raw_stem, peak.apex_rt_min)
         for peak in curves.same_mz_peaks
     } == {("G1", "S1", 7.9), ("G1", "S2", 8.1), ("G1", "S3", 8.0), ("G2", "S2", 11.0)}
 

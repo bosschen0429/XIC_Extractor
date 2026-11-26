@@ -41,7 +41,7 @@ def test_worker_job_and_result_objects_are_pickleable(tmp_path: Path) -> None:
 
     result = RawFileExtractionResult(
         raw_index=3,
-        sample_name="SampleA",
+        raw_stem="SampleA",
         file_result=None,
         diagnostics=[],
     )
@@ -55,11 +55,11 @@ def test_aggregation_sorts_successful_results_by_raw_index(tmp_path: Path) -> No
 
     result_b = RawFileExtractionResult(
         raw_index=2,
-        sample_name="B",
+        raw_stem="B",
         file_result=None,
         diagnostics=[],
     )
-    result_a = replace(result_b, raw_index=1, sample_name="A")
+    result_a = replace(result_b, raw_index=1, raw_stem="A")
 
     assert collect_ordered_results([result_b, result_a]) == [result_a, result_b]
 
@@ -126,14 +126,14 @@ def test_parallel_full_extraction_submits_pickleable_scoring_jobs_and_sorts(
         return [
             RawFileExtractionResult(
                 raw_index=2,
-                sample_name="B",
-                file_result=FileResult(sample_name="B", results={}),
+                raw_stem="B",
+                file_result=FileResult(raw_stem="B", results={}),
                 diagnostics=[DiagnosticRecord("B", "Analyte", "B_DIAG", "kept")],
             ),
             RawFileExtractionResult(
                 raw_index=1,
-                sample_name="A",
-                file_result=FileResult(sample_name="A", results={}),
+                raw_stem="A",
+                file_result=FileResult(raw_stem="A", results={}),
                 diagnostics=[DiagnosticRecord("A", "Analyte", "A_DIAG", "kept")],
             ),
         ]
@@ -149,7 +149,7 @@ def test_parallel_full_extraction_submits_pickleable_scoring_jobs_and_sorts(
         (1, "A.raw"),
         (2, "B.raw"),
     ]
-    assert [result.sample_name for result in ordered] == ["A", "B"]
+    assert [result.raw_stem for result in ordered] == ["A", "B"]
     assert ordered[0].diagnostics[0].issue == "A_DIAG"
     assert not hasattr(ordered[1], "score_breakdown_rows")
 
@@ -218,8 +218,8 @@ def test_raw_worker_rebuilds_scoring_factory_inside_worker(
 
         return RawFileExtractionResult(
             raw_index=raw_index,
-            sample_name=raw_path_arg.stem,
-            file_result=FileResult(sample_name=raw_path_arg.stem, results={}),
+            raw_stem=raw_path_arg.stem,
+            file_result=FileResult(raw_stem=raw_path_arg.stem, results={}),
             diagnostics=[],
         )
 

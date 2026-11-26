@@ -68,25 +68,25 @@ def build_processing_identity_no_raw_fixture(
         )
     sources: dict[str, AcquisitionSourceIdentity] = {}
     metadata = []
-    for sample_stem in sample_stems:
-        source_path = tmp_path / f"{sample_stem}.synthetic"
+    for raw_stem in sample_stems:
+        source_path = tmp_path / f"{raw_stem}.synthetic"
         source_path.write_bytes(
-            f"processing-identity-no-raw:{sample_stem}".encode("utf-8")
+            f"processing-identity-no-raw:{raw_stem}".encode("utf-8")
         )
-        sources[sample_stem] = build_acquisition_source_identity(
+        sources[raw_stem] = build_acquisition_source_identity(
             source_path,
             acquisition_format="synthetic_no_raw",
-            observation_namespace=f"synthetic:{sample_stem}",
+            observation_namespace=f"synthetic:{raw_stem}",
         )
         metadata.append(
             SampleMetadata(
-                sample_name=sample_stem,
-                raw_stem=sample_stem,
-                sample_role=declared_roles.get(sample_stem, "unknown"),
-                excluded=sample_stem in excluded_samples,
+                sample_label=raw_stem,
+                raw_stem=raw_stem,
+                sample_role=declared_roles.get(raw_stem, "unknown"),
+                excluded=raw_stem in excluded_samples,
                 exclusion_reason=(
                     "synthetic fixture exclusion"
-                    if sample_stem in excluded_samples
+                    if raw_stem in excluded_samples
                     else ""
                 ),
             )

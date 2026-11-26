@@ -67,7 +67,7 @@ def test_build_extraction_result_retains_unscored_peak() -> None:
     selected = selected_peak_hypothesis(
         build_production_peak_hypotheses(
             config=_Config(),
-            sample_name="SampleA",
+            raw_stem="SampleA",
             target=target,
             peak_result=peak_result,
         )
@@ -112,7 +112,7 @@ def test_build_extraction_result_uses_typed_evidence_reason() -> None:
     selected = selected_peak_hypothesis(
         build_production_peak_hypotheses(
             config=_Config(),
-            sample_name="SampleA",
+            raw_stem="SampleA",
             target=target,
             peak_result=peak_result,
         )
@@ -249,7 +249,7 @@ def test_build_extraction_result_adds_targeted_product_projection() -> None:
     selected = selected_peak_hypothesis(
         build_production_peak_hypotheses(
             config=_Config(),
-            sample_name="SampleA",
+            raw_stem="SampleA",
             target=target,
             peak_result=peak_result,
             candidate_ms2_evidence={candidate: _ms2_evidence()},
@@ -710,7 +710,7 @@ def test_istd_raw_hard_quality_flag_with_product_support_stays_counted() -> None
 def test_strict_nl_analyte_does_not_treat_rt_prior_as_review() -> None:
     result = _result_with_targeted_projection_semantics(
         target=_target(),
-        sample_name="STDS",
+        raw_stem="STDS",
         support_reasons=("ms1_coherent", "candidate_aligned_ms2_nl"),
         conflict_reasons=("targeted_rt_conflict",),
     )
@@ -723,18 +723,18 @@ def test_strict_nl_analyte_does_not_treat_rt_prior_as_review() -> None:
 
 
 @pytest.mark.parametrize(
-    "sample_name", ["EC013_2", "U00001ZBEE", "QC1", "Tumor_DNA", "Tumor_RNA"]
+    "raw_stem", ["EC013_2", "U00001ZBEE", "QC1", "Tumor_DNA", "Tumor_RNA"]
 )
 @pytest.mark.parametrize("neutral_loss_da", [116.0474, 132.0423, 146.0579, 162.0528])
 def test_targeted_configured_targets_ignore_sample_name(
-    sample_name, neutral_loss_da
+    raw_stem, neutral_loss_da
 ) -> None:
     result = _result_with_targeted_projection_semantics(
         target=replace(
             _target(),
             neutral_loss_da=neutral_loss_da,
         ),
-        sample_name=sample_name,
+        raw_stem=raw_stem,
         support_reasons=("ms1_coherent", "candidate_aligned_ms2_nl"),
         conflict_reasons=(),
     )
@@ -814,7 +814,7 @@ def _peak_result_with_candidate() -> PeakDetectionResult:
 def _result_with_targeted_projection_semantics(
     *,
     target: Target,
-    sample_name: str = "SampleA",
+    raw_stem: str = "SampleA",
     support_reasons: tuple[str, ...],
     conflict_reasons: tuple[str, ...],
     reason: str = "decision: accepted",
@@ -847,8 +847,8 @@ def _result_with_targeted_projection_semantics(
         paired_istd_anchor_rt=paired_istd_anchor_rt,
     )
     selected = PeakHypothesis(
-        hypothesis_id=f"{sample_name}|{target.label}|selected",
-        trace_group_id=f"{sample_name}|{target.label}|targeted",
+        hypothesis_id=f"{raw_stem}|{target.label}|selected",
+        trace_group_id=f"{raw_stem}|{target.label}|targeted",
         target_label=target.label,
         role="ISTD" if target.is_istd else "Analyte",
         istd_pair=target.istd_pair,
@@ -904,7 +904,7 @@ def _result_with_targeted_projection_semantics(
         scoring_context_builder=None,
         selected_hypothesis=selected,
         physical_evaluation=physical_evaluation,
-        sample_name=sample_name,
+        raw_stem=raw_stem,
         cid_nl_relations=_method_relations(target, candidate, nl_status),
         selected_cid_nl_candidate_index=0,
     )

@@ -529,9 +529,7 @@ def _prepare_selection(
 
     summary_samples = summary.get("samples", [])
     colors = group_colors(s["group"] for s in summary_samples if "group" in s)
-    universe_sample_ids = {
-        s["sample_key"] for s in summary_samples if "sample_key" in s
-    }
+    universe_sample_ids = {s["raw_stem"] for s in summary_samples if "raw_stem" in s}
 
     if not selection.sample_ids:
         normalized_sample_ids = tuple(sorted(universe_sample_ids))
@@ -673,8 +671,8 @@ def _prepare_selection(
         },
         "samples": [
             {
-                "id": s["sample_key"],
-                "label": s.get("sample_stem", s["sample_key"]),
+                "id": s["raw_stem"],
+                "label": s.get("sample_label", s["raw_stem"]),
                 **(
                     {"group": s["group"], "group_color": colors[s["group"]]}
                     if "group" in s
@@ -682,7 +680,7 @@ def _prepare_selection(
                 ),
             }
             for s in summary_samples
-            if s.get("sample_key") in normalized_set
+            if s.get("raw_stem") in normalized_set
         ],
         "items": rendered_items,
     }

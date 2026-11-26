@@ -10,7 +10,7 @@ from xic_extractor.alignment.ownership_models import (
 
 
 def _owner(
-    sample_stem: str,
+    raw_stem: str,
     *,
     neutral_loss_tag: str = "DNA_dR",
     precursor_mz: float = 250.0,
@@ -24,9 +24,9 @@ def _owner(
     support_seed_rt: float | None = None,
 ) -> SampleLocalMS1Owner:
     primary = IdentityEvent(
-        candidate_id=f"{sample_stem}#primary",
-        sample_stem=sample_stem,
-        raw_file=f"{sample_stem}.raw",
+        candidate_id=f"{raw_stem}#primary",
+        raw_stem=raw_stem,
+        raw_file=f"{raw_stem}.raw",
         neutral_loss_tag=neutral_loss_tag,
         precursor_mz=precursor_mz,
         product_mz=product_mz,
@@ -39,9 +39,9 @@ def _owner(
     if support_seed_rt is not None:
         support = (
             IdentityEvent(
-                candidate_id=f"{sample_stem}#support",
-                sample_stem=sample_stem,
-                raw_file=f"{sample_stem}.raw",
+                candidate_id=f"{raw_stem}#support",
+                raw_stem=raw_stem,
+                raw_file=f"{raw_stem}.raw",
                 neutral_loss_tag=neutral_loss_tag,
                 precursor_mz=precursor_mz,
                 product_mz=product_mz,
@@ -52,9 +52,9 @@ def _owner(
             ),
         )
     return SampleLocalMS1Owner(
-        owner_id=f"OWN-{sample_stem}",
-        sample_stem=sample_stem,
-        raw_file=f"{sample_stem}.raw",
+        owner_id=f"OWN-{raw_stem}",
+        raw_stem=raw_stem,
+        raw_file=f"{raw_stem}.raw",
         peak=measured_peak(
             mz=precursor_mz,
             apex_rt=owner_apex_rt,

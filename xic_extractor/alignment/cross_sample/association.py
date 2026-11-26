@@ -161,11 +161,11 @@ def _associate_position(
             successor,
             resolution,
         )
-    sample_id = position.sample.sample_name
+    raw_stem = position.sample.raw_stem
     matching_members = tuple(
         member
         for member in position.group.member_subjects
-        if member.sample_key == sample_id
+        if member.raw_stem == raw_stem
     )
     if len(matching_members) != 1:
         raise CrossSampleAssociationContractError(

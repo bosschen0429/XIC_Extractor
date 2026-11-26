@@ -89,7 +89,7 @@ class ReviewNlMethod:
 @dataclass(frozen=True)
 class ReviewCandidate:
     candidate_id: str
-    sample_stem: str
+    raw_stem: str
     method_label: str
     pattern_id: str
     status: str
@@ -142,7 +142,7 @@ def write_delta_mass_nl_summary(review: DeltaMassReview, path: Path) -> None:
             )
             rows.append(
                 {
-                    "sample_stem": candidate.sample_stem,
+                    "sample_stem": candidate.raw_stem,
                     "candidate_id": candidate.candidate_id,
                     "base_mz": candidate.base_mz,
                     "base_rt_apex_min": candidate.base_rt_apex_min,

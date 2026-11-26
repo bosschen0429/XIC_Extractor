@@ -89,8 +89,8 @@ class RetainedGroupingCandidate:
         return None
 
     @property
-    def sample_key(self) -> str:
-        return self.sample.sample_name
+    def raw_stem(self) -> str:
+        return self.sample.raw_stem
 
     @property
     def peak_hypothesis_id(self) -> str:
@@ -145,7 +145,7 @@ def bootstrap_cid_nl_initial_population(
     retained_by_assessment = dict(retained_hypotheses_by_assessment or {})
     consumed_retained_assessments: set[CidNlMethodAssessment] = set()
     for sample, assessment in sample_assessments:
-        sample_id = sample.sample_name
+        raw_stem = sample.raw_stem
         retained_hypotheses = retained_by_assessment.get(assessment, ())
         if assessment in retained_by_assessment:
             consumed_retained_assessments.add(assessment)
@@ -157,16 +157,16 @@ def bootstrap_cid_nl_initial_population(
                 assessment=assessment,
             )
         )
-        existing = hypotheses_by_sample.get(sample_id, ())
+        existing = hypotheses_by_sample.get(raw_stem, ())
         known = {hypothesis.hypothesis_id for hypothesis in existing}
-        hypotheses_by_sample[sample_id] = existing + tuple(
+        hypotheses_by_sample[raw_stem] = existing + tuple(
             hypothesis
             for hypothesis in hypotheses
             if hypothesis.hypothesis_id not in known
         )
         for hypothesis in hypotheses:
             assessment_by_hypothesis.setdefault(hypothesis.hypothesis_id, assessment)
-        sample_by_id[sample_id] = sample
+        sample_by_id[raw_stem] = sample
     if consumed_retained_assessments != set(retained_by_assessment):
         raise GroupingBootstrapError(
             "retained hypotheses reference an assessment outside the bootstrap input"
@@ -176,9 +176,9 @@ def bootstrap_cid_nl_initial_population(
         for hypotheses in hypotheses_by_sample.values()
         for hypothesis in hypotheses
     )
-    for sample_id in sorted(hypotheses_by_sample):
-        sample = sample_by_id[sample_id]
-        hypotheses = hypotheses_by_sample[sample_id]
+    for raw_stem in sorted(hypotheses_by_sample):
+        sample = sample_by_id[raw_stem]
+        hypotheses = hypotheses_by_sample[raw_stem]
         for hypothesis in hypotheses:
             assessment = assessment_by_hypothesis[hypothesis.hypothesis_id]
             if hypothesis.method == HYPOTHESIS_METHOD_DDA_CID_NL:
@@ -189,7 +189,7 @@ def bootstrap_cid_nl_initial_population(
                 )
                 owners.append(owner)
                 if places_sample_on_rt_frame(owner):
-                    anchor_samples.add(owner.sample_stem)
+                    anchor_samples.add(owner.raw_stem)
             else:
                 owners.append(
                     owner_from_ms1_observation_hypothesis(
@@ -260,8 +260,8 @@ def bootstrap_cid_nl_initial_population(
         )
     hypotheses = tuple(
         hypothesis
-        for sample_id in sorted(hypotheses_by_sample)
-        for hypothesis in hypotheses_by_sample[sample_id]
+        for raw_stem in sorted(hypotheses_by_sample)
+        for hypothesis in hypotheses_by_sample[raw_stem]
     )
     method_subject_intervals = tuple(
         cid_nl_method_subject_resolver_interval(subject) for subject in method_subjects
@@ -300,12 +300,12 @@ def bootstrap_cid_nl_initial_population(
     )
     retained_candidates = tuple(
         RetainedGroupingCandidate(
-            sample=sample_by_id[sample_id],
+            sample=sample_by_id[raw_stem],
             peak_hypothesis=hypothesis,
             assessment=assessment_by_hypothesis[hypothesis.hypothesis_id],
         )
-        for sample_id in sorted(hypotheses_by_sample)
-        for hypothesis in hypotheses_by_sample[sample_id]
+        for raw_stem in sorted(hypotheses_by_sample)
+        for hypothesis in hypotheses_by_sample[raw_stem]
     )
     return grouping_scope, retained_candidates, rt_frame
 

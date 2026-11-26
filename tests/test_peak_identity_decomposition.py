@@ -61,7 +61,7 @@ def test_one_ms1_observation_can_have_distinct_workflow_hypotheses() -> None:
 
     targeted = build_peak_hypotheses(
         analysis_mode="targeted",
-        sample_name="SampleA",
+        raw_stem="SampleA",
         target_label="KnownAnalyte",
         role="Analyte",
         istd_pair="",
@@ -70,7 +70,7 @@ def test_one_ms1_observation_can_have_distinct_workflow_hypotheses() -> None:
     )[0]
     untargeted_context = build_peak_hypotheses(
         analysis_mode="untargeted",
-        sample_name="SampleA",
+        raw_stem="SampleA",
         target_label="UnknownFeature",
         role="",
         istd_pair="",
@@ -99,7 +99,7 @@ def test_ms2_evidence_changes_without_changing_ms1_integration_or_id() -> None:
 
     supported = build_peak_hypotheses(
         analysis_mode="targeted",
-        sample_name="SampleA",
+        raw_stem="SampleA",
         target_label="KnownAnalyte",
         role="Analyte",
         istd_pair="",
@@ -109,7 +109,7 @@ def test_ms2_evidence_changes_without_changing_ms1_integration_or_id() -> None:
     )[0]
     unsupported = build_peak_hypotheses(
         analysis_mode="targeted",
-        sample_name="SampleA",
+        raw_stem="SampleA",
         target_label="KnownAnalyte",
         role="Analyte",
         istd_pair="",
@@ -167,7 +167,7 @@ def test_cid_nl_seed_changes_ms1_generation_window_before_peak_evaluation() -> N
 
 def _trace() -> Trace:
     return Trace.from_arrays(
-        sample_name="SampleA",
+        raw_stem="SampleA",
         mz=500.0,
         rt=[7.8, 7.9, 8.0, 8.1, 8.2],
         intensity=[0.0, 50.0, 500.0, 50.0, 0.0],
@@ -228,7 +228,7 @@ def _ms2_evidence(*, nl_match: bool) -> CandidateMS2Evidence:
 
 def _ms1_trace_probe(trace: Trace) -> tuple[object, ...]:
     return (
-        trace.sample_name,
+        trace.raw_stem,
         trace.mz,
         tuple(trace.rt.tolist()),
         tuple(trace.intensity.tolist()),
@@ -252,7 +252,7 @@ def _discovery_settings(*, ms1_search_padding_min: float) -> DiscoverySettings:
 def _seed(*, scan_number: int, rt: float) -> DiscoveryEvent:
     return DiscoveryEvent(
         raw_file=_RAW_FILE,
-        sample_stem="SampleA",
+        raw_stem="SampleA",
         scan_number=scan_number,
         rt=rt,
         precursor_mz=500.0,

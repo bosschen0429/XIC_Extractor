@@ -285,7 +285,7 @@ def write_grouping_result(
                 "group_id": group.group_hypothesis_id,
                 "mz": group.group_center_mz,
                 "rt": group.group_center_rt,
-                "sample_count": len({owner.sample_stem for owner in group.owners}),
+                "sample_count": len({owner.raw_stem for owner in group.owners}),
                 "disposition": group.disposition,
                 "basis": basis.basis if basis else "",
                 "reason": basis.reason if basis else "",
@@ -312,7 +312,7 @@ def write_grouping_result(
                     "candidate_ids": "|".join(
                         inputs.candidate_ids_by_owner.get(owner.owner_id, ())
                     ),
-                    "sample_stem": owner.sample_stem,
+                    "sample_stem": owner.raw_stem,
                     "mz": repr(float(owner.peak.mz)),
                     "observed_rt": repr(float(owner.peak.rt_apex_min)),
                     "comparison_rt": comparison_rt,
@@ -330,7 +330,7 @@ def write_grouping_result(
                 changes.append(
                     {
                         "owner_id": owner.owner_id,
-                        "sample_stem": owner.sample_stem,
+                        "sample_stem": owner.raw_stem,
                         "mz": owner.peak.mz,
                         "observed_rt": owner.peak.rt_apex_min,
                         "before_group": old_group,
@@ -343,6 +343,7 @@ def write_grouping_result(
                 )
         for decision in group.inference_decisions:
             fields = asdict(decision)
+            fields["sample_stem"] = fields.pop("raw_stem")
             risk = fields.pop("accepted_risk")
             fields["accepted_risk_json"] = (
                 json.dumps(risk, ensure_ascii=False, allow_nan=False)

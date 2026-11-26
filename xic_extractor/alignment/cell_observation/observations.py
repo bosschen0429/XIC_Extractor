@@ -68,15 +68,15 @@ class FinalGroupCellObservation:
     @property
     def key(self) -> tuple[CrossSamplePeakGroupHypothesis, str]:
         """The actual final group and the sample's natural key."""
-        return self.group, self.sample_key
+        return self.group, self.raw_stem
 
     @property
     def group_hypothesis_id(self) -> str:
         return self.group.group_hypothesis_id
 
     @property
-    def sample_key(self) -> str:
-        return self.canonical_sample.sample_name
+    def raw_stem(self) -> str:
+        return self.canonical_sample.raw_stem
 
     @property
     def evidence_state(self) -> FinalCellEvidenceAggregate:
@@ -241,7 +241,7 @@ def _compose_final_group_cell_observation_population(
     for backfill_ref in backfill_cells:
         key = (
             backfill_ref.group_hypothesis_id,
-            backfill_ref.sample_key,
+            backfill_ref.raw_stem,
         )
         if key in backfilled_by_key:
             raise CellObservationContractError("duplicate completed backfill cell")
@@ -264,7 +264,7 @@ def _compose_final_group_cell_observation_population(
             )
             states: tuple[FinalCellEvidenceState, ...]
             recovered = backfilled_by_key.pop(
-                (group.group_hypothesis_id, sample.sample_name), None
+                (group.group_hypothesis_id, sample.raw_stem), None
             )
             if recovered is not None:
                 if len(associations) != 1 or recovered.group_context.group != group:
@@ -276,7 +276,7 @@ def _compose_final_group_cell_observation_population(
                     raise CellObservationContractError(
                         "backfill changed original group membership"
                     )
-                if _member_for_sample(predecessor, sample.sample_name) is not None:
+                if _member_for_sample(predecessor, sample.raw_stem) is not None:
                     raise CellObservationContractError(
                         "backfill cannot replace an existing sample member"
                     )
@@ -324,11 +324,11 @@ def _derive_lane_evidence_state(
     source_group = source_cell.group_context.group
     source_member = _member_for_sample(
         source_group,
-        association.position.sample.sample_name,
+        association.position.sample.raw_stem,
     )
     final_member = _member_for_sample(
         final_group,
-        canonical_sample.sample_name,
+        canonical_sample.raw_stem,
     )
     if source_member is not None and source_member not in final_group.member_subjects:
         raise CellObservationContractError(
@@ -395,10 +395,10 @@ def _derive_lane_evidence_state(
 
 def _member_for_sample(
     group: CrossSamplePeakGroupHypothesis,
-    sample_key: str,
+    raw_stem: str,
 ) -> CrossSampleGroupMemberSubject | None:
     matches = tuple(
-        member for member in group.member_subjects if member.sample_key == sample_key
+        member for member in group.member_subjects if member.raw_stem == raw_stem
     )
     if len(matches) > 1:
         raise CellObservationContractError(
@@ -410,7 +410,7 @@ def _member_for_sample(
 def _final_cell_sort_key(
     cell: FinalGroupCellObservation,
 ) -> tuple[str, str]:
-    return cell.group_hypothesis_id, cell.sample_key
+    return cell.group_hypothesis_id, cell.raw_stem
 
 
 __all__ = [

@@ -469,7 +469,7 @@
   const color=id=>(mode==='offline'&&sample(id)?.group_color)||colors[(sampleColors.get(id)??0)%colors.length];
   const itemRows=item=>Array.isArray(item.samples)?item.samples:[];
   const witnesses=item=>Array.isArray(item.witnesses)?item.witnesses:(Array.isArray(item.candidates)?item.candidates:[]);
-  const candidateId=w=>w?.candidate_id||w?.id||'', witnessSample=w=>w?.sample_key||w?.sample_id||'';
+  const candidateId=w=>w?.candidate_id||w?.id||'', witnessSample=w=>w?.raw_stem||w?.sample_id||'';
   const records=item=>Array.isArray(item?.details?.readable_records)?item.details.readable_records:[];
   const itemName=item=>`項目 ${String(items.indexOf(item)+1).padStart(2,'0')}`;
   const itemTitle=item=>item.title||'已記錄的結果';
@@ -542,7 +542,7 @@
       const curves=refs.length?all.filter(c=>refs.includes(c.evidence_ref)):['group','row'].includes(item.kind)?[]:all;
       byId.set(id,{id,sid,label:sampleName(sid),row,order:finite(order)?order:null,curves});};
     (item.relationship_members||[]).forEach(m=>add(m.subject_id,m.sample_id,m.sample_label));
-    if(!byId.size)rows.forEach(r=>add(r.sample_id,r.sample_id,r.sample_stem||sampleName(r.sample_id)));
+    if(!byId.size)rows.forEach(r=>add(r.sample_id,r.sample_id,r.sample_label||sampleName(r.sample_id)));
     const nodes=[...byId.values()].sort((a,b)=>(a.order===null)-(b.order===null)||(a.order??0)-(b.order??0));
     return {nodes};
   }
@@ -1151,7 +1151,7 @@
   function sameMzSamples(item){
     const m=item.same_mz;if(!sameMzOpen.has(item.id))sameMzOpen.set(item.id,[...m.expanded]);return sameMzOpen.get(item.id);
   }
-  function sameMzLabel(m,sid){return sampleById.has(sid)?sampleName(sid):(m.points.find(p=>p.sample_key===sid)?.sample_stem||sid);}
+  function sameMzLabel(m,sid){return sampleById.has(sid)?sampleName(sid):(m.points.find(p=>p.raw_stem===sid)?.sample_label||sid);}
   const sameMzRowTag=id=>String(id).replace(/^[A-Za-z]+0*/,'')||id;
   function sameMzOverview(item){
     const m=item.same_mz,clickable=Object.keys(m.curves).length>0,open=new Set(sameMzSamples(item)),far=new Set(m.far.map(f=>f.sample_id));
@@ -1166,11 +1166,11 @@
     svg+=`<text x="${L}" y="${H-6}" font-size="12" class="plot-label">注射順序 →</text>`;
     const own=p=>p.feature_id===m.row;
     [...pts.filter(p=>!own(p)),...pts.filter(own)].forEach(p=>{
-      const cx=x(p.injection_order),cy=y(p.aligned_apex_rt_min),circled=own(p)&&far.has(p.sample_key);
+      const cx=x(p.injection_order),cy=y(p.aligned_apex_rt_min),circled=own(p)&&far.has(p.raw_stem);
       const mark=own(p)?`<circle cx="${cx}" cy="${cy}" r="3.4" fill="var(--accent)"/>`:`<circle cx="${cx}" cy="${cy}" r="2.4" fill="var(--subtle)" opacity=".35"/>`;
-      const ring=circled?`<circle cx="${cx}" cy="${cy}" r="7" fill="none" stroke="var(--warn)" stroke-width="${open.has(p.sample_key)?2.2:1.3}"/>`:'';
+      const ring=circled?`<circle cx="${cx}" cy="${cy}" r="7" fill="none" stroke="var(--warn)" stroke-width="${open.has(p.raw_stem)?2.2:1.3}"/>`:'';
       const hit=clickable?`<circle cx="${cx}" cy="${cy}" r="8" fill="transparent"/>`:'';
-      svg+=`<g ${clickable?`data-same-mz-sample="${esc(p.sample_key)}" style="cursor:pointer"`:''} data-same-mz-row="${esc(p.feature_id)}" data-same-mz-far="${circled}">${ring}${mark}${hit}<title>${esc(sameMzLabel(m,p.sample_key))} · ${esc(p.feature_id)} · 順序 ${p.injection_order} · ${rt(p.aligned_apex_rt_min)} min</title></g>`;
+      svg+=`<g ${clickable?`data-same-mz-sample="${esc(p.raw_stem)}" style="cursor:pointer"`:''} data-same-mz-row="${esc(p.feature_id)}" data-same-mz-far="${circled}">${ring}${mark}${hit}<title>${esc(sameMzLabel(m,p.raw_stem))} · ${esc(p.feature_id)} · 順序 ${p.injection_order} · ${rt(p.aligned_apex_rt_min)} min</title></g>`;
     });
     return `<svg role="img" aria-label="注射順序對校正峰頂 RT" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">${svg}</svg>`;
   }
@@ -1185,7 +1185,7 @@
     const points=c.rts.map((v,i)=>v>=lo&&v<=hi&&finite(ys[i])?`${x(v).toFixed(1)},${y(ys[i]).toFixed(1)}`:'').filter(Boolean).join(' ');
     svg+=`<polyline fill="none" stroke="var(--muted)" stroke-width="1.2" points="${points}"/>`;
     const lanes=[];
-    m.points.filter(p=>p.sample_key===sid).sort((a,b)=>a.apex_rt_min-b.apex_rt_min).forEach(p=>{
+    m.points.filter(p=>p.raw_stem===sid).sort((a,b)=>a.apex_rt_min-b.apex_rt_min).forEach(p=>{
       const own=p.feature_id===m.row,stroke=own?'var(--accent)':'var(--subtle)',px=x(p.apex_rt_min);
       let lane=lanes.findIndex(end=>px-end>34);if(lane<0)lane=Math.min(lanes.length,1);lanes[lane]=px;
       svg+=`<g data-same-mz-peak="${esc(p.feature_id)}"><line x1="${px}" x2="${px}" y1="${T-2-lane*11}" y2="${T+IH}" stroke="${stroke}" stroke-width="${own?1.8:1}" stroke-dasharray="${own?'':'2 3'}"/><text x="${px}" y="${T-5-lane*11}" text-anchor="middle" font-size="11" fill="${stroke}">${esc(sameMzRowTag(p.feature_id))}</text><title>${esc(p.feature_id)} ${rt(p.apex_rt_min)} min</title></g>`;

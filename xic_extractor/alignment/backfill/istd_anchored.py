@@ -79,9 +79,9 @@ def resolve_istd_anchored_backfill(
     """
 
     assessment_by_sample = {
-        sample.sample_name: assessment for sample, assessment in sample_assessments
+        sample.raw_stem: assessment for sample, assessment in sample_assessments
     }
-    sample_by_id = {sample.sample_name: sample for sample in sample_population}
+    sample_by_id = {sample.raw_stem: sample for sample in sample_population}
     owners = tuple(
         owner_from_cid_nl_assessment_support(
             sample=support.sample,
@@ -111,7 +111,7 @@ def resolve_istd_anchored_backfill(
     )
     paired_observations = tuple(paired_istd_observations()) if plans else ()
     pair_rts = {
-        sample_by_id[peak.sample_key].raw_stem: peak.rt_apex_min
+        sample_by_id[peak.raw_stem].raw_stem: peak.rt_apex_min
         for peak in paired_observations
     }
     decisions: list[ConservativeBackfillCellDecision] = []
@@ -121,14 +121,14 @@ def resolve_istd_anchored_backfill(
             supports=tuple(
                 sorted(
                     direct_supports,
-                    key=lambda support: support.sample.sample_name,
+                    key=lambda support: support.sample.raw_stem,
                 )
             ),
             config=alignment_config,
             rt_frame=rt_frame,
         )
         direct_by_sample = {
-            support.sample.sample_name: support for support in direct_supports
+            support.sample.raw_stem: support for support in direct_supports
         }
         cells = tuple(
             mint_cell_observation(
@@ -137,18 +137,18 @@ def resolve_istd_anchored_backfill(
                 group_context=group_context,
                 method_assessment=assessment,
                 peak_observation=(
-                    direct_by_sample[sample.sample_name].hypothesis.peak
-                    if sample.sample_name in direct_by_sample
+                    direct_by_sample[sample.raw_stem].hypothesis.peak
+                    if sample.raw_stem in direct_by_sample
                     else None
                 ),
                 peak_hypothesis=(
-                    direct_by_sample[sample.sample_name].hypothesis
-                    if sample.sample_name in direct_by_sample
+                    direct_by_sample[sample.raw_stem].hypothesis
+                    if sample.raw_stem in direct_by_sample
                     else None
                 ),
                 unassigned_support=(
                     assessment.method_result == "SUPPORT"
-                    and sample.sample_name not in direct_by_sample
+                    and sample.raw_stem not in direct_by_sample
                 ),
             )
             for sample, assessment in sample_assessments
@@ -172,9 +172,7 @@ def resolve_istd_anchored_backfill(
             else trajectory.paired_istd_locations
         )
         locations = locate_missing(
-            tuple(
-                sample_by_id[sample_id].raw_stem for sample_id in sorted(missing_ids)
-            ),
+            tuple(sample_by_id[raw_stem].raw_stem for raw_stem in sorted(missing_ids)),
             reference_samples=frozenset(
                 support.sample.raw_stem for support in direct_supports
             ),
@@ -182,9 +180,9 @@ def resolve_istd_anchored_backfill(
             backfill_half_window_min=rt_half_window_min,
             paired_istd_rts=pair_rts,
         )
-        for sample_id in sorted(missing_ids):
-            sample = sample_by_id[sample_id]
-            if assessment_by_sample[sample_id].method_result != "HOLD":
+        for raw_stem in sorted(missing_ids):
+            sample = sample_by_id[raw_stem]
+            if assessment_by_sample[raw_stem].method_result != "HOLD":
                 continue
             location = locations.get(sample.raw_stem)
             if location is None:
@@ -192,7 +190,7 @@ def resolve_istd_anchored_backfill(
             universe = mint_conservative_backfill_candidate_universe(
                 sample=sample,
                 group_facts=(facts,),
-                candidate_assessment=assessment_by_sample[sample_id],
+                candidate_assessment=assessment_by_sample[raw_stem],
                 localization=location,
                 localization_sources=paired_observations,
             )
@@ -204,7 +202,7 @@ def resolve_istd_anchored_backfill(
                 )
             )
     recovery_observations = {
-        decision.target_cell.sample_key: (decision.matched_candidate.peak_observation)
+        decision.target_cell.raw_stem: (decision.matched_candidate.peak_observation)
         for decision in decisions
         if decision.matched_candidate is not None
     }

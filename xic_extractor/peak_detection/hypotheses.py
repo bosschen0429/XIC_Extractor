@@ -113,13 +113,13 @@ class PeakHypothesis:
 
 def hypothesis_audit_id(
     *,
-    sample_name: str,
+    raw_stem: str,
     target_label: str,
     candidate: PeakCandidate,
 ) -> str:
     return "|".join(
         (
-            sample_name,
+            raw_stem,
             target_label,
             _join(candidate.proposal_sources),
             _format_float(candidate.selection_apex_rt, digits=5),
@@ -132,7 +132,7 @@ def hypothesis_audit_id(
 def build_peak_hypotheses(
     *,
     analysis_mode: AnalysisMode,
-    sample_name: str,
+    raw_stem: str,
     target_label: str,
     role: str,
     istd_pair: str,
@@ -169,14 +169,14 @@ def build_peak_hypotheses(
         hypotheses.append(
             PeakHypothesis(
                 hypothesis_id=hypothesis_audit_id(
-                    sample_name=sample_name,
+                    raw_stem=raw_stem,
                     target_label=target_label,
                     candidate=candidate,
                 ),
                 trace_group_id=trace_group.trace_group_id
                 if trace_group is not None
                 else _trace_group_id(
-                    sample_name=sample_name,
+                    raw_stem=raw_stem,
                     target_label=target_label,
                 ),
                 target_label=target_label,
@@ -222,10 +222,10 @@ def build_peak_hypotheses(
 
 def _trace_group_id(
     *,
-    sample_name: str,
+    raw_stem: str,
     target_label: str,
 ) -> str:
-    return "|".join((sample_name, target_label))
+    return "|".join((raw_stem, target_label))
 
 
 def _integration_from_candidate(

@@ -234,7 +234,7 @@ def _build_event(
 ) -> DiscoveryEvent:
     return DiscoveryEvent(
         raw_file=raw_file,
-        sample_stem=raw_file.stem,
+        raw_stem=raw_file.stem,
         scan_number=scan.scan_number,
         rt=scan.rt,
         precursor_mz=precursor_mz,

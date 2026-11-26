@@ -130,7 +130,7 @@ def test_configured_composition_runs_discovery_to_owner_matrix(
         raw_paths=paths,
         sample_metadata=tuple(
             SampleMetadata(
-                sample_name=p.stem,
+                sample_label=p.stem,
                 raw_stem=p.stem,
                 injection_order=i + 1,
                 sample_role="sample",
@@ -182,23 +182,21 @@ def test_configured_composition_runs_discovery_to_owner_matrix(
     cells = tuple(written_cells(writer))
     assert len(cells) == len(paths) * len(rows)
     selected_cells = tuple(
-        (sample_stem, cell)
-        for row, sample_stem, cell in cells
-        if row.destination == "matrix"
+        (raw_stem, cell) for row, raw_stem, cell in cells if row.destination == "matrix"
     )
     if scenario in {"missing", "disjoint"}:
         assert all(
-            cell.value is None for _, sample_stem, cell in cells if sample_stem == "S4"
+            cell.value is None for _, raw_stem, cell in cells if raw_stem == "S4"
         )
         assert all(
             cell.value is not None
-            for sample_stem, cell in selected_cells
-            if sample_stem != "S4"
+            for raw_stem, cell in selected_cells
+            if raw_stem != "S4"
         )
         s4_observed_apexes = {
             peak.integration.rt_apex_min
-            for sample_stem, cell in selected_cells
-            if sample_stem == "S4"
+            for raw_stem, cell in selected_cells
+            if raw_stem == "S4"
             for peak in cell.evidence.ms1_only_group_observations
         }
         if scenario == "missing":
@@ -206,8 +204,8 @@ def test_configured_composition_runs_discovery_to_owner_matrix(
         else:
             observed_apexes = sorted(
                 peak.integration.rt_apex_min
-                for _, sample_stem, cell in cells
-                if sample_stem == "S4"
+                for _, raw_stem, cell in cells
+                if raw_stem == "S4"
                 for peak in cell.evidence.ms1_only_group_observations
             )
             assert observed_apexes == pytest.approx([7.8, 8.3])
@@ -442,7 +440,7 @@ def test_intersection_rechecks_an_observed_peak_outside_the_discovery_window(
             sample_metadata=sample_metadata_for(
                 stems,
                 Late=SampleMetadata(
-                    sample_name="Late",
+                    sample_label="Late",
                     raw_stem="Late",
                     injection_order=seed_count + 1,
                     sample_role=role,

@@ -149,7 +149,7 @@ def test_method_toml_runs_sample_local_cli_to_compatible_csvs(
             == 0
         )
         (candidate,) = read_discovery_peaks_csv(output_dir / "discovery_peaks.csv")
-        assert candidate.sample_stem == sample
+        assert candidate.raw_stem == sample
         assert candidate.matched_tag_names == tuple(name for name, _ in tags)
         assert candidate.neutral_loss_tag == tags[0][0]
         events = _read_csv(output_dir / "discovery_events.csv")
@@ -615,14 +615,14 @@ def test_parallel_batch_preserves_first_failure_and_completed_census(
                 future.set_result(
                     DiscoverySampleProcessError(
                         sample_index=job.sample_index,
-                        sample_stem=job.acquisition_input.raw_path.stem,
+                        raw_stem=job.acquisition_input.raw_path.stem,
                         raw_name=job.acquisition_input.raw_path.name,
                         message="RuntimeError: owner boom",
                         timing_records=(
                             TimingRecord(
                                 stage="discover.failed_worker_partial",
                                 elapsed_sec=0.25,
-                                sample_stem=job.acquisition_input.raw_path.stem,
+                                raw_stem=job.acquisition_input.raw_path.stem,
                                 metrics={},
                             ),
                         ),
@@ -699,7 +699,7 @@ def test_parallel_batch_preserves_every_same_batch_failure(
             future.set_result(
                 DiscoverySampleProcessError(
                     sample_index=job.sample_index,
-                    sample_stem=job.acquisition_input.raw_path.stem,
+                    raw_stem=job.acquisition_input.raw_path.stem,
                     raw_name=job.acquisition_input.raw_path.name,
                     message=f"RuntimeError: owner boom {job.sample_index}",
                 )
@@ -747,7 +747,7 @@ def test_parallel_batch_rejects_error_caller_authored_owner_counts(
             future.set_result(
                 DiscoverySampleProcessError(
                     sample_index=job.sample_index,
-                    sample_stem=job.acquisition_input.raw_path.stem,
+                    raw_stem=job.acquisition_input.raw_path.stem,
                     raw_name=job.acquisition_input.raw_path.name,
                     message="RuntimeError: owner boom",
                     measurement_observations=(
@@ -806,7 +806,7 @@ def test_parallel_batch_projects_typed_error_measurements_and_reduces_raw_open(
             future.set_result(
                 DiscoverySampleProcessError(
                     sample_index=job.sample_index,
-                    sample_stem=job.acquisition_input.raw_path.stem,
+                    raw_stem=job.acquisition_input.raw_path.stem,
                     raw_name=job.acquisition_input.raw_path.name,
                     message="RuntimeError: owner boom",
                     ms1_measurements=measurements,
@@ -870,7 +870,7 @@ def test_parallel_batch_disabled_timing_skips_ipc_serialization(
             future.set_result(
                 DiscoverySampleProcessError(
                     sample_index=job.sample_index,
-                    sample_stem=job.acquisition_input.raw_path.stem,
+                    raw_stem=job.acquisition_input.raw_path.stem,
                     raw_name=job.acquisition_input.raw_path.name,
                     message="RuntimeError: owner boom",
                 )
@@ -1115,20 +1115,20 @@ def test_parallel_batch_failure_preserves_completed_worker_diagnostics(
             if job.sample_index == 0:
                 result: object = DiscoverySampleProcessError(
                     sample_index=0,
-                    sample_stem="sample-0",
+                    raw_stem="sample-0",
                     raw_name="sample-0.raw",
                     message="RuntimeError: owner boom",
                 )
             else:
                 result = DiscoverySampleProcessResult(
                     sample_index=1,
-                    sample_stem="sample-1",
+                    raw_stem="sample-1",
                     publication=cast(Any, None),
                     timing_records=(
                         TimingRecord(
                             stage="discover.worker",
                             elapsed_sec=2.0,
-                            sample_stem="sample-1",
+                            raw_stem="sample-1",
                         ),
                     ),
                     measurement_observations=(
@@ -1430,7 +1430,7 @@ def test_single_raw_pipeline_records_discovery_timing_stages(
         "discover.publish_outputs",
         "discover.write_batch_index",
     }
-    assert records_by_stage["discover.ms2_events"].sample_stem == "Sample"
+    assert records_by_stage["discover.ms2_events"].raw_stem == "Sample"
     assert records_by_stage["discover.ms2_events"].metrics["event_count"] == 1
     assert records_by_stage["discover.ion_grouping"].metrics["ion_count"] == 1
     assert records_by_stage["discover.ms1_capture"].metrics["peak_count"] == 1

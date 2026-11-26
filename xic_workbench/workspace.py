@@ -185,9 +185,7 @@ class ReviewWorkspace:
             self._require_open()
 
             def first_page(summary: dict[str, Any]) -> SelectionRequest:
-                sample_ids = tuple(
-                    sample["sample_key"] for sample in summary["samples"]
-                )
+                sample_ids = tuple(sample["raw_stem"] for sample in summary["samples"])
                 if not sample_ids:
                     raise ValueError("這份結果沒有可檢閱的樣本。")
                 reviewed = summary.get("retention") == "review"
@@ -238,7 +236,7 @@ class ReviewWorkspace:
                 sample_ids=(sample_id,)
                 if sample_id
                 else tuple(
-                    sample["sample_key"]
+                    sample["raw_stem"]
                     for sample in self._page.payload["summary"]["samples"]
                 ),
                 group_ids=(group_id.strip(),) if group_id.strip() else (),
@@ -307,8 +305,8 @@ class ReviewWorkspace:
             "review_scope": page.payload["selection"].get("review_scope", "all"),
             "all_samples": [
                 {
-                    "id": row["sample_key"],
-                    "label": row.get("sample_stem", row["sample_key"]),
+                    "id": row["raw_stem"],
+                    "label": row.get("sample_label", row["raw_stem"]),
                     **({"group": row["group"]} if "group" in row else {}),
                 }
                 for row in page.payload["summary"]["samples"]
@@ -347,7 +345,7 @@ class ReviewWorkspace:
         candidate_id = identifier if item["kind"] == "candidate" else None
         observed = sorted(
             {
-                witness["sample_key"]
+                witness["raw_stem"]
                 for witness in item.get("witnesses", [])
                 if witness.get("rt_apex_min") is not None
                 and witness.get("precursor_mz") is not None
@@ -423,11 +421,11 @@ class ReviewWorkspace:
                 )
                 self._curves = curves
                 summary["curve_sample_ids"] = sorted(
-                    {location.sample_key for location in curves.locations}
+                    {location.raw_stem for location in curves.locations}
                 )
                 summary["saved_curve_sample_ids"] = sorted(
                     {
-                        location.sample_key
+                        location.raw_stem
                         for location in curves.locations
                         if location.curve is not None
                     }
@@ -595,8 +593,8 @@ class ReviewWorkspace:
                         folder,
                         [
                             {
-                                "sample_key": location.sample_key,
-                                "sample_stem": location.sample_stem,
+                                "raw_stem": location.raw_stem,
+                                "sample_label": location.sample_label,
                             }
                             for location in curves.locations
                         ],

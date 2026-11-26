@@ -47,7 +47,7 @@ from xic_extractor.tabular_io import write_delimited_rows
 @dataclass(frozen=True)
 class ManualTruthRow:
     sheet: str
-    sample_name: str
+    raw_stem: str
     target: str
     manual_rt: float | None
     manual_height: float | None
@@ -58,7 +58,7 @@ class ManualTruthRow:
 
 @dataclass(frozen=True)
 class ProgramPeakRow:
-    sample_name: str
+    raw_stem: str
     target: str
     is_istd: bool
     rt: float | None
@@ -70,7 +70,7 @@ class ProgramPeakRow:
 @dataclass(frozen=True)
 class ManualValidationCase:
     name: str
-    sample_name: str
+    raw_stem: str
     raw_path: Path
     targets_path: Path
 
@@ -78,7 +78,7 @@ class ManualValidationCase:
 @dataclass(frozen=True)
 class PerTargetScoreRow:
     name: str
-    sample_name: str
+    raw_stem: str
     target: str
     is_istd: bool
     manual_rt: float | None
@@ -210,13 +210,13 @@ def _build_cases(args: argparse.Namespace) -> list[ManualValidationCase]:
     return [
         ManualValidationCase(
             name="nosplit",
-            sample_name=args.nosplit_raw.resolve().stem,
+            raw_stem=args.nosplit_raw.resolve().stem,
             raw_path=args.nosplit_raw.resolve(),
             targets_path=args.nosplit_targets.resolve(),
         ),
         ManualValidationCase(
             name="split",
-            sample_name=args.split_raw.resolve().stem,
+            raw_stem=args.split_raw.resolve().stem,
             raw_path=args.split_raw.resolve(),
             targets_path=args.split_targets.resolve(),
         ),
@@ -308,7 +308,7 @@ def _collect_program_rows(
             peak = result.peak if result is not None else None
             rows.append(
                 ProgramPeakRow(
-                    sample_name=file_result.sample_name,
+                    raw_stem=file_result.raw_stem,
                     target=target.label,
                     is_istd=target.is_istd,
                     rt=result.reported_rt if result is not None else None,
@@ -389,11 +389,11 @@ def score_manual_validation(
     *,
     istd_targets: set[str] | None = None,
 ) -> ManualValidationScore:
-    program_by_key = {(row.sample_name, row.target): row for row in program_rows}
+    program_by_key = {(row.raw_stem, row.target): row for row in program_rows}
     istd_target_names = set(istd_targets or ())
     per_target_rows: list[PerTargetScoreRow] = []
     for truth in truth_rows:
-        program = program_by_key.get((truth.sample_name, truth.target))
+        program = program_by_key.get((truth.raw_stem, truth.target))
         detected_program = program if _program_peak_detected(program) else None
         is_istd = truth.target in istd_target_names or (
             program.is_istd if program is not None else False
@@ -416,7 +416,7 @@ def score_manual_validation(
         per_target_rows.append(
             PerTargetScoreRow(
                 name=name,
-                sample_name=truth.sample_name,
+                raw_stem=truth.raw_stem,
                 target=truth.target,
                 is_istd=is_istd,
                 manual_rt=truth.manual_rt,
@@ -484,7 +484,7 @@ def _read_sheet_truth(worksheet: Worksheet) -> list[ManualTruthRow]:
         target = _cell_text(_row_value(row, 1))
         if not target:
             continue
-        for sample_name, start_idx in raw_blocks:
+        for raw_stem, start_idx in raw_blocks:
             manual_rt = _safe_float(_row_value(row, start_idx))
             manual_height = _safe_float(_row_value(row, start_idx + 1))
             manual_area = _safe_float(_row_value(row, start_idx + 2))
@@ -495,7 +495,7 @@ def _read_sheet_truth(worksheet: Worksheet) -> list[ManualTruthRow]:
             rows.append(
                 ManualTruthRow(
                     sheet=worksheet.title,
-                    sample_name=sample_name,
+                    raw_stem=raw_stem,
                     target=target,
                     manual_rt=manual_rt,
                     manual_height=manual_height,
@@ -512,9 +512,9 @@ def _iter_raw_blocks(header_row: Iterable[object]) -> list[tuple[str, int]]:
     for idx, value in enumerate(header_row):
         if idx < 3:
             continue
-        sample_name = _cell_text(value)
-        if sample_name:
-            blocks.append((_sample_stem(sample_name), idx))
+        raw_stem = _cell_text(value)
+        if raw_stem:
+            blocks.append((_sample_stem(raw_stem), idx))
     return blocks
 
 
@@ -617,7 +617,7 @@ def _write_per_target_sheet(
                 row_idx,
                 [
                     row.name,
-                    row.sample_name,
+                    row.raw_stem,
                     row.target,
                     row.is_istd,
                     row.manual_rt,
@@ -654,7 +654,7 @@ def _write_deviations_sheet(
                     row_idx,
                     [
                         score.name,
-                        row.sample_name,
+                        row.raw_stem,
                         row.target,
                         issue,
                         metric_value,

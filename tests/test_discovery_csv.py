@@ -162,7 +162,7 @@ def test_peak_table_from_an_older_discovery_is_rejected(tmp_path: Path) -> None:
 
 def test_peak_csv_escapes_text_for_csv_and_spreadsheets(tmp_path: Path) -> None:
     peak = _peak(
-        sample_stem='Sample, "quoted"',
+        raw_stem='Sample, "quoted"',
         neutral_loss_tag="@review",
     )
 
@@ -237,7 +237,7 @@ def test_event_reader_rejects_a_row_without_a_located_peak_or_reason(
         read_discovery_events_csv(
             path,
             raw_file=event.raw_file,
-            sample_stem=event.sample_stem,
+            raw_stem=event.raw_stem,
             neutral_loss_by_tag={
                 event.neutral_loss_tag: event.configured_neutral_loss_da
             },
@@ -296,7 +296,7 @@ def test_event_table_round_trips_the_evidence_alignment_assesses(
     restored = read_discovery_events_csv(
         path,
         raw_file=inferred.raw_file,
-        sample_stem=inferred.sample_stem,
+        raw_stem=inferred.raw_stem,
         neutral_loss_by_tag={"DNA_dR": inferred.configured_neutral_loss_da},
     )
 
@@ -332,7 +332,7 @@ def test_event_table_from_an_older_discovery_is_rejected(tmp_path: Path) -> None
         read_discovery_events_csv(
             path,
             raw_file=Path("S.raw"),
-            sample_stem="S",
+            raw_stem="S",
             neutral_loss_by_tag={"DNA_dR": 116.0474},
         )
 

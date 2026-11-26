@@ -19,7 +19,7 @@ from xic_extractor.peak_detection.traces import Trace
 
 def _numeric_peak(
     fixture: Any,
-    sample_stem: str,
+    raw_stem: str,
     *,
     mz: float = PRECURSOR_MZ,
     apex_rt: float = 8.0,
@@ -27,10 +27,10 @@ def _numeric_peak(
     rt_right_min: float = 8.1,
     height: float = 500.0,
 ) -> Any:
-    sample = fixture.sample(sample_stem)
+    sample = fixture.sample(raw_stem)
     source = fixture.source(sample)
     trace = Trace.from_arrays(
-        sample_name=sample_stem,
+        raw_stem=raw_stem,
         mz=mz,
         rt=(
             rt_left_min - 0.1,
@@ -74,7 +74,7 @@ def _numeric_peak(
         candidates=(candidate,),
     )
     integration = build_targeted_peak_hypotheses(
-        sample_name=trace.sample_name,
+        raw_stem=trace.raw_stem,
         target_label="cell-decision-no-raw",
         role="",
         istd_pair="",

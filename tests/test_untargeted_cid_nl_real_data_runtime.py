@@ -124,19 +124,19 @@ def test_runtime_delivers_one_real_subject_cohort(
         raw_paths=raw_paths,
         sample_metadata=(
             SampleMetadata(
-                sample_name="S1",
+                sample_label="S1",
                 raw_stem="S1",
                 injection_order=1,
                 sample_role="sample",
             ),
             SampleMetadata(
-                sample_name="S2",
+                sample_label="S2",
                 raw_stem="S2",
                 injection_order=2,
                 sample_role="qc",
             ),
             SampleMetadata(
-                sample_name="S3",
+                sample_label="S3",
                 raw_stem="S3",
                 injection_order=3,
                 sample_role="sample",
@@ -279,31 +279,31 @@ def test_runtime_recovers_from_single_scan_cid_nl_support_owners(
         dll_dir=tmp_path,
         sample_metadata=(
             SampleMetadata(
-                sample_name="S1",
+                sample_label="S1",
                 raw_stem="S1",
                 injection_order=1,
                 sample_role="sample",
             ),
             SampleMetadata(
-                sample_name="S2",
+                sample_label="S2",
                 raw_stem="S2",
                 injection_order=2,
                 sample_role="qc",
             ),
             SampleMetadata(
-                sample_name="Missing",
+                sample_label="Missing",
                 raw_stem="Missing",
                 injection_order=3,
                 sample_role="sample",
             ),
             SampleMetadata(
-                sample_name="NoPeak",
+                sample_label="NoPeak",
                 raw_stem="NoPeak",
                 injection_order=4,
                 sample_role="sample",
             ),
             SampleMetadata(
-                sample_name="Blank",
+                sample_label="Blank",
                 raw_stem="Blank",
                 injection_order=5,
                 sample_role="blank",
@@ -453,7 +453,7 @@ def test_batch_candidate_selection_preserves_order_and_request_sample_membership
             raw_paths=raw_paths,
             sample_metadata=tuple(
                 SampleMetadata(
-                    sample_name=path.stem,
+                    sample_label=path.stem,
                     raw_stem=path.stem,
                     injection_order=index,
                     sample_role="sample",
@@ -545,7 +545,7 @@ def test_runtime_reads_a_region_only_where_its_events_are_when_below_quorum(
         raw_paths=raw_paths,
         sample_metadata=tuple(
             SampleMetadata(
-                sample_name=stem,
+                sample_label=stem,
                 raw_stem=stem,
                 injection_order=index,
                 sample_role="sample",

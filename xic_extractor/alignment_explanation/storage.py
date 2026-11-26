@@ -25,7 +25,7 @@ from .errors import ExplanationError, ExplanationUnavailableError
 from .review import SUPPORT_ORIGINS
 
 EXPLANATION_ARTIFACT_NAME = "alignment_explanation.sqlite"
-SCHEMA_VERSION = "alignment_evidence"
+SCHEMA_VERSION = "alignment_evidence_raw_stem"
 
 STORED_SUMMARY_KEYS = frozenset(
     {
@@ -55,7 +55,7 @@ STORED_SUMMARY_KEYS = frozenset(
 
 TABLES: dict[str, tuple[str, ...]] = {
     "run": ("payload",),
-    "samples": ("id", "sample_key", "sample_stem"),
+    "samples": ("id", "raw_stem", "sample_label"),
     "peaks": ("id", "sample", "physical_peak_key", "mz", "rt_apex_min", "ppm"),
     "method_subjects": (
         "id",
@@ -158,7 +158,7 @@ _DDL = {
     "run": "CREATE TABLE run (payload TEXT NOT NULL)",
     "samples": (
         "CREATE TABLE samples (id INTEGER PRIMARY KEY, "
-        "sample_key TEXT UNIQUE NOT NULL, sample_stem TEXT NOT NULL)"
+        "raw_stem TEXT UNIQUE NOT NULL, sample_label TEXT NOT NULL)"
     ),
     "peaks": (
         "CREATE TABLE peaks (id INTEGER PRIMARY KEY, sample INTEGER NOT NULL, "
@@ -314,6 +314,14 @@ def read_completed_metadata(connection: sqlite3.Connection) -> dict[str, Any]:
         raise ExplanationError(
             "不支援此解釋資料格式；請重新執行 Alignment 產生新輸出。"
         )
+    row = connection.execute("SELECT payload FROM run").fetchone()
+    if row is None:
+        raise ExplanationError("malformed explanation: missing completion summary")
+    stored = decode_json(row[0])
+    if not isinstance(stored, dict) or stored.get("schema_version") != SCHEMA_VERSION:
+        raise ExplanationError(
+            "不支援此解釋資料格式；請重新執行 Alignment 產生新輸出。"
+        )
     for table, columns in (
         *TABLES.items(),
         *((name, cols) for name, cols in OPTIONAL_TABLES.items() if name in tables),
@@ -325,14 +333,6 @@ def read_completed_metadata(connection: sqlite3.Connection) -> dict[str, Any]:
             raise ExplanationError(
                 f"malformed explanation schema: {table}; rerun Alignment"
             )
-    row = connection.execute("SELECT payload FROM run").fetchone()
-    if row is None:
-        raise ExplanationError("malformed explanation: missing completion summary")
-    stored = decode_json(row[0])
-    if not isinstance(stored, dict) or stored.get("schema_version") != SCHEMA_VERSION:
-        raise ExplanationError(
-            "不支援此解釋資料格式；請重新執行 Alignment 產生新輸出。"
-        )
     if set(stored) != STORED_SUMMARY_KEYS:
         raise ExplanationError(
             "explanation summary fields do not match the schema; rerun Alignment"
@@ -354,9 +354,9 @@ def read_completed_metadata(connection: sqlite3.Connection) -> dict[str, Any]:
             "檢閱資料含有目前版本不再產生的支持來源；請重新執行 Alignment。"
         )
     stored["samples"] = [
-        {"sample_key": key, "sample_stem": stem}
+        {"raw_stem": key, "sample_label": stem}
         for key, stem in connection.execute(
-            "SELECT sample_key,sample_stem FROM samples ORDER BY id"
+            "SELECT raw_stem,sample_label FROM samples ORDER BY id"
         )
     ]
     return stored

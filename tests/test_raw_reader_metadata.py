@@ -61,7 +61,7 @@ def test_raw_file_handle_sample_header(raw_file: str) -> None:
     assert isinstance(header, RawSampleHeader)
     assert header.raw_path == raw_file
     assert header.raw_stem == "sample_a"
-    assert header.sample_name == "Sample_A"
+    assert header.sample_label == "Sample_A"
     assert header.sample_id == "ID_123"
     assert header.row_number == 5
     assert header.sample_type == "Unknown"

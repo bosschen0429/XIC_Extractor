@@ -87,9 +87,9 @@ def build_targeted_cross_sample_groups(
 ) -> CrossSampleGroupingResult:
     """Close Targeted membership from the selected hypothesis in each cell."""
 
-    sample_by_id = {sample.sample_name: sample for sample in samples}
+    sample_by_id = {sample.raw_stem: sample for sample in samples}
     assessment_by_id = {
-        sample.sample_name: assessment for sample, assessment in sample_assessments
+        sample.raw_stem: assessment for sample, assessment in sample_assessments
     }
     owners: list[SampleLocalMS1Owner] = []
     selected_by_id: dict[str, MeasuredPeakHypothesis] = {}
@@ -98,13 +98,13 @@ def build_targeted_cross_sample_groups(
             continue
         selected = terminal.hypothesis
         observation = selected.peak
-        sample_id = observation.sample_key
-        sample = sample_by_id.get(sample_id)
-        if sample is None or sample_id in selected_by_id:
+        raw_stem = observation.raw_stem
+        sample = sample_by_id.get(raw_stem)
+        if sample is None or raw_stem in selected_by_id:
             raise CrossSampleGroupingContractError(
                 "Targeted selection crossed or duplicated its canonical sample"
             )
-        assessment = assessment_by_id.get(sample_id)
+        assessment = assessment_by_id.get(raw_stem)
         if selected.method == HYPOTHESIS_METHOD_DDA_CID_NL:
             if assessment is None:
                 raise CrossSampleGroupingContractError(
@@ -125,7 +125,7 @@ def build_targeted_cross_sample_groups(
                 "Targeted selection has an unsupported hypothesis method"
             )
         owners.append(owner)
-        selected_by_id[sample_id] = selected
+        selected_by_id[raw_stem] = selected
 
     groups = construct_cross_sample_peak_group_hypotheses(
         tuple(owners),
@@ -294,7 +294,7 @@ def direct_evidence_rt_rows(
         peak_trajectories=trajectories,
     ):
         row = {
-            by_id[owner_id].sample_stem: estimate.rt_min
+            by_id[owner_id].raw_stem: estimate.rt_min
             for owner_id in group.owner_ids
             if (estimate := rt_frame.membership_coordinate(by_id[owner_id])) is not None
         }
@@ -327,10 +327,10 @@ def admit_cid_nl_group_backfills(
     proposals = []
     retained: dict[CidNlMethodAssessment, tuple[MeasuredPeakHypothesis, ...]] = {}
     for key, (sample, assessment) in sorted(backfills.items()):
-        group_id, sample_id, subject_id = key
+        group_id, raw_stem, subject_id = key
         group = by_id[group_id]
         if (
-            sample_id != sample.sample_name
+            raw_stem != sample.raw_stem
             or subject_id != assessment.method_subject.method_subject_id
         ):
             raise CrossSampleGroupingContractError(
@@ -361,10 +361,10 @@ def admit_cid_nl_group_backfills(
             )
         )
         physical_key = (
-            sample_id,
+            raw_stem,
             hypothesis.peak.physical_identity,
         )
-        if any(member.sample_key == sample_id for member in group.member_subjects):
+        if any(member.raw_stem == raw_stem for member in group.member_subjects):
             continue
         proposals.append((group_id, physical_key, owner, hypothesis, assessment))
     if not proposals:
@@ -565,19 +565,19 @@ def contested_backfill_peaks(
         if group.destination != "matrix":
             continue
         for member in group.member_subjects:
-            sample_id = member.sample_key
+            raw_stem = member.raw_stem
             for observation_id in member.physical_peaks:
-                occupied.add((sample_id, observation_id))
+                occupied.add((raw_stem, observation_id))
                 observation = member_observations[observation_id]
-                members_by_sample[sample_id].append(
+                members_by_sample[raw_stem].append(
                     (observation_id, view_for(observation))
                 )
     backfills_by_sample: dict[
         str, list[tuple[str, PeakObservation, PhysicalPeakView]]
     ] = defaultdict(list)
-    for (group_id, sample_id, _), (_, assessment) in backfills.items():
+    for (group_id, raw_stem, _), (_, assessment) in backfills.items():
         for peak in assessment.candidate_peaks:
-            backfills_by_sample[sample_id].append(
+            backfills_by_sample[raw_stem].append(
                 (
                     group_id,
                     peak.physical_identity,
@@ -585,12 +585,12 @@ def contested_backfill_peaks(
                 )
             )
     contested = set()
-    for sample_id, entries in backfills_by_sample.items():
+    for raw_stem, entries in backfills_by_sample.items():
         for index, (group_id, observation_id, view) in enumerate(entries):
-            key = (sample_id, observation_id)
+            key = (raw_stem, observation_id)
             if key in occupied or any(
                 compare_physical_peak_views(view, member_view) == "same"
-                for _, member_view in members_by_sample[sample_id]
+                for _, member_view in members_by_sample[raw_stem]
             ):
                 contested.add(key)
             for other_group, other_id, other_view in (
@@ -600,7 +600,7 @@ def contested_backfill_peaks(
                     observation_id == other_id
                     or compare_physical_peak_views(view, other_view) == "same"
                 ):
-                    contested.update((key, (sample_id, other_id)))
+                    contested.update((key, (raw_stem, other_id)))
     return frozenset(contested)
 
 

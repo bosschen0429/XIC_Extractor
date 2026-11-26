@@ -966,7 +966,7 @@ def test_istd_reference_selection_is_not_nearest_apex_always(
         reference = 30.0
     for ordered in (regions, regions[::-1]):
         population = TargetedPopulationContext(
-            sample_name="sample",
+            raw_stem="sample",
             target_label="ISTD",
             mz=258.1085,
             ppm_tol=20.0,

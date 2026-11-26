@@ -20,7 +20,7 @@ def witness_matches_criteria(
     rt_max: float | None = None,
 ) -> bool:
     """Check whether a single witness chain satisfies all query criteria."""
-    if sample_ids is not None and witness.sample_key not in sample_ids:
+    if sample_ids is not None and witness.raw_stem not in sample_ids:
         return False
 
     if candidate_ids is not None and witness.candidate_id not in candidate_ids:
@@ -60,7 +60,7 @@ def witness_matches_non_rt_criteria(
     mz_max: float | None = None,
 ) -> bool:
     """Check whether a witness satisfies non-RT criteria."""
-    if sample_ids is not None and witness.sample_key not in sample_ids:
+    if sample_ids is not None and witness.raw_stem not in sample_ids:
         return False
     if candidate_ids is not None and witness.candidate_id not in candidate_ids:
         return False

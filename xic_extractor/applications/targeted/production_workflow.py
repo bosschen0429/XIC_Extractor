@@ -173,17 +173,17 @@ def _build_publication_output(
         target_label = target.label
         targets_by_label[target_label] = target
         backfills = {
-            backfill.target_cell.sample_key: backfill
+            backfill.target_cell.raw_stem: backfill
             for backfill in result.scientific_core.targeted_backfill_decisions
         }
         for decision in result.completed_projection.decisions:
             sample = cast(TargetCellSubject, decision.subject).canonical_sample
             file_result, rendered = files[sample]
-            backfill_decision = backfills.get(sample.sample_name)
+            backfill_decision = backfills.get(sample.raw_stem)
             if backfill_decision is not None:
-                backfill_diagnostics[(file_result.sample_name, target_label)] = (
+                backfill_diagnostics[(file_result.raw_stem, target_label)] = (
                     DiagnosticRecord(
-                        file_result.sample_name,
+                        file_result.raw_stem,
                         target_label,
                         "BACKFILL_ACCEPTED"
                         if backfill_decision.matched_candidate is not None
@@ -207,10 +207,10 @@ def _build_publication_output(
                     and backfill_decision.matched_candidate is not None
                 ),
             )
-            cells[(file_result.sample_name, target_label)] = cell
+            cells[(file_result.raw_stem, target_label)] = cell
             rendered[target_label] = cell.render()
     position_diagnostics = _apply_paired_istd_positions(
-        {file_result.sample_name: rendered for file_result, rendered in files.values()},
+        {file_result.raw_stem: rendered for file_result, rendered in files.values()},
         cells,
         targets_by_label,
     )
@@ -219,7 +219,7 @@ def _build_publication_output(
         key=lambda item: (
             item[0].injection_order is None,
             item[0].injection_order or 0,
-            item[1][0].sample_name,
+            item[1][0].raw_stem,
         ),
     )
     return RunOutput(
@@ -238,17 +238,17 @@ def _build_publication_output(
                 for _, (file_result, rendered) in ordered_files
                 for label in file_result.results
                 for record in build_ms2_diagnostic_records(
-                    file_result.sample_name,
+                    file_result.raw_stem,
                     targets_by_label[label],
                     rendered[label],
                     config,
                 )
             ),
             *(
-                backfill_diagnostics[(file.sample_name, label)]
+                backfill_diagnostics[(file.raw_stem, label)]
                 for file in prepared.acquisition_evidence.file_results
                 for label in file.results
-                if (file.sample_name, label) in backfill_diagnostics
+                if (file.raw_stem, label) in backfill_diagnostics
             ),
             *position_diagnostics,
         ],
@@ -558,11 +558,9 @@ def _prepare_targeted_production_workflow(
     samples = tuple(
         replace(
             metadata_by_stem[raw_path.stem],
-            sample_name=file_result.sample_name,
-            raw_stem=raw_path.stem,
             injection_order=resolved_inputs.injection_order[raw_path.stem],
         )
-        for raw_path, file_result in results_by_raw_path
+        for raw_path, _ in results_by_raw_path
     )
     targets = current_inputs.targets
     profile = targeted_signal_processing_profile(request.config)
@@ -677,13 +675,13 @@ def _bind_results_to_raw_paths(
         if file_result.error:
             raise RuntimeError(
                 "Targeted RAW acquisition failed for "
-                f"{file_result.sample_name}: {file_result.error}"
+                f"{file_result.raw_stem}: {file_result.error}"
             )
-        if file_result.sample_name in results_by_sample:
+        if file_result.raw_stem in results_by_sample:
             raise RuntimeError(
                 "Targeted acquisition returned duplicate sample identities"
             )
-        results_by_sample[file_result.sample_name] = file_result
+        results_by_sample[file_result.raw_stem] = file_result
     raw_stems = {path.stem for path in raw_paths}
     result_names = set(results_by_sample)
     if result_names != raw_stems:
@@ -719,7 +717,7 @@ def _execute_target(
     assessment_tuple = tuple(
         sorted(
             assessments,
-            key=lambda item: item[0].sample_name,
+            key=lambda item: item[0].raw_stem,
         )
     )
     return _complete_retained_target(

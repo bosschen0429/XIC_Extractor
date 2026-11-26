@@ -55,7 +55,7 @@ def _membership_trajectories(
         tuple[str, tuple[str, str]], list[SampleLocalMS1Owner]
     ] = defaultdict(list)
     for owner in supported.values():
-        key = owner.sample_stem, rules.chemistry_key(owner)
+        key = owner.raw_stem, rules.chemistry_key(owner)
         by_sample_chemistry[key].append(owner)
     witnesses = []
     for sample_owners in by_sample_chemistry.values():
@@ -140,7 +140,7 @@ def _trajectory_seeds(
             continue
         if (
             not compatible_method_members(members, rules)
-            or len({member.sample_stem for member in members}) != len(members)
+            or len({member.raw_stem for member in members}) != len(members)
             or not within_ppm(
                 max(member.peak.mz for member in members),
                 min(member.peak.mz for member in members),

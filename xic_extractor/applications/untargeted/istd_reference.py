@@ -82,12 +82,10 @@ def extract_batch_known_istd_reference(
         mass_recalibration_by_sample=mass_recalibration_by_sample,
     )
     results_by_sample = {}
-    for (sample_stem, _), result in zip(samples, output.file_results, strict=True):
+    for (raw_stem, _), result in zip(samples, output.file_results, strict=True):
         if result.error is not None:
-            raise RuntimeError(
-                f"ISTD extraction failed for {sample_stem}: {result.error}"
-            )
-        results_by_sample[sample_stem] = result
+            raise RuntimeError(f"ISTD extraction failed for {raw_stem}: {result.error}")
+        results_by_sample[raw_stem] = result
 
     declared_cohorts = {row.raw_stem: row.batch_id for row in sample_metadata or ()}
     coordinates = resolve_istd_reference_peaks(

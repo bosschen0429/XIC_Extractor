@@ -246,7 +246,7 @@ def owner_facts(
     for owner_id in owner_ids:
         owner = owners[owner_id]
         member = owner.cross_sample_member_subject
-        sample = owner.sample_stem if member is None else member.sample_key
+        sample = owner.raw_stem if member is None else member.raw_stem
         facts.append((sample, owner.peak.mz, owner.peak.rt_apex_min))
     if len(set(facts)) != len(facts):
         raise ValueError("distinct recorded owners share sample, m/z and apex RT")
@@ -382,12 +382,12 @@ class MembershipComparison:
         shift = self.drift.sample_shift_min if self.drift is not None else {}
         self._sequence = {
             o.owner_id: (
-                self.orders[o.sample_stem],
+                self.orders[o.raw_stem],
                 self._measured_rank[o.owner_id],
-                shift.get(o.sample_stem, 0.0),
+                shift.get(o.raw_stem, 0.0),
             )
             for o in owners
-            if o.sample_stem in self.orders
+            if o.raw_stem in self.orders
         }
         self._pair_terms: dict[tuple[str, str], _PairTerms | None] = {}
         self._pair_positions = {p: i for i, p in enumerate(sorted(self.owners))}
@@ -473,7 +473,7 @@ class MembershipComparison:
         cfg = self.config
         method = self.rules.pair_evidence(left, right, cfg)
         if (
-            left.sample_stem == right.sample_stem
+            left.raw_stem == right.raw_stem
             or not self.trajectories.permits_membership(key)
             or not within_ppm(
                 max(left.peak.mz, right.peak.mz),
@@ -499,7 +499,7 @@ class MembershipComparison:
         )
         composition = 0.15 * self.rules.pair_mass_fraction(left, right, cfg)
         gap = abs(
-            self.orders.get(left.sample_stem, 0) - self.orders.get(right.sample_stem, 0)
+            self.orders.get(left.raw_stem, 0) - self.orders.get(right.raw_stem, 0)
         )
         density = max(self.density[key[0]], self.density[key[1]])
         neighborhood = 0.10 * gap / (gap + 16) * density / (density + 10)
@@ -722,8 +722,8 @@ class MembershipComparison:
                 tuple(
                     (
                         self.rts[p],
-                        batch_state.get(self.owners[p].sample_stem),
-                        shift.get(self.owners[p].sample_stem),
+                        batch_state.get(self.owners[p].raw_stem),
+                        shift.get(self.owners[p].raw_stem),
                     )
                     for p in key
                 )
@@ -787,7 +787,7 @@ class MembershipComparison:
             return {}, frozenset()
         offsets = {}
         for owner_id in members:
-            sample = self.owners[owner_id].sample_stem
+            sample = self.owners[owner_id].raw_stem
             if sample in by_sample:
                 offsets[owner_id] = by_sample[sample]
         return offsets, frozenset(members).difference(offsets)
@@ -807,7 +807,7 @@ class MembershipComparison:
         batch_state = self._batch_state(basis)
         offsets = {}
         for owner_id in witness:
-            sample = self.owners[owner_id].sample_stem
+            sample = self.owners[owner_id].raw_stem
             offset = coefficients.offset_min(
                 batch_state.get(sample), self.drift.sample_shift_min.get(sample)
             )
@@ -829,7 +829,7 @@ class MembershipComparison:
 
         Each (group, model) is scored once, so its drift frame is not retained.
         """
-        if len({self.owners[p].sample_stem for p in key}) != len(key):
+        if len({self.owners[p].raw_stem for p in key}) != len(key):
             return _GroupModel(coefficients, math.inf, False)
         model_cost = self._coefficient_cost * coefficients.nonzero_count
         if (
@@ -944,7 +944,7 @@ class MembershipComparison:
         offsets, unknown = self._frame(self._sample_offsets(coefficients, basis), key)
         if key != basis and self.has_rt_population_gap(key, offsets, unknown):
             return math.inf
-        if len({self.owners[p].sample_stem for p in key}) != len(key):
+        if len({self.owners[p].raw_stem for p in key}) != len(key):
             return math.inf
         fixed = frozenset(basis)
         pair_cost = 0.0
@@ -1029,7 +1029,7 @@ class MembershipComparison:
         then group order, as a stable sort on those keys would order them.
         They do not depend on RT, so every drift model of a group shares them.
         """
-        samples = [self.owners[p].sample_stem for p in key]
+        samples = [self.owners[p].raw_stem for p in key]
         ordered = np.array([i for i, s in enumerate(samples) if s in self.orders])
         if not len(ordered):
             return None
@@ -1082,7 +1082,7 @@ class MembershipComparison:
             gap_sec, threshold_sec, rel_tol=0, abs_tol=1e-10
         ):
             return False
-        samples = [self.owners[key].sample_stem for key in ordered]
+        samples = [self.owners[key].raw_stem for key in ordered]
         if any(sample not in self.orders for sample in samples):
             return True
         orders = [self.orders[sample] for sample in samples]
@@ -1239,9 +1239,9 @@ class MembershipComparison:
             separated = canonical_partition([*others, remainder, (owner_id,)])
             if math.isfinite(self.cost(separated)):
                 variants.add(separated)
-        sample = self.owners[owner_id].sample_stem
+        sample = self.owners[owner_id].raw_stem
         for target in others:
-            occupied = tuple(p for p in target if self.owners[p].sample_stem == sample)
+            occupied = tuple(p for p in target if self.owners[p].raw_stem == sample)
             new_target = tuple(p for p in target if p not in occupied) + (owner_id,)
             new_current = (*remainder, *occupied)
             candidate = canonical_partition(

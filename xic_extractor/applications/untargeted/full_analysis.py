@@ -6,7 +6,7 @@ import csv
 import uuid
 from collections.abc import Callable, Mapping
 from copy import deepcopy
-from dataclasses import asdict, dataclass, field, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -42,6 +42,7 @@ from xic_extractor.sample_metadata import (
     SAMPLE_METADATA_COLUMNS,
     SAMPLE_METADATA_SCHEMA_VERSION,
     SampleMetadata,
+    sample_metadata_payload,
 )
 from xic_extractor.tabular_io import write_tsv
 
@@ -117,7 +118,7 @@ class UntargetedAnalysis:
             if delta_mass
             else {"alignment": "completed", "backfill": "enabled"}
         )
-        summary["samples"] = [asdict(row) for row in self.samples]
+        summary["samples"] = [sample_metadata_payload(row) for row in self.samples]
         return summary
 
     def _run_full(self, recipe: BoundCidNlRecipe) -> dict[str, Any]:
@@ -323,7 +324,10 @@ class UntargetedAnalysis:
         write_tsv(
             sample_path,
             [
-                {"schema_version": SAMPLE_METADATA_SCHEMA_VERSION, **asdict(row)}
+                {
+                    "schema_version": SAMPLE_METADATA_SCHEMA_VERSION,
+                    **sample_metadata_payload(row),
+                }
                 for row in self.samples
             ],
             SAMPLE_METADATA_COLUMNS,

@@ -153,12 +153,12 @@ def _prepare_runtime_work(
     batch_phases: list[_BatchSamplePhaseState] = []
     for sample_states in sample_groups:
         first = sample_states[0].job
-        sample_id = first.sample.sample_name
+        raw_stem = first.sample.raw_stem
         initial_resource_key: str | None = (
-            f"acquisition-session:{partition_key}:{sample_id}:initial"
+            f"acquisition-session:{partition_key}:{raw_stem}:initial"
         )
         backfill_resource_key: str | None = (
-            f"acquisition-session:{partition_key}:{sample_id}:backfill"
+            f"acquisition-session:{partition_key}:{raw_stem}:backfill"
         )
         if initial_only:
             backfill_resource_key = None
@@ -205,21 +205,19 @@ def _prepare_runtime_work(
                     if state.error is None:
                         state.error = pool.first_error
 
-        phases_by_sample = {
-            phase.job.sample.sample_name: phase for phase in batch_phases
-        }
+        phases_by_sample = {phase.job.sample.raw_stem: phase for phase in batch_phases}
 
         def initial(
             sample_states: tuple[_RuntimeJobState, ...],
         ) -> _SampleInitialWorkerResponse:
             return _execute_initial_sample_phase(
-                phases_by_sample[sample_states[0].job.sample.sample_name],
+                phases_by_sample[sample_states[0].job.sample.raw_stem],
             )
 
         def backfill(
             sample_states: tuple[_RuntimeJobState, ...],
         ) -> _SampleBackfillWorkerResponse | None:
-            phase = phases_by_sample.get(sample_states[0].job.sample.sample_name)
+            phase = phases_by_sample.get(sample_states[0].job.sample.raw_stem)
             if phase is not None:
                 return _execute_backfill_sample_phase(phase)
             return None
@@ -249,8 +247,8 @@ def _prepare_runtime_work(
         def make_process_initial_req(
             sample_states: tuple[_RuntimeJobState, ...],
         ) -> _SampleInitialWorkerRequest:
-            sample_id = sample_states[0].job.sample.sample_name
-            phase = phases_by_sample[sample_id]
+            raw_stem = sample_states[0].job.sample.raw_stem
+            phase = phases_by_sample[raw_stem]
             return _SampleInitialWorkerRequest(
                 jobs=tuple(s.job for s in sample_states),
                 initial_resource_key=phase.initial_resource_key,
@@ -264,8 +262,8 @@ def _prepare_runtime_work(
             resp: _SampleInitialWorkerResponse | None,
         ) -> None:
             if resp is not None:
-                sample_id = sample_states[0].job.sample.sample_name
-                resp.apply_to(phases_by_sample[sample_id])
+                raw_stem = sample_states[0].job.sample.raw_stem
+                resp.apply_to(phases_by_sample[raw_stem])
             on_sample_completed("partition_initial", comp, tot, sample_states)
 
         def skip_backfill(sample_states: tuple[_RuntimeJobState, ...]) -> bool:
@@ -277,8 +275,8 @@ def _prepare_runtime_work(
         def make_process_backfill_req(
             sample_states: tuple[_RuntimeJobState, ...],
         ) -> _SampleBackfillWorkerRequest:
-            sample_id = sample_states[0].job.sample.sample_name
-            phase = phases_by_sample[sample_id]
+            raw_stem = sample_states[0].job.sample.raw_stem
+            phase = phases_by_sample[raw_stem]
             pending = tuple(
                 state
                 for state in sample_states
@@ -306,8 +304,8 @@ def _prepare_runtime_work(
             resp: _SampleBackfillWorkerResponse | None,
         ) -> None:
             if resp is not None:
-                sample_id = sample_states[0].job.sample.sample_name
-                resp.apply_to(phases_by_sample[sample_id])
+                raw_stem = sample_states[0].job.sample.raw_stem
+                resp.apply_to(phases_by_sample[raw_stem])
             on_sample_completed("partition_backfill", comp, tot, sample_states)
 
         try:
@@ -439,8 +437,8 @@ def _runtime_sample_groups(
 ) -> tuple[tuple[_RuntimeJobState, ...], ...]:
     grouped: dict[str, list[_RuntimeJobState]] = {}
     for state in states:
-        sample_id = state.job.sample.sample_name
-        grouped.setdefault(sample_id, []).append(state)
+        raw_stem = state.job.sample.raw_stem
+        grouped.setdefault(raw_stem, []).append(state)
     return tuple(tuple(group) for group in grouped.values())
 
 

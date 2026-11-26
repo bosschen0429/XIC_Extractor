@@ -86,7 +86,7 @@ def project_target_pre_cell(
 
     scope = cast(TargetSearchScope, finalized_alignment.scope)
     samples = _canonical_samples(scope.samples)
-    sample_by_id = {sample.sample_name: sample for sample in samples}
+    sample_by_id = {sample.raw_stem: sample for sample in samples}
     terminals = _terminals_by_sample(
         finalized_alignment,
         scope=scope,
@@ -106,7 +106,7 @@ def project_target_pre_cell(
             target=scope.target,
             canonical_sample=sample,
             row_binding=row_binding,
-            terminal_subject=terminals[sample.sample_name],
+            terminal_subject=terminals[sample.raw_stem],
         )
         for sample in samples
     )
@@ -121,7 +121,7 @@ def project_target_pre_cell(
 def _canonical_samples(
     samples: tuple[SampleMetadata, ...],
 ) -> tuple[SampleMetadata, ...]:
-    return tuple(sorted(samples, key=lambda sample: sample.sample_name))
+    return tuple(sorted(samples, key=lambda sample: sample.raw_stem))
 
 
 def _terminals_by_sample(
@@ -132,12 +132,12 @@ def _terminals_by_sample(
 ) -> dict[str, TerminalSearchObservation]:
     terminals = {}
     for terminal in finalized_alignment.terminal_subjects:
-        sample_id = terminal.sample_key
-        if sample_id in terminals:
+        raw_stem = terminal.raw_stem
+        if raw_stem in terminals:
             raise TargetProjectionContractError(
                 "finalized terminal population contains duplicate canonical samples"
             )
-        terminals[sample_id] = terminal
+        terminals[raw_stem] = terminal
     if set(terminals) != set(samples):
         raise TargetProjectionContractError(
             "finalized terminal population is missing or adds a canonical sample"
@@ -153,12 +153,12 @@ def _eligible_groups(
 ) -> tuple[CrossSamplePeakGroupHypothesis, ...]:
     groups = finalized_alignment.final_population
     members_by_sample = {
-        sample_id: group_member_subject_from_peak_hypothesis(
+        raw_stem: group_member_subject_from_peak_hypothesis(
             sample=sample,
             hypothesis=terminal.hypothesis,
         )
-        for sample_id, sample in sample_by_id.items()
-        if type(terminal := terminals[sample_id]) is ObservedSearchSubject
+        for raw_stem, sample in sample_by_id.items()
+        if type(terminal := terminals[raw_stem]) is ObservedSearchSubject
     }
     eligible: list[CrossSamplePeakGroupHypothesis] = []
     for group in groups:
@@ -168,11 +168,11 @@ def _eligible_groups(
             (
                 any(
                     (
-                        candidate == members_by_sample[sample_id]
+                        candidate == members_by_sample[raw_stem]
                         for candidate in group.member_subjects
                     )
                 )
-                for sample_id in members_by_sample
+                for raw_stem in members_by_sample
             )
         ):
             eligible.append(group)
@@ -186,9 +186,7 @@ def _mint_row_binding(
 ) -> TargetRowBinding:
     count = len(eligible_groups)
     sample_ids = tuple(
-        member.sample_key
-        for group in eligible_groups
-        for member in group.member_subjects
+        member.raw_stem for group in eligible_groups for member in group.member_subjects
     )
     variant: TargetRowBindingVariant
     if count == 0:

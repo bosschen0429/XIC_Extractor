@@ -163,7 +163,7 @@ def samples_eligible_for_group_extension(
 ) -> dict[CrossSamplePeakGroupHypothesis, frozenset[str]]:
     """Apply the direct SUPPORT quorum to eligibility without granting a value."""
     eligible_ids = frozenset(
-        sample.sample_name
+        sample.raw_stem
         for sample in sample_population
         if is_backfill_eligible_sample(sample)
     )
@@ -173,7 +173,7 @@ def samples_eligible_for_group_extension(
         if group.disposition == "rejected":
             continue
         support_ids = {
-            member.sample_key
+            member.raw_stem
             for owner, member in (
                 (owner, owner.cross_sample_member_subject) for owner in group.owners
             )
@@ -194,7 +194,7 @@ def plan_conservative_backfill_targets(
     for group, eligible_ids in samples_eligible_for_group_extension(
         groups, sample_population=sample_population
     ).items():
-        occupied = {member.sample_key for member in group.member_subjects}
+        occupied = {member.raw_stem for member in group.member_subjects}
         targets = eligible_ids - occupied
         if targets:
             planned.append((group, targets))
@@ -213,18 +213,18 @@ def assess_conservative_backfill_group(
         raise ConservativeBackfillContractError(
             "Backfill assessment requires an existing CellObservation group"
         )
-    ordered_cells = tuple(sorted(source_cells, key=lambda cell: cell.sample_key))
+    ordered_cells = tuple(sorted(source_cells, key=lambda cell: cell.raw_stem))
     ordered_samples = tuple(
         sorted(
             sample_population,
-            key=lambda sample: sample.sample_name,
+            key=lambda sample: sample.raw_stem,
         )
     )
     group_context = ordered_cells[0].group_context
     cells = _canonical_cells(ordered_cells)
     samples = _canonical_samples(ordered_samples)
     eligible_ids = tuple(
-        sample.sample_name for sample in samples if is_backfill_eligible_sample(sample)
+        sample.raw_stem for sample in samples if is_backfill_eligible_sample(sample)
     )
     activation_supports = tuple(
         support
@@ -235,14 +235,14 @@ def assess_conservative_backfill_group(
         )
     )
     direct_support_ids = tuple(
-        support.sample.sample_name for support in activation_supports
+        support.sample.raw_stem for support in activation_supports
     )
     eligible_support_ids = tuple(
-        sample_id for sample_id in direct_support_ids if sample_id in eligible_ids
+        raw_stem for raw_stem in direct_support_ids if raw_stem in eligible_ids
     )
     support_traces = tuple(support.hypothesis.peak for support in activation_supports)
-    cell_sample_ids = tuple(cell.sample_key for cell in cells)
-    sample_ids = tuple(sample.sample_name for sample in samples)
+    cell_sample_ids = tuple(cell.raw_stem for cell in cells)
+    sample_ids = tuple(sample.raw_stem for sample in samples)
     sample_count = len(eligible_ids)
     minimum_support = minimum_direct_support_count(sample_count)
     support_count = len(eligible_support_ids)
@@ -296,13 +296,13 @@ def map_conservative_backfill_candidates(
             "one sample×method-subject mapping allows at most one backfill universe "
             "receipt"
         )
-    sample_id = sample.sample_name
+    raw_stem = sample.raw_stem
     universes_by_subject = {
         universe.method_subject_id: universe for universe in candidate_universes
     }
 
     target_cells = tuple(
-        _target_cell(facts, sample_id=sample_id) for facts in group_facts
+        _target_cell(facts, raw_stem=raw_stem) for facts in group_facts
     )
     decisions: list[ConservativeBackfillCellDecision | None] = [None] * len(group_facts)
     active_by_subject: dict[str, list[int]] = {}
@@ -510,7 +510,7 @@ def _canonical_cells(
         raise ConservativeBackfillContractError(
             "Backfill facts require immutable canonical CellObservation references"
         )
-    sample_ids = tuple(cell.sample_key for cell in cells)
+    sample_ids = tuple(cell.raw_stem for cell in cells)
     if sample_ids != tuple(sorted(set(sample_ids))):
         raise ConservativeBackfillContractError(
             "CellObservation references must be unique and canonical-sorted by sample"
@@ -563,7 +563,7 @@ def _canonical_samples(
         raise ConservativeBackfillContractError(
             "sample_population must contain owner-resolved run samples"
         )
-    sample_ids = tuple(sample.sample_name for sample in samples)
+    sample_ids = tuple(sample.raw_stem for sample in samples)
     if sample_ids != tuple(sorted(set(sample_ids))):
         raise ConservativeBackfillContractError(
             "sample_population must be unique and canonical-sorted"
@@ -597,9 +597,9 @@ def _group_reason_codes(
 def _target_cell(
     facts: ConservativeBackfillGroupFacts,
     *,
-    sample_id: str,
+    raw_stem: str,
 ) -> CellObservation:
-    cells = tuple(cell for cell in facts.source_cells if cell.sample_key == sample_id)
+    cells = tuple(cell for cell in facts.source_cells if cell.raw_stem == raw_stem)
     if len(cells) != 1:
         raise ConservativeBackfillContractError(
             "frozen group does not contain exactly one canonical target sample cell"

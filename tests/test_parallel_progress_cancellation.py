@@ -155,10 +155,10 @@ def _target(label: str) -> Target:
     )
 
 
-def _raw_result(raw_index: int, sample_name: str) -> RawFileExtractionResult:
+def _raw_result(raw_index: int, raw_stem: str) -> RawFileExtractionResult:
     return RawFileExtractionResult(
         raw_index=raw_index,
-        sample_name=sample_name,
-        file_result=FileResult(sample_name=sample_name, results={}),
+        raw_stem=raw_stem,
+        file_result=FileResult(raw_stem=raw_stem, results={}),
         diagnostics=[],
     )

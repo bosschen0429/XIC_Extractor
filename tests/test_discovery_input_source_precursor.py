@@ -27,7 +27,7 @@ def test_representative_precursor_follows_discovery_choice_within_one_scan(
     raw_path.write_bytes(b"representative-precursor")
     peak = _peak(
         peak_id="TumorBC2312_DNA@mz300.1_rt7.8000",
-        sample_stem="TumorBC2312_DNA",
+        raw_stem="TumorBC2312_DNA",
         peak_mz=300.1,
         best_ms2_scan_id=10,
     )

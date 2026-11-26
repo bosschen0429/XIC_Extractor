@@ -305,7 +305,7 @@ def test_untargeted_job_loads_saved_sequence_metadata_when_samples_are_absent(
         lambda path: RawSampleHeader(
             raw_path=str(path),
             raw_stem=path.stem,
-            sample_name="Header Alpha",
+            sample_label="Header Alpha",
             sample_id="A",
             row_number=4,
             sample_type="Unknown",
@@ -358,8 +358,8 @@ def test_untargeted_job_loads_saved_sequence_metadata_when_samples_are_absent(
         assert state["job"]["status"] == "succeeded"
         metadata = captured["request"].sample_metadata
         assert metadata is not None
-        assert [(row.sample_name, row.sample_role) for row in metadata] == [
-            ("Header Alpha", "qc")
+        assert [(row.sample_label, row.sample_role) for row in metadata] == [
+            ("Alpha", "qc")
         ]
         assert metadata[0].injection_order == 1
     finally:
@@ -436,7 +436,7 @@ def test_untargeted_job_takes_order_and_names_from_raw_and_keeps_annotations(
         lambda path: RawSampleHeader(
             raw_path=str(path),
             raw_stem=path.stem,
-            sample_name=f"Header {path.stem}",
+            sample_label=f"Header {path.stem}",
             sample_id=path.stem,
             row_number=None,
             sample_type="Unknown",
@@ -511,7 +511,7 @@ def test_untargeted_job_takes_order_and_names_from_raw_and_keeps_annotations(
             2,
             1,
         )
-        assert rows["Sample-A"].sample_name == "Header Sample-A"
+        assert rows["Sample-A"].sample_label == "Header Sample-A"
         assert (rows["Sample-A"].sample_role, rows["Sample-A"].prep_batch_id) == (
             "qc",
             "Prep A",

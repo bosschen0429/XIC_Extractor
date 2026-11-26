@@ -46,16 +46,16 @@ def _write_owner_closed_batch_index(
     rows: list[tuple[str, str, str]],
 ) -> None:
     batch_rows = []
-    for sample_stem, raw_file, candidate_csv in rows:
+    for raw_stem, raw_file, candidate_csv in rows:
         candidate_path = path.parent / (candidate_csv or "empty.csv")
         candidate_path.parent.mkdir(parents=True, exist_ok=True)
         write_csv(candidate_path, DISCOVERY_PEAK_COLUMNS, [])
         batch_rows.append(
             {
-                "sample_stem": sample_stem,
+                "sample_stem": raw_stem,
                 "raw_file": raw_file,
                 "peak_csv": candidate_csv,
-                **_owner_closed_receipt_fields(sample_stem, candidate_path),
+                **_owner_closed_receipt_fields(raw_stem, candidate_path),
             }
         )
     write_csv(path, DISCOVERY_BATCH_INDEX_COLUMNS, batch_rows)
@@ -1015,10 +1015,10 @@ def _write_owner_closed_preflight_batch(
     batch_index = tmp_path / "discovery_batch_index.csv"
     fieldnames = DISCOVERY_BATCH_INDEX_COLUMNS
     rows: list[dict[str, str]] = []
-    for sample_stem in sample_stems:
-        raw_path = raw_dir / f"{sample_stem}.raw"
+    for raw_stem in sample_stems:
+        raw_path = raw_dir / f"{raw_stem}.raw"
         raw_path.write_bytes(b"")
-        candidate_csv = tmp_path / f"{sample_stem.lower()}.csv"
+        candidate_csv = tmp_path / f"{raw_stem.lower()}.csv"
         candidate_csv.write_bytes(b"")
         acquisition_source = build_local_acquisition_source_identity(
             raw_path,
@@ -1026,7 +1026,7 @@ def _write_owner_closed_preflight_batch(
             observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
         )
         receipt = mint_discovery_peak_universe_receipt(
-            sample_stem=sample_stem,
+            raw_stem=raw_stem,
             acquisition_source=acquisition_source,
             peak_csv=candidate_csv,
             peaks=(),
@@ -1034,7 +1034,7 @@ def _write_owner_closed_preflight_batch(
         rows.append(
             {
                 "schema_version": DISCOVERY_BATCH_INDEX_SCHEMA_VERSION,
-                "sample_stem": sample_stem,
+                "sample_stem": raw_stem,
                 "raw_file": raw_path.name,
                 "peak_csv": candidate_csv.name,
                 "peak_count": "0",
@@ -1628,7 +1628,7 @@ def test_run_alignment_cli_routes_sample_metadata_without_losing_cohorts(
     if explicit_metadata:
         assert captured["request"].sample_metadata == (
             SampleMetadata(
-                sample_name="S2",
+                sample_label="S2",
                 raw_stem="S2",
                 injection_order=1,
                 sample_role="sample",
@@ -1638,7 +1638,7 @@ def test_run_alignment_cli_routes_sample_metadata_without_losing_cohorts(
                 group="B",
             ),
             SampleMetadata(
-                sample_name="S1",
+                sample_label="S1",
                 raw_stem="S1",
                 injection_order=2,
                 sample_role="qc",

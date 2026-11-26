@@ -126,10 +126,10 @@ class Figures:
         for item in self.observations:
             if not keep(item):
                 continue
-            fitted = self.calibration.samples.get(item.sample_stem)
+            fitted = self.calibration.samples.get(item.raw_stem)
             rt = fitted.calibrated_rt(item.rt_min) if fitted is not None else None
             if rt is not None:
-                values[item.sample_stem] = rt
+                values[item.raw_stem] = rt
         return values
 
     def _anchor_rt(self, anchor: DriftAnchor) -> dict[str, float]:
@@ -140,7 +140,7 @@ class Figures:
         counts: dict[str, set[str]] = {}
         for o in self.observations:
             if o.channel not in drifting:
-                counts.setdefault(o.channel, set()).add(o.sample_stem)
+                counts.setdefault(o.channel, set()).add(o.raw_stem)
         channel = max(counts, key=lambda c: (len(counts[c]), c))
         return channel, self._calibrated(lambda o: o.channel == channel)
 

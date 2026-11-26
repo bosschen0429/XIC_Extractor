@@ -83,7 +83,7 @@ def acquire_delta_mass_review(
     nl_settings = apply_to_discovery(load_preset(nl_preset)) if nl_preset else None
     by_sample: dict[str, list[ReviewCandidate]] = defaultdict(list)
     for candidate in selected:
-        by_sample[candidate.sample_stem].append(candidate)
+        by_sample[candidate.raw_stem].append(candidate)
     raw_paths = {
         p.stem: p
         for p in raw_directory.iterdir()
@@ -103,13 +103,11 @@ def acquire_delta_mass_review(
         feature_bounds = {
             f.feature_id: (f.rt_start_min, f.rt_end_min)
             for f in features
-            if f.sample_stem == sample
+            if f.raw_stem == sample
             and f.rt_start_min is not None
             and f.rt_end_min is not None
         }
-        feature_masses = {
-            f.feature_id: f.mz for f in features if f.sample_stem == sample
-        }
+        feature_masses = {f.feature_id: f.mz for f in features if f.raw_stem == sample}
         bounded_candidates = []
         for candidate in candidates:
             bounded_positions = tuple(
@@ -420,7 +418,7 @@ def _read_selected_candidates(
         selected.append(
             ReviewCandidate(
                 candidate_id=candidate_id,
-                sample_stem=row["sample_stem"],
+                raw_stem=row["sample_stem"],
                 method_label=row["method_label"],
                 pattern_id=row["pattern_id"],
                 status=row["status"],
@@ -437,7 +435,7 @@ def _read_selected_candidates(
             )
         )
     if policy is not MassRecalibration.NONE:
-        missing = {c.sample_stem for c in selected} - mass_results.keys()
+        missing = {c.raw_stem for c in selected} - mass_results.keys()
         if missing:
             raise ValueError(
                 f"Missing saved mass restoration for samples: {sorted(missing)}"

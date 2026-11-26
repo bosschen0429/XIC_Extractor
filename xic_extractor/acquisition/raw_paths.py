@@ -10,8 +10,8 @@ def existing_raw_paths(
     raw_dir: Path,
 ) -> dict[str, Path]:
     paths: dict[str, Path] = {}
-    for sample_stem in sample_order:
-        raw_file = raw_files.get(sample_stem)
+    for raw_stem in sample_order:
+        raw_file = raw_files.get(raw_stem)
         candidates: list[Path] = []
         if raw_file is not None and str(raw_file):
             if raw_file.is_absolute() and raw_file.resolve().is_relative_to(
@@ -19,9 +19,9 @@ def existing_raw_paths(
             ):
                 candidates.append(raw_file)
             candidates.append(raw_dir / raw_file.name)
-        candidates.append(raw_dir / f"{sample_stem}.raw")
+        candidates.append(raw_dir / f"{raw_stem}.raw")
         for candidate in candidates:
             if candidate.exists():
-                paths[sample_stem] = candidate
+                paths[raw_stem] = candidate
                 break
     return paths

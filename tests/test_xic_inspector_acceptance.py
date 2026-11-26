@@ -99,10 +99,10 @@ def test_acceptance_a1_production_owner_pipeline_fidelity(
     assert expected_observations.keys() <= {
         retained["physical_peak_key"] for retained in curves
     }
-    s1_sample = next(s for s in summary["samples"] if s["sample_stem"] == "S1")
-    curve = next(c for c in curves if c["sample_id"] == s1_sample["sample_key"])
+    s1_sample = next(s for s in summary["samples"] if s["sample_label"] == "S1")
+    curve = next(c for c in curves if c["sample_id"] == s1_sample["raw_stem"])
     assert curve["kind"] == "initial_capture"
-    assert curve["sample_id"] == s1_sample["sample_key"]
+    assert curve["sample_id"] == s1_sample["raw_stem"]
     assert len(curve["curves"]["rt"]) == len(curve["curves"]["raw"])
     assert len(curve["curves"]["rt"]) > 0
     assert curve["integration"] is not None

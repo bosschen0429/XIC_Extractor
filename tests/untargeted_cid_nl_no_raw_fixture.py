@@ -63,13 +63,13 @@ def build_untargeted_cid_nl_no_raw_fixture(
     sources: dict[str, AcquisitionSourceIdentity] = {}
     metadata = []
     source_paths: dict[str, Path] = {}
-    for injection_order, (sample_stem, sample_role) in enumerate(
+    for injection_order, (raw_stem, sample_role) in enumerate(
         sample_roles.items(),
         start=1,
     ):
-        source_path = tmp_path / f"{sample_stem}.synthetic"
-        source_path.write_bytes(f"untargeted-cid-nl-no-raw:{sample_stem}".encode())
-        sources[sample_stem] = build_local_acquisition_source_identity(
+        source_path = tmp_path / f"{raw_stem}.synthetic"
+        source_path.write_bytes(f"untargeted-cid-nl-no-raw:{raw_stem}".encode())
+        sources[raw_stem] = build_local_acquisition_source_identity(
             source_path,
             acquisition_format=(
                 THERMO_RAW_ACQUISITION_FORMAT
@@ -79,18 +79,18 @@ def build_untargeted_cid_nl_no_raw_fixture(
             observation_namespace=(
                 THERMO_RAW_OBSERVATION_NAMESPACE
                 if thermo_raw_sources
-                else f"untargeted-cid-nl:{sample_stem}"
+                else f"untargeted-cid-nl:{raw_stem}"
             ),
         )
         metadata.append(
             SampleMetadata(
-                sample_name=sample_stem,
-                raw_stem=sample_stem,
+                sample_label=raw_stem,
+                raw_stem=raw_stem,
                 injection_order=injection_order,
                 sample_role=sample_role,
             )
         )
-        source_paths[sample_stem] = source_path
+        source_paths[raw_stem] = source_path
     return UntargetedCidNlNoRawFixture(
         processing_attempt_id=str(uuid.uuid4()),
         samples=tuple(metadata),

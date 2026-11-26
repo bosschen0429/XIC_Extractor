@@ -95,6 +95,7 @@ def write_delta_mass_outputs(
     positions: list[dict[str, object]] = []
     for candidate in candidates:
         row = {k: v for k, v in asdict(candidate).items() if k != "positions"}
+        row["sample_stem"] = row.pop("raw_stem")
         discriminating = [
             p
             for p in candidate.positions
@@ -125,7 +126,7 @@ def write_delta_mass_outputs(
             positions.append(
                 {
                     "candidate_id": candidate.candidate_id,
-                    "sample_stem": candidate.sample_stem,
+                    "sample_stem": candidate.raw_stem,
                     **position_fields,
                 }
             )

@@ -142,17 +142,17 @@ def test_predecessor_cells_keep_all_supports_with_deterministic_outside_witness(
         assert {
             (
                 cell.group_hypothesis_id,
-                cell.sample_key,
+                cell.raw_stem,
             )
             for cell in cells
         } == {
-            (group.group_hypothesis_id, sample.sample_name)
+            (group.group_hypothesis_id, sample.raw_stem)
             for group in groups
             for sample, _assessment in assessments
         }
         for sample, assessment in assessments:
             sample_cells = tuple(
-                cell for cell in cells if cell.sample_key == sample.sample_name
+                cell for cell in cells if cell.raw_stem == sample.raw_stem
             )
             assert all(cell.method_assessment is assessment for cell in sample_cells)
             direct = tuple(
@@ -175,7 +175,7 @@ def test_predecessor_cells_keep_all_supports_with_deterministic_outside_witness(
         contents = {
             (
                 cell.group_hypothesis_id,
-                cell.sample_key,
+                cell.raw_stem,
             ): cell
             for cell in cells
         }
@@ -245,7 +245,7 @@ def test_recovery_evidence_stays_with_its_group_when_peer_has_no_input(
     groups = tuple(
         group
         for group in all_groups
-        if group.member_subjects[0].sample_key == initial_sample.sample_name
+        if group.member_subjects[0].raw_stem == initial_sample.raw_stem
     )
     assert len(groups) == 2
     recovered_group = min(groups, key=lambda group: group.group_center_rt)
@@ -265,7 +265,7 @@ def test_recovery_evidence_stays_with_its_group_when_peer_has_no_input(
         backfill_assessments_by_group={
             (
                 recovered_group.group_hypothesis_id,
-                recovered_sample.sample_name,
+                recovered_sample.raw_stem,
                 fixture.method_subject.method_subject_id,
             ): (recovered_sample, backfill_assessment)
         },
@@ -274,7 +274,7 @@ def test_recovery_evidence_stays_with_its_group_when_peer_has_no_input(
     )
     assert len(cells) == 3
     recovered_cells = tuple(
-        cell for cell in cells if cell.sample_key == recovered_sample.sample_name
+        cell for cell in cells if cell.raw_stem == recovered_sample.raw_stem
     )
     assert len(recovered_cells) == 1
     assert recovered_cells[0].group_hypothesis_id == (
@@ -307,7 +307,7 @@ def test_backfill_attempt_with_same_values_reuses_the_initial_assessment(
     group = next(
         group
         for group in groups
-        if group.member_subjects[0].sample_key == sample.sample_name
+        if group.member_subjects[0].raw_stem == sample.raw_stem
     )
     common = {
         "groups": groups,
@@ -322,7 +322,7 @@ def test_backfill_attempt_with_same_values_reuses_the_initial_assessment(
         backfill_assessments_by_group={
             (
                 group.group_hypothesis_id,
-                sample.sample_name,
+                sample.raw_stem,
                 fixture.method_subject.method_subject_id,
             ): (sample, relinked)
         },
@@ -332,7 +332,7 @@ def test_backfill_attempt_with_same_values_reuses_the_initial_assessment(
     assert all(
         cell.method_assessment is initial
         for cell in with_backfill
-        if cell.sample_key == sample.sample_name
+        if cell.raw_stem == sample.raw_stem
     )
 
 
@@ -383,7 +383,7 @@ def test_composer_distinguishes_completed_negative_search(
         method_assessment=negative_assessment,
     )
     predecessor_cells = tuple(
-        negative_cell if cell.sample_key == sample.sample_name else cell
+        negative_cell if cell.raw_stem == sample.raw_stem else cell
         for cell in spine.cells
     )
     handoff = _owner_handoff_for_cells(
@@ -551,7 +551,7 @@ def test_composer_merge_retains_both_predecessor_lanes_deterministically(
         for item in forward
     )
     expected_positions_by_sample = {
-        item.canonical_sample.sample_name: {
+        item.canonical_sample.raw_stem: {
             association.position.key
             for association in handoff.position_associations
             if association.position.sample is item.canonical_sample
@@ -560,7 +560,7 @@ def test_composer_merge_retains_both_predecessor_lanes_deterministically(
     }
     assert all(
         {association.position.key for association in item.position_associations}
-        == expected_positions_by_sample[item.canonical_sample.sample_name]
+        == expected_positions_by_sample[item.canonical_sample.raw_stem]
         for item in forward
     )
 
@@ -598,13 +598,13 @@ def test_composer_split_keeps_cartesian_not_searched_remainder(
     )
     predecessor = predecessor_spine.group
     members_by_sample = {
-        member.sample_key: member for member in predecessor.member_subjects
+        member.raw_stem: member for member in predecessor.member_subjects
     }
     left = group_from_members(
-        member_subjects=(members_by_sample[samples[0].sample_name],),
+        member_subjects=(members_by_sample[samples[0].raw_stem],),
     )
     right = group_from_members(
-        member_subjects=(members_by_sample[samples[1].sample_name],),
+        member_subjects=(members_by_sample[samples[1].raw_stem],),
     )
     coverage = _coverage_for_groups(
         fixture,
@@ -644,7 +644,7 @@ def test_final_member_rejects_hold_method_lane(tmp_path: Path) -> None:
         detector_invocation_id="gaussian15:s1:hold-invalid-final-member",
         evaluation_receipt=_completed_receipt(),
     )
-    source = next(cell for cell in spine.cells if cell.sample_key == sample.sample_name)
+    source = next(cell for cell in spine.cells if cell.raw_stem == sample.raw_stem)
     invalid_source = mint_cell_observation(
         sample=sample,
         target=fixture.target,

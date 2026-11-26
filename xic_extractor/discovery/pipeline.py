@@ -84,14 +84,14 @@ def _apply_blank_qualification_if_enabled(
     *,
     settings: DiscoverySettings,
     timing_recorder: TimingRecorder,
-    sample_stem: str,
+    raw_stem: str,
     acquisition_input: ProcessingAcquisitionInput,
 ) -> tuple[DiscoveryPeakPhysicalBinding, ...]:
     if not settings.enable_blank_qualification:
         return bindings
     with timing_recorder.stage(
         "discover.blank_qualification",
-        sample_stem=sample_stem,
+        raw_stem=raw_stem,
         metrics={"peak_count": len(bindings)},
     ) as stage:
         content = acquisition_input.blank_library_content
@@ -185,7 +185,7 @@ def run_discovery_batch(
     per_sample: list[DiscoveryRunOutputs] = []
     for sample_index, acquisition_input in enumerate(run_inputs):
         raise_if_discovery_cancelled(should_cancel)
-        sample_stem = acquisition_input.raw_path.stem
+        raw_stem = acquisition_input.raw_path.stem
         discovery_result = _discover_sample(
             settings=run_spec.settings,
             signal_processing_profile=run_spec.signal_processing_profile,
@@ -206,7 +206,7 @@ def run_discovery_batch(
         per_sample.append(publication.outputs)
         index_rows.append(publication.index_row)
         if progress_callback is not None:
-            progress_callback(sample_index + 1, len(run_inputs), sample_stem)
+            progress_callback(sample_index + 1, len(run_inputs), raw_stem)
 
     raise_if_discovery_cancelled(should_cancel)
     return DiscoveryBatchOutputs(
@@ -310,7 +310,7 @@ def _discover_completed_sample(
             acquired.physical_bindings,
             settings=settings,
             timing_recorder=timing_recorder,
-            sample_stem=acquisition_input.raw_path.stem,
+            raw_stem=acquisition_input.raw_path.stem,
             acquisition_input=acquisition_input,
         ),
         settings=settings,
@@ -335,7 +335,7 @@ def _acquire_discovery_sample(
     acquisition_input: ProcessingAcquisitionInput,
 ) -> _DiscoverySampleResult:
     raw_path = acquisition_input.raw_path
-    sample_stem = raw_path.stem
+    raw_stem = raw_path.stem
     with raw_opener(raw_path, dll_dir) as raw:
         completed = False
         acquired_measurements: _DiscoveryMs1Measurements | None = None
@@ -371,19 +371,19 @@ def _acquire_discovery_sample(
         finally:
             if not completed:
                 if acquired_measurements is None:
-                    record_raw_measurements(timing_recorder, raw, sample_stem)
+                    record_raw_measurements(timing_recorder, raw, raw_stem)
                 else:
                     try:
                         record_discovery_ms1_measurements(
                             timing_recorder,
                             acquired_measurements,
-                            sample_stem,
+                            raw_stem,
                         )
                     except Exception as diagnostic_exc:
                         timing_recorder.observe(
                             "diagnostic_projection_failure_count",
                             value=1,
-                            scope=sample_stem,
+                            scope=raw_stem,
                             unit="failures",
                             source="xic_extractor.discovery.pipeline",
                             availability="failed",

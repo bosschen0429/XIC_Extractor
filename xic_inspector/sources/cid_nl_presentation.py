@@ -88,7 +88,7 @@ def competition_groups(cell: dict[str, Any]) -> list[list[list[Any]]]:
     ID for one that was not selected.
     """
     groups: list[list[list[Any]]] = []
-    sid = cell["sample_key"]
+    sid = cell["raw_stem"]
     for risk in cell.get("membership_risks", ()):
         if not {"accepted_competition", "backfill_competition"}.intersection(
             risk["risk_flags"]
@@ -176,11 +176,7 @@ def _item_labels(view: ItemEvidence, samples, route):
         labels["group_counts"] = {
             **_group_counts(samples),
             "unresolved": len(
-                {
-                    c["sample_key"]
-                    for c in view.cells
-                    if c.get("variant") == "unresolved"
-                }
+                {c["raw_stem"] for c in view.cells if c.get("variant") == "unresolved"}
             ),
         }
     return labels
@@ -208,14 +204,14 @@ def build_sample(
     decision_refs: list[CardRef],
 ) -> dict[str, Any]:
     """One sample's saved value and what to read beside it."""
-    cells = [c for c in view.cells if c["sample_key"] == sid]
+    cells = [c for c in view.cells if c["raw_stem"] == sid]
     values = [c["quantitative_value"] for c in cells]
     note = None
     if view.item.kind == "row":
         note = "沒有單一定量結果" if len(cells) != 1 else blank_reason(cells[0])
     return {
         "sample_id": sid,
-        "sample_stem": sample_labels.get(sid, sid),
+        "sample_label": sample_labels.get(sid, sid),
         "support_origin": view.support_origins[sid],
         **({"quantitative_value": values[0]} if len(values) == 1 else {}),
         **({"note": note} if note else {}),
@@ -260,7 +256,7 @@ def build_render_item(
                 **asdict(w),
                 "matched": w in item.matched_witnesses,
                 "ms1_apex_mz": measured_mz_by_candidate.get(
-                    (w.candidate_id, w.sample_key)
+                    (w.candidate_id, w.raw_stem)
                 ),
             }
             for w in item.witnesses

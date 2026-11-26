@@ -130,7 +130,7 @@ def test_production_batch_preserves_bounded_subject_membership(
         raw_paths=(raw_path,),
         sample_metadata=(
             SampleMetadata(
-                sample_name="S1",
+                sample_label="S1",
                 raw_stem="S1",
                 injection_order=1,
                 sample_role="sample",

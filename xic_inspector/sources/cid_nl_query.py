@@ -57,11 +57,7 @@ class IndexedCidNlSource(CidNlSource):
         evidence = read_review_evidence(
             self.path,
             candidate_keys=sorted(
-                {
-                    (w.candidate_id, w.sample_key)
-                    for item in items
-                    for w in item.witnesses
-                }
+                {(w.candidate_id, w.raw_stem) for item in items for w in item.witnesses}
             ),
             row_ids=sorted({item.identifier for item in items if item.kind == "row"}),
             summary=self.summary,

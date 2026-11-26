@@ -30,7 +30,7 @@ from xic_extractor.peak_detection.traces import Trace
 
 def cid_nl_peak(
     fixture: ProcessingIdentityNoRawFixture,
-    sample_stem: str,
+    raw_stem: str,
     *,
     mz: float = PRECURSOR_MZ,
     apex_rt: float = 8.0,
@@ -38,10 +38,10 @@ def cid_nl_peak(
     rt_right_min: float = 8.1,
     height: float = 500.0,
 ) -> PeakObservation:
-    sample = fixture.sample(sample_stem)
+    sample = fixture.sample(raw_stem)
     source = fixture.source(sample)
     trace = Trace.from_arrays(
-        sample_name=sample_stem,
+        raw_stem=raw_stem,
         mz=mz,
         rt=(
             rt_left_min - 0.1,
@@ -80,14 +80,14 @@ def cid_nl_peak(
 
 def cid_nl_evidence(
     fixture: ProcessingIdentityNoRawFixture,
-    sample_stem: str,
+    raw_stem: str,
     *,
     scan_number: int,
     scan_rt_min: float,
 ) -> CidNlEvidenceObservation:
     return cid_nl_evidence_observation(
-        sample=fixture.sample(sample_stem),
-        acquisition_source=fixture.source(fixture.sample(sample_stem)),
+        sample=fixture.sample(raw_stem),
+        acquisition_source=fixture.source(fixture.sample(raw_stem)),
         scan_number=scan_number,
         precursor_mz=PRECURSOR_MZ,
         product_mz=PRODUCT_MZ,
@@ -101,14 +101,14 @@ def cid_nl_evidence(
 
 def cid_nl_unique_support(
     fixture: ProcessingIdentityNoRawFixture,
-    sample_stem: str,
+    raw_stem: str,
     *,
     peak: PeakObservation,
     evidence: CidNlEvidenceObservation,
     candidate_peaks: tuple[PeakObservation, ...] | None = None,
 ) -> DdaCidNlPeakSupport:
     (support,), sets = resolve_cid_nl_method_relations(
-        sample=fixture.sample(sample_stem),
+        sample=fixture.sample(raw_stem),
         evidence_refs=(evidence,),
         candidate_peaks=candidate_peaks or (peak,),
         policy=cid_nl_support_policy(),
@@ -119,13 +119,13 @@ def cid_nl_unique_support(
 
 def cid_nl_set_relation(
     fixture: ProcessingIdentityNoRawFixture,
-    sample_stem: str,
+    raw_stem: str,
     *,
     evidence: CidNlEvidenceObservation,
     candidate_peaks: tuple[PeakObservation, ...],
 ) -> DdaCidNlCandidateSetRelation:
     individual, (relation,) = resolve_cid_nl_method_relations(
-        sample=fixture.sample(sample_stem),
+        sample=fixture.sample(raw_stem),
         evidence_refs=(evidence,),
         candidate_peaks=candidate_peaks,
         policy=cid_nl_support_policy(),

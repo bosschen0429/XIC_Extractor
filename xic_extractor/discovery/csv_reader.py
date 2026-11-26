@@ -81,18 +81,18 @@ def read_discovery_batch_index(
     event_csvs: dict[str, Path | None] = {}
     peak_receipts: dict[str, DiscoveryPeakUniverseReceipt] = {}
     for row_number, row in rows:
-        sample_stem = _machine_text(row.get("sample_stem", ""))
+        raw_stem = _machine_text(row.get("sample_stem", ""))
         peak_csv = _machine_text(row.get("peak_csv", ""))
         raw_file = _machine_text(row.get("raw_file", ""))
         event_csv = _machine_text(row.get("event_csv", ""))
-        if not sample_stem:
+        if not raw_stem:
             raise ValueError(f"{path}: row {row_number}: sample_stem is required")
         if not peak_csv:
             raise ValueError(f"{path}: row {row_number}: peak_csv is required")
-        if sample_stem in peak_csvs:
+        if raw_stem in peak_csvs:
             raise ValueError(
                 f"{path}: row {row_number}: duplicate sample_stem values are not "
-                f"supported ({sample_stem!r})"
+                f"supported ({raw_stem!r})"
             )
         schema_version = _machine_text(row.get("schema_version", ""))
         if schema_version != DISCOVERY_BATCH_INDEX_SCHEMA_VERSION:
@@ -109,20 +109,20 @@ def read_discovery_batch_index(
         try:
             receipt = discovery_receipt_from_index_fields(
                 row,
-                sample_stem=sample_stem,
+                raw_stem=raw_stem,
                 peak_count=peak_count,
             )
         except (IdentityContractError, ValueError) as exc:
             raise ValueError(
                 f"{path}: row {row_number}: invalid Discovery receipt: {exc}"
             ) from exc
-        sample_order.append(sample_stem)
-        peak_csvs[sample_stem] = _resolve_artifact_path(path.parent, peak_csv)
-        raw_files[sample_stem] = _raw_file_path(raw_file) if raw_file else None
-        event_csvs[sample_stem] = (
+        sample_order.append(raw_stem)
+        peak_csvs[raw_stem] = _resolve_artifact_path(path.parent, peak_csv)
+        raw_files[raw_stem] = _raw_file_path(raw_file) if raw_file else None
+        event_csvs[raw_stem] = (
             _resolve_artifact_path(path.parent, event_csv) if event_csv else None
         )
-        peak_receipts[sample_stem] = receipt
+        peak_receipts[raw_stem] = receipt
     return DiscoveryBatchIndex(
         path=path,
         sample_order=tuple(sample_order),
@@ -176,7 +176,7 @@ def located_events_by_peak(
     path: Path,
     *,
     raw_file: Path,
-    sample_stem: str,
+    raw_stem: str,
     neutral_loss_by_tag: Mapping[str, float],
 ) -> dict[str, tuple[DiscoveryEvent, ...]]:
     """Every event locating each peak of one sample's event table."""
@@ -184,7 +184,7 @@ def located_events_by_peak(
     for item in read_discovery_events_csv(
         path,
         raw_file=raw_file,
-        sample_stem=sample_stem,
+        raw_stem=raw_stem,
         neutral_loss_by_tag=neutral_loss_by_tag,
     ):
         if item.peak_id:
@@ -196,7 +196,7 @@ def read_discovery_events_csv(
     path: Path,
     *,
     raw_file: Path,
-    sample_stem: str,
+    raw_stem: str,
     neutral_loss_by_tag: Mapping[str, float],
 ) -> tuple[EventAttachment, ...]:
     """Read one sample's event table back into its events and located peaks."""
@@ -210,7 +210,7 @@ def read_discovery_events_csv(
             row_number,
             row,
             raw_file=raw_file,
-            sample_stem=sample_stem,
+            raw_stem=raw_stem,
             neutral_loss_by_tag=neutral_loss_by_tag,
         )
         for row_number, row in rows
@@ -238,7 +238,7 @@ def parse_discovery_event_row(
     row: Mapping[str, str],
     *,
     raw_file: Path,
-    sample_stem: str,
+    raw_stem: str,
     neutral_loss_by_tag: Mapping[str, float],
 ) -> EventAttachment:
     values = dict(row)
@@ -292,7 +292,7 @@ def parse_discovery_event_row(
             validate_ms1_precursor_observation(observation)
         event = DiscoveryEvent(
             raw_file=raw_file,
-            sample_stem=sample_stem,
+            raw_stem=raw_stem,
             scan_number=_parse_int(path, row_number, values, "ms2_scan_number"),
             rt=number("ms2_rt"),
             precursor_mz=number("precursor_mz"),
@@ -358,7 +358,7 @@ def _parse_peak_row(
 
     return DiscoveryPeak(
         peak_id=_machine_text(peak_id),
-        sample_stem=_machine_field(row, "sample_stem"),
+        raw_stem=_machine_field(row, "sample_stem"),
         peak_mz=number("peak_mz"),
         neutral_loss_tag=text("neutral_loss_tag"),
         best_ms2_scan_id=integer("best_ms2_scan_id"),

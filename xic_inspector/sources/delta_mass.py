@@ -38,21 +38,21 @@ class DeltaMassReviewSource:
             "plot_evidence_capability": "retained_curves",
             "processing_attempt_id": str(path.resolve()),
             "samples": [
-                {"sample_key": sample, "sample_stem": sample}
-                for sample in sorted({c.sample_stem for c in self.review.candidates})
+                {"raw_stem": sample, "sample_label": sample}
+                for sample in sorted({c.raw_stem for c in self.review.candidates})
             ],
         }
 
     def load_items(self, sample_ids: set[str]) -> list[CanonicalItem]:
         items = []
         for candidate in self.review.candidates:
-            if candidate.sample_stem not in sample_ids:
+            if candidate.raw_stem not in sample_ids:
                 continue
             _, ref = build_canonical_ref(
                 "candidate",
                 self.summary["processing_attempt_id"],
                 candidate.candidate_id,
-                candidate.sample_stem,
+                candidate.raw_stem,
             )
             items.append(
                 CanonicalItem(
@@ -60,14 +60,13 @@ class DeltaMassReviewSource:
                     attempt_id=self.summary["processing_attempt_id"],
                     identifier=candidate.candidate_id,
                     serialized_ref=ref,
-                    sample_ids=(candidate.sample_stem,),
+                    sample_ids=(candidate.raw_stem,),
                     witnesses=tuple(
                         Witness(
-                            sample_key=candidate.sample_stem,
+                            raw_stem=candidate.raw_stem,
                             candidate_id=candidate.candidate_id,
                             precursor_mz=p.query_mz,
                             rt_apex_min=candidate.base_rt_apex_min,
-                            sample_stem=candidate.sample_stem,
                         )
                         for p in candidate.positions
                     ),
@@ -93,7 +92,7 @@ class DeltaMassReviewSource:
                     "id": item.serialized_ref,
                     "kind": "candidate",
                     "stratum": "rest",
-                    "title": candidate.sample_stem,
+                    "title": candidate.raw_stem,
                     "badge_label": "Delta Mass 候選",
                     "method_label": candidate.method_label,
                     "reason_label": candidate.candidate_id,
@@ -107,11 +106,11 @@ class DeltaMassReviewSource:
                         "scope_sample_count": 1,
                         "origin_kinds": [],
                     },
-                    "samples": [{"sample_id": candidate.sample_stem}],
+                    "samples": [{"sample_id": candidate.raw_stem}],
                     "witnesses": [asdict(w) for w in item.witnesses],
                     "curves": [
                         {
-                            "sample_id": candidate.sample_stem,
+                            "sample_id": candidate.raw_stem,
                             "candidate_id": candidate.candidate_id,
                             "evidence_ref": position.label,
                             "position_label": position.label,

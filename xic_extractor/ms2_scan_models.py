@@ -66,7 +66,7 @@ class Ms2Window:
     count toward the window's scanned events.
     """
 
-    sample_key: str
+    raw_stem: str
     rt_min: float
     rt_max: float
     events: tuple[Ms2ScanEvent, ...]

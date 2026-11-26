@@ -107,7 +107,7 @@ class KnownIstdReference:
     def _corrected_rt_min(self, owner: SampleLocalMS1Owner) -> float | None:
         return interpolate_calibrated_rt_min(
             owner.peak.rt_apex_min,
-            self._knots_by_sample.get(owner.sample_stem, ()),
+            self._knots_by_sample.get(owner.raw_stem, ()),
         )
 
     def bind(
@@ -128,7 +128,7 @@ class KnownIstdReference:
         targets = {target.label: target for target in self.anchor.targets}
         owners_by_sample: dict[str, list[SampleLocalMS1Owner]] = {}
         for owner in owners:
-            owners_by_sample.setdefault(owner.sample_stem, []).append(owner)
+            owners_by_sample.setdefault(owner.raw_stem, []).append(owner)
         candidates: list[tuple[str, str, float]] = []
         counts: dict[str, int] = {}
         for label, sample, rt, delta in self.coordinates:
@@ -173,10 +173,10 @@ class KnownIstdOwnerLookup:
     def source(self) -> Literal["targeted_istd_trend"]:
         return "targeted_istd_trend"
 
-    def sample_delta_min(self, sample_stem: str) -> None:
+    def sample_delta_min(self, raw_stem: str) -> None:
         return None
 
-    def injection_order(self, sample_stem: str) -> None:
+    def injection_order(self, raw_stem: str) -> None:
         return None
 
     @cached_property
@@ -272,7 +272,7 @@ def _istd_target_snapshot_payload(targets: tuple[Target, ...]) -> dict[str, obje
 
 @dataclass(frozen=True)
 class SampleDriftEvidence:
-    sample_stem: str
+    raw_stem: str
     injection_order: int
     istd_rt_min: float
     local_trend_rt_min: float
@@ -324,35 +324,34 @@ class DriftEvidenceLookup:
             return "targeted_istd_trend"
         return "batch_istd_trend"
 
-    def sample_delta_min(self, sample_stem: str) -> float | None:
-        return self._sample_delta_medians.get(sample_stem)
+    def sample_delta_min(self, raw_stem: str) -> float | None:
+        return self._sample_delta_medians.get(raw_stem)
 
-    def injection_order(self, sample_stem: str) -> int | None:
-        orders = self._injection_orders_by_sample.get(sample_stem)
+    def injection_order(self, raw_stem: str) -> int | None:
+        orders = self._injection_orders_by_sample.get(raw_stem)
         if not orders:
             return None
         if len(orders) == 1:
             return orders[0]
         raise ValueError(
-            f"conflicting injection order for sample {sample_stem!r}: {list(orders)}"
+            f"conflicting injection order for sample {raw_stem!r}: {list(orders)}"
         )
 
     @cached_property
     def _sample_delta_medians(self) -> dict[str, float]:
         by_sample: dict[str, list[float]] = {}
         for point in self.points:
-            by_sample.setdefault(point.sample_stem, []).append(point.rt_drift_delta_min)
+            by_sample.setdefault(point.raw_stem, []).append(point.rt_drift_delta_min)
         return {
-            sample_stem: float(statistics.median(deltas))
-            for sample_stem, deltas in by_sample.items()
+            raw_stem: float(statistics.median(deltas))
+            for raw_stem, deltas in by_sample.items()
         }
 
     @cached_property
     def _injection_orders_by_sample(self) -> dict[str, tuple[int, ...]]:
         by_sample: dict[str, set[int]] = {}
         for point in self.points:
-            by_sample.setdefault(point.sample_stem, set()).add(point.injection_order)
+            by_sample.setdefault(point.raw_stem, set()).add(point.injection_order)
         return {
-            sample_stem: tuple(sorted(orders))
-            for sample_stem, orders in by_sample.items()
+            raw_stem: tuple(sorted(orders)) for raw_stem, orders in by_sample.items()
         }

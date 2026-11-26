@@ -126,7 +126,7 @@ def read_targeted_points(path: Path) -> dict[str, tuple[TargetedPoint, ...]]:
                 continue
             grouped.setdefault(label, []).append(
                 TargetedPoint(
-                    sample_stem=current_sample,
+                    raw_stem=current_sample,
                     target_label=label,
                     rt=_float_value(row[cols["RT"]]),
                     area=_float_value(row[cols["Area"]]),
@@ -156,7 +156,7 @@ def read_targeted_reliability_points(
         target = _required_text_value(path, index, row, "target_label")
         state = _required_text_value(path, index, row, "reliability_state")
         points[(sample, target)] = TargetedReliabilityPoint(
-            sample_stem=sample,
+            raw_stem=sample,
             target_label=target,
             reliability_state=state,
             risk_reasons=_risk_reasons_value(row.get("risk_reasons")),
@@ -289,7 +289,7 @@ def read_alignment_cells(path: Path) -> dict[tuple[str, str], AlignmentCell]:
         sample = _normalize_sample_id(row["sample_stem"])
         cell = AlignmentCell(
             feature_id=row["feature_id"],
-            sample_stem=sample,
+            raw_stem=sample,
             status=row.get("status", ""),
             area=_float_value(row.get("area")),
             apex_rt=_float_value(row.get("apex_rt")),

@@ -390,7 +390,7 @@ def test_cid_nl_join_records_unmatched_reason_and_reproduces_from_published_tabl
 
     def candidate(sample, mz, rt):
         return DeltaMassCandidate(
-            sample_stem=sample,
+            raw_stem=sample,
             method_label="synthetic",
             pattern_id="synthetic",
             candidate_id=sample,

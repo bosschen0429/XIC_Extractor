@@ -30,7 +30,7 @@ class DdaCidNlCandidateSetRelationContractError(ValueError):
 class DdaCidNlCandidateSetRelation:
     """Immutable set-level relation; it carries no individual vote."""
 
-    sample_key: str
+    raw_stem: str
     evidence: CidNlEvidenceObservation
     candidate_peaks: tuple[PeakObservation, ...]
     matched_candidates: tuple[PeakObservation, ...]

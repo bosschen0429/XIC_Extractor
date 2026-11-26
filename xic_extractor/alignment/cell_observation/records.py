@@ -55,8 +55,8 @@ class CellObservation:
     )
 
     @property
-    def sample_key(self) -> str:
-        return self.method_assessment.sample_key
+    def raw_stem(self) -> str:
+        return self.method_assessment.raw_stem
 
     @property
     def group_hypothesis_id(self) -> str:
@@ -122,7 +122,7 @@ def _outside_group_relation(
         support
         for support in outside_group_context.supports
         if support.assessment is method_assessment
-        and support.sample.sample_name == method_assessment.sample_key
+        and support.sample.raw_stem == method_assessment.raw_stem
     )
     if len(supports) != 1:
         raise CellObservationContractError(
@@ -152,11 +152,11 @@ def mint_cell_observation(
 ) -> CellObservation:
     """Attach a completed assessment to an existing group without creating it."""
 
-    if method_assessment.sample_key != (sample.sample_name):
+    if method_assessment.raw_stem != (sample.raw_stem):
         raise CellObservationContractError("assessment references a different sample")
     support_binding = any(
         support.assessment == method_assessment
-        and support.sample.sample_name == sample.sample_name
+        and support.sample.raw_stem == sample.raw_stem
         for support in group_context.supports
     )
     if method_assessment.method_subject != group_context.method_subject and (

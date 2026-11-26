@@ -128,7 +128,7 @@ def _directional_inference(
     counts["directional_passes"] += 1
     by_sample: dict[str, list[SampleLocalMS1Owner]] = defaultdict(list)
     for owner in owners:
-        by_sample[owner.sample_stem].append(owner)
+        by_sample[owner.raw_stem].append(owner)
     sample_stems = sorted(
         by_sample,
         key=lambda sample: _sample_sort_key(sample, injection_order),
@@ -149,10 +149,10 @@ def _directional_inference(
         if seed is not None:
             seed_feature.setdefault(seed, feature_key)
 
-    for sample_stem in sample_stems:
+    for raw_stem in sample_stems:
         counts["samples_processed"] += 1
         sample_owners = tuple(
-            sorted(by_sample[sample_stem], key=lambda item: item.owner_id)
+            sorted(by_sample[raw_stem], key=lambda item: item.owner_id)
         )
         seeded_rows = tuple(
             owner
@@ -172,7 +172,7 @@ def _directional_inference(
             decisions.append(
                 SparseFeatureDecision(
                     direction=direction,
-                    sample_stem=sample_stem,
+                    raw_stem=raw_stem,
                     owner_id=owner.owner_id,
                     feature_key=feature_key,
                     state="assigned",
@@ -198,7 +198,7 @@ def _directional_inference(
                 decisions.append(
                     SparseFeatureDecision(
                         direction=direction,
-                        sample_stem=sample_stem,
+                        raw_stem=raw_stem,
                         owner_id=owner.owner_id,
                         feature_key=feature_key,
                         state="evaluated_undecided",
@@ -271,7 +271,7 @@ def _directional_inference(
                 decisions.append(
                     SparseFeatureDecision(
                         direction=direction,
-                        sample_stem=sample_stem,
+                        raw_stem=raw_stem,
                         owner_id=owner.owner_id,
                         feature_key=candidate.feature_key,
                         state=state,
@@ -312,7 +312,7 @@ def _directional_inference(
             decisions.append(
                 SparseFeatureDecision(
                     direction=direction,
-                    sample_stem=sample_stem,
+                    raw_stem=raw_stem,
                     owner_id=owner.owner_id,
                     feature_key=feature.key,
                     state=state,
@@ -328,9 +328,9 @@ def _directional_inference(
 
 
 def _sample_sort_key(
-    sample_stem: str,
+    raw_stem: str,
     injection_order: Mapping[str, int] | None,
 ) -> tuple[bool, int, str]:
-    if injection_order is None or sample_stem not in injection_order:
-        return True, 0, sample_stem
-    return False, injection_order[sample_stem], sample_stem
+    if injection_order is None or raw_stem not in injection_order:
+        return True, 0, raw_stem
+    return False, injection_order[raw_stem], raw_stem

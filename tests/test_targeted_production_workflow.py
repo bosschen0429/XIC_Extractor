@@ -242,7 +242,7 @@ def test_publication_uses_final_peak_evidence_not_stale_selected_summary(tmp_pat
     assert second_final.nl_token == "NO_MS2"
     assert not second_final.selected_cid_nl_supported
     nl_records = [d for d in published.diagnostics if d.issue in {"NL_FAIL", "NO_MS2"}]
-    assert [d.sample_name for d in nl_records] == ["SampleB"]
+    assert [d.raw_stem for d in nl_records] == ["SampleB"]
     assert "stale" not in nl_records[0].reason
 
 
@@ -256,7 +256,7 @@ def test_two_samples_reuse_exact_acquired_physical_evaluations(
         sample_peak_scales={"SampleA": 1.0, "SampleB": 2.0},
     )
     acquired = {
-        file_result.sample_name: file_result.results[target.label].physical_evaluation
+        file_result.raw_stem: file_result.results[target.label].physical_evaluation
         for file_result in output.file_results
     }
     finalized = execute_targeted_production_workflow(
@@ -321,8 +321,8 @@ def test_targeted_grouping_keeps_each_sample_selected_value(
     groups = result.scientific_core.final_population
     assert groups == result.scientific_core.grouping_result.initial_population
     assert {
-        member.sample_key for group in groups for member in group.member_subjects
-    } == {sample.sample_name for sample in result.canonical_samples}
+        member.raw_stem for group in groups for member in group.member_subjects
+    } == {sample.raw_stem for sample in result.canonical_samples}
 
 
 def test_nl_event_outside_exact_target_precursor_is_not_target_evidence(
@@ -446,10 +446,10 @@ def test_nl_event_outside_retained_peak_finalizes_without_direct_support(
         output.file_results[1].results[target.label].reported_peak_area,
     )
     assert {
-        member.sample_key
+        member.raw_stem
         for group in result.scientific_core.final_population
         for member in group.member_subjects
-    } == {sample.sample_name for sample in result.canonical_samples}
+    } == {sample.raw_stem for sample in result.canonical_samples}
 
 
 def test_retained_peak_outside_target_rt_is_not_a_target_capture(
@@ -616,7 +616,7 @@ def test_missing_selected_peak_finalizes_as_searched_no_observation(
     rt = np.linspace(1.0, 2.0, 101)
     flat_intensity = np.full_like(rt, 10.0)
     trace = Trace.from_arrays(
-        sample_name="SampleA",
+        raw_stem="SampleA",
         mz=target.mz,
         rt=rt,
         intensity=flat_intensity,
@@ -741,7 +741,7 @@ def test_neutral_loss_disabled_target_without_selected_ms1_is_no_write(
         original = file_result.results[target.label]
         rt = np.linspace(1.0, 2.0, 101)
         trace = Trace.from_arrays(
-            sample_name=file_result.sample_name,
+            raw_stem=file_result.raw_stem,
             mz=target.mz,
             rt=rt,
             intensity=np.zeros_like(rt),
@@ -837,7 +837,7 @@ def test_reordered_acquisition_results_bind_by_raw_sample_identity(
     )
 
     assert [
-        (sample.raw_stem, sample.sample_name)
+        (sample.raw_stem, sample.sample_label)
         for sample in finalized[0].canonical_samples
     ] == [("SampleA", "SampleA"), ("SampleB", "SampleB")]
 
@@ -852,7 +852,7 @@ def test_crossed_acquisition_trace_sample_fails_closed(tmp_path: Path) -> None:
     assert trace is not None
     output.file_results[0].results[target.label] = replace(
         extraction,
-        acquisition_trace=replace(trace, sample_name="SampleB"),
+        acquisition_trace=replace(trace, raw_stem="SampleB"),
     )
 
     with pytest.raises(RuntimeError, match="crossed the canonical sample identity"):

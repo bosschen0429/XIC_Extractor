@@ -59,7 +59,7 @@ def test_discovery_cli_reports_batch_execution_failure(
         raise DiscoveryProcessExecutionError(
             DiscoverySampleProcessError(
                 sample_index=0,
-                sample_stem="A",
+                raw_stem="A",
                 raw_name="A.raw",
                 message="unable to open RAW",
             ),

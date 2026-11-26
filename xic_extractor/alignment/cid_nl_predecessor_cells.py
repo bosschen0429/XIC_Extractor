@@ -59,10 +59,10 @@ def compose_cid_nl_predecessor_cells(
         id(assessment) for _, assessment in sample_assessments
     }
     backfills = backfill_assessments_by_group or {}
-    for (_, sample_id, subject_id), (sample, assessment) in backfills.items():
+    for (_, raw_stem, subject_id), (sample, assessment) in backfills.items():
         if (
-            sample.sample_name != sample_id
-            or assessment.sample_key != sample_id
+            sample.raw_stem != raw_stem
+            or assessment.raw_stem != raw_stem
             or assessment.method_subject.method_subject_id != subject_id
         ):
             raise CellObservationContractError(
@@ -77,7 +77,7 @@ def compose_cid_nl_predecessor_cells(
     sample_assessments = tuple(
         sorted(
             unique_assessments.values(),
-            key=lambda pair: pair[0].sample_name,
+            key=lambda pair: pair[0].raw_stem,
         )
     )
     retained_hypothesis_ids = frozenset(
@@ -113,13 +113,13 @@ def compose_cid_nl_predecessor_cells(
             for member in group.member_subjects:
                 if member.subject_id in missing_owner_ids:
                     missing_member_observations_by_sample.setdefault(
-                        member.sample_key,
+                        member.raw_stem,
                         set(),
                     ).update(member.physical_peaks)
         for sample, assessment in sample_assessments:
-            sample_id = sample.sample_name
+            raw_stem = sample.raw_stem
             missing_observation_ids = missing_member_observations_by_sample.get(
-                sample_id,
+                raw_stem,
                 set(),
             )
             if not missing_observation_ids.intersection(
@@ -156,7 +156,7 @@ def compose_cid_nl_predecessor_cells(
                         for owner_id in group.owner_ids
                         if owner_id in supports_by_hypothesis_id
                     ),
-                    key=lambda support: support.sample.sample_name,
+                    key=lambda support: support.sample.raw_stem,
                 )
             ),
             config=alignment_config,
@@ -170,18 +170,18 @@ def compose_cid_nl_predecessor_cells(
     ] = {}
     samples = {}
     for sample, assessment in sample_assessments:
-        sample_id = sample.sample_name
-        samples[sample_id] = sample
+        raw_stem = sample.raw_stem
+        samples[raw_stem] = sample
         if id(assessment) in initial_assessment_objects:
             assessments_by_sample_subject.setdefault(
-                (sample_id, assessment.method_subject.method_subject_id), []
+                (raw_stem, assessment.method_subject.method_subject_id), []
             ).append(assessment)
     support_contexts: dict[tuple[str, int], list[CidNlCellGroupContext]] = {}
     for context in contexts:
         for support in context.direct_supports:
             support_contexts.setdefault(
                 (
-                    support.sample.sample_name,
+                    support.sample.raw_stem,
                     id(support.assessment),
                 ),
                 [],
@@ -190,24 +190,24 @@ def compose_cid_nl_predecessor_cells(
     for context in contexts:
         method_subject_id = context.method_subject_id
         context_support_by_sample_id = {
-            support.sample.sample_name: support for support in context.supports
+            support.sample.raw_stem: support for support in context.supports
         }
-        for sample_id in samples:
+        for raw_stem in samples:
             if (
                 selected_cells is not None
-                and (context.group.group_hypothesis_id, sample_id) not in selected_cells
+                and (context.group.group_hypothesis_id, raw_stem) not in selected_cells
             ):
                 continue
-            sample = samples[sample_id]
-            local_support = context_support_by_sample_id.get(sample_id)
+            sample = samples[raw_stem]
+            local_support = context_support_by_sample_id.get(raw_stem)
             local_refs = () if local_support is None else (local_support.assessment,)
             canonical_refs = assessments_by_sample_subject.get(
-                (sample_id, method_subject_id), ()
+                (raw_stem, method_subject_id), ()
             )
             backfill = backfills.get(
                 (
                     context.group.group_hypothesis_id,
-                    sample_id,
+                    raw_stem,
                     method_subject_id,
                 )
             )
@@ -239,7 +239,7 @@ def compose_cid_nl_predecessor_cells(
             elif assessment.method_result == "SUPPORT":
                 siblings = tuple(
                     sibling
-                    for sibling in support_contexts.get((sample_id, id(assessment)), ())
+                    for sibling in support_contexts.get((raw_stem, id(assessment)), ())
                     if sibling is not context
                 )
                 outside_context = (
@@ -254,7 +254,7 @@ def compose_cid_nl_predecessor_cells(
                     is_ms1_only_cid_nl_backfill_assessment(assessment)
                     and (
                         context.group.group_hypothesis_id,
-                        sample_id,
+                        raw_stem,
                     )
                     in rejected_backfill_cells
                 )

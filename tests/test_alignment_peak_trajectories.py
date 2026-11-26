@@ -207,7 +207,7 @@ def test_observed_peak_keeps_its_location_without_borrowing_another_batch():
 def _owner(sample: str, label: str, rt: float) -> SampleLocalMS1Owner:
     return SampleLocalMS1Owner(
         owner_id=f"{sample}:{label}",
-        sample_stem=sample,
+        raw_stem=sample,
         raw_file=f"{sample}.raw",
         peak=measured_peak(
             mz=500.0,
@@ -227,7 +227,7 @@ def _context(
     sample: str, peaks: tuple[tuple[float, float], ...]
 ) -> SampleElutionContext:
     return SampleElutionContext(
-        sample_stem=sample,
+        raw_stem=sample,
         mz=500.0,
         rt_start=8.0,
         rt_end=15.0,
@@ -717,7 +717,7 @@ def test_landmarks_exclude_clipped_edge_and_keep_interior_maxima() -> None:
     )
     prepared = prepare_physical_signal(rt, raw)
     before = prepared.prepared
-    context = project_elution_context(prepared, sample_stem="sample", mz=500.0)
+    context = project_elution_context(prepared, raw_stem="sample", mz=500.0)
     assert context is not None
     assert [landmark.apex_rt for landmark in context.landmarks] == pytest.approx(
         [1.0, 1.6], abs=0.01
@@ -734,7 +734,7 @@ def test_membership_exclusion_requires_distinct_physical_segments(shared_lobe, r
     raw += 500.0 * np.exp(-0.5 * ((rt - 9.85) / 0.08) ** 2)
     prepared = prepare_physical_signal(rt, raw)
     contexts = [
-        project_elution_context(prepared, sample_stem=sample, mz=500.0)
+        project_elution_context(prepared, raw_stem=sample, mz=500.0)
         for sample in ("a", "b", "ms1_only", "ms1_extra")
     ]
     assert all(
@@ -752,7 +752,7 @@ def test_membership_exclusion_requires_distinct_physical_segments(shared_lobe, r
     )
     unrelated = prepare_physical_signal(rt, unrelated_signal)
     contexts.extend(
-        project_elution_context(unrelated, sample_stem=sample, mz=700.0)
+        project_elution_context(unrelated, raw_stem=sample, mz=700.0)
         for sample in ("a", "b", "ms1_only", "ms1_extra")
     )
     model = resolve_peak_trajectories(
@@ -765,7 +765,7 @@ def test_membership_exclusion_requires_distinct_physical_segments(shared_lobe, r
     assert model.permits_membership(owner.owner_id for owner in owners) is shared_lobe
     if shared_lobe:
         assert dict(model.trajectory_for(owners).sample_apices) == {
-            owner.sample_stem: owner.peak.integration.rt_apex_min for owner in owners
+            owner.raw_stem: owner.peak.integration.rt_apex_min for owner in owners
         }
 
 
@@ -784,7 +784,7 @@ def test_backfill_rt_uses_trajectory_fit_and_target_sample_coordinates() -> None
         .trajectory_for(members)
         .locate(
             backfill_half_window_min=1.0,
-            sample_stem="target",
+            raw_stem="target",
             rt_frame=SampleRtFrame(
                 injection_order=({"a": 1, "b": 3, "target": 2}),
                 sample_cohorts=({"a": "batch", "b": "batch", "target": "batch"}),
@@ -798,7 +798,7 @@ def test_backfill_rt_uses_trajectory_fit_and_target_sample_coordinates() -> None
         .trajectory_for(members)
         .locate(
             backfill_half_window_min=1.0,
-            sample_stem="other",
+            raw_stem="other",
             rt_frame=SampleRtFrame(
                 injection_order=({"a": 1, "b": 3, "other": 2}),
                 sample_cohorts=({"a": "batch", "b": "batch", "other": "different"}),
@@ -874,7 +874,7 @@ def test_backfill_rt_follows_steep_local_drift_beyond_the_neighbors(
         .trajectory_for(members)
         .locate(
             backfill_half_window_min=1.0,
-            sample_stem="target",
+            raw_stem="target",
             rt_frame=SampleRtFrame(
                 injection_order=(orders or {}), sample_cohorts=(cohorts or {})
             ).with_warp(flat),
@@ -885,7 +885,7 @@ def test_backfill_rt_follows_steep_local_drift_beyond_the_neighbors(
         .trajectory_for(members)
         .locate(
             backfill_half_window_min=1.0,
-            sample_stem="target",
+            raw_stem="target",
             rt_frame=SampleRtFrame(
                 injection_order=(orders or {}), sample_cohorts=(cohorts or {})
             ),
@@ -922,7 +922,7 @@ def test_backfill_noisy_extrapolation_stays_at_supported_boundary(
             .trajectory_for(members)
             .locate(
                 backfill_half_window_min=1.0,
-                sample_stem=sample,
+                raw_stem=sample,
                 rt_frame=SampleRtFrame(
                     injection_order=(orders or {}),
                     sample_cohorts=(dict.fromkeys(orders, "batch")),
@@ -940,7 +940,7 @@ def test_backfill_noisy_extrapolation_stays_at_supported_boundary(
             PeakTrajectories()
             .trajectory_for(members)
             .locate(
-                sample_stem=sample,
+                raw_stem=sample,
                 rt_frame=SampleRtFrame(
                     injection_order=(orders or {}),
                     sample_cohorts=(dict.fromkeys(orders, "batch")),
@@ -965,7 +965,7 @@ def _direct_conflict_case(second_owner_rt, *, independent_branch=False):
     ]
     contexts = [
         SampleElutionContext(
-            sample_stem=sample,
+            raw_stem=sample,
             mz=mz,
             rt_start=start,
             rt_end=end,
@@ -1013,7 +1013,7 @@ def _direct_conflict_case(second_owner_rt, *, independent_branch=False):
     if independent_branch:
         contexts.append(
             SampleElutionContext(
-                sample_stem="independent",
+                raw_stem="independent",
                 mz=659.3459114397047,
                 rt_start=28.5,
                 rt_end=30.6,
@@ -1048,9 +1048,7 @@ def test_direct_conflict_withdraws_only_dependent_locations(
         for track in original_tracks
     )
     trajectory = model.trajectory_for(owners)
-    expected = {
-        owner.sample_stem: owner.peak.integration.rt_apex_min for owner in owners
-    }
+    expected = {owner.raw_stem: owner.peak.integration.rt_apex_min for owner in owners}
     if independent_branch:
         expected["independent"] = 32.988294154916666 - 2.9
     assert dict(trajectory.sample_apices) == pytest.approx(expected)
@@ -1058,7 +1056,7 @@ def test_direct_conflict_withdraws_only_dependent_locations(
     frame = SampleRtFrame(injection_order=orders)
     locations = trajectory.backfill_locations(
         ("BC1116", "independent"),
-        reference_samples=frozenset(owner.sample_stem for owner in owners),
+        reference_samples=frozenset(owner.raw_stem for owner in owners),
         rt_frame=frame,
         backfill_half_window_min=1.0,
     )
@@ -1089,13 +1087,13 @@ def test_direct_binding_does_not_invent_conflict_from_drift_offset_or_missing_bi
     trajectory = model.trajectory_for(owners)
     assert dict(trajectory.sample_apices) == pytest.approx(
         {
-            **{o.sample_stem: o.peak.integration.rt_apex_min for o in owners},
+            **{o.raw_stem: o.peak.integration.rt_apex_min for o in owners},
             "BC1116": 35.7000614,
         }
     )
     location = trajectory.backfill_locations(
         ("BC1116",),
-        reference_samples=frozenset(owner.sample_stem for owner in owners),
+        reference_samples=frozenset(owner.raw_stem for owner in owners),
         rt_frame=SampleRtFrame(injection_order=orders),
         backfill_half_window_min=1.0,
     )["BC1116"]
@@ -1127,7 +1125,12 @@ def test_retained_247_locations_survive_a_separate_contradicted_link():
     ]
     contexts = [
         SampleElutionContext(
-            **{key: value for key, value in row.items() if key != "landmarks"},
+            raw_stem=row["sample_stem"],
+            **{
+                key: value
+                for key, value in row.items()
+                if key not in {"landmarks", "sample_stem"}
+            },
             landmarks=tuple(ElutionLandmark(**peak) for peak in row["landmarks"]),
         )
         for row in data["contexts"]
@@ -1148,11 +1151,11 @@ def test_retained_247_locations_survive_a_separate_contradicted_link():
         "NormalBC2282_DNA": 12.46524381305,
     }
     assert dict(trajectory.sample_apices) == pytest.approx(
-        {**{o.sample_stem: o.peak.integration.rt_apex_min for o in owners}, **expected}
+        {**{o.raw_stem: o.peak.integration.rt_apex_min for o in owners}, **expected}
     )
     locations = trajectory.backfill_locations(
         tuple(expected),
-        reference_samples=frozenset(o.sample_stem for o in owners),
+        reference_samples=frozenset(o.raw_stem for o in owners),
         rt_frame=SampleRtFrame(injection_order=data["injection_order"]),
         backfill_half_window_min=1.0,
     )
@@ -1203,7 +1206,7 @@ def test_backfill_planning_consumes_filtered_locations_with_sample_attribution(
     owners, retained = [], []
     for original_owner in original:
         name, rt = (
-            original_owner.sample_stem,
+            original_owner.raw_stem,
             original_owner.peak.integration.rt_apex_min,
         )
         sample = fixture.sample(name)
@@ -1266,12 +1269,12 @@ def test_backfill_planning_consumes_filtered_locations_with_sample_attribution(
         rt_frame=frame,
         backfill_half_window_min=1.0,
     )
-    by_id = {q.sample_key: q for q in questions}
+    by_id = {q.raw_stem: q for q in questions}
     assert set(by_id) == {
-        fixture.sample(name).sample_name for name in ("BC1116", "independent")
+        fixture.sample(name).raw_stem for name in ("BC1116", "independent")
     }
-    bad = by_id[fixture.sample("BC1116").sample_name].localization
-    good = by_id[fixture.sample("independent").sample_name].localization
+    bad = by_id[fixture.sample("BC1116").raw_stem].localization
+    good = by_id[fixture.sample("independent").raw_stem].localization
     assert not bad.location.observed and not bad.reliable
     assert bad.location.basis == "trajectory_reference"
     assert bad.location.query_rt == pytest.approx(32.988294154916666)

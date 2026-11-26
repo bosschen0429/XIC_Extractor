@@ -117,11 +117,11 @@ class _DriftLookup:
     orders: dict[str, int]
     source: str = "batch_istd_trend"
 
-    def sample_delta_min(self, sample_stem: str) -> float | None:
-        return self.deltas.get(sample_stem)
+    def sample_delta_min(self, raw_stem: str) -> float | None:
+        return self.deltas.get(raw_stem)
 
-    def injection_order(self, sample_stem: str) -> int | None:
-        return self.orders.get(sample_stem)
+    def injection_order(self, raw_stem: str) -> int | None:
+        return self.orders.get(raw_stem)
 
 
 def _memberships(result: FeatureMembershipInferenceResult) -> set[frozenset[str]]:
@@ -481,7 +481,7 @@ def test_sparse_long_rt_same_mass_without_drift_is_undecided() -> None:
         config=_long_rt_config(),
         rt_frame=SampleRtFrame(
             injection_order=(
-                {owner.sample_stem: index for index, owner in enumerate(owners)}
+                {owner.raw_stem: index for index, owner in enumerate(owners)}
             )
         ),
     )
@@ -514,7 +514,7 @@ def test_sparse_long_rt_same_mass_uses_drift_corrected_support() -> None:
         config=_long_rt_config(),
         rt_frame=SampleRtFrame(
             injection_order=(
-                {owner.sample_stem: index for index, owner in enumerate(owners)}
+                {owner.raw_stem: index for index, owner in enumerate(owners)}
             )
         ).with_sources(
             drift_lookup=_DriftLookup(
@@ -579,7 +579,7 @@ def test_assigned_sparse_decisions_record_the_witness_and_rt_basis_used() -> Non
         config=_long_rt_config(),
         rt_frame=SampleRtFrame(
             injection_order=(
-                {owner.sample_stem: index for index, owner in enumerate(owners)}
+                {owner.raw_stem: index for index, owner in enumerate(owners)}
             )
         ).with_sources(
             drift_lookup=_DriftLookup(
@@ -777,7 +777,7 @@ def test_candidate_comparisons_scale_with_features_instead_of_owner_pairs() -> N
         config=AlignmentConfig(),
         rt_frame=SampleRtFrame(
             injection_order=(
-                {owner.sample_stem: index for index, owner in enumerate(owners)}
+                {owner.raw_stem: index for index, owner in enumerate(owners)}
             )
         ),
     )
@@ -851,4 +851,4 @@ def test_supported_apices_do_not_fall_back_to_raw_shapes_at_calibration_edges(
             if unsupported_edge == "start"
             else owner.peak.integration.rt_right_min
         )
-        assert frame.calibrated_rt_min(owner.sample_stem, boundary) is None
+        assert frame.calibrated_rt_min(owner.raw_stem, boundary) is None

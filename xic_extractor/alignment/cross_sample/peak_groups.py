@@ -122,7 +122,7 @@ def construct_cross_sample_peak_group_hypotheses(
             "every owner requires an exact member subject before grouping"
         )
     if sample_universe is not None and any(
-        owner.sample_stem not in sample_universe for owner in owners
+        owner.raw_stem not in sample_universe for owner in owners
     ):
         raise ValueError("sample_universe omits an owner sample")
     inference = infer_feature_memberships(

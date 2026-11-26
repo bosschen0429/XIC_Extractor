@@ -186,7 +186,7 @@ def _plan(tmp_path, monkeypatch, *, scenario="positive", sample_count=4):
         raw_paths=paths,
         sample_metadata=tuple(
             SampleMetadata(
-                sample_name=path.stem,
+                sample_label=path.stem,
                 raw_stem=path.stem,
                 injection_order=index + 1,
                 sample_role=(

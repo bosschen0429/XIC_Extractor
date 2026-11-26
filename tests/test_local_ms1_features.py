@@ -43,18 +43,18 @@ def test_build_local_ms1_feature_table_rejects_empty_index() -> None:
     with pytest.raises(ValueError, match="at least one MS1 scan"):
         build_local_ms1_feature_table(
             (),
-            sample_stem="Sample_1",
+            raw_stem="Sample_1",
         )
 
 
-@pytest.mark.parametrize("sample_stem", ["", "   "])
+@pytest.mark.parametrize("raw_stem", ["", "   "])
 def test_build_local_ms1_feature_table_rejects_blank_sample_identity(
-    sample_stem: str,
+    raw_stem: str,
 ) -> None:
     with pytest.raises(ValueError, match="non-whitespace text"):
         build_local_ms1_feature_table(
             (_scan(1, 1.00, [(500.0000, 10.0)]),),
-            sample_stem=sample_stem,
+            raw_stem=raw_stem,
         )
 
 
@@ -69,7 +69,7 @@ def test_build_local_ms1_feature_table_emits_ok_and_weak_support_features() -> N
 
     features = build_local_ms1_feature_table(
         index,
-        sample_stem="Sample_1",
+        raw_stem="Sample_1",
         settings=_settings(
             min_ok_prominence=20.0,
             weak_support_prominence=3.0,
@@ -111,7 +111,7 @@ def test_seeded_builder_requires_high_intensity_seed_before_low_points_join() ->
 
     features = build_local_ms1_feature_table(
         index,
-        sample_stem="Seeded",
+        raw_stem="Seeded",
         settings=_settings(
             mass_detection_noise_level=50.0,
             min_trace_seed_intensity=100.0,
@@ -139,7 +139,7 @@ def test_seeded_builder_respects_max_missing_scans_when_reusing_seed_range() -> 
 
     features = build_local_ms1_feature_table(
         index,
-        sample_stem="StrictGap",
+        raw_stem="StrictGap",
         settings=_settings(
             max_missing_scans=0,
             min_observed_scans=3,
@@ -165,7 +165,7 @@ def test_seeded_builder_uses_scan_order_for_low_intensity_bridge_points() -> Non
 
     features = build_local_ms1_feature_table(
         index,
-        sample_stem="Bridge",
+        raw_stem="Bridge",
         settings=_settings(
             mass_detection_noise_level=1.0,
             min_trace_seed_intensity=50.0,
@@ -189,7 +189,7 @@ def test_local_ms1_feature_table_rejects_edge_apex() -> None:
 
     features = build_local_ms1_feature_table(
         index,
-        sample_stem="Sample_1",
+        raw_stem="Sample_1",
         settings=_settings(
             gaussian_window_points=1,
             min_ok_prominence=0.0,
@@ -243,7 +243,7 @@ def test_single_apex_peak_region_uses_nearest_tail_valleys_not_trace_edges() -> 
 
     features = build_local_ms1_feature_table(
         index,
-        sample_stem="Bounded",
+        raw_stem="Bounded",
         settings=_settings(
             gaussian_window_points=1,
             min_ok_prominence=5.0,
@@ -274,12 +274,12 @@ def test_build_local_ms1_feature_table_normalizes_identity_whitespace() -> None:
 
     features = build_local_ms1_feature_table(
         index,
-        sample_stem="  Sample_1  ",
+        raw_stem="  Sample_1  ",
         settings=_settings(min_ok_prominence=5.0),
     )
 
     assert features
-    assert all(feature.sample_stem == "Sample_1" for feature in features)
+    assert all(feature.raw_stem == "Sample_1" for feature in features)
     assert all(feature.feature_id.startswith("Sample_1|") for feature in features)
 
 
@@ -301,7 +301,7 @@ def test_gap_fraction_counts_internal_gap_not_trailing_gap(
 
     features = build_local_ms1_feature_table(
         index,
-        sample_stem="Gap",
+        raw_stem="Gap",
         settings=_settings(
             max_missing_scans=1,
             min_observed_scans=3,
@@ -336,7 +336,7 @@ def test_split_peak_child_regions_count_missing_gaps_independently(
 
     features = build_local_ms1_feature_table(
         index,
-        sample_stem="SplitGap",
+        raw_stem="SplitGap",
         settings=_settings(
             max_missing_scans=1,
             min_observed_scans=3,

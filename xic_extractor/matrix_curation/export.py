@@ -59,6 +59,7 @@ from xic_extractor.sample_metadata import (
     SampleMetadata,
     is_sample_metadata_source,
     load_sample_metadata,
+    sample_metadata_payload,
 )
 from xic_extractor.tabular_io import (
     escape_excel_formula,
@@ -204,25 +205,22 @@ def bind_samples(
     *,
     missing: str,
 ) -> SampleBinding:
-    """Match each Matrix column to exactly one sample by name or RAW stem."""
+    """Match each Matrix column to exactly one RAW stem."""
     columns = tuple(sample_columns)
     if metadata is None:
         return SampleBinding(columns, None, missing)
-    aliases: dict[str, SampleMetadata] = {}
+    by_stem: dict[str, SampleMetadata] = {}
     for row in metadata:
-        for alias in {row.sample_name, row.raw_stem}:
-            column = escape_excel_formula(alias)
-            if column in aliases and aliases[column] != row:
-                return SampleBinding(columns, None, f"樣本名稱對應不明確：{column!r}")
-            aliases[column] = row
-    absent = [column for column in columns if column not in aliases]
+        column = escape_excel_formula(row.raw_stem)
+        if column in by_stem:
+            return SampleBinding(columns, None, f"RAW 檔名對應不明確：{column!r}")
+        by_stem[column] = row
+    absent = [column for column in columns if column not in by_stem]
     if absent:
         return SampleBinding(
             columns, None, f"樣本資料缺少 Matrix 欄位對應的樣本：{', '.join(absent)}"
         )
-    matched = tuple(aliases[column] for column in columns)
-    if len({row.sample_name for row in matched}) != len(columns):
-        return SampleBinding(columns, None, "多個 Matrix 欄位對應到同一個樣本。")
+    matched = tuple(by_stem[column] for column in columns)
     return SampleBinding(columns, matched)
 
 
@@ -506,7 +504,7 @@ def prepare_matrix_curation(
                 {
                     "matrix_column": column,
                     "schema_version": SAMPLE_METADATA_SCHEMA_VERSION,
-                    **asdict(row),
+                    **sample_metadata_payload(row),
                     "excluded": "TRUE" if row.excluded else "FALSE",
                 }
                 for column, row in zip(samples, binding.samples, strict=True)

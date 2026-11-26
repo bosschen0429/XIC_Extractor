@@ -54,11 +54,11 @@ def _window_candidate_edges(
     }
     arcs: list[_WindowEdge] = []
     by_order = sorted(
-        window, key=lambda owner: (orders[owner.sample_stem], owner.owner_id)
+        window, key=lambda owner: (orders[owner.raw_stem], owner.owner_id)
     )
     for left_index, left in enumerate(by_order):
         for right in by_order[left_index + 1 :]:
-            gap = orders[right.sample_stem] - orders[left.sample_stem]
+            gap = orders[right.raw_stem] - orders[left.raw_stem]
             sparse_fallback = (
                 gap > 16
                 and max(
@@ -68,7 +68,7 @@ def _window_candidate_edges(
                 <= 10
             )
             distant_dense_pair = gap > 16 and not sparse_fallback
-            if left.sample_stem == right.sample_stem:
+            if left.raw_stem == right.raw_stem:
                 continue
             if not trajectories.permits_membership((left.owner_id, right.owner_id)):
                 continue
@@ -156,8 +156,8 @@ def _ambiguous_window_edges(
     neighbors: dict[str, set[str]] = defaultdict(set)
     for arc in arcs:
         cost, left_id, right_id = arc.ambiguity_cost, arc.left_id, arc.right_id
-        competing[(left_id, owner_by_id[right_id].sample_stem)].append((cost, right_id))
-        competing[(right_id, owner_by_id[left_id].sample_stem)].append((cost, left_id))
+        competing[(left_id, owner_by_id[right_id].raw_stem)].append((cost, right_id))
+        competing[(right_id, owner_by_id[left_id].raw_stem)].append((cost, left_id))
         neighbors[left_id].add(right_id)
         neighbors[right_id].add(left_id)
     ambiguous_window: set[str] = set()
@@ -177,7 +177,7 @@ def _ambiguous_window_edges(
         shared_neighbors = set.intersection(
             *(neighbors[candidate_id] for candidate_id in alternatives)
         ) - {owner_id}
-        if len({owner_by_id[item].sample_stem for item in shared_neighbors}) >= 2:
+        if len({owner_by_id[item].raw_stem for item in shared_neighbors}) >= 2:
             ambiguous_window.update(alternatives)
         else:
             ambiguous_window.add(owner_id)

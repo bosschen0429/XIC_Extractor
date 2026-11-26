@@ -219,11 +219,11 @@ async function openInspectorExport(source) {
     const label = el("label");
     const input = el("input");
     input.type = "checkbox";
-    input.value = sample.sample_key;
+    input.value = sample.raw_stem;
     label.append(
       input,
       document.createTextNode(
-        sample.sample_name || sample.sample_id || sample.sample_key,
+        sample.sample_label || sample.raw_stem,
       ),
     );
     $("export-samples").append(label);

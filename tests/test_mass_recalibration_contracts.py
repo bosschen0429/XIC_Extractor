@@ -54,7 +54,7 @@ def test_receipt_roundtrip_preserves_each_raw_result_and_legacy_none(tmp_path, o
             policy=MassRecalibration.EASY_IC_RESTORE,
         )
         receipt = mint_discovery_peak_universe_receipt(
-            sample_stem=sample,
+            raw_stem=sample,
             acquisition_source=build_local_acquisition_source_identity(
                 raw, acquisition_format="thermo_raw", observation_namespace="test"
             ),
@@ -64,12 +64,12 @@ def test_receipt_roundtrip_preserves_each_raw_result_and_legacy_none(tmp_path, o
         )
         fields = discovery_receipt_index_fields(receipt)
         restored = discovery_receipt_from_index_fields(
-            fields, sample_stem=sample, peak_count=0
+            fields, raw_stem=sample, peak_count=0
         )
         assert restored.mass_recalibration_result == result
         fields.pop("mass_recalibration")
         legacy = discovery_receipt_from_index_fields(
-            fields, sample_stem=sample, peak_count=0
+            fields, raw_stem=sample, peak_count=0
         )
         assert legacy.mass_recalibration_result.policy is MassRecalibration.NONE
         assert legacy.mass_recalibration_result.outcome == "none"

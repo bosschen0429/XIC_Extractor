@@ -78,7 +78,7 @@ def run_targeted_istd_benchmark(
         target_points = tuple(
             point
             for point in targeted_points.get(target.label, ())
-            if point.sample_stem in matrix.sample_stems
+            if point.raw_stem in matrix.sample_stems
         )
         matching_points = _benchmark_points(
             target_points,

@@ -210,11 +210,11 @@ def test_a_paired_group_joins_its_reference_row_in_the_explanation(tmp_path):
     matrix = tmp_path / "matrix.tsv"
     matrix.write_text("matrix", encoding="utf-8")
     report = tmp_path / "review.sqlite"
-    samples = [{"sample_key": s, "sample_stem": s} for s in ("n1", "o1")]
+    samples = [{"raw_stem": s, "sample_label": s} for s in ("n1", "o1")]
 
     def member(sample):
         return {
-            "sample_key": sample,
+            "raw_stem": sample,
             "subject_kind": "peak_hypothesis",
             "subject_id": f"h-{sample}",
             "physical_peak_keys": [f"p-{sample}"],
@@ -241,7 +241,7 @@ def test_a_paired_group_joins_its_reference_row_in_the_explanation(tmp_path):
                 "new-group",
                 [
                     {
-                        "sample_key": sample,
+                        "raw_stem": sample,
                         "variant": "numeric",
                         "value": 100.0,
                         "apex_rt_min": {"n1": 10.0, "o1": 10.3}[sample],
@@ -263,4 +263,4 @@ def test_a_paired_group_joins_its_reference_row_in_the_explanation(tmp_path):
 
     row = read_review_evidence(report).groups["F000001"]
     assert row.disposition == "provisional"
-    assert sorted(item["sample_key"] for item in row.members) == ["n1", "o1"]
+    assert sorted(item["raw_stem"] for item in row.members) == ["n1", "o1"]

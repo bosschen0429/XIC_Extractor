@@ -262,7 +262,7 @@ def compatible_composite_owners(
         if (
             member is None
             or member.subject_id != owner.owner_id
-            or member.sample_key != assessment.sample_key
+            or member.raw_stem != assessment.raw_stem
         ):
             return False
         if len(member.physical_peaks) != 1:

@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import csv
-from dataclasses import asdict
 from pathlib import Path
 from types import SimpleNamespace
 
 from tests.raw_header_fakes import install_raw_sample_headers
-from xic_extractor.sample_metadata import SampleMetadata, load_sample_metadata
+from xic_extractor.sample_metadata import (
+    SampleMetadata,
+    load_sample_metadata,
+    sample_metadata_payload,
+)
 from xic_workbench.samples import (
     read_batch_samples,
     review_sample_groups,
@@ -24,7 +27,7 @@ def _raw_batch(tmp_path: Path, monkeypatch, stems: tuple[str, ...]) -> Path:
     install_raw_sample_headers(
         monkeypatch,
         lambda path: SimpleNamespace(
-            sample_name=path.stem,
+            sample_label=path.stem,
             sample_type="Unknown",
             comment="",
             instrument_method="",
@@ -56,17 +59,17 @@ def test_annotation_file_is_one_per_raw_folder(tmp_path) -> None:
 def test_review_groups_use_confirmed_roles_by_raw_stem_without_raw_reads(tmp_path):
     config, raw_dir = tmp_path / "config", tmp_path / "raw"
     source = [
-        {"sample_key": "canonical-study", "sample_stem": "Renamed_sample"},
-        {"sample_key": "canonical-qc", "sample_stem": "Pool"},
-        {"sample_key": "TumorBC12345_DNA"},
-        {"sample_key": "unavailable-sample"},
+        {"raw_stem": "renamed_SAMPLE", "sample_label": "A display label"},
+        {"raw_stem": "Pool", "sample_label": "A display label"},
+        {"raw_stem": "TumorBC12345_DNA"},
+        {"raw_stem": "unavailable-sample"},
     ]
     assert review_sample_groups(config, raw_dir, source) == {}
     save_batch_samples(
         config,
         raw_dir,
         [
-            asdict(
+            sample_metadata_payload(
                 SampleMetadata(
                     "unrelated display alias",
                     "RENAMED_sample",
@@ -74,13 +77,13 @@ def test_review_groups_use_confirmed_roles_by_raw_stem_without_raw_reads(tmp_pat
                     group="Study",
                 )
             ),
-            asdict(SampleMetadata("Pool", "Pool", sample_role="qc")),
-            asdict(
+            sample_metadata_payload(SampleMetadata("Pool", "Pool", sample_role="qc")),
+            sample_metadata_payload(
                 SampleMetadata(
                     "TumorBC12345_DNA", "TumorBC12345_DNA", sample_role="sample"
                 )
             ),
-            asdict(
+            sample_metadata_payload(
                 SampleMetadata(
                     "not in report", "extra", sample_role="other", group="Excluded"
                 )
@@ -88,8 +91,8 @@ def test_review_groups_use_confirmed_roles_by_raw_stem_without_raw_reads(tmp_pat
         ],
     )
     assert review_sample_groups(config, raw_dir, source) == {
-        "canonical-study": "Sample",
-        "canonical-qc": "QC",
+        "renamed_SAMPLE": "Sample",
+        "Pool": "QC",
         "TumorBC12345_DNA": "Sample",
     }
     assert review_sample_groups(config, tmp_path / "different-raw-folder", source) == {}
@@ -235,7 +238,7 @@ def test_confirmed_annotations_reach_raw_whose_header_cannot_be_read(
         if path.stem == "Broken":
             raise RawReaderError("no MS controller")
         return SimpleNamespace(
-            sample_name=path.stem,
+            sample_label=path.stem,
             sample_type="Unknown",
             comment="",
             instrument_method="",

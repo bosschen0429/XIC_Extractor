@@ -48,7 +48,7 @@ def _local_detected_row(**overrides: object) -> dict[str, object]:
 def _local_detected_feature(**overrides: object) -> DetectedFeature:
     values = _local_detected_row(**overrides)
     return DetectedFeature(
-        sample_stem=str(values["sample_stem"]),
+        raw_stem=str(values["sample_stem"]),
         feature_id=str(values["feature_id"]),
         source_feature_row_id=str(values["source_feature_row_id"]),
         mz=float(values["mz"]),
@@ -195,7 +195,7 @@ def test_generic_feature_and_cid_nl_routes_work_without_delta_mass_provider(
 
             features = tuple(
                 DetectedFeature(
-                    sample_stem=sample, feature_id="feature-1",
+                    raw_stem=sample, feature_id="feature-1",
                     source_feature_row_id=None, mz=mz, rt_apex_min=8.5,
                     rt_start_min=8.4, rt_end_min=8.6, height=height,
                     area=height * 2, trace_quality="OK", shape_score=None,

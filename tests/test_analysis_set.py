@@ -87,7 +87,7 @@ def test_flat_and_nested_layouts_give_the_same_analysis_set() -> None:
 
 
 @pytest.mark.parametrize("header_names", [("B", "B"), ("B", "different"), ("B", "A")])
-def test_header_names_cannot_collide_with_another_raw_alias(header_names):
+def test_header_labels_are_kept_without_affecting_raw_identity(header_names):
     headers = [header("/b/A.raw", 0), header("/b/B.raw", 11)]
     rows = {
         h.raw_path: SampleMetadata(name, Path(h.raw_path).stem, sample_role="sample")
@@ -98,13 +98,9 @@ def test_header_names_cannot_collide_with_another_raw_alias(header_names):
         rows,
         analysis="untargeted",
     )
-    for token in ("A", "B"):
-        matches = [
-            row
-            for row in result.sample_metadata
-            if token in {row.sample_name, row.raw_stem}
-        ]
-        assert [row.raw_stem for row in matches] == [token]
+    assert [(row.raw_stem, row.sample_label) for row in result.sample_metadata] == list(
+        zip(("A", "B"), header_names, strict=True)
+    )
 
 
 @pytest.mark.parametrize("same_stem_context", [False, True])
@@ -181,7 +177,7 @@ def test_retained_alignment_keeps_full_root_injection_order(
     orders = {s.raw_stem: s.injection_order for s in plan.context.samples}
     assert orders == {"A": 1 if same_stem_context else 2, "B": 3}
     assert [
-        (s.raw_stem, s.sample_name, s.sample_role) for s in plan.context.samples
+        (s.raw_stem, s.sample_label, s.sample_role) for s in plan.context.samples
     ] == [("A", "A", "sample"), ("B", "B", "sample")]
     assert orders == {
         e.raw_stem: e.injection_order
@@ -294,7 +290,7 @@ def test_distinct_analyzed_injections_sharing_a_stem_are_rejected() -> None:
     third = header("/b/c/S__2.raw", 22)
     roles[third.raw_path] = "sample"
     result = resolve([first, second, third], roles)
-    assert [row.sample_name for row in result.sample_metadata] == ["S", "S__3", "S__2"]
+    assert [row.sample_label for row in result.sample_metadata] == ["S", "S", "S__2"]
 
 
 def test_discover_raw_files_is_recursive(tmp_path: Path) -> None:
@@ -473,7 +469,7 @@ def test_selected_unreadable_header_reports_the_file_and_original_reason(
         raw_sequence.read_analysis_set(tmp_path, tmp_path, analysis="untargeted")
 
 
-def test_raw_owns_names_and_order_while_a_partial_sequence_annotates(
+def test_raw_owns_identity_and_order_while_partial_sequence_supplies_labels(
     tmp_path: Path, monkeypatch
 ) -> None:
     from tests.sample_metadata_sequence_parsing_fixtures import _create_synthetic_docx
@@ -512,8 +508,12 @@ def test_raw_owns_names_and_order_while_a_partial_sequence_annotates(
         "Blank_1",
     ]
     assert [row.injection_order for row in result.sample_metadata] == [1, 2, 3, 4, 5]
-    assert {row.sample_name for row in result.sample_metadata} == {
-        f"header {stem}" for stem in rows
+    assert {stem: row.sample_label for stem, row in rows.items()} == {
+        "Old_S1": "header Old_S1",
+        "NormalBC001_DNA": "BC001 Normal Tissue + ISTDs",
+        "TumorBC001_DNA": "BC001 Tumor Tissue + ISTDs",
+        "QC_Pool_1": "Pooled QC",
+        "Blank_1": "DIW",
     }
     assert (rows["QC_Pool_1"].sample_role, rows["Blank_1"].sample_role) == (
         "qc",
@@ -573,7 +573,7 @@ def test_unchanged_raw_header_is_read_once(tmp_path: Path, monkeypatch) -> None:
             SimpleNamespace(
                 sample_header=SimpleNamespace(
                     sample_type="Unknown",
-                    sample_name=f"header {path.read_text()}",
+                    sample_label=f"header {path.read_text()}",
                     comment="",
                     instrument_method="",
                 )
@@ -598,7 +598,7 @@ def test_unchanged_raw_header_is_read_once(tmp_path: Path, monkeypatch) -> None:
     os.utime(replacement, ns=(old_stat.st_atime_ns, old_stat.st_mtime_ns))
     replacement.replace(raw)
     replaced = raw_sequence.read_analysis_set(tmp_path, tmp_path, analysis="untargeted")
-    assert replaced.analyzed[0].metadata.sample_name == "header y"
+    assert replaced.analyzed[0].metadata.sample_label == "header y"
     assert opens == [raw, raw]
 
 

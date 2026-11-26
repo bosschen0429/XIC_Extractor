@@ -91,7 +91,7 @@ class _ThermoApi:
 class RawSampleHeader:
     raw_path: str
     raw_stem: str
-    sample_name: str
+    sample_label: str
     sample_id: str
     row_number: int | None
     sample_type: str
@@ -254,7 +254,7 @@ class RawFileHandle:
     def sample_header(self) -> RawSampleHeader:
         raw = self._raw_file
         info = getattr(raw, "SampleInformation", None)
-        sample_name = str(getattr(info, "SampleName", "") or "").strip()
+        sample_label = str(getattr(info, "SampleName", "") or "").strip()
         sample_id = str(getattr(info, "SampleId", "") or "").strip()
         row_number_raw = getattr(info, "RowNumber", None)
         row_number = None
@@ -274,7 +274,7 @@ class RawFileHandle:
         return RawSampleHeader(
             raw_path=file_name,
             raw_stem=raw_stem,
-            sample_name=sample_name or raw_stem,
+            sample_label=sample_label or raw_stem,
             sample_id=sample_id,
             row_number=row_number,
             sample_type=sample_type,

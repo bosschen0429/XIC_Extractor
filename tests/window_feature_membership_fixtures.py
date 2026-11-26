@@ -16,7 +16,7 @@ def _synthetic_owner(
 ) -> SampleLocalMS1Owner:
     event = IdentityEvent(
         candidate_id=owner_id,
-        sample_stem=sample,
+        raw_stem=sample,
         raw_file=f"{sample}.raw",
         neutral_loss_tag="DNA_dR",
         precursor_mz=precursor_mz,
@@ -28,7 +28,7 @@ def _synthetic_owner(
     )
     return SampleLocalMS1Owner(
         owner_id=owner_id,
-        sample_stem=sample,
+        raw_stem=sample,
         raw_file=f"{sample}.raw",
         peak=measured_peak(
             mz=precursor_mz,

@@ -194,7 +194,7 @@ def _complete_cell_observations(
     )
     members_by_group = {
         group.group_hypothesis_id: frozenset(
-            member.sample_key for member in group.member_subjects
+            member.raw_stem for member in group.member_subjects
         )
         for group in grouping_scope.groups
     }
@@ -233,8 +233,8 @@ def _complete_cell_observations(
         peak_trajectories=grouping_scope.peak_trajectories,
     )
     backfilled_positions = frozenset(
-        (group_id, sample_id)
-        for (group_id, sample_id, _), (_, assessment) in group_backfills.items()
+        (group_id, raw_stem)
+        for (group_id, raw_stem, _), (_, assessment) in group_backfills.items()
         if assessment.method_result == "SUPPORT"
     )
     predecessor_cells = compose_cid_nl_predecessor_cells(
@@ -259,10 +259,10 @@ def _complete_cell_observations(
             rt_frame=grouping_result.rt_frame,
             sample_universe=sample_universe,
             backfill_assessments_by_group={
-                (successor_ids[group_id], sample_id, subject_id): pair
+                (successor_ids[group_id], raw_stem, subject_id): pair
                 for (
                     group_id,
-                    sample_id,
+                    raw_stem,
                     subject_id,
                 ), pair in group_backfills.items()
                 if pair[1].method_result == "SUPPORT"
@@ -272,8 +272,8 @@ def _complete_cell_observations(
                 **backfilled_hypotheses,
             },
             selected_cells=frozenset(
-                (successor_ids[group_id], sample_id)
-                for group_id, sample_id in backfilled_positions
+                (successor_ids[group_id], raw_stem)
+                for group_id, raw_stem in backfilled_positions
             ),
         )
         if backfilled_positions
@@ -298,27 +298,27 @@ def _prepare_cell_coverage(
     cells_by_group: dict[str, list[CellObservation]] = {}
     for predecessor_cell in predecessor_cells:
         group_id = predecessor_cell.group_hypothesis_id
-        sample_id = predecessor_cell.sample_key
-        cell_by_key[(group_id, sample_id)] = predecessor_cell
+        raw_stem = predecessor_cell.raw_stem
+        cell_by_key[(group_id, raw_stem)] = predecessor_cell
         cells_by_group.setdefault(group_id, []).append(predecessor_cell)
-    ordered_samples = tuple(sorted(samples, key=lambda sample: sample.sample_name))
+    ordered_samples = tuple(sorted(samples, key=lambda sample: sample.raw_stem))
     if not backfill_enabled:
         return _CellCoveragePlan(cell_by_key, (), False)
     conservative_positions = []
     for group in grouping_result.initial_population:
         group_cells = tuple(cells_by_group[group.group_hypothesis_id])
-        searched_sample_ids = {cell.sample_key for cell in group_cells}
+        searched_sample_ids = {cell.raw_stem for cell in group_cells}
         facts = assess_conservative_backfill_group(
             group_cells,
             sample_population=samples,
             unsearched_sample_ids=tuple(
-                sample.sample_name
+                sample.raw_stem
                 for sample in ordered_samples
-                if sample.sample_name not in searched_sample_ids
+                if sample.raw_stem not in searched_sample_ids
             ),
         )
         for sample in samples:
-            key = (group.group_hypothesis_id, sample.sample_name)
+            key = (group.group_hypothesis_id, sample.raw_stem)
             cell = cell_by_key.get(key)
             if cell is None or key in backfilled_positions:
                 continue
@@ -377,7 +377,7 @@ def _close_cell_coverage(
     completions = {
         (
             item.group.group_hypothesis_id,
-            item.sample.sample_name,
+            item.sample.raw_stem,
             item.backfill_assessment.method_subject.method_subject_id,
         ): item
         for item in completed_empty_backfills
@@ -385,7 +385,7 @@ def _close_cell_coverage(
     no_request_decisions = {}
     for sample, facts in plan.conservative_positions:
         group = facts.group_context.group
-        key = (group.group_hypothesis_id, sample.sample_name)
+        key = (group.group_hypothesis_id, sample.raw_stem)
         completion = None
         universes: tuple[ConservativeBackfillCandidateUniverse, ...] = ()
         if facts.may_attempt_backfill:
@@ -416,9 +416,9 @@ def _close_cell_coverage(
         )
         for group in repair_groups
         for sample in samples
-        for cell in (cell_by_key.get((group.group_hypothesis_id, sample.sample_name)),)
+        for cell in (cell_by_key.get((group.group_hypothesis_id, sample.raw_stem)),)
         for no_request in (
-            no_request_decisions.get((group.group_hypothesis_id, sample.sample_name)),
+            no_request_decisions.get((group.group_hypothesis_id, sample.raw_stem)),
         )
     )
     return BackfillEvaluationCoverageBatch(

@@ -8,7 +8,7 @@ PAIRED_FALLBACK_ISTD_PEAK_DELTA_MAX_MIN: float = 0.5
 
 
 def paired_anchor_mismatch_diagnostic(
-    sample_name: str,
+    raw_stem: str,
     target: Target,
     peak_result: PeakDetectionResult,
     *,
@@ -30,7 +30,7 @@ def paired_anchor_mismatch_diagnostic(
         return None
 
     return DiagnosticRecord(
-        sample_name=sample_name,
+        raw_stem=raw_stem,
         target_label=target.label,
         issue="ANCHOR_RT_MISMATCH",
         reason=(

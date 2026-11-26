@@ -25,6 +25,7 @@ from xic_extractor.sample_metadata import (
     load_and_match_sample_metadata,
     load_sample_metadata,
     parse_sample_metadata,
+    sample_metadata_payload,
 )
 
 ROLE_LABELS = {
@@ -64,9 +65,9 @@ def review_sample_groups(
     }
     labels = {}
     for sample in source_samples:
-        stem = sample.get("sample_stem", sample["sample_key"])
+        stem = sample["raw_stem"]
         if label := roles.get(stem.casefold()):
-            labels[sample["sample_key"]] = label
+            labels[sample["raw_stem"]] = label
     return labels
 
 
@@ -219,18 +220,17 @@ def load_samples(
             report.rows
             if report is not None and paths
             else tuple(
-                SampleMetadata(sample_name=path.stem, raw_stem=path.stem)
+                SampleMetadata(sample_label=path.stem, raw_stem=path.stem)
                 for path in paths
             )
         )
         rows = tuple(
             replace(
                 row,
-                sample_name=row.raw_stem,
                 injection_order=None,
                 batch_id=row.batch_id or Path(raw_dir).name,
                 sample_role=(row.sample_role if row.raw_stem in matched_stems else None)
-                or infer_sample_role(None, sample_name=row.raw_stem),
+                or infer_sample_role(None, sample_text=row.raw_stem),
             )
             for row in preview_rows
         )
@@ -264,7 +264,10 @@ def load_samples(
         for role in SAMPLE_ROLES
         if any(row.sample_role == role for row in rows)
     }
-    return {"samples": [asdict(row) for row in rows], "summary": summary}
+    return {
+        "samples": [sample_metadata_payload(row) for row in rows],
+        "summary": summary,
+    }
 
 
 def apply_raw_chronology(
@@ -277,7 +280,7 @@ def apply_raw_chronology(
     resolved = read_analysis_set(
         Path(raw_dir), Path(dll_dir), from_payload(rows), analysis="untargeted"
     )
-    return [asdict(row) for row in resolved.sample_metadata]
+    return [sample_metadata_payload(row) for row in resolved.sample_metadata]
 
 
 def from_payload(value: object) -> tuple[SampleMetadata, ...] | None:
@@ -297,7 +300,10 @@ def from_payload(value: object) -> tuple[SampleMetadata, ...] | None:
         missing = [key for key in ("sample_name", "raw_stem") if key not in item]
         if missing:
             raise ValueError(f"samples[{index}] is missing {missing[0]}")
-        row = SampleMetadata(**item)
+        row = SampleMetadata(
+            sample_label=item["sample_name"],
+            **{k: v for k, v in item.items() if k != "sample_name"},
+        )
         _validate_row(row, index=index)
         rows.append(row)
     return tuple(rows)
@@ -315,7 +321,7 @@ def _export_rows(metadata: Sequence[SampleMetadata]) -> list[dict[str, str]]:
             "schema_version": SAMPLE_METADATA_SCHEMA_VERSION,
             **{
                 key: "" if value is None else str(value)
-                for key, value in asdict(row).items()
+                for key, value in sample_metadata_payload(row).items()
             },
             "excluded": "true" if row.excluded else "false",
         }
@@ -340,7 +346,7 @@ def _write_rows(destination: Path, metadata: Sequence[SampleMetadata]) -> None:
 
 
 def _validate_row(row: SampleMetadata, *, index: int) -> None:
-    if not row.sample_name.strip() or not row.raw_stem.strip():
+    if not row.sample_label.strip() or not row.raw_stem.strip():
         raise ValueError(f"samples[{index}] requires sample_name and raw_stem")
     if row.sample_role not in SAMPLE_ROLES:
         raise ValueError(f"samples[{index}] has unsupported sample_role")
@@ -353,7 +359,7 @@ def _validate_row(row: SampleMetadata, *, index: int) -> None:
     if not isinstance(row.excluded, bool):
         raise TypeError(f"samples[{index}] excluded must be boolean")
     for field in (
-        "sample_name",
+        "sample_label",
         "raw_stem",
         "batch_id",
         "prep_batch_id",

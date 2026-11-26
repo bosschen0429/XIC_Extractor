@@ -26,12 +26,12 @@ def cli_execution(monkeypatch):
     """Record the CLI request and supply only its progress/summary response."""
     output = RunOutput(
         file_results=[
-            SimpleNamespace(sample_name="SampleA"),
-            SimpleNamespace(sample_name="SampleB"),
+            SimpleNamespace(raw_stem="SampleA"),
+            SimpleNamespace(raw_stem="SampleB"),
         ],
         diagnostics=[
             DiagnosticRecord(
-                sample_name="SampleB",
+                raw_stem="SampleB",
                 target_label="Analyte",
                 issue="PEAK_NOT_FOUND",
                 reason="No peak",

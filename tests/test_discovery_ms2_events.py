@@ -38,7 +38,7 @@ def test_observed_loss_within_tolerance_produces_discovery_seed() -> None:
     assert len(seeds) == 1
     seed = seeds[0]
     assert seed.raw_file == RAW_FILE
-    assert seed.sample_stem == "TumorBC2312_DNA"
+    assert seed.raw_stem == "TumorBC2312_DNA"
     assert seed.scan_number == 6095
     assert seed.rt == 7.83
     assert seed.precursor_mz == 258.1085

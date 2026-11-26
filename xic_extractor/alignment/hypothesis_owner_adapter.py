@@ -136,7 +136,7 @@ def owner_from_cid_nl_assessment_support(
     )
     event = IdentityEvent(
         candidate_id=hypothesis.hypothesis_id,
-        sample_stem=sample.raw_stem,
+        raw_stem=sample.raw_stem,
         raw_file=observation.generation_provenance.acquisition_source_id,
         neutral_loss_tag=neutral_loss_tag,
         precursor_mz=aggregate_precursor_mz,
@@ -156,7 +156,7 @@ def owner_from_cid_nl_assessment_support(
     )
     return SampleLocalMS1Owner(
         owner_id=hypothesis.hypothesis_id,
-        sample_stem=sample.raw_stem,
+        raw_stem=sample.raw_stem,
         raw_file=observation.generation_provenance.acquisition_source_id,
         peak=observation,
         primary_identity_event=event,
@@ -191,7 +191,7 @@ def owner_from_ms1_observation_hypothesis(
     observation = hypothesis.peak
     return SampleLocalMS1Owner(
         owner_id=hypothesis.hypothesis_id,
-        sample_stem=sample.raw_stem,
+        raw_stem=sample.raw_stem,
         raw_file=observation.generation_provenance.acquisition_source_id,
         peak=observation,
         primary_identity_event=None,

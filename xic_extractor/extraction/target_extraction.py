@@ -92,7 +92,7 @@ def extract_raw_file_result(
         )
     return result_models.RawFileExtractionResult(
         raw_index=raw_index,
-        sample_name=file_result.sample_name,
+        raw_stem=file_result.raw_stem,
         file_result=file_result,
         diagnostics=diagnostics,
     )
@@ -110,7 +110,7 @@ def process_file(
 ) -> tuple[FileResult, list[DiagnosticRecord]]:
     from xic_extractor.extraction import result_models
 
-    sample_name = raw_path.stem
+    raw_stem = raw_path.stem
     try:
         raw_context = (
             open_raw(
@@ -131,21 +131,19 @@ def process_file(
         )
         with raw_context as raw:
             if not targets:
-                return result_models.FileResult(sample_name=sample_name, results={}), []
+                return result_models.FileResult(raw_stem=raw_stem, results={}), []
             start, end = raw.acquisition_rt_bounds()
             precursor_scope = targeted_ms2_precursor_scope(targets)
             sample_window = (
                 acquire_ms2_window(
                     raw,
-                    sample_key=sample_name,
+                    raw_stem=raw_stem,
                     rt_min=start,
                     rt_max=end,
                     precursor_scope=precursor_scope,
                 )
                 if precursor_scope is not None
-                else Ms2Window(
-                    sample_key=sample_name, rt_min=start, rt_max=end, events=()
-                )
+                else Ms2Window(raw_stem=raw_stem, rt_min=start, rt_max=end, events=())
             )
             seeds_by_loss = prepare_sample_method_seeds(raw, sample_window, targets)
             results: dict[str, ExtractionResult] = {}
@@ -158,7 +156,7 @@ def process_file(
                 extract_one_target(
                     raw,
                     config,
-                    sample_name,
+                    raw_stem,
                     target,
                     reference_rt=None,
                     sample_window=sample_window,
@@ -186,13 +184,13 @@ def process_file(
                 else:
                     if target.istd_pair:
                         diagnostics.append(
-                            istd_anchor_missing_diagnostic(sample_name, target)
+                            istd_anchor_missing_diagnostic(raw_stem, target)
                         )
                     reference_rt = None
                 extract_one_target(
                     raw,
                     config,
-                    sample_name,
+                    raw_stem,
                     target,
                     reference_rt=reference_rt,
                     sample_window=sample_window,
@@ -214,21 +212,21 @@ def process_file(
                     ),
                 )
             return result_models.FileResult(
-                sample_name=sample_name,
+                raw_stem=raw_stem,
                 results=results,
             ), diagnostics
     except Exception as exc:
         reason = f"Failed to open .raw: {type(exc).__name__}: {exc}"
         return (
-            result_models.FileResult(sample_name=sample_name, results={}, error=reason),
-            [DiagnosticRecord(sample_name, "", "FILE_ERROR", reason)],
+            result_models.FileResult(raw_stem=raw_stem, results={}, error=reason),
+            [DiagnosticRecord(raw_stem, "", "FILE_ERROR", reason)],
         )
 
 
 def extract_one_target(
     raw: Any,
     config: ExtractionConfig,
-    sample_name: str,
+    raw_stem: str,
     target: Target,
     *,
     reference_rt: float | None,
@@ -269,14 +267,14 @@ def extract_one_target(
         sample_window = (
             acquire_ms2_window(
                 raw,
-                sample_key=sample_name,
+                raw_stem=raw_stem,
                 rt_min=context_rt_min,
                 rt_max=context_rt_max,
                 precursor_scope=targeted_ms2_precursor_scope([target]),
             )
             if targeted_ms2_precursor_scope([target]) is not None
             else Ms2Window(
-                sample_key=sample_name,
+                raw_stem=raw_stem,
                 rt_min=context_rt_min,
                 rt_max=context_rt_max,
                 events=(),
@@ -310,7 +308,7 @@ def extract_one_target(
     )
     method_window = sample_window
     trace_group = targeted_extraction_trace_group(
-        sample_name=sample_name,
+        raw_stem=raw_stem,
         target=target,
         config=selection_config,
         rt=rt,
@@ -355,7 +353,7 @@ def extract_one_target(
     if scoring_context_factory is not None and not defer_selection:
         scoring_context_builder = scoring_context_factory(
             target=target,
-            sample_name=sample_name,
+            raw_stem=raw_stem,
             rt=rt,
             intensity=intensity,
             istd_rt_in_this_sample=istd_rt_in_this_sample,
@@ -389,7 +387,7 @@ def extract_one_target(
             paired_istd_anchor_rt=istd_rt_in_this_sample,
         )
     paired_rejection = paired_anchor_mismatch_diagnostic(
-        sample_name,
+        raw_stem,
         target,
         peak_result,
         reference_rt=reference_rt,
@@ -413,9 +411,7 @@ def extract_one_target(
 
     results[target.label] = result
     if not defer_selection:
-        diagnostics.extend(
-            build_diagnostic_records(sample_name, target, result, config)
-        )
+        diagnostics.extend(build_diagnostic_records(raw_stem, target, result, config))
     if paired_rejection is not None:
         diagnostics.append(paired_rejection)
     return anchor_rt

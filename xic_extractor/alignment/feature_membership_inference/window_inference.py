@@ -49,7 +49,7 @@ def _window_inference(
     injection_order = rt_frame.injection_order
     if not owners:
         return (), ()
-    samples = {owner.sample_stem for owner in owners}
+    samples = {owner.raw_stem for owner in owners}
     known_orders = {
         sample: order for sample, order in injection_order.items() if sample in samples
     }
@@ -64,7 +64,7 @@ def _window_inference(
     common_rt = {
         owner.owner_id: rt
         for owner in owners
-        if (rt := rt_frame.calibrated_rt_min(owner.sample_stem, owner.peak.rt_apex_min))
+        if (rt := rt_frame.calibrated_rt_min(owner.raw_stem, owner.peak.rt_apex_min))
         is not None
     }
     trajectories = trajectories.common_frame_membership(common_rt)
@@ -258,7 +258,7 @@ def _window_membership_result(
             witness = min(
                 (item for item in group_owners if item.owner_id != owner.owner_id),
                 key=lambda item: (
-                    abs(orders[item.sample_stem] - orders[owner.sample_stem]),
+                    abs(orders[item.raw_stem] - orders[owner.raw_stem]),
                     item.owner_id,
                 ),
                 default=None,
@@ -276,7 +276,7 @@ def _window_membership_result(
             decisions.append(
                 SparseFeatureDecision(
                     direction="window",
-                    sample_stem=owner.sample_stem,
+                    raw_stem=owner.raw_stem,
                     owner_id=owner.owner_id,
                     feature_key=feature_key,
                     state="assigned"

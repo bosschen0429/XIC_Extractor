@@ -84,16 +84,14 @@ def _bind_acquisition_sources(
     file_results = []
     seen_samples: set[str] = set()
     for file_result in output.file_results:
-        sample_name = file_result.sample_name
-        if sample_name in seen_samples:
-            raise ConfigError(
-                f"Duplicate acquisition output for sample {sample_name!r}."
-            )
-        seen_samples.add(sample_name)
-        expectation = sources_by_sample.get(sample_name)
+        raw_stem = file_result.raw_stem
+        if raw_stem in seen_samples:
+            raise ConfigError(f"Duplicate acquisition output for sample {raw_stem!r}.")
+        seen_samples.add(raw_stem)
+        expectation = sources_by_sample.get(raw_stem)
         if expectation is None:
             raise ConfigError(
-                f"Acquisition output sample {sample_name!r} has no processing identity."
+                f"Acquisition output sample {raw_stem!r} has no processing identity."
             )
         source = expectation.source
         results = {}
@@ -106,7 +104,7 @@ def _bind_acquisition_sources(
                 ):
                     raise ConfigError(
                         "Acquisition output contains MS2 evidence from a different "
-                        f"RAW source for {sample_name!r}/{target_label!r}."
+                        f"RAW source for {raw_stem!r}/{target_label!r}."
                     )
                 products.append(
                     replace(
@@ -118,7 +116,7 @@ def _bind_acquisition_sources(
             def bind_candidate(
                 candidate,
                 source=source,
-                sample_name=sample_name,
+                raw_stem=raw_stem,
                 target_label=target_label,
             ):
                 product = None if candidate is None else candidate.best_product_evidence
@@ -130,7 +128,7 @@ def _bind_acquisition_sources(
                 ):
                     raise ConfigError(
                         "Acquisition output contains MS2 evidence from a different "
-                        f"RAW source for {sample_name!r}/{target_label!r}."
+                        f"RAW source for {raw_stem!r}/{target_label!r}."
                     )
                 return replace(
                     candidate,

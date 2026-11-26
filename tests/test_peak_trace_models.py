@@ -15,13 +15,13 @@ def test_trace_from_xic_request_preserves_xic_metadata() -> None:
     xic = XICTrace.from_arrays([24.0, 25.0, 26.0], [0.0, 100.0, 0.0])
 
     trace = trace_from_xic_request(
-        sample_name="TumorBC2312_DNA",
+        raw_stem="TumorBC2312_DNA",
         request=request,
         xic_trace=xic,
         source="alignment_owner",
     )
 
-    assert trace.sample_name == "TumorBC2312_DNA"
+    assert trace.raw_stem == "TumorBC2312_DNA"
     assert trace.mz == 269.1388
     assert trace.rt_min == 24.0
     assert trace.rt_max == 26.0
@@ -33,7 +33,7 @@ def test_trace_from_xic_request_preserves_xic_metadata() -> None:
 def test_trace_rejects_mismatched_arrays() -> None:
     with pytest.raises(ValueError, match="matching 1D arrays"):
         Trace.from_arrays(
-            sample_name="s1",
+            raw_stem="s1",
             mz=250.0,
             rt=np.asarray([1.0, 2.0]),
             intensity=np.asarray([10.0]),
@@ -45,7 +45,7 @@ def test_trace_rejects_mismatched_arrays() -> None:
 
 def test_targeted_and_untargeted_trace_group_adapters_set_context() -> None:
     trace = Trace.from_arrays(
-        sample_name="s1",
+        raw_stem="s1",
         mz=269.1388,
         rt=[24.0, 25.0, 26.0],
         intensity=[0.0, 100.0, 0.0],

@@ -25,7 +25,7 @@ def test_build_production_peak_hypotheses_maps_selected_ms2_only(tmp_path) -> No
     intensity = np.asarray([10.0, 100.0, 20.0, 80.0, 10.0])
     trace_group = targeted_trace_group(
         Trace.from_arrays(
-            sample_name="SampleA",
+            raw_stem="SampleA",
             mz=target.mz,
             rt=rt,
             intensity=intensity,
@@ -54,7 +54,7 @@ def test_build_production_peak_hypotheses_maps_selected_ms2_only(tmp_path) -> No
     )
     hypotheses = targeted_peak_selection.build_production_peak_hypotheses(
         config=_config(tmp_path),
-        sample_name="SampleA",
+        raw_stem="SampleA",
         target=target,
         peak_result=peak_result,
         candidate_ms2_evidence={selected: _ms2_evidence()},
@@ -80,7 +80,7 @@ def test_selected_peak_hypothesis_returns_none_without_selected_candidate(
 ) -> None:
     hypotheses = targeted_peak_selection.build_production_peak_hypotheses(
         config=_config(tmp_path),
-        sample_name="SampleA",
+        raw_stem="SampleA",
         target=_target(),
         peak_result=PeakDetectionResult(
             status="PEAK_NOT_FOUND",
@@ -120,7 +120,7 @@ def test_build_production_peak_hypotheses_passes_no_ms2_detection_policy(
     hypothesis = targeted_peak_selection.selected_peak_hypothesis(
         targeted_peak_selection.build_production_peak_hypotheses(
             config=replace(_config(tmp_path), count_no_ms2_as_detected=True),
-            sample_name="SampleA",
+            raw_stem="SampleA",
             target=_target(),
             peak_result=peak_result,
             candidate_ms2_evidence={
@@ -166,7 +166,7 @@ def test_selected_hypothesis_uses_final_peak_result_reason_when_score_is_stale(
     selected = targeted_peak_selection.selected_peak_hypothesis(
         targeted_peak_selection.build_production_peak_hypotheses(
             config=_config(tmp_path),
-            sample_name="SampleA",
+            raw_stem="SampleA",
             target=_target(),
             peak_result=peak_result,
         )
@@ -177,12 +177,12 @@ def test_selected_hypothesis_uses_final_peak_result_reason_when_score_is_stale(
 
 
 @pytest.mark.parametrize(
-    "sample_name,shift,scale,selected_index",
+    "raw_stem,shift,scale,selected_index",
     [("SampleA_RNA", 0.0, 1.0, 0), ("SampleB_RNA", 0.2, 1.7, 1)],
 )
 @pytest.mark.parametrize("reuse_evaluation", [False, True])
 def test_handoff_preserves_the_selected_candidate_through_workbook(
-    tmp_path, monkeypatch, sample_name, shift, scale, selected_index, reuse_evaluation
+    tmp_path, monkeypatch, raw_stem, shift, scale, selected_index, reuse_evaluation
 ) -> None:
     from xic_extractor.configuration.signal_processing_profile import (
         resolve_signal_processing_profile,
@@ -271,7 +271,7 @@ def test_handoff_preserves_the_selected_candidate_through_workbook(
     )
     trace_group = targeted_extraction_trace_group(
         config=config,
-        sample_name=sample_name,
+        raw_stem=raw_stem,
         target=target,
         rt=rt,
         intensity=intensity,
@@ -322,7 +322,7 @@ def test_handoff_preserves_the_selected_candidate_through_workbook(
         selection_decision=handoff.selection_decision,
         physical_evaluation=handoff.physical_evaluation,
         acquisition_trace=trace_group.primary_trace,
-        sample_name=sample_name,
+        raw_stem=raw_stem,
     )
     assert result.reported_rt == pytest.approx(selected.peak.rt)
     assert result.reported_peak_area == pytest.approx(selected.peak.area)
@@ -338,7 +338,7 @@ def test_handoff_preserves_the_selected_candidate_through_workbook(
     write_excel_from_run_output(
         config,
         [target],
-        RunOutput([FileResult(sample_name, {target.label: result})], []),
+        RunOutput([FileResult(raw_stem, {target.label: result})], []),
         output_path=output_path,
     )
     workbook = load_workbook(output_path, read_only=True, data_only=True)
@@ -413,7 +413,7 @@ def test_build_production_peak_hypotheses_uses_config_baseline_method(
                 _config(tmp_path),
                 baseline_integration_method="linear_edge",
             ),
-            sample_name="SampleA",
+            raw_stem="SampleA",
             target=_target(),
             peak_result=peak_result,
             rt=rt,

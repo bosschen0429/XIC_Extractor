@@ -382,7 +382,7 @@ def test_application_outputs_formal_groups_with_an_optional_snapshot(
     (group,) = groups
     assert group.disposition == "established"
     assert {
-        owner.sample_stem: owner.primary_identity_event is not None
+        owner.raw_stem: owner.primary_identity_event is not None
         for owner in group.owners
     } == {"S0": True, "S1": True, "S2": False, "S3": False}
     assert {owner.owner_id for owner in group.owners} == {
@@ -957,12 +957,12 @@ def test_calibrated_patterns_reject_shifted_decoys_without_merging_real_peaks(
         for group in groups:
             trajectory = scope.peak_trajectories.trajectory_for(group.owners)
             points = dict(trajectory.sample_apices)
-            expected = selected[group.owners[0].sample_stem]
+            expected = selected[group.owners[0].raw_stem]
             assert points == pytest.approx(
                 {sample: expected + offset for sample, offset in offsets.items()}
             )
     assert {
-        frozenset(owner.sample_stem for owner in group.owners) for group in groups
+        frozenset(owner.raw_stem for owner in group.owners) for group in groups
     } == {
         frozenset(("a", "b")),
         frozenset(("c", "d")),

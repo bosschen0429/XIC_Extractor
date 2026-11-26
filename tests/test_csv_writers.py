@@ -128,7 +128,7 @@ def _candidate_ms2_evidence(
 
 def _file_result() -> FileResult:
     return FileResult(
-        sample_name="SampleA",
+        raw_stem="SampleA",
         results={"WithNL": _result(nl=NLResult("WARN", 12.34, None, 3, 0, 2))},
         group=None,
     )
@@ -155,7 +155,7 @@ def test_row_builders_report_selected_candidate_nl_before_target_window_nl() -> 
         result,
         candidate_ms2_evidence=_candidate_ms2_evidence("NL_FAIL", 125.0),
     )
-    file_result = FileResult(sample_name="SampleA", results={"WithNL": result})
+    file_result = FileResult(raw_stem="SampleA", results={"WithNL": result})
 
     long_row = _long_output_rows(file_result, [target])[0]
 
@@ -178,7 +178,7 @@ def test_not_counted_product_projection_preserves_matrix_peak_values() -> None:
             not_counted_reasons=("identification_method_not_supported",),
         ),
     )
-    file_result = FileResult(sample_name="SampleA", results={"WithNL": result})
+    file_result = FileResult(raw_stem="SampleA", results={"WithNL": result})
 
     long_row = _long_output_rows(file_result, [target])[0]
 
@@ -215,7 +215,7 @@ def test_long_rows_use_targeted_product_projection() -> None:
             review_reasons=("plausible_nl_dropout_review",),
         ),
     )
-    file_result = FileResult(sample_name="SampleA", results={"WithNL": result})
+    file_result = FileResult(raw_stem="SampleA", results={"WithNL": result})
 
     long_row = _long_output_rows(file_result, [target])[0]
 
@@ -242,7 +242,7 @@ def test_long_row_labels_follow_not_counted_projection() -> None:
             not_counted_reasons=("missing_positive_ms1_peak",),
         ),
     )
-    file_result = FileResult(sample_name="SampleA", results={"WithNL": result})
+    file_result = FileResult(raw_stem="SampleA", results={"WithNL": result})
 
     long_row = _long_output_rows(file_result, [target])[0]
 
@@ -295,7 +295,7 @@ def test_csv_rows_project_selected_integration_values_when_present() -> None:
             )
         ),
     )
-    file_result = FileResult(sample_name="SampleA", results={"WithNL": result})
+    file_result = FileResult(raw_stem="SampleA", results={"WithNL": result})
 
     long_rows = _long_output_rows(file_result, [target])
 
@@ -330,7 +330,7 @@ def test_csv_rows_preserve_no_peak_nd_projection() -> None:
         istd_pair="",
         reason="",
     )
-    file_result = FileResult(sample_name="SampleA", results={"WithNL": result})
+    file_result = FileResult(raw_stem="SampleA", results={"WithNL": result})
 
     long_row = _long_output_rows(file_result, [target])[0]
 
@@ -355,7 +355,7 @@ def test_not_quantifiable_row_is_blank_not_zero_or_absence():
         ),
     )
     row = _long_output_rows(
-        FileResult(sample_name="SampleA", results={"WithNL": result}),
+        FileResult(raw_stem="SampleA", results={"WithNL": result}),
         [_target("WithNL")],
     )[0]
     assert row["Area"] == ""

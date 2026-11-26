@@ -143,7 +143,7 @@ class TargetedCandidateAssessment:
             else ()
         )
         return TargetedPopulationContext(
-            sample_name=self.trace_group.sample_name,
+            raw_stem=self.trace_group.raw_stem,
             target_label=self.target.label,
             mz=self.target.mz,
             ppm_tol=self.target.ppm_tol,
@@ -280,7 +280,7 @@ class TargetedCandidateAssessment:
                 if candidate is not None and self.method_relations is not None
                 else None
             ),
-            sample_name=self.trace_group.sample_name,
+            raw_stem=self.trace_group.raw_stem,
             method_candidate_evidence=tuple(self.method_assessments.values()),
             selected_method_candidate_index=(
                 tuple(self.candidate_evaluations).index(candidate)
@@ -457,7 +457,7 @@ class TargetedPeakSelection:
 def build_production_peak_hypotheses(
     *,
     config: ExtractionConfig,
-    sample_name: str,
+    raw_stem: str,
     target: Target,
     peak_result: PeakDetectionResult,
     candidate_ms2_evidence: CandidateMS2EvidenceMap | None = None,
@@ -466,7 +466,7 @@ def build_production_peak_hypotheses(
     trace_group: TraceGroup | None = None,
 ) -> tuple[PeakHypothesis, ...]:
     hypotheses = build_peak_hypotheses(
-        sample_name=sample_name,
+        raw_stem=raw_stem,
         target_label=target.label,
         role="ISTD" if target.is_istd else "Analyte",
         istd_pair=target.istd_pair,
@@ -512,7 +512,7 @@ def select_targeted_peak(
     trace = trace_group.primary_trace
     hypotheses = build_production_peak_hypotheses(
         config=config,
-        sample_name=trace_group.sample_name,
+        raw_stem=trace_group.raw_stem,
         target=target,
         peak_result=peak_result,
         candidate_ms2_evidence=candidate_ms2_evidence,
@@ -651,7 +651,7 @@ def prepare_targeted_method_seeds(
             for event in window.events
             if event.parse_error is None and event.scan is not None
             for seed in discovery_events_from_scan(
-                event.scan, raw_file=Path(window.sample_key), settings=settings
+                event.scan, raw_file=Path(window.raw_stem), settings=settings
             )
         )
     return prepared

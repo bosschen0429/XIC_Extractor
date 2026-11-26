@@ -186,7 +186,7 @@ def test_typed_workflow_failure_never_reaches_publication(
     (data_dir / "SampleA.raw").write_bytes(b"sample")
     config = replace(_config(), data_dir=data_dir)
     acquisition = RunOutput(
-        file_results=[FileResult(sample_name="SampleA", results={})],
+        file_results=[FileResult(raw_stem="SampleA", results={})],
         diagnostics=[],
     )
 
@@ -229,9 +229,7 @@ def test_failed_raw_acquisition_preserves_reason_and_never_publishes(
     (data_dir / "SampleA.raw").write_bytes(b"sample")
     config = replace(_config(), data_dir=data_dir)
     acquisition = RunOutput(
-        file_results=[
-            FileResult(sample_name="SampleA", results={}, error="file locked")
-        ],
+        file_results=[FileResult(raw_stem="SampleA", results={}, error="file locked")],
         diagnostics=[],
     )
 
@@ -275,7 +273,7 @@ def test_cancellation_after_partial_acquisition_skips_handoff_and_publication(
         (data_dir / f"{name}.raw").write_bytes(name.encode("utf-8"))
     config = replace(_config(), data_dir=data_dir)
     acquisition = RunOutput(
-        file_results=[FileResult(sample_name="SampleA", results={})],
+        file_results=[FileResult(raw_stem="SampleA", results={})],
         diagnostics=[],
     )
     cancelled = False

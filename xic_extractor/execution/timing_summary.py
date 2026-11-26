@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 class TimingRecordView:
     stage: str
     elapsed_sec: float
-    sample_stem: str = ""
+    raw_stem: str = ""
     metrics: Mapping[str, object] | None = None
 
 
@@ -83,10 +83,10 @@ def _measurement_summary(
         metrics = record.metrics or {}
         for metric in canonical_fields:
             if metric in metrics:
-                grouped[(metric, record.sample_stem)].append(
+                grouped[(metric, record.raw_stem)].append(
                     {
                         "metric": metric,
-                        "scope": record.sample_stem,
+                        "scope": record.raw_stem,
                         "unit": "count",
                         "aggregation": "sum",
                         "source": "timing_record",
@@ -229,9 +229,7 @@ def _stage_summary(
     rows: list[dict[str, object]] = []
     for stage, stage_records in by_stage.items():
         elapsed_values = [record.elapsed_sec for record in stage_records]
-        sample_stems = {
-            record.sample_stem for record in stage_records if record.sample_stem
-        }
+        sample_stems = {record.raw_stem for record in stage_records if record.raw_stem}
         rows.append(
             {
                 "stage": stage,
@@ -338,7 +336,7 @@ def _record_view(record: TimingRecord) -> TimingRecordView:
     return TimingRecordView(
         stage=text_value(record.stage),
         elapsed_sec=_float_value(record.elapsed_sec),
-        sample_stem=text_value(record.sample_stem),
+        raw_stem=text_value(record.raw_stem),
         metrics=_mapping_or_empty(record.metrics),
     )
 

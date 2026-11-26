@@ -158,7 +158,7 @@ def test_nucleoside_windows_follow_published_method_unless_replaced(
                 explanation_summary(
                     {
                         "neutral_loss_by_tag": method,
-                        "samples": [{"sample_key": "S"}],
+                        "samples": [{"raw_stem": "S"}],
                         "matrix_sha256": file_sha256(
                             tmp_path / "alignment_matrix.tsv", uppercase=False
                         )
@@ -329,7 +329,9 @@ def test_cli_rejects_invalid_or_missing_threshold(tmp_path, threshold):
 def test_cli_rejects_unbound_samples_and_no_eligible_samples(tmp_path):
     source, samples = _inputs(tmp_path)
     header, metadata = read_tsv_with_header(samples)
-    write_tsv(samples, [row for row in metadata if row["raw_stem"] != "S1"], header)
+    retained = [row for row in metadata if row["raw_stem"] != "S1"]
+    retained[0]["sample_name"] = "S1"
+    write_tsv(samples, retained, header)
     output = tmp_path / "curated"
     result = _run(source, samples, output)
     assert result.returncode == 2

@@ -233,7 +233,7 @@ def test_owner_boundary_between_scan_points_maps_to_selected_trace(
         candidates=(candidate,),
     )
     integration = build_peak_hypotheses(
-        sample_name=trace.sample_name,
+        raw_stem=trace.raw_stem,
         target_label="test-only-target",
         role="",
         istd_pair="",
@@ -277,18 +277,18 @@ def test_proposal_source_reorder_is_canonicalized(tmp_path: Path) -> None:
 def _identity_fixture(
     tmp_path: Path,
     *,
-    sample_key: str = "sample-a",
-    sample_name: str = "Sample A",
+    raw_stem: str = "sample-a",
+    sample_label: str = "Sample A",
 ) -> _IdentityFixture:
-    source_path = tmp_path / f"{sample_key}.synthetic"
-    source_path.write_bytes(f"synthetic-no-raw-{sample_key}".encode())
+    source_path = tmp_path / f"{raw_stem}.synthetic"
+    source_path.write_bytes(f"synthetic-no-raw-{raw_stem}".encode())
     source = build_acquisition_source_identity(
         source_path,
         acquisition_format="synthetic_no_raw",
-        observation_namespace=f"synthetic:{sample_key}",
+        observation_namespace=f"synthetic:{raw_stem}",
     )
     return _IdentityFixture(
-        sample=SampleMetadata(sample_name=sample_name, raw_stem=sample_key),
+        sample=SampleMetadata(sample_label=sample_label, raw_stem=raw_stem),
         source=source,
     )
 
@@ -321,11 +321,11 @@ def _trace(
     intensity: tuple[float, ...],
     rt_min: float,
     rt_max: float,
-    sample_name: str = "sample-a",
+    raw_stem: str = "sample-a",
     acquisition_source_id: str = "",
 ) -> Trace:
     return Trace.from_arrays(
-        sample_name=sample_name,
+        raw_stem=raw_stem,
         mz=500.0,
         rt=rt,
         intensity=intensity,

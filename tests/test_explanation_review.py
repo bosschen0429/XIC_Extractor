@@ -149,7 +149,7 @@ def test_indexed_selection_keeps_witness_scope_counts_and_bounded_loading(
     report = tmp_path / "review.sqlite"
     with ExplanationReportWriter(report, review_only=True) as writer:
         writer.declare_samples(
-            [{"sample_key": s, "sample_stem": s} for s in ("S1", "S2")]
+            [{"raw_stem": s, "sample_label": s} for s in ("S1", "S2")]
         )
         for cid, sid, mz, rt in (
             ("C1", "S1", 500, 1),
@@ -184,7 +184,7 @@ def test_indexed_selection_keeps_witness_scope_counts_and_bounded_loading(
                     gid,
                     [
                         {
-                            "sample_key": sid,
+                            "raw_stem": sid,
                             "variant": "unresolved",
                             "value": None,
                         }
@@ -266,7 +266,7 @@ def test_default_review_keeps_values_and_query_without_curves(
     assert all("artifact" not in row for row in detail["method_assessments"])
     expected = sorted(
         (
-            decision.subject.canonical_sample.sample_name,
+            decision.subject.canonical_sample.raw_stem,
             decision.variant,
             getattr(decision, "value", None),
         )
@@ -275,7 +275,7 @@ def test_default_review_keeps_values_and_query_without_curves(
         for decision in cells
     )
     actual = sorted(
-        (row["sample_key"], row["variant"], row["value"])
+        (row["raw_stem"], row["variant"], row["value"])
         for row in _cells(report).values()
     )
     assert actual == expected
@@ -352,7 +352,7 @@ def test_existing_full_report_conversion_preserves_sample_values(tmp_path, monke
             return sorted(
                 (
                     row["feature_id"],
-                    row["sample_key"],
+                    row["raw_stem"],
                     row["variant"],
                     row.get("value"),
                 )
@@ -475,10 +475,10 @@ def test_produced_membership_risk_reaches_final_samples(
             assert estimate.anchor_count == 2
             assert estimate.rt_min == pytest.approx(
                 owner.peak.integration.rt_apex_min
-                - (0.1 if owner.sample_stem == "S2" else 0)
+                - (0.1 if owner.raw_stem == "S2" else 0)
             )
     expected = {
-        member.sample_key: json.loads(json.dumps(asdict(risks[member.subject_id])))
+        member.raw_stem: json.loads(json.dumps(asdict(risks[member.subject_id])))
         for group in completed.initial_groups
         for member in group.member_subjects
     }
@@ -494,9 +494,7 @@ def test_produced_membership_risk_reaches_final_samples(
         alignment_config=config,
     )
     cells = _cells(report).values()
-    assert {
-        cell["sample_key"]: cell["membership_risks"][0] for cell in cells
-    } == expected
+    assert {cell["raw_stem"]: cell["membership_risks"][0] for cell in cells} == expected
     assert matrix.read_bytes() == original
 
 
@@ -576,13 +574,13 @@ def test_named_cells_preserve_values_and_details_across_input_order(
 ):
     cells = [
         {
-            "sample_key": "S1",
+            "raw_stem": "S1",
             "variant": "numeric",
             "value": 11.0,
             "reason_codes": ["first"],
         },
         {
-            "sample_key": "S2",
+            "raw_stem": "S2",
             "variant": "numeric",
             "value": 22.0,
             "reason_codes": ["second"],
@@ -593,7 +591,7 @@ def test_named_cells_preserve_values_and_details_across_input_order(
         path = tmp_path / f"order-{index}.sqlite"
         with ExplanationReportWriter(path, review_only=review_only) as writer:
             writer.declare_samples(
-                [{"sample_key": s, "sample_stem": s} for s in ("S1", "S2")]
+                [{"raw_stem": s, "sample_label": s} for s in ("S1", "S2")]
             )
             writer.add_final_group(
                 "F1",
@@ -619,7 +617,7 @@ def test_named_cells_reject_duplicate_group_sample(tmp_path):
     path = tmp_path / "duplicate.sqlite"
     with pytest.raises(ValueError, match="duplicate review cell"):
         with ExplanationReportWriter(path, review_only=True) as writer:
-            writer.declare_samples([{"sample_key": "S1", "sample_stem": "S1"}])
+            writer.declare_samples([{"raw_stem": "S1", "sample_label": "S1"}])
             writer.add_final_group(
                 "F1",
                 feature_id="F1",
@@ -629,8 +627,8 @@ def test_named_cells_reject_duplicate_group_sample(tmp_path):
             writer.add_cells(
                 "F1",
                 [
-                    {"sample_key": "S1", "variant": "numeric", "value": 11.0},
-                    {"sample_key": "S1", "variant": "numeric", "value": 22.0},
+                    {"raw_stem": "S1", "variant": "numeric", "value": 11.0},
+                    {"raw_stem": "S1", "variant": "numeric", "value": 22.0},
                 ],
             )
     assert not path.exists()

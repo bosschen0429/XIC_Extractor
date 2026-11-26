@@ -8,7 +8,7 @@ import os
 import re
 import threading
 import time
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -24,7 +24,11 @@ from tests.workbench_browser_fixtures import config_dir as config_dir
 from tests.workbench_browser_fixtures import workbench as workbench
 from tests.workbench_browser_fixtures import workbench_defaults as workbench_defaults
 from xic_extractor.alignment_explanation.storage import encode_review_curve
-from xic_extractor.sample_metadata import SampleMetadata, load_sample_metadata
+from xic_extractor.sample_metadata import (
+    SampleMetadata,
+    load_sample_metadata,
+    sample_metadata_payload,
+)
 from xic_extractor.settings_schema import CANONICAL_SETTINGS_DEFAULTS
 from xic_workbench.config_io import read_settings, write_settings
 from xic_workbench.samples import (
@@ -668,7 +672,7 @@ def test_word_import_preview_finishes_or_stops_without_losing_confirmed_samples(
         config_dir,
         raw_dir,
         [
-            asdict(
+            sample_metadata_payload(
                 SampleMetadata(
                     "NormalBC001_DNA",
                     "NormalBC001_DNA",
@@ -676,7 +680,9 @@ def test_word_import_preview_finishes_or_stops_without_losing_confirmed_samples(
                     group="Confirmed",
                 )
             ),
-            asdict(SampleMetadata("QC_Pool_1", "QC_Pool_1", sample_role="qc")),
+            sample_metadata_payload(
+                SampleMetadata("QC_Pool_1", "QC_Pool_1", sample_role="qc")
+            ),
         ],
     )
     saved_path = sample_annotations_path(config_dir, raw_dir)
@@ -1342,7 +1348,7 @@ def test_new_batch_preserves_method_but_uses_the_new_folders_samples(
             config_dir,
             folder,
             [
-                asdict(
+                sample_metadata_payload(
                     SampleMetadata(
                         "S1",
                         "S1",
@@ -2208,7 +2214,7 @@ def test_untargeted_curves_open_beside_saved_report_and_reuse_loaded_view(
     db = (
         create_inspector_report(
             tmp_path,
-            samples=[{"sample_key": "S1"}],
+            samples=[{"raw_stem": "S1"}],
             base_cell={"observation_ids": ["obs-01"], "apex_rt_min": 1.0},
             extend=lambda writer: writer.set_cell_curve(
                 "G1", "S1", encode_review_curve((0.9, 1.0, 1.1), (1.0, 5.0, 1.0))
@@ -2520,7 +2526,9 @@ def test_group_position_curves_are_labelled_and_leave_saved_empty_cell_unchanged
         config_dir,
         tmp_path,
         [
-            asdict(SampleMetadata(sid, sid, sample_role=role, group="Stored"))
+            sample_metadata_payload(
+                SampleMetadata(sid, sid, sample_role=role, group="Stored")
+            )
             for sid, role in (
                 ("S1", "sample"),
                 ("S2", "sample"),
@@ -2597,7 +2605,7 @@ def test_group_position_curves_are_labelled_and_leave_saved_empty_cell_unchanged
         config_dir,
         tmp_path,
         [
-            asdict(SampleMetadata(sid, sid, sample_role="blank"))
+            sample_metadata_payload(SampleMetadata(sid, sid, sample_role="blank"))
             for sid in ("S1", "S2", "S3")
         ],
     )
@@ -3501,7 +3509,9 @@ def test_sample_restore_is_bound_to_current_inputs(
     page = workbench
     old = tmp_path / "batch_a"
     old.mkdir()
-    row = asdict(SampleMetadata("S1", "S1", sample_role="blank", injection_order=1))
+    row = sample_metadata_payload(
+        SampleMetadata("S1", "S1", sample_role="blank", injection_order=1)
+    )
     monkeypatch.setattr(
         "xic_workbench.samples.load_samples",
         lambda *args, **kwargs: {
@@ -4304,7 +4314,7 @@ def test_sample_editor_selects_by_drag_search_and_shift_and_marks_other_rows(
         config_dir,
         batch,
         [
-            asdict(
+            sample_metadata_payload(
                 SampleMetadata(
                     stem,
                     stem,
@@ -4677,7 +4687,9 @@ def test_legacy_groups_stay_in_inspector_but_not_analysis_setup(
         config_dir,
         batch,
         [
-            asdict(SampleMetadata(stem, stem, sample_role="sample", group=group))
+            sample_metadata_payload(
+                SampleMetadata(stem, stem, sample_role="sample", group=group)
+            )
             for stem, group in groups.items()
         ],
     )

@@ -125,7 +125,7 @@ def run_delta_mass_discovery(
             detector_started = time.perf_counter()
             features = build_local_ms1_feature_table(
                 index,
-                sample_stem=raw_path.stem,
+                raw_stem=raw_path.stem,
                 settings=detector,
             )
             detector_seconds = time.perf_counter() - detector_started
@@ -216,10 +216,10 @@ def _join_cid_nl(
     dr_rows_by_sample: dict[str, list[_CidNlPeakRow]] = {}
     for row in rows:
         if _ALLOWED_CID_NL_TAG in row.matched_tag_names:
-            dr_rows_by_sample.setdefault(row.sample_stem, []).append(row)
+            dr_rows_by_sample.setdefault(row.raw_stem, []).append(row)
     joined = []
     for candidate in candidates:
-        sample_rows = dr_rows_by_sample.get(candidate.sample_stem, ())
+        sample_rows = dr_rows_by_sample.get(candidate.raw_stem, ())
         admitted = [row for row in sample_rows if row.status in _JOINABLE_STATUSES]
         matches = [row for row in admitted if _fallback_matches(candidate, row)]
         if matches:
@@ -259,7 +259,7 @@ class _CidNlPeakRow:
     sit tens of ppm away on a dense peak.
     """
 
-    sample_stem: str
+    raw_stem: str
     peak_id: str
     matched_tag_names: tuple[str, ...]
     status: str
@@ -294,8 +294,8 @@ def _load_cid_nl_peak_rows(paths: Sequence[Path]) -> tuple[_CidNlPeakRow, ...]:
     for path, row_index, row in rows:
         label = f"{path} row {row_index}"
         peak_id = required_row_text(row.get("peak_id"), "peak_id", label)
-        sample_stem = required_row_text(row.get("sample_stem"), "sample_stem", label)
-        for field, identity in (("peak_id", peak_id), ("sample_stem", sample_stem)):
+        raw_stem = required_row_text(row.get("sample_stem"), "sample_stem", label)
+        for field, identity in (("peak_id", peak_id), ("sample_stem", raw_stem)):
             _reject_ambiguous_formula_escaped_identity(
                 identity, field=field, row_label=label
             )
@@ -305,7 +305,7 @@ def _load_cid_nl_peak_rows(paths: Sequence[Path]) -> tuple[_CidNlPeakRow, ...]:
         seen.add(peak_id)
         parsed.append(
             _CidNlPeakRow(
-                sample_stem=sample_stem,
+                raw_stem=raw_stem,
                 peak_id=peak_id,
                 matched_tag_names=tuple(
                     tag

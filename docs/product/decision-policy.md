@@ -296,7 +296,7 @@ reconstruct the policy:
 
 | Field class | Examples |
 | --- | --- |
-| Unit identity | `target_label`, `sample_key`, `feature_id`, `(feature_id, sample)` cell position |
+| Unit identity | `target_label`, `raw_stem`, `feature_id`, `(feature_id, raw_stem)` cell position |
 | Required evidence status | present/missing/inconclusive typed facts and source artifact hashes |
 | Blockers | conflict, ambiguity, stale source, unsupported projection, missing activation |
 | Support | RT, shape, MS2/NL, standard/library, paired-context, group/coherence support |

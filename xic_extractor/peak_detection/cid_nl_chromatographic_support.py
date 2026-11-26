@@ -67,7 +67,7 @@ def _support_from_scans(
             "composite scan support loss dimensions must be complete"
         )
     return CidNlChromatographicSupport(
-        sample_key=sample.sample_name,
+        raw_stem=sample.raw_stem,
         peak_observation=first.peak_observation,
         candidate_peaks=first.candidate_peaks,
         acquisition_mode=first.evidence.acquisition_mode,

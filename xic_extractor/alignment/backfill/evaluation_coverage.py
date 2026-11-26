@@ -66,7 +66,7 @@ class BackfillPlanningPosition:
     def key(self) -> tuple[str, str]:
         return (
             self.group.group_hypothesis_id,
-            self.sample.sample_name,
+            self.sample.raw_stem,
         )
 
 

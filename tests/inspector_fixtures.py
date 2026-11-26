@@ -21,7 +21,7 @@ def create_review_batch(tmp_path, sample_count=2, *, keep_curves=False):
     )
 
     sample_ids = tuple(f"S{i + 1}" for i in range(sample_count))
-    samples = [{"sample_key": s, "sample_stem": s} for s in sample_ids]
+    samples = [{"raw_stem": s, "sample_label": s} for s in sample_ids]
     matrix = tmp_path / "matrix.tsv"
     matrix.write_text("recorded matrix fixture", encoding="utf-8")
     report = tmp_path / "review.sqlite"
@@ -43,13 +43,13 @@ def create_review_batch(tmp_path, sample_count=2, *, keep_curves=False):
             )
             writer.set_row_destination(rid, route)
             peaks = {
-                member["sample_key"]: member["physical_peak_keys"] for member in members
+                member["raw_stem"]: member["physical_peak_keys"] for member in members
             }
             writer.add_cells(
                 rid,
                 [
                     {
-                        "sample_key": sid,
+                        "raw_stem": sid,
                         "variant": "numeric" if isinstance(value, int) else value,
                         "value": value if isinstance(value, int) else None,
                         "observation_ids": peaks.get(sid, []),
@@ -96,7 +96,7 @@ def create_nearest_review_batch(tmp_path):
         ("missing-mz", ((None, 1.0),), False),
         ("multi-witness", ((350.0, 2.0), (123.4, 2.5)), False),
     ]
-    samples = [{"sample_key": "S1", "sample_stem": "S1"}]
+    samples = [{"raw_stem": "S1", "sample_label": "S1"}]
     with ExplanationReportWriter(report, review_only=True) as writer:
         writer.declare_samples(samples)
         for rid, witnesses, unresolved in rows:
@@ -112,7 +112,7 @@ def create_nearest_review_batch(tmp_path):
                 rid,
                 [
                     {
-                        "sample_key": "S1",
+                        "raw_stem": "S1",
                         "variant": "unresolved" if unresolved else "numeric",
                         "value": None if unresolved else 100.0,
                     }
@@ -141,10 +141,10 @@ def discovery(candidate_id: str) -> dict[str, str]:
 NEUTRAL_LOSS_BY_TAG = {"dR": 116.0474}
 
 
-def witness_member(sample_key: str, hypothesis_id: str, *peaks: str) -> dict:
+def witness_member(raw_stem: str, hypothesis_id: str, *peaks: str) -> dict:
     """A final-group member whose hypothesis is a candidate's terminal subject."""
     return {
-        "sample_key": sample_key,
+        "raw_stem": raw_stem,
         "subject_id": hypothesis_id,
         "subject_kind": "peak_hypothesis",
         "physical_peak_keys": list(peaks),
@@ -154,7 +154,7 @@ def witness_member(sample_key: str, hypothesis_id: str, *peaks: str) -> dict:
 def add_witness(
     writer,
     candidate_id: str,
-    sample_key: str,
+    raw_stem: str,
     *,
     rt: float | None,
     peak_mz: float | None = None,
@@ -164,22 +164,22 @@ def add_witness(
 
     The witness RT is the terminal peak's apex; ``rt=None`` keeps it unrecorded.
     """
-    peak = f"peak-{candidate_id}-{sample_key}"
-    hypothesis = f"hypothesis-{candidate_id}-{sample_key}"
-    writer.add_peak(sample_key, peak, (peak_mz, rt, None))
+    peak = f"peak-{candidate_id}-{raw_stem}"
+    hypothesis = f"hypothesis-{candidate_id}-{raw_stem}"
+    writer.add_peak(raw_stem, peak, (peak_mz, rt, None))
     writer.add_candidate(
         candidate_id,
-        sample_key,
+        raw_stem,
         **{**discovery(candidate_id), **candidate},
     )
     writer.add_terminal(
         candidate_id,
-        sample_key,
+        raw_stem,
         variant="observed",
         hypothesis_id=hypothesis,
         physical_peak_key=peak,
     )
-    return witness_member(sample_key, hypothesis, peak)
+    return witness_member(raw_stem, hypothesis, peak)
 
 
 def read_report_payload(path: Path) -> dict:
@@ -288,12 +288,12 @@ def create_inspector_report(
 
     if samples is None:
         samples = [
-            {"sample_stem": "s1", "sample_key": "S1"},
-            {"sample_stem": "s2", "sample_key": "S2"},
+            {"sample_label": "s1", "raw_stem": "S1"},
+            {"sample_label": "s2", "raw_stem": "S2"},
         ]
-    samples = [{"sample_stem": sample["sample_key"], **sample} for sample in samples]
+    samples = [{"sample_label": sample["raw_stem"], **sample} for sample in samples]
 
-    sid = samples[0]["sample_key"]
+    sid = samples[0]["raw_stem"]
     with ExplanationReportWriter(db_path, review_only=review_only) as writer:
         writer.declare_samples(samples)
         writer.add_peak(sid, "obs-01", (None, 1.0, None))
@@ -332,7 +332,7 @@ def create_inspector_report(
             if cells is not None
             else [
                 {
-                    "sample_key": sid,
+                    "raw_stem": sid,
                     "variant": "numeric",
                     "value": 1000.0,
                     **(base_cell or {}),

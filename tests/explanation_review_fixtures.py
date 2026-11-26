@@ -75,7 +75,7 @@ def _group_with_missing_apex_review(
         "S2": (501.0, 20.0),
         "S3": (500.0, 20.0),
     }
-    samples = [{"sample_key": sid, "sample_stem": sid} for sid in ("S1", "S2", "S3")]
+    samples = [{"raw_stem": sid, "sample_label": sid} for sid in ("S1", "S2", "S3")]
     with ExplanationReportWriter(report, review_only=True) as writer:
         writer.declare_samples(samples)
         for (cid, sid), mz, rt in zip(keys, (499.0, 501.0), (7.9, 8.1), strict=True):
@@ -90,7 +90,7 @@ def _group_with_missing_apex_review(
             disposition="saved",
             members=[
                 {
-                    "sample_key": sid,
+                    "raw_stem": sid,
                     "subject_id": cid,
                     "subject_kind": "peak_hypothesis",
                     "physical_peak_keys": [cid],
@@ -111,7 +111,7 @@ def _group_with_missing_apex_review(
             "G1",
             [
                 {
-                    "sample_key": sid,
+                    "raw_stem": sid,
                     "variant": "numeric" if value else "unavailable",
                     "value": value,
                     "apex_rt_min": {"S1": 7.9, "S2": 8.1, "S3": 8.0}[sid]
@@ -153,7 +153,7 @@ def _group_with_missing_apex_review(
                 disposition="saved",
                 members=[
                     {
-                        "sample_key": owner,
+                        "raw_stem": owner,
                         "subject_id": peak,
                         "subject_kind": "peak_hypothesis",
                         "physical_peak_keys": [peak],
@@ -167,7 +167,7 @@ def _group_with_missing_apex_review(
                 feature_id,
                 [
                     {
-                        "sample_key": sid,
+                        "raw_stem": sid,
                         "variant": "numeric" if sid == owner else "unavailable",
                         "value": 50 if sid == owner else None,
                         "apex_rt_min": apex if sid == owner else None,
@@ -226,7 +226,7 @@ def _quality_review_report(
             physical_peak_key=f"obs-{sid}",
         )
         decision = NS(
-            subject=NS(canonical_sample=NS(sample_name=sid)),
+            subject=NS(canonical_sample=NS(raw_stem=sid)),
             evidence=NS(effective_cells=(cell,), evidence_states=()),
             variant="quantified",
             value=value,
@@ -248,14 +248,14 @@ def _quality_review_report(
     }
     members = [
         {
-            "sample_key": sid,
+            "raw_stem": sid,
             "subject_id": f"member-{sid}",
             "subject_kind": "peak_hypothesis",
             "physical_peak_keys": [f"obs-{sid}"],
         }
         for sid in ("S1", "S2")
     ]
-    samples = [{"sample_stem": sid, "sample_key": sid} for sid in ("S1", "S2")]
+    samples = [{"sample_label": sid, "raw_stem": sid} for sid in ("S1", "S2")]
     with ExplanationReportWriter(report, review_only=True) as writer:
         writer.declare_samples(samples)
         keys = [("C1", "S1"), ("C2", "S2")]

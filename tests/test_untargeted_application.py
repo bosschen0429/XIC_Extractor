@@ -96,7 +96,7 @@ def test_published_run_follows_known_istd_reference_and_injection_order(
     workbook = inputs.pop("known_istd_reference_workbook")
     sample_metadata = tuple(
         SampleMetadata(
-            sample_name=stem,
+            sample_label=stem,
             raw_stem=stem,
             injection_order=len(stems) - index,
             sample_role="blank" if index == 0 else "sample",

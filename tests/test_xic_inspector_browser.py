@@ -1213,7 +1213,7 @@ def test_measured_mz_readout_keeps_sample_values_and_missing_measurements(
         report, SelectionRequest(strategy="query", group_ids=("G1",))
     ).payload
     assert {
-        witness["sample_key"]: witness["ms1_apex_mz"]
+        witness["raw_stem"]: witness["ms1_apex_mz"]
         for witness in payload["items"][0]["witnesses"]
     } == {"S1": 500.2010, "S2": None}
     page = review_page

@@ -68,7 +68,7 @@ def count_run(
     for item in read_discovery_events_csv(
         events,
         raw_file=raw,
-        sample_stem=sample,
+        raw_stem=sample,
         neutral_loss_by_tag=neutral_loss_by_tag,
     ):
         if item.peak_id:

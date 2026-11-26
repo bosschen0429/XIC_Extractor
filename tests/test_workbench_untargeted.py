@@ -53,7 +53,7 @@ def test_samples_take_annotations_from_metadata_but_names_and_order_from_raw(
     install_raw_sample_headers(
         monkeypatch,
         lambda path: SimpleNamespace(
-            sample_name=f"Header {path.stem}",
+            sample_label=f"Header {path.stem}",
             sample_type="Unknown",
             comment="",
             instrument_method="",
@@ -117,7 +117,7 @@ def test_samples_take_annotations_from_metadata_but_names_and_order_from_raw(
 
     assert [row["raw_stem"] for row in result["samples"]] == ["Sample-A", "Sample-B"]
     assert result["samples"][0] == {
-        "sample_name": "Header Sample-A",
+        "sample_name": "Alpha",
         "raw_stem": "Sample-A",
         "injection_order": 1,
         "sample_role": "qc",
@@ -147,7 +147,7 @@ def test_samples_use_raw_header_chronology_and_sequence_roles(
         raw_a: RawSampleHeader(
             raw_path=str(raw_a),
             raw_stem="Sample-A",
-            sample_name="Header Alpha",
+            sample_label="Header Alpha",
             sample_id="A",
             row_number=2,
             sample_type="Unknown",
@@ -158,7 +158,7 @@ def test_samples_use_raw_header_chronology_and_sequence_roles(
         raw_b: RawSampleHeader(
             raw_path=str(raw_b),
             raw_stem="Sample-B",
-            sample_name="Header Beta",
+            sample_label="Header Beta",
             sample_id="B",
             row_number=1,
             sample_type="QC",
@@ -196,8 +196,8 @@ def test_samples_use_raw_header_chronology_and_sequence_roles(
     ]
     assert [row["injection_order"] for row in result["samples"]] == [1, 2]
     assert [row["sample_name"] for row in result["samples"]] == [
-        "Header Beta",
-        "Header Alpha",
+        "Sequence Beta",
+        "Sequence Alpha",
     ]
     assert [row["sample_role"] for row in result["samples"]] == [
         "blank",
@@ -425,7 +425,7 @@ def test_raw_sample_refresh_preserves_filename_and_method_roles(tmp_path, monkey
     def header(path, dll_dir):
         return SimpleNamespace(
             raw_stem=path.stem,
-            sample_name="A01",
+            sample_label="A01",
             sample_type="Unknown",
             row_number=names.index(path.stem) + 1,
             creation_date=None,

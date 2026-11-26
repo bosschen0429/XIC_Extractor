@@ -41,7 +41,7 @@ class ObservedSearchSubject:
     """One searched candidate with its selected scientific hypothesis."""
 
     candidate_id: str
-    sample_key: str
+    raw_stem: str
     hypothesis: MeasuredPeakHypothesis
 
     @property
@@ -54,7 +54,7 @@ class SearchedNoObservationSubject:
     """One searched candidate without a selected hypothesis."""
 
     candidate_id: str
-    sample_key: str
+    raw_stem: str
 
     @property
     def variant(self) -> Literal["searched_no_observation"]:
@@ -111,15 +111,14 @@ def finalize_scientific_alignment(
     canonical_samples: tuple[SampleMetadata, ...]
     samples = scope.samples
     if type(samples) is tuple and all(
-        samples[i].sample_name <= samples[i + 1].sample_name
-        for i in range(len(samples) - 1)
+        samples[i].raw_stem <= samples[i + 1].raw_stem for i in range(len(samples) - 1)
     ):
         canonical_samples = samples
     else:
         canonical_samples = tuple(
             sorted(
                 samples,
-                key=lambda sample: sample.sample_name,
+                key=lambda sample: sample.raw_stem,
             )
         )
     canonical_cells: tuple[FinalGroupCellObservation, ...]
@@ -154,13 +153,10 @@ def _require_terminal_population(
 ) -> None:
     """Require one attributed terminal for every capture in the owner scope."""
     expected = Counter(
-        (
-            (binding.candidate_id, binding.sample_key)
-            for binding in scope.capture_bindings
-        )
+        ((binding.candidate_id, binding.raw_stem) for binding in scope.capture_bindings)
     )
     actual = Counter(
-        ((subject.candidate_id, subject.sample_key) for subject in terminal_subjects)
+        ((subject.candidate_id, subject.raw_stem) for subject in terminal_subjects)
     )
     if actual != expected:
         raise FinalizedScientificAlignmentContractError(
@@ -170,7 +166,7 @@ def _require_terminal_population(
 
 def _terminal_sort_key(subject: TerminalSearchObservation) -> tuple[str, str, str]:
     return (
-        subject.sample_key,
+        subject.raw_stem,
         subject.candidate_id,
         subject.variant,
     )

@@ -29,7 +29,7 @@ class DdaCidNlScanSupportMember:
 class CidNlChromatographicSupport:
     """One physical MS1 support event backed by one or more exact DDA scans."""
 
-    sample_key: str
+    raw_stem: str
     peak_observation: PeakObservation
     candidate_peaks: tuple[PeakObservation, ...]
     acquisition_mode: str

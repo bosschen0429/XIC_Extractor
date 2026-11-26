@@ -82,7 +82,7 @@ def measured_hypothesis_key(method: str, peak_observation: PeakObservation) -> s
     peak = peak_observation
     return "|".join(
         (
-            peak.sample_key,
+            peak.raw_stem,
             method,
             repr(peak.mz),
             repr(peak.rt_apex_min),

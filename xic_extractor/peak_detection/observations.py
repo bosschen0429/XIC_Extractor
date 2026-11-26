@@ -50,7 +50,7 @@ class PeakObservation:
     selected integral nor adds another persisted identity.
     """
 
-    sample_key: str
+    raw_stem: str
     mz: float
     rt: tuple[float, ...]
     intensity: tuple[float, ...]
@@ -116,7 +116,7 @@ class PeakObservation:
 
         return "|".join(
             (
-                self.sample_key,
+                self.raw_stem,
                 repr(self.mz),
                 repr(self.rt[0]),
                 repr(self.rt[-1]),
@@ -139,7 +139,7 @@ class PeakObservation:
 class RetainedCaptureEvidence:
     """Actual capture inputs and output, with no scientific decision authority."""
 
-    sample_key: str
+    raw_stem: str
     processing_attempt_id: str
     method_subject_id: str
     candidate_id: str | None
@@ -178,7 +178,7 @@ def mint_physical_peak_observations(
     for evaluation, mz in zip(evaluations, masses, strict=True):
         integration = physical_peak_observation_integration(evaluation)
         observation = _project_peak_observation(
-            sample_key=sample.sample_name,
+            raw_stem=sample.raw_stem,
             trace=trace,
             mz=mz,
             integration=integration,
@@ -196,7 +196,7 @@ def mint_physical_peak_observations(
 
 def _project_peak_observation(
     *,
-    sample_key: str,
+    raw_stem: str,
     trace: Trace,
     mz: float,
     integration: IntegrationResult | None,
@@ -235,7 +235,7 @@ def _project_peak_observation(
         )
     )
     return PeakObservation(
-        sample_key=sample_key,
+        raw_stem=raw_stem,
         mz=float(mz),
         rt=selected_rt,
         intensity=selected_intensity,

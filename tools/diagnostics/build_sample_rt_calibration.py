@@ -212,10 +212,10 @@ def _sample_rows(
     for sample in calibration.samples.values():
         span = sample.reliable_observed_range
         prior = sample.prior_injection
-        context = timeline_context.get(sample.sample_stem, {})
+        context = timeline_context.get(sample.raw_stem, {})
         rows.append(
             {
-                "sample_stem": sample.sample_stem,
+                "sample_stem": sample.raw_stem,
                 "status": sample.status,
                 "knot_count": len(sample.knots),
                 "reliable_observed_start_min": _round(span[0]) if span else None,

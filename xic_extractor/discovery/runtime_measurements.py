@@ -25,7 +25,7 @@ DISCOVERY_MS1_MEASUREMENT_NAMES = frozenset(
 def record_discovery_ms1_measurements(
     timing_recorder: TimingRecorder,
     measurements: _DiscoveryMs1Measurements | None,
-    sample_stem: str,
+    raw_stem: str,
     *,
     unavailable_reason: str = (
         "RAW handle is not bound to the acquisition owner batch contract"
@@ -34,7 +34,7 @@ def record_discovery_ms1_measurements(
     if measurements is None:
         _record_unavailable_discovery_ms1_measurements(
             timing_recorder,
-            sample_stem,
+            raw_stem,
             reason=unavailable_reason,
         )
         return
@@ -141,17 +141,17 @@ def record_discovery_ms1_measurements(
         timing_recorder.observe(
             metric,
             value=value,
-            scope=sample_stem,
+            scope=raw_stem,
             unit=unit,
             source=source,
         )
-    _record_rss_unavailable(timing_recorder, sample_stem)
-    validate_discovery_ms1_observations(timing_recorder, sample_stem)
+    _record_rss_unavailable(timing_recorder, raw_stem)
+    validate_discovery_ms1_observations(timing_recorder, raw_stem)
 
 
 def _record_unavailable_discovery_ms1_measurements(
     timing_recorder: TimingRecorder,
-    sample_stem: str,
+    raw_stem: str,
     *,
     reason: str,
 ) -> None:
@@ -173,26 +173,26 @@ def _record_unavailable_discovery_ms1_measurements(
         timing_recorder.observe(
             metric,
             value=None,
-            scope=sample_stem,
+            scope=raw_stem,
             unit=unit,
             source="xic_extractor.discovery.ms1_capture",
             availability="unavailable",
             reason=reason,
         )
-    _record_rss_unavailable(timing_recorder, sample_stem)
-    validate_discovery_ms1_observations(timing_recorder, sample_stem)
+    _record_rss_unavailable(timing_recorder, raw_stem)
+    validate_discovery_ms1_observations(timing_recorder, raw_stem)
 
 
 def _record_rss_unavailable(
     timing_recorder: TimingRecorder,
-    sample_stem: str,
+    raw_stem: str,
 ) -> None:
     reason = "unsupported: Discovery runner has no owner-bound RSS sampler"
     for metric in ("worker_peak_rss_bytes", "process_tree_peak_rss_bytes"):
         timing_recorder.observe(
             metric,
             value=None,
-            scope=sample_stem,
+            scope=raw_stem,
             unit="bytes",
             aggregation="max",
             source="xic_extractor.discovery.pipeline",
@@ -203,18 +203,18 @@ def _record_rss_unavailable(
 
 def record_unavailable_raw_open(
     timing_recorder: TimingRecorder,
-    sample_stem: str,
+    raw_stem: str,
 ) -> None:
     """Leave an explicit unknown when acquisition supplied no open observation."""
     if any(
-        row["metric"] == "raw_open_count" and row["scope"] == sample_stem
+        row["metric"] == "raw_open_count" and row["scope"] == raw_stem
         for row in timing_recorder.measurement_observations
     ):
         return
     timing_recorder.observe(
         "raw_open_count",
         value=None,
-        scope=sample_stem,
+        scope=raw_stem,
         unit="opens",
         source="xic_extractor.discovery.runtime_measurements.record_unavailable_raw_open",
         availability="unavailable",
@@ -258,14 +258,14 @@ def reject_caller_authored_discovery_ms1_measurement(
 
 def validate_discovery_ms1_observations(
     timing_recorder: TimingRecorder,
-    sample_stem: str,
+    raw_stem: str,
 ) -> None:
     if not timing_recorder.enabled:
         return
     names = tuple(
         str(row["metric"])
         for row in timing_recorder.measurement_observations
-        if row.get("scope") == sample_stem
+        if row.get("scope") == raw_stem
         and isinstance(row.get("metric"), str)
         and str(row["metric"]).startswith("discovery_ms1_")
     )
@@ -283,7 +283,7 @@ def validate_discovery_ms1_observations(
 def record_raw_measurements(
     timing_recorder: TimingRecorder,
     raw: BatchXICAdapter,
-    sample_stem: str,
+    raw_stem: str,
 ) -> None:
     """Project Discovery owner facts without inventing unavailable counters."""
 
@@ -299,7 +299,7 @@ def record_raw_measurements(
     timing_recorder.observe(
         "logical_xic_request_count",
         value=None,
-        scope=sample_stem,
+        scope=raw_stem,
         unit="requests",
         source="discovery.raw_handle",
         availability="unavailable",
@@ -308,7 +308,7 @@ def record_raw_measurements(
     timing_recorder.observe(
         "xic_batch_count",
         value=None,
-        scope=sample_stem,
+        scope=raw_stem,
         unit="batches",
         source="discovery.raw_handle",
         availability="unavailable",
@@ -317,7 +317,7 @@ def record_raw_measurements(
     timing_recorder.observe(
         "adapter_chromatogram_call_count",
         value=raw_calls,
-        scope=sample_stem,
+        scope=raw_stem,
         unit="calls",
         source="discovery.raw_handle.raw_chromatogram_call_count",
         availability="measured" if isinstance(raw_calls, int) else "unavailable",
@@ -326,7 +326,7 @@ def record_raw_measurements(
     timing_recorder.observe(
         "trace_point_count",
         value=None,
-        scope=sample_stem,
+        scope=raw_stem,
         unit="points",
         source="discovery.raw_handle",
         availability="unavailable",

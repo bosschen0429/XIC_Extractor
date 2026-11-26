@@ -64,7 +64,7 @@ from xic_extractor.rt_calibration_codec import (
     rt_drift_payload,
 )
 
-_GROUPING_SCHEMA = "grouping_experiment_inputs"
+_GROUPING_SCHEMA = "grouping_experiment_raw_stem_inputs"
 _RtModel = tuple[
     BatchRtWarp | None,
     BatchRtCalibration | None,
@@ -195,9 +195,7 @@ def read_grouping_inputs(path: Path) -> tuple[GroupingInputs, dict[str, Any]]:
     for workset in inputs.worksets:
         if len({owner.owner_id for owner in workset.owners}) != len(workset.owners):
             raise ValueError("Grouping snapshot has duplicate owners in a workset")
-        if any(
-            owner.sample_stem not in inputs.sample_stems for owner in workset.owners
-        ):
+        if any(owner.raw_stem not in inputs.sample_stems for owner in workset.owners):
             raise ValueError("Grouping snapshot omits an observation's sample")
     return inputs, payload["provenance"]
 
@@ -313,7 +311,7 @@ def _read_rt_model_inputs(value: Mapping[str, Any]) -> BatchRtModelInputs:
 
 
 def _read_elution_context(value: dict[str, Any]) -> SampleElutionContext:
-    if not isinstance(value["sample_stem"], str):
+    if not isinstance(value["raw_stem"], str):
         raise ValueError(
             "elution context requires a sample, mass, bounds and landmarks"
         )
@@ -352,7 +350,7 @@ def _read_elution_context(value: dict[str, Any]) -> SampleElutionContext:
         **{**value, "rt": (), "raw": (), "landmarks": tuple(landmarks)}
     )
     if (
-        not context.sample_stem.strip()
+        not context.raw_stem.strip()
         or any(
             isinstance(value, bool)
             or not isinstance(value, (int, float))
@@ -383,7 +381,7 @@ def _owner_payload(owner: SampleLocalMS1Owner) -> dict[str, Any]:
     integration = owner.peak.integration
     return {
         "owner_id": owner.owner_id,
-        "sample_stem": owner.sample_stem,
+        "raw_stem": owner.raw_stem,
         "raw_file": owner.raw_file,
         "precursor_mz": owner.peak.mz,
         "owner_apex_rt": owner.peak.rt_apex_min,
@@ -420,7 +418,7 @@ def _owner_payload(owner: SampleLocalMS1Owner) -> dict[str, Any]:
 
 def _peak_payload(peak: PeakObservation) -> dict[str, Any]:
     return {
-        "sample_key": peak.sample_key,
+        "raw_stem": peak.raw_stem,
         "mz": peak.mz,
         "rt": peak.rt,
         "intensity": peak.intensity,
@@ -456,7 +454,7 @@ def _read_peak(value: dict[str, Any]) -> PeakObservation:
         )
     _validate_integration(integration, selected_rt=rt)
     return PeakObservation(
-        sample_key=value["sample_key"],
+        raw_stem=value["raw_stem"],
         mz=mz,
         rt=rt,
         intensity=intensity,

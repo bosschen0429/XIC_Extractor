@@ -112,7 +112,7 @@ def test_completed_empty_recovery_preserves_each_compatible_source_subject(
             query
             for group in detail["groups"]
             for query in group["xic_extractions"]
-            if query["sample_key"] == "Missing"
+            if query["raw_stem"] == "Missing"
         ]
         assert len(missing_queries) == 1
         assert missing_queries[0]["group_position"] is True
@@ -208,13 +208,13 @@ def test_sample_metadata_sets_matrix_order_and_backfill_eligibility(
             peaks=peaks,
             sample_metadata=(
                 SampleMetadata(
-                    sample_name="Support1",
+                    sample_label="Support1",
                     raw_stem="Support1",
                     injection_order=3,
                     sample_role="sample",
                 ),
                 SampleMetadata(
-                    sample_name="Support2",
+                    sample_label="Support2",
                     raw_stem="Support2",
                     injection_order=1,
                     sample_role=role,
@@ -222,7 +222,7 @@ def test_sample_metadata_sets_matrix_order_and_backfill_eligibility(
                     exclusion_reason="operator exclusion" if excluded else "",
                 ),
                 SampleMetadata(
-                    sample_name="Hold",
+                    sample_label="Hold",
                     raw_stem="Hold",
                     injection_order=2,
                     sample_role="sample",
@@ -661,13 +661,12 @@ def test_atomic_publication_preserves_ms1_peak_and_no_peak(
     assert summarize_duplicate_quantification(published)["valued_cells"] == 4
     evidence = read_review_evidence(output / "alignment_explanation.sqlite")
     stems_by_key = {
-        sample["sample_key"]: sample["sample_stem"]
-        for sample in evidence.summary["samples"]
+        sample["raw_stem"]: sample["raw_stem"] for sample in evidence.summary["samples"]
     }
     assert {
-        stems_by_key[sample_key]: fact["apex_rt_min"]
+        stems_by_key[raw_stem]: fact["apex_rt_min"]
         for group in evidence.groups.values()
-        for sample_key, fact in group.cells.items()
+        for raw_stem, fact in group.cells.items()
     } == {
         "Support1": 7.97,
         "Support2": 7.99,

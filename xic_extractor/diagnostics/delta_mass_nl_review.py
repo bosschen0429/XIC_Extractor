@@ -48,7 +48,7 @@ def assess_review_neutral_losses(
         population = tuple(
             (f.feature_id, CidNlCandidateInterval(f.mz, f.rt_start_min, f.rt_end_min))
             for f in features
-            if f.sample_stem == candidate.sample_stem
+            if f.raw_stem == candidate.raw_stem
             and abs(f.mz - position.query_mz) <= 2 * tolerance
             and f.rt_start_min is not None
             and f.rt_end_min is not None
@@ -84,7 +84,7 @@ def assess_review_neutral_losses(
             relevant = tuple(
                 seed
                 for seed in seeds
-                if seed.sample_stem == candidate.sample_stem
+                if seed.raw_stem == candidate.raw_stem
                 and seed.neutral_loss_tag == profile.tag
                 and abs(seed.precursor_mz - position.query_mz) <= tolerance
                 and lo <= seed.rt <= hi

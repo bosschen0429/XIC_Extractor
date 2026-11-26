@@ -59,7 +59,7 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
         peaks_by_sample=peaks_by_sample,
         sample_metadata=tuple(
             SampleMetadata(
-                sample_name=stem,
+                sample_label=stem,
                 raw_stem=stem,
                 injection_order=index,
                 sample_role="sample",
@@ -91,7 +91,7 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
         for group in workset.grouping_scope.groups
         if group.disposition == "established"
         for owner in group.owners
-        if owner.sample_stem == "Missing"
+        if owner.raw_stem == "Missing"
     }
     missing_results = tuple(
         item for item in result.sample_results if item.job.sample.raw_stem == "Missing"

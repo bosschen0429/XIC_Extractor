@@ -36,11 +36,11 @@ class _DriftLookup:
     orders: dict[str, int]
     source: str = "batch_istd_trend"
 
-    def sample_delta_min(self, sample_stem: str) -> float | None:
-        return self.deltas.get(sample_stem)
+    def sample_delta_min(self, raw_stem: str) -> float | None:
+        return self.deltas.get(raw_stem)
 
-    def injection_order(self, sample_stem: str) -> int | None:
-        return self.orders.get(sample_stem)
+    def injection_order(self, raw_stem: str) -> int | None:
+        return self.orders.get(raw_stem)
 
 
 def test_blocked_edge_reports_neutral_loss_reason() -> None:
@@ -209,9 +209,9 @@ def test_sufficient_raw_edge_is_preserved_before_applying_drift() -> None:
     class CountingDrift(_DriftLookup):
         calls = 0
 
-        def sample_delta_min(self, sample_stem: str) -> float | None:
+        def sample_delta_min(self, raw_stem: str) -> float | None:
             type(self).calls += 1
-            return super().sample_delta_min(sample_stem)
+            return super().sample_delta_min(raw_stem)
 
     edge = evaluate_owner_edge(
         _owner("s1", owner_apex_rt=10.00),
@@ -323,7 +323,7 @@ def test_drift_is_not_queried_when_it_cannot_admit_the_pair(
     expected_decision: str,
 ) -> None:
     class UnneededDrift(_DriftLookup):
-        def sample_delta_min(self, sample_stem: str) -> float | None:
+        def sample_delta_min(self, raw_stem: str) -> float | None:
             pytest.fail("RT correction cannot overcome this non-RT failure")
 
     edge = evaluate_owner_edge(
@@ -454,7 +454,7 @@ def test_adjacent_hard_gate_precedence_edges(
 
 
 def _resolved_owner(
-    sample_stem: str,
+    raw_stem: str,
     *,
     snr: float,
     evidence_score: int = 18,
@@ -463,7 +463,7 @@ def _resolved_owner(
 ) -> SampleLocalMS1Owner:
     """An owner carrying the peak Alignment actually resolved for it."""
     owner = _owner(
-        sample_stem,
+        raw_stem,
         evidence_score=evidence_score,
         seed_event_count=seed_event_count,
         owner_apex_rt=owner_apex_rt,

@@ -84,7 +84,7 @@ def test_owner_decides_membership_and_exact_exclusion_from_acquired_evidence(
         raw_paths=paths,
         sample_metadata=tuple(
             SampleMetadata(
-                sample_name=p.stem,
+                sample_label=p.stem,
                 raw_stem=p.stem,
                 injection_order=i,
                 sample_role="sample",
@@ -137,34 +137,32 @@ def test_owner_decides_membership_and_exact_exclusion_from_acquired_evidence(
         group for workset in final.worksets for group in workset.grouping_scope.groups
     )
     assert {
-        owner.sample_stem
+        owner.raw_stem
         for group in groups
         for owner in group.owners
         if owner.primary_identity_event is not None
     } == retained_samples
     assert {
-        owner.sample_stem
+        owner.raw_stem
         for group in groups
         for owner in group.owners
         if owner.primary_identity_event is None
     } == set()
     assert len(groups) == bool(retained_samples)
     assert {
-        binding.sample_key for binding in grouping.request.scope.capture_bindings
+        binding.raw_stem for binding in grouping.request.scope.capture_bindings
     } == retained_samples
     exclusions = grouping.request.excluded_candidates
     if exclusion_reason is None:
         assert exclusions == ()
     else:
         expected_peaks = tuple(
-            peak for peak in peaks if peak.sample_stem not in retained_samples
+            peak for peak in peaks if peak.raw_stem not in retained_samples
         )
         assert {
-            (item.candidate_id, item.sample_key, item.reason_code)
-            for item in exclusions
+            (item.candidate_id, item.raw_stem, item.reason_code) for item in exclusions
         } == {
-            (peak.peak_id, peak.sample_stem, exclusion_reason)
-            for peak in expected_peaks
+            (peak.peak_id, peak.raw_stem, exclusion_reason) for peak in expected_peaks
         }
         for item in exclusions:
             refs = (
@@ -221,9 +219,9 @@ def test_owner_decides_membership_and_exact_exclusion_from_acquired_evidence(
         for group in workset.grouping_scope.groups
     }
     assert {
-        (renamed[item.candidate_id], item.sample_key, item.reason_code)
+        (renamed[item.candidate_id], item.raw_stem, item.reason_code)
         for item in exclusions
     } == {
-        (item.candidate_id, item.sample_key, item.reason_code)
+        (item.candidate_id, item.raw_stem, item.reason_code)
         for item in variant.request.excluded_candidates
     }

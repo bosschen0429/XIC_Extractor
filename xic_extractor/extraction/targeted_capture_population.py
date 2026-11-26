@@ -80,11 +80,11 @@ class TargetedSampleCapture:
         if self.owner_hypothesis is None:
             return SearchedNoObservationSubject(
                 candidate_id=self.candidate_id,
-                sample_key=self.sample.sample_name,
+                raw_stem=self.sample.raw_stem,
             )
         return ObservedSearchSubject(
             candidate_id=self.candidate_id,
-            sample_key=self.sample.sample_name,
+            raw_stem=self.sample.raw_stem,
             hypothesis=self.owner_hypothesis,
         )
 
@@ -118,7 +118,7 @@ class TargetedCapturePopulation:
         """Take each selected observation's hypothesis from its assessment."""
 
         assessment_by_sample = {
-            sample.sample_name: assessment for sample, assessment in assessments
+            sample.raw_stem: assessment for sample, assessment in assessments
         }
         bound_entries = []
         for entry in self.entries:
@@ -128,7 +128,7 @@ class TargetedCapturePopulation:
                 continue
             hypotheses = compose_peak_hypotheses_from_assessment_universe(
                 sample=entry.sample,
-                assessment=assessment_by_sample[entry.sample.sample_name],
+                assessment=assessment_by_sample[entry.sample.raw_stem],
             )
             matches = tuple(
                 hypothesis for hypothesis in hypotheses if hypothesis.peak == selected
@@ -146,7 +146,7 @@ class TargetedCapturePopulation:
 
         entries = []
         for entry in self.entries:
-            recovery = recovery_observations.get(entry.sample.sample_name)
+            recovery = recovery_observations.get(entry.sample.raw_stem)
             if (
                 entry.candidate_id is None
                 or recovery is None
@@ -214,7 +214,7 @@ def build_targeted_capture_population(
         CaptureCandidateBinding(
             candidate_id=candidate_id,
             method_subject_id=method_subject_id,
-            sample_key=sample.sample_name,
+            raw_stem=sample.raw_stem,
         )
         for sample, _result, candidate_id in candidates
     )
@@ -236,13 +236,13 @@ def build_targeted_capture_population(
         target=target,
     )
     candidate_by_sample = {
-        sample.sample_name: (result, candidate_id)
+        sample.raw_stem: (result, candidate_id)
         for sample, result, candidate_id in candidates
     }
     entries = []
     for sample, file_result in results_by_sample:
         result = file_result.results[label]
-        candidate = candidate_by_sample.get(sample.sample_name)
+        candidate = candidate_by_sample.get(sample.raw_stem)
         if candidate is None:
             if ms1_only:
                 raise RuntimeError(
@@ -361,7 +361,7 @@ def bound_acquisition_trace(
     trace = result.acquisition_trace
     if trace is None:
         raise RuntimeError("Targeted result has no retained acquisition trace")
-    if trace.sample_name != sample.sample_name:
+    if trace.raw_stem != sample.raw_stem:
         raise RuntimeError(
             "Targeted acquisition trace crossed the canonical sample identity"
         )
@@ -371,7 +371,7 @@ def bound_acquisition_trace(
         )
     return replace(
         trace,
-        sample_name=sample.sample_name,
+        raw_stem=sample.raw_stem,
         source=TARGETED_ACQUISITION_TRACE_SOURCE,
         acquisition_source_id=source.acquisition_source_id,
     )
@@ -385,7 +385,7 @@ def targeted_capture_candidate_id(
         (
             "targeted-capture",
             target.label,
-            sample.sample_name,
+            sample.raw_stem,
         )
     )
 

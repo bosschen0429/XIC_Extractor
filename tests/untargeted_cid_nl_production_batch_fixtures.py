@@ -188,7 +188,7 @@ def _expected_capture_curve(evidence):
         kind="backfill_observation"
         if evidence.capture_stage == "method_backfill"
         else evidence.capture_stage,
-        sample_id=evidence.sample_key,
+        sample_id=evidence.raw_stem,
         candidate_id=evidence.candidate_id,
         trace=evidence.trace,
         evaluation=evidence.physical_evaluation,
@@ -535,7 +535,7 @@ def profile_replay(tmp_path, monkeypatch, request):
             hypothesis_universe_compositions.append(
                 (
                     owner_name,
-                    kwargs["sample"].sample_name,
+                    kwargs["sample"].raw_stem,
                     assessment,
                 )
             )
@@ -633,14 +633,14 @@ def profile_replay(tmp_path, monkeypatch, request):
             result.failure,
             tuple(
                 (
-                    sample_stem,
+                    raw_stem,
                     candidate.peak_id,
                     tuple(
                         (event.scan_number, event.rt)
                         for event in candidate.located_events
                     ),
                 )
-                for sample_stem, sample_candidates in candidates.items()
+                for raw_stem, sample_candidates in candidates.items()
                 for candidate in sample_candidates
             ),
         )
@@ -672,8 +672,7 @@ def profile_replay(tmp_path, monkeypatch, request):
                 assessment = adapter.assessment_input.assessment
                 if assessment.candidate_peaks:
                     assert all(
-                        peak.source_trace.sample_name
-                        == sample_result.job.sample.sample_name
+                        peak.source_trace.raw_stem == sample_result.job.sample.raw_stem
                         for peak in assessment.candidate_peaks
                     )
                 observations = dict(adapter.candidate_observations)
@@ -816,7 +815,7 @@ def _source_verification_inputs(tmp_path: Path):
             raw_paths=(path,),
             sample_metadata=(
                 SampleMetadata(
-                    sample_name="S1",
+                    sample_label="S1",
                     raw_stem="S1",
                     injection_order=1,
                     sample_role="sample",

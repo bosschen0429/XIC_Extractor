@@ -215,7 +215,7 @@ def test_discovery_only_filters_background_when_explicitly_enabled(
     def peak(precursor_mz: float, height: float) -> _Binding:
         return _Binding(
             peak=_peak(
-                sample_stem="test",
+                raw_stem="test",
                 peak_mz=precursor_mz,
                 attached_event_count=2,
             ),
@@ -251,7 +251,7 @@ def test_discovery_only_filters_background_when_explicitly_enabled(
         (c_background, c_override, c_clean),
         settings=settings,
         timing_recorder=TimingRecorder.disabled("discovery"),
-        sample_stem="test",
+        raw_stem="test",
         acquisition_input=spec.acquisition_inputs[0],
     )
 

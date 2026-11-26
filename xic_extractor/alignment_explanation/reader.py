@@ -124,7 +124,7 @@ class _Report:
             db.execute(
                 "CREATE TEMP TABLE requested_candidates AS "
                 "SELECT c.* FROM main.candidates c JOIN samples s ON s.id=c.sample "
-                "WHERE (c.candidate_id,s.sample_key) IN "
+                "WHERE (c.candidate_id,s.raw_stem) IN "
                 "(SELECT json_extract(value,'$[0]'),json_extract(value,'$[1]') "
                 "FROM json_each(?))",
                 (json.dumps(list(candidate_keys)),),
@@ -137,8 +137,8 @@ class _Report:
         self.tables = present_tables(db)
         self._risk_owners: dict[int, list[Any]] = {}
         self._risk_owner_groups: dict[int, list[Any]] = {}
-        self.samples = [sample["sample_key"] for sample in summary["samples"]]
-        self.stems = [sample["sample_stem"] for sample in summary["samples"]]
+        self.samples = [sample["raw_stem"] for sample in summary["samples"]]
+        self.labels = [sample["sample_label"] for sample in summary["samples"]]
         self.peaks: dict[int, tuple[str, float | None, float | None, float | None]] = (
             {row[0]: row[1:] for row in db.execute(_PEAKS)} if not self.scoped else {}
         )
@@ -200,8 +200,8 @@ class _Report:
             "neutral_loss_tag": row[5],
             "peak_status": row[6],
             "candidate_id": row[1],
-            "sample_key": self.samples[row[2]],
-            "sample_stem": self.stems[row[2]],
+            "raw_stem": self.samples[row[2]],
+            "sample_label": self.labels[row[2]],
             "precursor_mz": row[3],
             "ms1_apex_mz": row[4],
         }
@@ -214,7 +214,7 @@ class _Report:
         cid, sid = row[1], self.samples[row[2]]
         record = {
             "candidate_id": cid,
-            "sample_key": sid,
+            "raw_stem": sid,
             "trace_group_id": f"{sid}|{cid}",
             "variant": row[8],
         }
@@ -250,7 +250,7 @@ class _Report:
             "method_version": row[5],
             "provider_id": row[3],
             "reason_codes": json.loads(row[9]),
-            "sample_key": self.samples[row[1]],
+            "raw_stem": self.samples[row[1]],
             "technical_state": row[7],
         }
         if self.full:
@@ -267,7 +267,7 @@ class _Report:
             "method_subject_id": self.subjects[row[7]][0],
             "peak_status": row[6],
             "reason_code": reason,
-            "sample_key": self.samples[row[2]],
+            "raw_stem": self.samples[row[2]],
         }
 
     def candidates(
@@ -330,7 +330,7 @@ class _Report:
             group: [
                 {
                     "physical_peak_keys": self.peak_keys(peaks),
-                    "sample_key": self.samples[sample],
+                    "raw_stem": self.samples[sample],
                     "subject_id": subject,
                     "subject_kind": kind,
                 }
@@ -371,7 +371,7 @@ class _Report:
                             "physical_peak_key": key,
                             "ppm": peak_ppm,
                             "rt_apex_min": rt,
-                            "sample_key": sid,
+                            "raw_stem": sid,
                         }
                     )
                 if not peak_ids and position is not None:
@@ -382,7 +382,7 @@ class _Report:
                             "physical_peak_key": None,
                             "ppm": ppm,
                             "rt_apex_min": position,
-                            "sample_key": sid,
+                            "raw_stem": sid,
                         }
                     )
             result[feature_id if feature_id is not None else str(group_id)] = (
@@ -592,7 +592,7 @@ class _Report:
             sid = self.samples[sample]
             result.setdefault(feature_id, {})[sid] = {
                 "feature_id": feature_id,
-                "sample_key": sid,
+                "raw_stem": sid,
                 "variant": variant,
                 "value": value,
                 "apex_rt_min": apex,
@@ -710,8 +710,8 @@ class ReviewCurveLocation:
     intensity of the peak that gave a cell its value, when the run kept it.
     """
 
-    sample_key: str
-    sample_stem: str
+    raw_stem: str
+    sample_label: str
     physical_peak_key: str | None
     mz: float
     ppm: float
@@ -723,8 +723,8 @@ class ReviewCurveLocation:
 class SameMzPeak:
     """The apex of one Matrix value of a row sharing the reviewed row's m/z."""
 
-    sample_key: str
-    sample_stem: str
+    raw_stem: str
+    sample_label: str
     feature_id: str
     apex_rt_min: float
 
@@ -750,7 +750,7 @@ class ReviewCurves:
         return any(
             location.curve is None
             for location in self.locations
-            if location.sample_key in requested
+            if location.raw_stem in requested
         )
 
 
@@ -761,7 +761,7 @@ _SAVED_CURVE = (
     "AND vp.value=p.id{scope})"
 )
 _GROUP_LOCATIONS = (
-    "SELECT s.sample_key,s.sample_stem,p.physical_peak_key,"
+    "SELECT s.raw_stem,s.sample_label,p.physical_peak_key,"
     "CASE WHEN p.id IS NULL THEN g.center_mz ELSE p.mz END,"
     "CASE WHEN p.id IS NULL THEN g.ppm ELSE p.ppm END,"
     "CASE WHEN p.id IS NULL THEN c.position_rt_min ELSE p.rt_apex_min END,{curve} "
@@ -771,13 +771,13 @@ _GROUP_LOCATIONS = (
     "ORDER BY c.sample,p.id"
 )
 _CANDIDATE_LOCATIONS = (
-    "SELECT s.sample_key,s.sample_stem,p.physical_peak_key,p.mz,p.ppm,"
+    "SELECT s.raw_stem,s.sample_label,p.physical_peak_key,p.mz,p.ppm,"
     "p.rt_apex_min,{curve} "
     "FROM candidates k JOIN samples s ON s.id=k.sample "
     "JOIN peaks p ON p.id=k.terminal_peak WHERE k.candidate_id=? ORDER BY k.sample"
 )
 _SAME_MZ_PEAKS = (
-    "SELECT s.sample_key,s.sample_stem,o.feature_id,c.apex_rt_min "
+    "SELECT s.raw_stem,s.sample_label,o.feature_id,c.apex_rt_min "
     "FROM groups g JOIN groups o ON o.feature_id IS NOT NULL "
     "AND abs(o.center_mz-g.center_mz)<=g.center_mz*g.ppm*1e-6 "
     "JOIN cells c ON c.group_id=o.id JOIN samples s ON s.id=c.sample "
@@ -811,11 +811,11 @@ def read_review_curves(
             if center is not None:
                 row_mz, row_ppm = center
     locations = []
-    for sample_key, stem, peak_key, mz, ppm, rt, payload in rows:
+    for raw_stem, label, peak_key, mz, ppm, rt, payload in rows:
         locations.append(
             ReviewCurveLocation(
-                sample_key,
-                stem,
+                raw_stem,
+                label,
                 peak_key,
                 mz,
                 ppm,
@@ -839,7 +839,7 @@ def read_row_cell_values(
     """Read owner value, support origin and selected apex without cold evidence."""
     with open_readonly(path) as db:
         yield from db.execute(
-            "SELECT g.feature_id,s.sample_key,c.value,c.support_origin,c.apex_rt_min "
+            "SELECT g.feature_id,s.raw_stem,c.value,c.support_origin,c.apex_rt_min "
             "FROM cells c JOIN groups g ON g.id=c.group_id "
             "JOIN samples s ON s.id=c.sample "
             "WHERE g.feature_id IN (SELECT value FROM json_each(?)) "
@@ -1005,11 +1005,11 @@ def read_summary_with_examples(
     """The diagnostic CLI's summary and five example labels from the admitted report."""
     with open_readonly(path) as db:
         return read_completed_summary(db), [
-            {"candidate_id": cid, "sample_stem": stem}
+            {"candidate_id": cid, "raw_stem": stem}
             for cid, stem in db.execute(
-                "SELECT c.candidate_id,s.sample_stem FROM candidates c "
+                "SELECT c.candidate_id,s.raw_stem FROM candidates c "
                 "JOIN samples s ON s.id=c.sample "
-                "ORDER BY c.candidate_id,s.sample_key LIMIT 5"
+                "ORDER BY c.candidate_id,s.raw_stem LIMIT 5"
             )
         ]
 
@@ -1018,7 +1018,7 @@ def read_review_row_counts(
     path: Path, summary: Mapping[str, Any]
 ) -> Iterator[dict[str, Any]]:
     """Overview facts from named row and cell columns, without reasons or curves."""
-    samples = [s["sample_key"] for s in summary["samples"]]
+    samples = [s["raw_stem"] for s in summary["samples"]]
     with open_readonly(path) as db:
         counts = {
             group: (numeric, unresolved)

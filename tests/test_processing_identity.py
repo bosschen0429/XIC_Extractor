@@ -383,7 +383,7 @@ def test_targeted_and_untargeted_read_one_sequence_owner(
             end_time_min=5.0,
             instrument_method="",
         )
-        return header, infer_sample_role(None, sample_name=path.stem), path.stem
+        return header, infer_sample_role(None, sample_text=path.stem), path.stem
 
     monkeypatch.setattr(raw_sequence, "_analysis_header", analysis_header)
     sequence = tmp_path / "sequence.docx"

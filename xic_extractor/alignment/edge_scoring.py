@@ -66,7 +66,7 @@ def evaluate_owner_edge(
     rt_raw_delta_sec = abs(left.peak.rt_apex_min - right.peak.rt_apex_min) * 60.0
     drift_source = rt_frame.drift_source
     injection_order_gap = rt_frame.drift_injection_order_gap(
-        left.sample_stem, right.sample_stem
+        left.raw_stem, right.raw_stem
     )
     duplicate_context = method_evidence.duplicate_context
     owner_quality = _owner_quality(left, right, duplicate_context)
@@ -139,7 +139,7 @@ def _hard_gate_failure(
     config: AlignmentConfig,
     method_evidence: MethodPairEvidence,
 ) -> tuple[HardGateFailureReason | None, bool]:
-    if left.sample_stem == right.sample_stem:
+    if left.raw_stem == right.raw_stem:
         return "same_sample", False
     if method_evidence.identity_failure:
         return method_evidence.identity_failure, False
@@ -414,8 +414,8 @@ def _evidence(
     return OwnerEdgeEvidence(
         left_owner_id=left.owner_id,
         right_owner_id=right.owner_id,
-        left_sample_stem=left.sample_stem,
-        right_sample_stem=right.sample_stem,
+        left_sample_stem=left.raw_stem,
+        right_sample_stem=right.raw_stem,
         neutral_loss_tag=left.neutral_loss_tag,
         left_precursor_mz=left.peak.mz,
         right_precursor_mz=right.peak.mz,

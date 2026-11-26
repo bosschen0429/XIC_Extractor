@@ -56,9 +56,9 @@ def rt_calibration_from_payload(value: dict[str, Any]) -> BatchRtCalibration:
     samples = {}
     for row in value["samples"]:
         sample = sample_calibration_from_payload(row)
-        if sample.sample_stem in samples:
+        if sample.raw_stem in samples:
             raise ValueError("RT calibration has duplicate samples")
-        samples[sample.sample_stem] = sample
+        samples[sample.raw_stem] = sample
     policy = RtCalibrationPolicy(**value["policy"])
     validate_rt_calibration_policy(policy)
     return BatchRtCalibration(
@@ -108,7 +108,7 @@ def sample_calibration_from_payload(row: dict[str, Any]) -> SampleRtCalibration:
         raise ValueError(f"Invalid RT knots for {row['sample_stem']}")
     stem = row["sample_stem"]
     return SampleRtCalibration(
-        sample_stem=stem,
+        raw_stem=stem,
         status=row["status"],
         knots=knots,
         front_shift_min=row["front_shift_min"],
@@ -161,7 +161,7 @@ def _read_estimate_support(value: object) -> RtEstimateSupport | None:
 
 def sample_calibration_payload(sample: SampleRtCalibration) -> dict[str, Any]:
     return {
-        "sample_stem": sample.sample_stem,
+        "sample_stem": sample.raw_stem,
         "status": sample.status,
         "knots_observed_reference_min": sample.knots,
         "front_shift_min": sample.front_shift_min,

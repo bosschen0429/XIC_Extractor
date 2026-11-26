@@ -205,7 +205,7 @@ def test_workbook_keeps_an_event_without_a_result_on_the_worklist(tmp_path):
     config = _config(tmp_path)
     original = _run_output(with_diagnostics=False)
     diagnostic = DiagnosticRecord(
-        sample_name="Another sample",
+        raw_stem="Another sample",
         target_label="",
         issue="FILE_ERROR",
         reason="=Failed to open .raw: OSError: missing file",
@@ -456,14 +456,14 @@ def _run_output(*, with_diagnostics: bool) -> RunOutput:
     if with_diagnostics:
         diagnostics.append(
             DiagnosticRecord(
-                sample_name="SampleA",
+                raw_stem="SampleA",
                 target_label="WithNL",
                 issue="NL_FAIL",
                 reason="best match 80 ppm",
             )
         )
     return RunOutput(
-        file_results=[FileResult(sample_name="SampleA", results={"WithNL": result})],
+        file_results=[FileResult(raw_stem="SampleA", results={"WithNL": result})],
         diagnostics=diagnostics,
     )
 

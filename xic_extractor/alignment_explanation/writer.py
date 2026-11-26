@@ -34,7 +34,7 @@ _CURVE_COLUMNS = ("sample_id", "kind", "candidate_id", "physical_peak_key")
 _CELL_FIELDS = frozenset(
     {
         "feature_id",
-        "sample_key",
+        "raw_stem",
         "variant",
         "value",
         "apex_rt_min",
@@ -140,13 +140,13 @@ class ExplanationReportWriter:
 
     def add_peak(
         self,
-        sample_key: str,
+        raw_stem: str,
         physical_peak_key: str,
         coordinates: PeakCoordinates = (None, None, None),
     ) -> None:
         """Record one physical peak once; its coordinates are fixed by the peak."""
         stored = self._peaks.setdefault(
-            (sample_key, physical_peak_key), [len(self._peaks) + 1, None, None, None]
+            (raw_stem, physical_peak_key), [len(self._peaks) + 1, None, None, None]
         )
         for index, value in enumerate(coordinates, start=1):
             if value is None:
@@ -158,11 +158,11 @@ class ExplanationReportWriter:
                     f"distinct peaks share one locator: {physical_peak_key}"
                 )
 
-    def _peak_ids(self, sample_key: str, keys: Iterable[str]) -> list[int]:
+    def _peak_ids(self, raw_stem: str, keys: Iterable[str]) -> list[int]:
         ids = []
         for key in keys:
-            self.add_peak(sample_key, key)
-            ids.append(self._peaks[sample_key, key][0])
+            self.add_peak(raw_stem, key)
+            ids.append(self._peaks[raw_stem, key][0])
         return ids
 
     def add_method_subject(self, payload: Mapping[str, Any]) -> None:
@@ -196,7 +196,7 @@ class ExplanationReportWriter:
     def add_candidate(
         self,
         candidate_id: str,
-        sample_key: str,
+        raw_stem: str,
         *,
         precursor_mz: float | None,
         neutral_loss_tag: str,
@@ -206,7 +206,7 @@ class ExplanationReportWriter:
     ) -> None:
         """One declared Discovery candidate: its tag and method subject are part
         of what readers show for it."""
-        key = candidate_id, sample_key
+        key = candidate_id, raw_stem
         if key in self._candidates:
             raise ValueError("duplicate diagnostic candidate/sample")
         self._subject_id(method_subject_id)
@@ -225,22 +225,22 @@ class ExplanationReportWriter:
     def add_terminal(
         self,
         candidate_id: str,
-        sample_key: str,
+        raw_stem: str,
         *,
         variant: str,
         hypothesis_id: str | None = None,
         physical_peak_key: str | None = None,
     ) -> None:
         """A candidate's terminal search subject: its variant and observed peak."""
-        candidate = self._candidates[candidate_id, sample_key]
+        candidate = self._candidates[candidate_id, raw_stem]
         if candidate["terminal_variant"] is not None:
             raise ValueError("duplicate terminal subject for one candidate")
         candidate["terminal_variant"] = variant
         candidate["hypothesis_id"] = hypothesis_id
         if physical_peak_key is not None:
-            candidate["terminal_peak"] = self._peak_ids(
-                sample_key, (physical_peak_key,)
-            )[0]
+            candidate["terminal_peak"] = self._peak_ids(raw_stem, (physical_peak_key,))[
+                0
+            ]
 
     def add_assessment(
         self,
@@ -248,12 +248,12 @@ class ExplanationReportWriter:
         *,
         candidate_physical_peak_keys: Sequence[str],
     ) -> None:
-        sample_key = payload["sample_key"]
-        self._sample(sample_key)
+        raw_stem = payload["raw_stem"]
+        self._sample(raw_stem)
         self._assessments.append(
             (
                 self._record_id(),
-                sample_key,
+                raw_stem,
                 self._subject_id(payload["method_subject_id"]),
                 payload.get("provider_id"),
                 payload.get("method_id"),
@@ -262,7 +262,7 @@ class ExplanationReportWriter:
                 payload.get("technical_state"),
                 payload.get("method_result"),
                 json.dumps(list(payload.get("reason_codes", ())), ensure_ascii=False),
-                json.dumps(self._peak_ids(sample_key, candidate_physical_peak_keys)),
+                json.dumps(self._peak_ids(raw_stem, candidate_physical_peak_keys)),
                 None if self.review_only else payload.get("acquisition_source_id"),
                 None
                 if self.review_only or payload.get("evaluation_receipt") is None
@@ -270,23 +270,21 @@ class ExplanationReportWriter:
             )
         )
 
-    def add_exclusion(
-        self, candidate_id: str, sample_key: str, reason_code: str
-    ) -> None:
-        key = candidate_id, sample_key
+    def add_exclusion(self, candidate_id: str, raw_stem: str, reason_code: str) -> None:
+        key = candidate_id, raw_stem
         if self._exclusions.setdefault(key, reason_code) != reason_code:
             raise ValueError(f"conflicting candidate exclusion: {key}")
 
-    def _sample(self, sample_key: str) -> None:
-        if sample_key not in self._samples:
-            raise ExplanationError(f"undeclared sample: {sample_key}")
+    def _sample(self, raw_stem: str) -> None:
+        if raw_stem not in self._samples:
+            raise ExplanationError(f"undeclared sample: {raw_stem}")
 
     def declare_samples(self, samples: Sequence[Mapping[str, str]]) -> None:
         """Samples in run order; every other table refers to these ordinals."""
         if self._samples:
             raise ValueError("samples are declared once")
         self._sample_rows = [
-            (index, sample["sample_key"], sample["sample_stem"])
+            (index, sample["raw_stem"], sample["sample_label"])
             for index, sample in enumerate(samples)
         ]
         self._samples = {key: index for index, key, _ in self._sample_rows}
@@ -294,9 +292,9 @@ class ExplanationReportWriter:
     def _member(
         self, member: Mapping[str, Any], *, initial: int | None, final: str | None
     ) -> None:
-        sample_key = member["sample_key"]
-        key = sample_key, member["subject_id"]
-        peaks = self._peak_ids(sample_key, member.get("physical_peak_keys", ()))
+        raw_stem = member["raw_stem"]
+        key = raw_stem, member["subject_id"]
+        peaks = self._peak_ids(raw_stem, member.get("physical_peak_keys", ()))
         row = self._members.setdefault(
             key,
             [
@@ -370,7 +368,7 @@ class ExplanationReportWriter:
         row_id = self._record_id()
         for member in members:
             self._member(member, initial=row_id, final=None)
-        owners = {member["subject_id"]: member["sample_key"] for member in members}
+        owners = {member["subject_id"]: member["raw_stem"] for member in members}
         decisions = []
         for decision in inference_decisions or ():
             risk = decision.get("accepted_risk")
@@ -399,9 +397,9 @@ class ExplanationReportWriter:
         (Backfill admissions); a member's accepted risk is stored with the member.
         """
         for cell in cells:
-            sample_key = cell["sample_key"]
-            self._sample(sample_key)
-            key = group_id, sample_key
+            raw_stem = cell["raw_stem"]
+            self._sample(raw_stem)
+            key = group_id, raw_stem
             if key in self._cells:
                 raise ValueError("duplicate review cell for group and sample")
             unknown = set(cell) - _CELL_FIELDS
@@ -412,7 +410,7 @@ class ExplanationReportWriter:
                 {
                     **quality,
                     "observation_id": self._peak_ids(
-                        sample_key, (quality["observation_id"],)
+                        raw_stem, (quality["observation_id"],)
                     )[0],
                 }
                 for quality in cell.get("signal_quality", [])
@@ -423,7 +421,7 @@ class ExplanationReportWriter:
                 cell.get("apex_rt_min"),
                 cell.get("source"),
                 cell.get("support_origin", "unavailable"),
-                json.dumps(self._peak_ids(sample_key, cell.get("observation_ids", ()))),
+                json.dumps(self._peak_ids(raw_stem, cell.get("observation_ids", ()))),
                 None,
                 _ordered_json(list(cell.get("evidence_states", ()))),
                 _ordered_json(list(cell.get("reason_codes", ()))),
@@ -436,9 +434,9 @@ class ExplanationReportWriter:
                 else _compressed(cell["observation"]),
             ]
 
-    def set_cell_position(self, group_id: str, sample_key: str, rt_min: float) -> None:
+    def set_cell_position(self, group_id: str, raw_stem: str, rt_min: float) -> None:
         """The recorded group position used to inspect an empty cell."""
-        self._cells[group_id, sample_key][6] = rt_min
+        self._cells[group_id, raw_stem][6] = rt_min
 
     def _risk_references(self, risk: Mapping[str, Any]) -> dict[str, Any]:
         """Keep each compared owner group once; a risk retains its own costs."""
@@ -472,12 +470,12 @@ class ExplanationReportWriter:
             ],
         }
 
-    def set_cell_curve(self, group_id: str, sample_key: str, curve: bytes) -> None:
+    def set_cell_curve(self, group_id: str, raw_stem: str, curve: bytes) -> None:
         """The measured RT and raw intensity of the extraction window that gave
         a cell its value, as ``encode_review_curve`` stores them at full
         precision; readers recompute processed signals.
         """
-        self._cell_curves[group_id, sample_key] = curve
+        self._cell_curves[group_id, raw_stem] = curve
 
     def add_curve_payload(
         self,

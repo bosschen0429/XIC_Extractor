@@ -70,7 +70,7 @@ _INITIAL_GROUP_CANDIDATES = """
 
 _CURVE_CANDIDATES = """
     SELECT cu.payload_id, c.id AS candidate FROM main.curves cu
-    JOIN main.samples s ON s.sample_key = cu.sample_id
+    JOIN main.samples s ON s.raw_stem = cu.sample_id
     JOIN {candidates} c ON c.candidate_id = cu.candidate_id AND c.sample = s.id"""
 
 _RELATIONS: dict[str, tuple[str, tuple[str, ...], tuple[str, ...]]] = {

@@ -217,7 +217,7 @@ def test_execute_forwards_sample_metadata_and_targets_csv(
     targets_csv.touch()
     sample_metadata = (
         SampleMetadata(
-            sample_name="A",
+            sample_label="A",
             raw_stem="A",
             injection_order=1,
             sample_role="qc",

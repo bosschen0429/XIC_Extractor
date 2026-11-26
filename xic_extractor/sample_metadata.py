@@ -3,7 +3,7 @@ from __future__ import annotations
 import csv
 import re
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Any, Literal
 
@@ -65,7 +65,7 @@ _SEQUENCE_HEADER_FIELD_BY_ALIAS = {
 
 @dataclass(frozen=True)
 class SampleMetadata:
-    sample_name: str
+    sample_label: str = field(compare=False)
     raw_stem: str
     injection_order: int | None = None
     sample_role: SampleRole | None = None
@@ -75,6 +75,11 @@ class SampleMetadata:
     group: str = ""
     excluded: bool = False
     exclusion_reason: str = ""
+
+
+def sample_metadata_payload(row: SampleMetadata) -> dict[str, Any]:
+    fields = asdict(row)
+    return {"sample_name": fields.pop("sample_label"), **fields}
 
 
 class SampleMetadataError(ValueError):
@@ -132,11 +137,11 @@ def parse_sample_role(text: str | None) -> SampleRole | None:
 
 def infer_sample_role(
     sample_type: str | None,
-    sample_name: str | None = None,
+    sample_text: str | None = None,
     comment: str | None = None,
 ) -> SampleRole:
     """Infer SampleRole from Thermo SampleType and text metadata; else other."""
-    combined = f"{sample_name or ''} {comment or ''}".upper()
+    combined = f"{sample_text or ''} {comment or ''}".upper()
     if re.search(r"(?:^|[\W_])(?:(?:POOLED|POOL)[_\s]?)?QC\d*(?:[\W_]|$)", combined):
         return "qc"
     if re.search(r"(?:^|[\W_])(?:BLANK|BLK)\d*(?:[\W_]|$)", combined):
@@ -164,7 +169,7 @@ def infer_sample_role(
         written = None
     if written is not None:
         return written
-    return "sample" if sample_name else "other"
+    return "sample" if sample_text else "other"
 
 
 def normalize_for_matching(s: str) -> str:
@@ -355,6 +360,12 @@ def _parse_xlsx_sequence_table(xlsx_path: Path) -> list[dict[str, Any]]:
 
         if not file_name and not sample_name:
             continue
+        if "raw_stem" not in best_header_map:
+            file_name = sample_name
+        elif not file_name:
+            raise SampleMetadataError(
+                f"{xlsx_path.name}:{row_idx + 1}: RAW file name is required"
+            )
 
         results.append(
             {
@@ -442,6 +453,12 @@ def _parse_generic_tabular_sequence(path: Path) -> list[dict[str, Any]]:
 
         if not file_name and not sample_name:
             continue
+        if "raw_stem" not in best_header_map:
+            file_name = sample_name
+        elif not file_name:
+            raise SampleMetadataError(
+                f"{path.name}:{row_idx + 1}: RAW file name is required"
+            )
 
         results.append(
             {
@@ -481,33 +498,20 @@ def _metadata_from_sequence_entries(
     raw_entries: Sequence[Mapping[str, Any]],
 ) -> tuple[SampleMetadata, ...]:
     metadata_rows: list[SampleMetadata] = []
-    seen_names: set[str] = set()
-
-    for idx, entry in enumerate(raw_entries, start=1):
-        raw_stem = Path(entry["raw_stem"]).stem if entry["raw_stem"] else ""
-        sample_name = entry["sample_name"] or raw_stem or f"sample_{idx}"
-
-        if sample_name in seen_names:
-            if raw_stem and raw_stem not in seen_names:
-                sample_name = raw_stem
-            else:
-                sample_name = f"{sample_name}_{entry['order'] or idx}"
-        seen_names.add(sample_name)
-
-        if not raw_stem:
-            raw_stem = sample_name
-
+    for entry in raw_entries:
+        raw_stem = Path(entry["raw_stem"]).stem
+        sample_label = entry["sample_name"] or raw_stem
         role = infer_sample_role(
             entry.get("sample_role"),
-            sample_name=sample_name,
-            comment=f"{entry.get('method', '')} {raw_stem}",
+            sample_text=raw_stem,
+            comment=entry.get("method", ""),
         )
 
         group = entry.get("group", "")
 
         metadata_rows.append(
             SampleMetadata(
-                sample_name=sample_name,
+                sample_label=sample_label,
                 raw_stem=raw_stem,
                 injection_order=entry["order"],
                 sample_role=role,
@@ -604,13 +608,7 @@ def match_sample_metadata(
         if index in ordered_matches:
             candidates_by_row.append({ordered_matches[index]})
             continue
-        values = (row.raw_stem,) if exact_raw_stems else (row.raw_stem, row.sample_name)
-        candidates = {
-            stem
-            for value in values
-            if value
-            for stem in normalized_raws.get(key(value), ())
-        }
+        candidates = set(normalized_raws.get(key(row.raw_stem), ()))
         if not exact_raw_stems:
             base = normalize_for_matching(row.raw_stem)
             repeated = repeated_raws.get(base, [])
@@ -625,7 +623,7 @@ def match_sample_metadata(
     unmatched: list[str] = []
     ambiguous: list[str] = []
     for row, candidates in zip(sequence_rows, candidates_by_row, strict=True):
-        name = row.raw_stem or row.sample_name
+        name = row.raw_stem
         if len(candidates) == 1 and claims[next(iter(candidates))] == 1:
             matched_by_raw[next(iter(candidates))] = row
         elif candidates:
@@ -680,10 +678,10 @@ def _sequence_match_report(
             unmatched_raw_stems.append(stem)
             rows.append(
                 SampleMetadata(
-                    sample_name=stem,
+                    sample_label=stem,
                     raw_stem=stem,
                     injection_order=None,
-                    sample_role=infer_sample_role("unknown", sample_name=stem),
+                    sample_role=infer_sample_role("unknown", sample_text=stem),
                 )
             )
             continue
@@ -691,7 +689,7 @@ def _sequence_match_report(
         matched_raw_stems.append(stem)
         rows.append(
             SampleMetadata(
-                sample_name=source_row.sample_name,
+                sample_label=source_row.sample_label,
                 raw_stem=stem,
                 injection_order=source_row.injection_order,
                 sample_role=source_row.sample_role,
@@ -717,7 +715,7 @@ def _sequence_match_report(
 def _sequence_conflicts(
     entries: Sequence[Mapping[str, Any]],
 ) -> tuple[SequenceConflict, ...]:
-    """Check document rows as written, before names are made unique."""
+    """Check document rows as written."""
     by_order: dict[int, list[str]] = {}
     for entry in entries:
         if entry["order"] is not None:
@@ -774,32 +772,15 @@ def parse_sample_metadata(
     source: str = "<memory>",
 ) -> tuple[SampleMetadata, ...]:
     parsed: list[SampleMetadata] = []
-    seen_sample_names: set[str] = set()
     seen_raw_stems: set[str] = set()
-    seen_aliases: dict[str, tuple[int, str]] = {}
     for index, row in enumerate(rows, start=2):
         normalized = _normalize_row(row)
         if not any(normalized.values()):
             continue
         item = _parse_sample_metadata_row(normalized, source=source, row_number=index)
-        _check_unique(item.sample_name, seen_sample_names, "sample_name", source, index)
-        if item.raw_stem:
-            _check_unique(item.raw_stem, seen_raw_stems, "raw_stem", source, index)
-        _register_alias(
-            item.sample_name,
-            "sample_name",
-            seen_aliases,
-            source,
-            index,
+        _check_unique(
+            item.raw_stem.casefold(), seen_raw_stems, "raw_stem", source, index
         )
-        if item.raw_stem:
-            _register_alias(
-                item.raw_stem,
-                "raw_stem",
-                seen_aliases,
-                source,
-                index,
-            )
         parsed.append(item)
     return _canonical_group_rows(parsed)
 
@@ -835,8 +816,8 @@ def _parse_sample_metadata_row(
         raise SampleMetadataError(
             f"{source}:{row_number}: unsupported schema_version {schema_version!r}"
         )
-    sample_name = _required_text(row, "sample_name", source, row_number)
-    raw_stem = row["raw_stem"] or sample_name
+    raw_stem = _required_text(row, "raw_stem", source, row_number)
+    sample_label = row["sample_name"] or raw_stem
     injection_order = _optional_int(
         row["injection_order"],
         "injection_order",
@@ -849,7 +830,7 @@ def _parse_sample_metadata_row(
         raise SampleMetadataError(f"{source}:{row_number}: {exc}") from exc
     excluded = _parse_bool(row["excluded"], "excluded", source, row_number)
     return SampleMetadata(
-        sample_name=sample_name,
+        sample_label=sample_label,
         raw_stem=raw_stem,
         injection_order=injection_order,
         sample_role=sample_role,
@@ -931,20 +912,3 @@ def _check_unique(
     if value in seen:
         raise SampleMetadataError(f"{source}:{row_number}: duplicate {key} {value!r}")
     seen.add(value)
-
-
-def _register_alias(
-    value: str,
-    alias_type: str,
-    seen: dict[str, tuple[int, str]],
-    source: str,
-    row_number: int,
-) -> None:
-    existing = seen.get(value)
-    if existing is not None and existing[0] != row_number:
-        existing_row, existing_type = existing
-        raise SampleMetadataError(
-            f"{source}:{row_number}: sample metadata alias collision {value!r}; "
-            f"already used as {existing_type} on row {existing_row}"
-        )
-    seen[value] = (row_number, alias_type)

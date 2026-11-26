@@ -231,7 +231,7 @@ class CidNlMethodAssessment:
     decided the result travel with it without changing that equality.
     """
 
-    sample_key: str
+    raw_stem: str
     acquisition_source_id: str
     provider_id: str
     method_id: str
@@ -298,7 +298,7 @@ def resolve_cid_nl_method_relations(
     )
     set_refs = tuple(
         DdaCidNlCandidateSetRelation(
-            sample_key=sample.sample_name,
+            raw_stem=sample.raw_stem,
             evidence=evidence_refs[event_index],
             candidate_peaks=ordered_candidates,
             matched_candidates=tuple(
@@ -351,7 +351,7 @@ def mint_cid_nl_method_assessment(
         set_relation_refs=set_relations,
     )
     return CidNlMethodAssessment(
-        sample_key=sample.sample_name,
+        raw_stem=sample.raw_stem,
         acquisition_source_id=acquisition_source.acquisition_source_id,
         provider_id=CID_NL_PROVIDER_ID,
         method_id=CID_NL_METHOD_ID,
@@ -554,7 +554,7 @@ def _canonical_refs(value: tuple, *, field: str) -> tuple:
             item if isinstance(item, CidNlEvidenceObservation) else item.evidence
         )
         return (
-            observation.sample_key,
+            observation.raw_stem,
             observation.scan_number,
             observation.configured_neutral_loss_da,
             observation.scan_rt_min,

@@ -219,9 +219,7 @@ class BatchRtModelAccumulator:
 
     def add_observations(self, observations: Iterable[RtAnchorObservation]) -> None:
         for item in observations:
-            self._observed[(item.channel, item.sample_stem)][item.owner_id] = (
-                item.rt_min
-            )
+            self._observed[(item.channel, item.raw_stem)][item.owner_id] = item.rt_min
 
     def freeze(
         self,

@@ -27,7 +27,7 @@ def measured_peak(
     end_rt: float | None = None,
     area: float = 1_000.0,
     height: float = 100.0,
-    sample_key: str = "test-sample",
+    raw_stem: str = "test-sample",
     intensity: tuple[float, ...] | None = None,
     **integration: Any,
 ) -> PeakObservation:
@@ -42,7 +42,7 @@ def measured_peak(
         **integration,
     }
     return PeakObservation(
-        sample_key=sample_key,
+        raw_stem=raw_stem,
         mz=mz,
         rt=rt,
         intensity=intensity
@@ -123,7 +123,7 @@ def trace_peak(
 
     indices = integration.raw_scan_indices
     return PeakObservation(
-        sample_key=sample.sample_name,
+        raw_stem=sample.raw_stem,
         mz=float(trace.mz),
         rt=tuple(float(trace.rt[index]) for index in indices),
         intensity=tuple(float(trace.intensity[index]) for index in indices),

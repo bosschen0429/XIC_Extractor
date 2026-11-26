@@ -188,9 +188,7 @@ def decide_group_cell_population(
     """
 
     member_samples = {
-        group.group_hypothesis_id: {
-            member.sample_key for member in group.member_subjects
-        }
+        group.group_hypothesis_id: {member.raw_stem for member in group.member_subjects}
         for group in finalized_alignment.final_population
     }
     group_extension_eligible = samples_eligible_for_group_extension(
@@ -200,9 +198,9 @@ def decide_group_cell_population(
     return {
         observation.key: _decide_group(
             observation,
-            is_member=observation.sample_key
+            is_member=observation.raw_stem
             in member_samples[observation.group_hypothesis_id],
-            group_extension_eligible=observation.sample_key
+            group_extension_eligible=observation.raw_stem
             in group_extension_eligible.get(observation.group, ()),
         )
         for observation in finalized_alignment.cell_observations
@@ -228,7 +226,7 @@ def _decide_sealed_subject(
         payload, integration = _decide_group(
             evidence,
             is_member=any(
-                member.sample_key == evidence.sample_key
+                member.raw_stem == evidence.raw_stem
                 for member in evidence.group.member_subjects
             ),
         )
@@ -248,8 +246,8 @@ def _decide_target(
     subject: TargetCellSubject,
 ) -> tuple[CellDecisionPayload, IntegrationResult | None]:
     terminal = subject.terminal_subject
-    sample_id = subject.canonical_sample.sample_name
-    if terminal.sample_key != sample_id:
+    raw_stem = subject.canonical_sample.raw_stem
+    if terminal.raw_stem != raw_stem:
         raise CellDecisionContractError(
             "Target terminal crossed the exact canonical sample"
         )
@@ -405,12 +403,12 @@ def _decision_sort_key(decision: ProductionCellDecision) -> tuple[str, ...]:
         return (
             "target",
             subject.target.label,
-            subject.canonical_sample.sample_name,
+            subject.canonical_sample.raw_stem,
         )
     if type(subject) is GroupCellSubject:
         return (
             "untarget",
             subject.group_hypothesis_id,
-            subject.canonical_sample.sample_name,
+            subject.canonical_sample.raw_stem,
         )
     raise CellDecisionContractError("decision contains an unsupported subject")

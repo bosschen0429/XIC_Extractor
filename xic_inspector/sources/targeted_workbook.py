@@ -205,8 +205,8 @@ class TargetedWorkbookSource:
             "overview": asdict(overview),
             "samples": [
                 {
-                    "sample_key": name,
-                    "sample_stem": name,
+                    "raw_stem": name,
+                    "sample_label": name,
                     "group": str(group or ""),
                 }
                 for name, group in sample_groups.items()

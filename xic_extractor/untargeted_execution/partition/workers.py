@@ -227,13 +227,13 @@ def _apply_backfill_questions(
 ) -> None:
     by_key = {
         (
-            state.job.sample.sample_name,
+            state.job.sample.raw_stem,
             state.job.method_subject.method_subject_id,
         ): state
         for state in states
     }
     for question in questions:
-        key = (question.sample_key, question.method_subject.method_subject_id)
+        key = (question.raw_stem, question.method_subject.method_subject_id)
         state = by_key[key]
         if state.error is not None or state.adapter_result is None:
             continue
@@ -247,7 +247,7 @@ def _prepare_group_authorized_backfills(
     *,
     prepared: CidNlGrouping,
 ) -> None:
-    samples = {state.job.sample.sample_name: state.job.sample for state in states}
+    samples = {state.job.sample.raw_stem: state.job.sample for state in states}
     questions = plan_grouped_cid_nl_backfills(
         prepared.worksets,
         sample_population=tuple(samples.values()),
@@ -284,7 +284,7 @@ def _prepare_subject_authorized_backfills(
         state.error is not None or state.adapter_result is None for state in states
     ):
         return
-    samples = {state.job.sample.sample_name: state.job.sample for state in states}
+    samples = {state.job.sample.raw_stem: state.job.sample for state in states}
     questions = plan_subject_cid_nl_backfills(
         tuple(
             (state.job.sample, state.adapter_result.assessment_input.assessment)

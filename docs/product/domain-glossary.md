@@ -47,6 +47,12 @@ tests.
 
 ## Evidence Terms
 
+- **RAW stem** (`raw_stem`): the RAW filename without its extension. It is the
+  sole sample key after input resolution, used for joins, ordering and IDs.
+- **Sample label** (`sample_label`): display text from the sequence or the RAW
+  header. It is not unique and is not a lookup key. The Targeted workbook's
+  existing `SampleName` column contains the RAW stem, not the display label.
+
 - `Trace`: intensity over retention time for a feature, target or candidate.
 - `PeakHypothesis`: a peak-picking candidate on one trace: a proposed peak, RT
   window and integration basis before capture binds the selected peak.

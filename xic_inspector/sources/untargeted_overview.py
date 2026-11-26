@@ -35,9 +35,9 @@ def review_overview(path, summary, curation_removed_ids=()):
         ),
         "samples": [
             {
-                "id": s["sample_key"],
-                "label": s.get("sample_stem"),
-                "numeric_count": coverage[s["sample_key"]],
+                "id": s["raw_stem"],
+                "label": s.get("sample_label"),
+                "numeric_count": coverage[s["raw_stem"]],
             }
             for s in summary["samples"]
         ],

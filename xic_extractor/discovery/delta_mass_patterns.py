@@ -46,7 +46,7 @@ class DeltaMassPositionResult:
 
 @dataclass
 class DeltaMassCandidate:
-    sample_stem: str
+    raw_stem: str
     method_label: str
     pattern_id: str
     candidate_id: str
@@ -122,7 +122,7 @@ def prepare_delta_mass_candidates(
                     for f in ordered[
                         bisect_left(masses, lower_mz) : bisect_right(masses, upper_mz)
                     ]
-                    if f.sample_stem == anchor.sample_stem
+                    if f.raw_stem == anchor.raw_stem
                     and f.feature_id not in used_features
                     and abs(f.rt_apex_min - reference_rt) * 60 <= threshold
                 ]
@@ -149,7 +149,7 @@ def prepare_delta_mass_candidates(
                 counts["layer_2_rejected"] += 1
                 continue
             key = (
-                anchor.sample_stem,
+                anchor.raw_stem,
                 tuple(f.feature_id if f else None for f in matches),
             )
             if key in seen:
@@ -191,10 +191,10 @@ def prepare_delta_mass_candidates(
                     row.position_status = "pass"
                 results.append(row)
             candidate = DeltaMassCandidate(
-                anchor.sample_stem,
+                anchor.raw_stem,
                 settings.method_label,
                 settings.pattern_id,
-                f"{anchor.sample_stem}|delta|{len(candidates) + 1}",
+                f"{anchor.raw_stem}|delta|{len(candidates) + 1}",
                 role.label,
                 anchor.feature_id,
                 base.mz if base else base_mz,

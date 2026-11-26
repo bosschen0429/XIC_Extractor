@@ -27,7 +27,7 @@ def project_targeted_result(
     result: ExtractionResult,
     *,
     target: Target,
-    sample_name: str,
+    raw_stem: str,
 ) -> TargetedProductProjection:
     semantics = (
         result.selected_hypothesis.evidence.decision_semantics

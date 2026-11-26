@@ -185,7 +185,7 @@ def plan_cid_nl_mass_regions(
         if qualifies(event):
             mz = event_ion_mz(event)
             rts_by_mz.setdefault(mz, set()).add(float(event.rt))
-            samples_by_mz.setdefault(mz, set()).add(event.sample_stem)
+            samples_by_mz.setdefault(mz, set()).add(event.raw_stem)
     regions: list[tuple[list[float], set[float], set[str]]] = []
     right = 0.0
     for mz in sorted(rts_by_mz):
@@ -368,7 +368,7 @@ def _region_event_selector(
         (
             (event_ion_mz(event), event)
             for event in events
-            if event.sample_stem == sample.raw_stem
+            if event.raw_stem == sample.raw_stem
             and event.neutral_loss_tag in settings.selected_tag_names
         ),
         key=lambda item: item[0],
@@ -461,7 +461,7 @@ def _measure_region(
         distinct.append((trace, population))
         if context := project_elution_context(
             population.prepared,
-            sample_stem=sample.raw_stem,
+            raw_stem=sample.raw_stem,
             mz=request.mz,
             universe=population.universe,
         ):
@@ -485,7 +485,7 @@ def _measure_region(
             continue
         if request not in traces:
             traces[request] = trace_from_xic_request(
-                sample_name=sample.sample_name,
+                raw_stem=sample.raw_stem,
                 request=request,
                 xic_trace=trace.trace,
                 source=__name__,

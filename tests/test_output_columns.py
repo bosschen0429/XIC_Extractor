@@ -115,7 +115,7 @@ def _fabricate_run_output() -> RunOutput:
         ),
     )
     file_result = FileResult(
-        sample_name="S1",
+        raw_stem="S1",
         results={"d3-5-hmdC": extraction_result},
         group=None,
     )

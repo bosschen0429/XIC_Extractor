@@ -269,7 +269,7 @@ def test_scan_shared_by_isotope_and_monoisotope_binds_only_the_subject_ion():
     )
     candidate = DiscoveryPeak(
         peak_id="A@monoisotope",
-        sample_stem="A",
+        raw_stem="A",
         peak_mz=monoisotope,
         neutral_loss_tag="DNA_dR",
         best_ms2_scan_id=151,

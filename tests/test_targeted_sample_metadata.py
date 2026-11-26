@@ -44,7 +44,7 @@ def test_targeted_excluded_raw_is_never_extracted_or_rendered(tmp_path, monkeypa
         ],
     )
     config = replace(config, injection_order_source=metadata)
-    spectra = {f.sample_name: f for f in fixture_output.file_results}
+    spectra = {f.raw_stem: f for f in fixture_output.file_results}
     extracted = []
 
     def extract(index, _config, _targets, raw_path, **kwargs):
@@ -55,7 +55,7 @@ def test_targeted_excluded_raw_is_never_extracted_or_rendered(tmp_path, monkeypa
     monkeypatch.setattr(serial_backend, "extract_raw_file_result", extract)
     output = pipeline.run_pipeline(config, [target])
     assert extracted == ["Case_A", "Control"]
-    assert {f.sample_name for f in output.file_results} == {"Case_A", "Control"}
+    assert {f.raw_stem for f in output.file_results} == {"Case_A", "Control"}
     assert {
         row["SampleName"] for row in _run_output_to_long_rows(output, [target])
     } == {"Case_A", "Control"}
@@ -147,7 +147,7 @@ def test_cli_flows_share_tsv_groups_and_excluded_population(tmp_path, monkeypatc
     write_sample_metadata(
         metadata,
         [
-            {"sample_name": "Case_A", "raw_stem": "Case_A", "group": "Case"},
+            {"sample_name": "Control", "raw_stem": "Case_A", "group": "Case"},
             {
                 "sample_name": "CaseA",
                 "raw_stem": "CaseA",
@@ -155,7 +155,11 @@ def test_cli_flows_share_tsv_groups_and_excluded_population(tmp_path, monkeypatc
                 "excluded": "true",
                 "exclusion_reason": "bad injection",
             },
-            {"sample_name": "Control", "raw_stem": "Control", "group": "Control"},
+            {
+                "sample_name": "A display label",
+                "raw_stem": "Control",
+                "group": "Control",
+            },
         ],
     )
 
@@ -171,7 +175,7 @@ def test_cli_flows_share_tsv_groups_and_excluded_population(tmp_path, monkeypatc
             config_dir,
         )
 
-    spectra = {f.sample_name: f for f in acquired.file_results}
+    spectra = {f.raw_stem: f for f in acquired.file_results}
     extracted = []
 
     def extract(index, _config, _targets, raw_path, **kwargs):
@@ -198,6 +202,8 @@ def test_cli_flows_share_tsv_groups_and_excluded_population(tmp_path, monkeypatc
         "Case_A": "Case",
         "Control": "Control",
     }
+    by_stem = {row["SampleName"]: row for row in targeted_rows}
+    assert by_stem["Control"]["Area"] > by_stem["Case_A"]["Area"] > 0
     assert extracted == ["Case_A", "Control"]
 
     raw_paths = tuple(_raw_paths_from_dir(config.data_dir, tmp_path, metadata))
@@ -283,5 +289,13 @@ def test_cli_flows_share_tsv_groups_and_excluded_population(tmp_path, monkeypatc
         assert set(matrix.fieldnames[2:]) == {
             row["SampleName"] for row in targeted_rows
         }
-        assert list(matrix)
+        [row] = list(matrix)
+        assert float(row["Control"]) > float(row["Case_A"]) > 0
+    from xic_extractor.alignment_explanation.reader import read_explanation_metadata
+
+    review = read_explanation_metadata(destination / "alignment_explanation.sqlite")
+    assert {row["raw_stem"]: row["sample_label"] for row in review["samples"]} == {
+        "Case_A": "Control",
+        "Control": "A display label",
+    }
     assert {path.stem for path in opened} == {"Case_A", "Control"}

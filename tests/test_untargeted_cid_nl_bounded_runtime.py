@@ -1158,10 +1158,10 @@ def test_sample_parallelism_keeps_partition_and_acquisition_counts_fixed(
         assert get_ident() == coordinator and live_jobs == 0
         batch = original_materialize(*args, **kwargs)
         expected_initial_sample_ids = {
-            sample.sample_name for sample in plan.context.samples
+            sample.raw_stem for sample in plan.context.samples
         }
         assert {
-            job.sample.sample_name for job in batch.jobs
+            job.sample.raw_stem for job in batch.jobs
         } == expected_initial_sample_ids
         assert all(
             job.processing_attempt_id == plan.context.processing_attempt_id
@@ -1389,11 +1389,11 @@ def test_sample_worker_transport_references_global_request_owners(
             on_completed=lambda _done, _total, _job, result: transported.append(result),
         )
     assert all(pid != os.getpid() for pid, _job in transported)
-    expected = {job.sample.sample_name: job for job in batch.jobs}
+    expected = {job.sample.raw_stem: job for job in batch.jobs}
     assert len(expected) == 2
     assert len(transported) == len(batch.jobs)
     for _pid, job in transported:
-        original = expected[job.sample.sample_name]
+        original = expected[job.sample.raw_stem]
         assert job.sample is original.sample
         assert job._request_subjects is original._request_subjects
         assert job.candidates == original.candidates
@@ -1499,7 +1499,7 @@ def test_two_sample_process_messages_match_serial_results_and_attribution(
     assert serial.succeeded and process.succeeded
     serial_results = tuple(
         (
-            result.job.sample.sample_name,
+            result.job.sample.raw_stem,
             result.job.method_subject.method_subject_id,
             tuple(ref for ref in result.effective_assessments),
         )
@@ -1507,7 +1507,7 @@ def test_two_sample_process_messages_match_serial_results_and_attribution(
     )
     process_results = tuple(
         (
-            result.job.sample.sample_name,
+            result.job.sample.raw_stem,
             result.job.method_subject.method_subject_id,
             tuple(ref for ref in result.effective_assessments),
         )
@@ -1603,7 +1603,7 @@ def test_formal_partition_reuses_prepared_group_ids_with_ms1_only_members(
     assert calls == [1]
     (group,) = prepared.worksets[0].grouping_scope.groups
     assert {
-        owner.sample_stem: owner.primary_identity_event is not None
+        owner.raw_stem: owner.primary_identity_event is not None
         for owner in group.owners
     } == {"S0": True, "S1": True, "S2": False, "S3": False}
     assert all(not result.backfill_attempts for result in leaf.sample_results)

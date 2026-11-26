@@ -77,7 +77,7 @@ DISCOVERY_EVENT_COLUMNS = (
 @dataclass(frozen=True)
 class DiscoveryEvent:
     raw_file: Path
-    sample_stem: str
+    raw_stem: str
     scan_number: int
     rt: float
     precursor_mz: float
@@ -126,7 +126,7 @@ class DiscoveryIon:
     """
 
     raw_file: Path
-    sample_stem: str
+    raw_stem: str
     mz: float
     events: tuple[DiscoveryEvent, ...]
 
@@ -148,7 +148,7 @@ class DiscoveryPeak:
     """
 
     peak_id: str
-    sample_stem: str
+    raw_stem: str
     peak_mz: float
     neutral_loss_tag: str
     best_ms2_scan_id: int
@@ -209,8 +209,8 @@ class EventAttachment:
         return not self.unattached_reason
 
     @property
-    def sample_stem(self) -> str:
-        return self.event.sample_stem
+    def raw_stem(self) -> str:
+        return self.event.raw_stem
 
     @property
     def ms2_scan_number(self) -> int:
@@ -345,11 +345,11 @@ class DiscoveryBatchOutputs:
 
 def build_discovery_peak_id(
     *,
-    sample_stem: str,
+    raw_stem: str,
     xic_mz: float,
     peak_rt_min: float,
 ) -> str:
-    return f"{sample_stem}@mz{_format_id_mz(xic_mz)}_rt{peak_rt_min:.4f}"
+    return f"{raw_stem}@mz{_format_id_mz(xic_mz)}_rt{peak_rt_min:.4f}"
 
 
 def _format_id_mz(value: float) -> str:

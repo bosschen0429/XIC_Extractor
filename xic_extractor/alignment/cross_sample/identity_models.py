@@ -36,7 +36,7 @@ class CrossSampleContractError(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class CrossSampleGroupMemberSubject:
-    sample_key: str
+    raw_stem: str
     subject_kind: Literal["peak_hypothesis"]
     subject_id: str
     physical_peaks: tuple[PeakObservation, ...]
@@ -48,7 +48,7 @@ def group_member_subject_from_peak_hypothesis(
     hypothesis: MeasuredPeakHypothesis,
 ) -> CrossSampleGroupMemberSubject:
     return CrossSampleGroupMemberSubject(
-        sample_key=sample.sample_name,
+        raw_stem=sample.raw_stem,
         subject_kind="peak_hypothesis",
         subject_id=hypothesis.hypothesis_id,
         physical_peaks=(hypothesis.peak.physical_identity,),
@@ -64,16 +64,16 @@ def canonical_group_members(
     physical: set[PeakObservation] = set()
     members: list[CrossSampleGroupMemberSubject] = []
     for member in member_subjects:
-        if member.sample_key in samples:
+        if member.raw_stem in samples:
             raise CrossSampleContractError(
                 "group has two identity-bearing members for one canonical sample"
             )
         if physical.intersection(member.physical_peaks):
             raise CrossSampleContractError("group duplicates a physical observation")
-        samples.add(member.sample_key)
+        samples.add(member.raw_stem)
         physical.update(member.physical_peaks)
         members.append(member)
-    return tuple(sorted(members, key=lambda item: item.sample_key))
+    return tuple(sorted(members, key=lambda item: item.raw_stem))
 
 
 __all__ = (

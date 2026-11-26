@@ -110,7 +110,7 @@ def review_curve_bundle(
     Returns the bundle and the samples whose window has no usable signal.
     """
     requested = set(sample_ids)
-    selected = [loc for loc in curves.locations if loc.sample_key in requested]
+    selected = [loc for loc in curves.locations if loc.raw_stem in requested]
     settings = RunSettings(report)
     traces, unusable = _saved_traces(
         (loc for loc in selected if loc.curve is not None), settings.profile
@@ -159,16 +159,16 @@ def _same_mz_reads(curves: ReviewCurves, padding_min: float) -> list[_RawRead]:
         return []
     apexes = [peak.apex_rt_min for peak in curves.same_mz_peaks]
     window = (max(0.0, min(apexes) - padding_min), max(apexes) + padding_min)
-    samples = {peak.sample_key: peak.sample_stem for peak in curves.same_mz_peaks}
+    samples = {peak.raw_stem: peak.sample_label for peak in curves.same_mz_peaks}
     return [
         _RawRead(
             ReviewCurveLocation(
-                key, stem, None, curves.row_mz, curves.row_ppm, window[0], None
+                key, label, None, curves.row_mz, curves.row_ppm, window[0], None
             ),
             window,
             same_mz=True,
         )
-        for key, stem in sorted(samples.items())
+        for key, label in sorted(samples.items())
     ]
 
 
@@ -205,7 +205,7 @@ def _saved_traces(
         rt, raw = location.curve
         trace = _trace(location, rt, raw, profile, role=SAVED_ROLE, flags={})
         if trace is None:
-            unusable.add(location.sample_stem)
+            unusable.add(location.raw_stem)
         else:
             traces.append(trace)
     return traces, unusable
@@ -226,7 +226,7 @@ def _raw_traces(
     """
     by_stem: dict[str, list[_RawRead]] = {}
     for read in reads:
-        by_stem.setdefault(read.location.sample_stem, []).append(read)
+        by_stem.setdefault(read.location.raw_stem, []).append(read)
     traces: list[CurveBundleTrace] = []
     unusable: set[str] = set()
     for completed, (stem, sample_reads) in enumerate(sorted(by_stem.items())):
@@ -268,7 +268,7 @@ def _raw_traces(
                 if trace is None:
                     continue
                 if read.same_mz:
-                    trace = replace(trace, trace_id=f"same-mz:{location.sample_key}")
+                    trace = replace(trace, trace_id=f"same-mz:{location.raw_stem}")
                 else:
                     usable = True
                 traces.append(trace)
@@ -329,13 +329,13 @@ def _trace(
     raw = ChromatogramCurve(tuple(map(float, rt)), tuple(map(float, intensity)))
     return CurveBundleTrace(
         trace_id=(
-            f"review:{location.sample_key}:"
+            f"review:{location.raw_stem}:"
             f"{location.physical_peak_key or 'group-position'}"
         ),
-        sample_id=location.sample_key,
-        sample_label=location.sample_stem,
+        sample_id=location.raw_stem,
+        sample_label=location.sample_label,
         role=role,
-        raw_identity=location.sample_stem,
+        raw_identity=location.raw_stem,
         mz=location.mz,
         ppm=location.ppm,
         extraction_rt_window=window or (raw.rt[0], raw.rt[-1]),

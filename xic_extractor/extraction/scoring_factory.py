@@ -32,7 +32,7 @@ def build_scoring_context_factory(
     def _factory(
         *,
         target: Target,
-        sample_name: str,
+        raw_stem: str,
         rt: np.ndarray,
         intensity: np.ndarray,
         prepared_result: PreparedSignalResult,

@@ -178,7 +178,7 @@ def test_backfill_different_apices_require_measured_same_lobe(
                 destination="matrix",
                 member_subjects=(
                     SimpleNamespace(
-                        sample_key="sample",
+                        raw_stem="sample",
                         physical_peaks=("0",),
                     ),
                 ),
@@ -202,7 +202,7 @@ def test_backfill_different_apices_require_measured_same_lobe(
 
 def _sample_id(owner: SampleLocalMS1Owner) -> str:
     assert owner.cross_sample_member_subject is not None
-    return owner.cross_sample_member_subject.sample_key
+    return owner.cross_sample_member_subject.raw_stem
 
 
 def _member_observations(group):
@@ -379,7 +379,7 @@ def _two_bands(early: tuple[str, ...], late: tuple[str, ...], *, gap: float):
     groups = construct_cross_sample_peak_group_hypotheses(
         owners,
         config=_CONFIG,
-        sample_universe=frozenset(owner.sample_stem for owner in owners),
+        sample_universe=frozenset(owner.raw_stem for owner in owners),
         rt_frame=SampleRtFrame(),
         rules=CID_NL_GROUPING_RULES,
     )
@@ -401,7 +401,7 @@ def test_grouping_uses_corrected_coordinates_for_separated_bands(
     owners = tuple(owner for group in groups for owner in group.owners)
     warp = BatchRtWarp(
         knots_by_sample=tuple(
-            (owner.sample_stem, ((9.0, owner.peak.integration.rt_apex_min - 9.0),))
+            (owner.raw_stem, ((9.0, owner.peak.integration.rt_apex_min - 9.0),))
             for owner in owners
         ),
         anchor_group_count=1,

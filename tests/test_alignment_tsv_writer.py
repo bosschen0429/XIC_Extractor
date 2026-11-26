@@ -640,7 +640,9 @@ def test_backfill_cell_evidence_tsv_is_compact_and_backfill_scoped(
     )
 
     assert list(rows[0]) == list(ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS)
-    assert [(row["feature_id"], row["sample_stem"], row["status"]) for row in rows] == [
+    assert [
+        (row["feature_id"], row["sample_label"], row["status"]) for row in rows
+    ] == [
         ("F000001", "sample-b", "backfilled"),
     ]
     assert rows[0]["area"] == "8"
@@ -707,7 +709,7 @@ def test_advisory_signal_quality_is_sample_scoped_and_matrix_unchanged(tmp_path)
     second = render("matrix", tmp_path / "after.tsv", after)
     assert first.read_bytes() == second.read_bytes()
     rows = _read_tsv(render("cells", tmp_path / "review-cells.tsv", after))
-    assert [row["sample_stem"] for row in rows] == ["S1", "S2"]
+    assert [row["sample_label"] for row in rows] == ["S1", "S2"]
     assert [row["low_signal_to_noise"] for row in rows] == ["FALSE", "TRUE"]
     assert [row["signal_to_noise"] for row in rows] == ["20", "2"]
 

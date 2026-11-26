@@ -65,7 +65,7 @@ def _select_window(
     comparison.settle(partition)
     by_sample: dict[str, list[SampleLocalMS1Owner]] = defaultdict(list)
     for owner in window:
-        by_sample[owner.sample_stem].append(owner)
+        by_sample[owner.raw_stem].append(owner)
     while True:
         moves = []
         for sample_owners in by_sample.values():
@@ -210,7 +210,7 @@ def _accepted_final_memberships(
                 decisions.append(
                     SparseFeatureDecision(
                         "window",
-                        owner.sample_stem,
+                        owner.raw_stem,
                         owner_id,
                         f"window:{group[0]}",
                         "assigned" if assigned else "birth",
@@ -225,7 +225,7 @@ def _accepted_final_memberships(
                 )
         counts["owner_edge_evaluations"] += len(comparison.pairs)
         counts["feature_summary_comparisons"] += len(comparison.group_costs)
-    counts["samples_processed"] += len({o.sample_stem for o in owners})
+    counts["samples_processed"] += len({o.raw_stem for o in owners})
     counts["births"] += len(groups)
     return tuple(groups), tuple(decisions)
 

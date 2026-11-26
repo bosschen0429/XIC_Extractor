@@ -54,10 +54,10 @@ def _summarize_target(
     paired_logs: list[tuple[float, float]] = []
     rt_deltas: list[float] = []
     for point in benchmark_points:
-        area = selected_matrix.get(point.sample_stem)
+        area = selected_matrix.get(point.raw_stem)
         if area is not None and area > 0 and point.area is not None:
             paired_logs.append((math.log10(point.area), math.log10(area)))
-            cell = cells.get((selected_family, point.sample_stem))
+            cell = cells.get((selected_family, point.raw_stem))
             if cell is not None and cell.apex_rt is not None and point.rt is not None:
                 rt_deltas.append(cell.apex_rt - point.rt)
 
@@ -191,7 +191,7 @@ def _reliability_summary(
     missing_count = 0
     review_positive_detail_reasons: list[str] = []
     for point in points:
-        record = reliability.get((point.sample_stem, point.target_label))
+        record = reliability.get((point.raw_stem, point.target_label))
         if record is None:
             if point.positive:
                 if strict_targeted_reliability:

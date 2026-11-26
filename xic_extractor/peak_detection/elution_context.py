@@ -36,7 +36,7 @@ class ElutionLandmark:
 
 @dataclass(frozen=True, slots=True)
 class SampleElutionContext:
-    sample_stem: str
+    raw_stem: str
     mz: float
     rt_start: float
     rt_end: float
@@ -48,7 +48,7 @@ class SampleElutionContext:
 def project_elution_context(
     prepared_result: PreparedSignalResult,
     *,
-    sample_stem: str,
+    raw_stem: str,
     mz: float,
     universe: PhysicalSegmentUniverse | None = None,
 ) -> SampleElutionContext | None:
@@ -88,7 +88,7 @@ def project_elution_context(
         if width > 0.0
     )
     return SampleElutionContext(
-        sample_stem=sample_stem,
+        raw_stem=raw_stem,
         mz=mz,
         rt_start=float(rt[0]),
         rt_end=float(rt[-1]),

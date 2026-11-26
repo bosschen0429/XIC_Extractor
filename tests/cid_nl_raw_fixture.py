@@ -111,13 +111,13 @@ def _multi_tag_settings() -> DiscoverySettings:
     )
 
 
-def _source_for(fixture, sample_stem: str) -> AcquisitionSourceIdentity:
-    return fixture.source(sample_stem)
+def _source_for(fixture, raw_stem: str) -> AcquisitionSourceIdentity:
+    return fixture.source(raw_stem)
 
 
 def _open_bound_raw(
     fixture,
-    sample_stem: str,
+    raw_stem: str,
     source_raw: _FakeRaw,
     *,
     tmp_path: Path,
@@ -126,9 +126,9 @@ def _open_bound_raw(
         (tmp_path / filename).write_bytes(b"dll")
     vendor_raw = _FakeThermoRaw(source_raw)
     handle = open_raw(
-        tmp_path / f"{sample_stem}.synthetic",
+        tmp_path / f"{raw_stem}.synthetic",
         tmp_path,
-        expected_acquisition_source=_source_for(fixture, sample_stem),
+        expected_acquisition_source=_source_for(fixture, raw_stem),
         _import_module=_working_imports,
         _thermo=SimpleNamespace(
             raw_file_reader_adapter=SimpleNamespace(

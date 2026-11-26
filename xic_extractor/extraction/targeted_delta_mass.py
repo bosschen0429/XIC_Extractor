@@ -98,7 +98,7 @@ def assess_targeted_delta_mass(
                 continue
             features.append(
                 DetectedFeature(
-                    sample_stem=trace.sample_name,
+                    raw_stem=trace.raw_stem,
                     feature_id=f"{position.label}:{index}",
                     source_feature_row_id=None,
                     mz=base_mz + position.delta_da,

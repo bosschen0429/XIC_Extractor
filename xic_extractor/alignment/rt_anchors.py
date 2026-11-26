@@ -53,7 +53,7 @@ class RtAnchorObservation:
     channel: str
     precursor_mz: float
     neutral_loss_da: float | None
-    sample_stem: str
+    raw_stem: str
     owner_id: str
     rt_min: float
     bootstrap_group_id: str | None
@@ -108,7 +108,7 @@ def rt_anchor_observations(
             subject.method_subject_id,
             subject.precursor_mz,
             subject.neutral_loss_da,
-            owner.sample_stem,
+            owner.raw_stem,
             owner.owner_id,
             owner.peak.rt_apex_min,
             group.group_hypothesis_id

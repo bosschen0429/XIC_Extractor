@@ -114,7 +114,7 @@ def test_roles_votes_and_full_support_trace_set_are_owner_derived(
     ) == (
         (
             spine.group,
-            frozenset({fixture.sample("pooled").sample_name}),
+            frozenset({fixture.sample("pooled").raw_stem}),
         ),
     )
 
@@ -130,9 +130,7 @@ def test_rejected_group_plans_no_backfill(tmp_path: Path) -> None:
     established = plan_conservative_backfill_targets(
         (spine.group,), sample_population=fixture.samples
     )
-    assert established == (
-        (spine.group, frozenset({fixture.sample("s3").sample_name})),
-    )
+    assert established == ((spine.group, frozenset({fixture.sample("s3").raw_stem})),)
 
     rejected = replace(spine.group, disposition="rejected")
 
@@ -169,8 +167,7 @@ def test_large_run_backfill_preserves_population_threshold(
             (
                 spine.group,
                 frozenset(
-                    fixture.sample(f"s{i}").sample_name
-                    for i in range(support_count, 85)
+                    fixture.sample(f"s{i}").raw_stem for i in range(support_count, 85)
                 ),
             ),
         )
@@ -229,9 +226,7 @@ def test_incomplete_group_snapshot_is_held_even_when_support_threshold_passes(
         invocation="not-frozen",
     )
     retained_cells = tuple(
-        cell
-        for cell in spine.cells
-        if cell.sample_key != fixture.sample("s4").sample_name
+        cell for cell in spine.cells if cell.raw_stem != fixture.sample("s4").raw_stem
     )
     facts = assess_conservative_backfill_group(
         retained_cells,
@@ -310,7 +305,7 @@ def test_terminal_method_results_precede_group_recovery_eligibility(
     retained_cells = tuple(
         cell
         for cell in incomplete_spine.cells
-        if cell.sample_key != incomplete_fixture.sample("omitted").sample_name
+        if cell.raw_stem != incomplete_fixture.sample("omitted").raw_stem
     )
     incomplete = assess_conservative_backfill_group(
         retained_cells,
@@ -676,7 +671,7 @@ def _spine(
 
 def _reject_assessment(
     fixture: ProcessingIdentityNoRawFixture,
-    sample_stem: str,
+    raw_stem: str,
     *,
     scan_number: int,
     invocation: str,
@@ -685,13 +680,13 @@ def _reject_assessment(
     effective_target = fixture.target if target is None else target
     evidence = cid_nl_evidence(
         fixture,
-        sample_stem,
+        raw_stem,
         scan_number=scan_number,
         scan_rt_min=8.0,
     )
     return mint_cid_nl_method_assessment(
-        sample=fixture.sample(sample_stem),
-        acquisition_source=fixture.source(fixture.sample(sample_stem)),
+        sample=fixture.sample(raw_stem),
+        acquisition_source=fixture.source(fixture.sample(raw_stem)),
         target=effective_target,
         detector_invocation_id=invocation,
         evaluation_receipt=CidNlEvaluationReceipt(
@@ -708,14 +703,14 @@ def _reject_assessment(
 
 def _assessment(
     fixture: ProcessingIdentityNoRawFixture,
-    sample_stem: str,
+    raw_stem: str,
     *,
     support_apex: float | None,
     scan_number: int,
     invocation: str,
     target=None,
 ) -> CidNlMethodAssessment:
-    sample = fixture.sample(sample_stem)
+    sample = fixture.sample(raw_stem)
     effective_target = fixture.target if target is None else target
     if support_apex is None:
         return mint_cid_nl_method_assessment(
@@ -733,11 +728,11 @@ def _assessment(
             ),
             technical_state="unsupported",
         )
-    peak = _peak(fixture, sample_stem, apex_rt=support_apex)
+    peak = _peak(fixture, raw_stem, apex_rt=support_apex)
     evidence_refs = tuple(
         cid_nl_evidence(
             fixture,
-            sample_stem,
+            raw_stem,
             scan_number=scan_number + offset,
             scan_rt_min=support_apex + offset * 0.00001,
         )
@@ -746,7 +741,7 @@ def _assessment(
     support_refs = tuple(
         cid_nl_unique_support(
             fixture,
-            sample_stem,
+            raw_stem,
             peak=peak,
             evidence=evidence,
         )
@@ -773,13 +768,13 @@ def _assessment(
 
 def _peak(
     fixture: ProcessingIdentityNoRawFixture,
-    sample_stem: str,
+    raw_stem: str,
     *,
     apex_rt: float,
 ):
     return cid_nl_peak(
         fixture,
-        sample_stem,
+        raw_stem,
         apex_rt=apex_rt,
         rt_left_min=apex_rt - 0.1,
         rt_right_min=apex_rt + 0.1,
@@ -789,14 +784,14 @@ def _peak(
 def _recovery_universe(
     fixture: ProcessingIdentityNoRawFixture,
     group_facts,
-    sample_stem: str,
+    raw_stem: str,
     peaks,
 ):
     assessment = mint_cid_nl_method_assessment(
-        sample=fixture.sample(sample_stem),
-        acquisition_source=fixture.source(fixture.sample(sample_stem)),
+        sample=fixture.sample(raw_stem),
+        acquisition_source=fixture.source(fixture.sample(raw_stem)),
         target=fixture.target,
-        detector_invocation_id=f"backfill-recovery:{sample_stem}",
+        detector_invocation_id=f"backfill-recovery:{raw_stem}",
         evaluation_receipt=CidNlEvaluationReceipt(
             query_rt_min=7.0,
             query_rt_max=9.0,
@@ -808,7 +803,7 @@ def _recovery_universe(
         candidate_peaks=tuple(peaks),
     )
     return mint_conservative_backfill_candidate_universe(
-        sample=fixture.sample(sample_stem),
+        sample=fixture.sample(raw_stem),
         group_facts=tuple(group_facts),
         candidate_assessment=assessment,
     )

@@ -247,9 +247,9 @@ def _known_identity_groups(
     for label in sorted(by_label):
         owner_ids = tuple(sorted(by_label[label]))
         owners_for_label = tuple(owner_by_id[owner_id] for owner_id in owner_ids)
-        repeated_samples = len(
-            {owner.sample_stem for owner in owners_for_label}
-        ) != len(owners_for_label)
+        repeated_samples = len({owner.raw_stem for owner in owners_for_label}) != len(
+            owners_for_label
+        )
         cross_label_conflict = label in conflict_labels
         conflict = repeated_samples or cross_label_conflict
         reason = (

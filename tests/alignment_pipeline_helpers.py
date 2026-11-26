@@ -64,7 +64,7 @@ def resolved_elution_context(
         height * np.exp(-0.5 * ((rt - apex) / 0.035) ** 2) for apex, height in peaks
     )
     context = project_elution_context(
-        prepare_physical_signal(rt, signal), sample_stem=sample, mz=mz
+        prepare_physical_signal(rt, signal), raw_stem=sample, mz=mz
     )
     assert context is not None
     assert tuple(p.apex_rt for p in context.landmarks) == tuple(sorted(apices))
@@ -83,22 +83,22 @@ def write_batch(
     batch_dir.mkdir(exist_ok=True)
     raw_files = raw_files or {}
     rows = []
-    for sample_stem in sample_order:
-        sample_dir = batch_dir / sample_stem
+    for raw_stem in sample_order:
+        sample_dir = batch_dir / raw_stem
         sample_dir.mkdir(exist_ok=True)
         candidates_csv = sample_dir / "discovery_peaks.csv"
         write_csv(
             candidates_csv,
             DISCOVERY_PEAK_COLUMNS,
-            [candidate_row(sample_stem)],
+            [candidate_row(raw_stem)],
         )
         row = {
-            "sample_stem": sample_stem,
-            "raw_file": raw_files.get(sample_stem, f"C:/stale/{sample_stem}.raw"),
+            "sample_stem": raw_stem,
+            "raw_file": raw_files.get(raw_stem, f"C:/stale/{raw_stem}.raw"),
             "peak_csv": str(candidates_csv.relative_to(batch_dir)),
             "event_csv": "",
         }
-        row.update(_owner_closed_receipt_fields(sample_stem, candidates_csv))
+        row.update(_owner_closed_receipt_fields(raw_stem, candidates_csv))
         rows.append(row)
     batch_index = batch_dir / "discovery_batch_index.csv"
     write_csv(batch_index, DISCOVERY_BATCH_INDEX_COLUMNS, rows)
@@ -106,13 +106,13 @@ def write_batch(
 
 
 def _owner_closed_receipt_fields(
-    sample_stem: str,
+    raw_stem: str,
     candidates_csv: Path,
 ) -> dict[str, str]:
     """Build a test-only receipt from one stable synthetic acquisition."""
 
     source_path = candidates_csv.with_name("owner_closed_acquisition.raw")
-    source_path.write_bytes(f"owner-closed-acquisition:{sample_stem}".encode())
+    source_path.write_bytes(f"owner-closed-acquisition:{raw_stem}".encode())
     acquisition_source = build_local_acquisition_source_identity(
         source_path,
         acquisition_format="thermo_raw",
@@ -120,7 +120,7 @@ def _owner_closed_receipt_fields(
     )
     candidates = read_discovery_peaks_csv(candidates_csv)
     receipt = mint_discovery_peak_universe_receipt(
-        sample_stem=sample_stem,
+        raw_stem=raw_stem,
         acquisition_source=acquisition_source,
         peak_csv=candidates_csv,
         peaks=candidates,
@@ -143,17 +143,17 @@ def write_csv(
         writer.writerows(rows)
 
 
-def candidate_id(sample_stem: str) -> str:
-    return f"{sample_stem}@mz500_rt8.5000"
+def candidate_id(raw_stem: str) -> str:
+    return f"{raw_stem}@mz500_rt8.5000"
 
 
-def candidate_row(sample_stem: str) -> dict[str, str]:
+def candidate_row(raw_stem: str) -> dict[str, str]:
     return {
         "status": "admitted",
         "evidence_score": "80",
         "attached_event_count": "2",
-        "peak_id": candidate_id(sample_stem),
-        "sample_stem": sample_stem,
+        "peak_id": candidate_id(raw_stem),
+        "sample_stem": raw_stem,
         "peak_mz": "500.0",
         "precursor_mz_basis": "scan_precursor",
         "ms1_apex_mz": "",
@@ -174,7 +174,7 @@ class WriterPeak:
     physical_peak_key: str
     mz: float
     rt: float
-    sample_key: str = ""
+    raw_stem: str = ""
     intensity: tuple[float, ...] = ()
 
     @property
@@ -209,7 +209,7 @@ class WriterEvidence:
     method_assessments: tuple[object, ...] = ()
     direct_hypotheses: tuple[object, ...] = ()
     group: object = None
-    sample_key: str = ""
+    raw_stem: str = ""
     effective_cells: tuple[object, ...] = ()
 
 
@@ -334,7 +334,7 @@ def writer_batch(sample_order: tuple[str, ...], *groups: WriterGroup) -> Any:
     """
 
     samples = tuple(
-        SimpleNamespace(raw_stem=stem, sample_name=stem, injection_order=index)
+        SimpleNamespace(raw_stem=stem, injection_order=index)
         for index, stem in enumerate(sample_order, start=1)
     )
     terminal_subjects = []
@@ -360,7 +360,7 @@ def writer_batch(sample_order: tuple[str, ...], *groups: WriterGroup) -> Any:
                 peak = replace(peak, mz=spec.center_mz, rt=spec.center_rt)
                 members.append(
                     SimpleNamespace(
-                        sample_key=stem,
+                        raw_stem=stem,
                         subject_id=f"{ordinal}:{stem}",
                         physical_peaks=(peak,),
                     )
@@ -385,7 +385,7 @@ def writer_batch(sample_order: tuple[str, ...], *groups: WriterGroup) -> Any:
                 terminal_subjects.append(
                     ObservedSearchSubject(
                         candidate_id=candidates[stem],
-                        sample_key=stem,
+                        raw_stem=stem,
                         hypothesis=hypothesis,  # type: ignore[arg-type]
                     )
                 )
@@ -403,7 +403,7 @@ def writer_batch(sample_order: tuple[str, ...], *groups: WriterGroup) -> Any:
                         ),
                         direct_hypotheses=hypotheses,
                         group=group,
-                        sample_key=stem,
+                        raw_stem=stem,
                         effective_cells=(SimpleNamespace(group_context=context),),
                     ),
                 )
@@ -447,8 +447,8 @@ def written_cells(
     for child in _children(completed):
         for group, cells in child.group_cells:
             by_stem = {cell.subject.canonical_sample.raw_stem: cell for cell in cells}
-            for sample_stem in sample_order:
-                yield group, sample_stem, by_stem[sample_stem]
+            for raw_stem in sample_order:
+                yield group, raw_stem, by_stem[raw_stem]
 
 
 def written_groups(completed: Any) -> tuple[Any, ...]:
@@ -502,7 +502,7 @@ def matrix(sample_order: tuple[str, ...]) -> Any:
         writer_group(
             *(owner_cell() for _ in sample_order),
             candidates=tuple(
-                (sample_stem, candidate_id(sample_stem)) for sample_stem in sample_order
+                (raw_stem, candidate_id(raw_stem)) for raw_stem in sample_order
             ),
         ),
     )
@@ -553,7 +553,7 @@ def _integration(apex_rt: float) -> IntegrationResult:
 
 
 def _owner(
-    sample_stem: str,
+    raw_stem: str,
     suffix: str,
     *,
     apex_rt: float = 8.5,
@@ -565,9 +565,9 @@ def _owner(
     seed_event_count: int = 2,
 ) -> SampleLocalMS1Owner:
     event = IdentityEvent(
-        candidate_id=f"{sample_stem}#{suffix}",
-        sample_stem=sample_stem,
-        raw_file=f"{sample_stem}.raw",
+        candidate_id=f"{raw_stem}#{suffix}",
+        raw_stem=raw_stem,
+        raw_file=f"{raw_stem}.raw",
         neutral_loss_tag=neutral_loss_tag,
         precursor_mz=precursor_mz,
         product_mz=product_mz,
@@ -577,7 +577,7 @@ def _owner(
         seed_event_count=seed_event_count,
     )
     physical_peak = PeakObservation(
-        sample_key=f"test-sample:{sample_stem}",
+        raw_stem=f"test-sample:{raw_stem}",
         mz=precursor_mz,
         rt=(apex_rt - 0.05, apex_rt, apex_rt + 0.05),
         intensity=(1.0 + sum(map(ord, suffix)) / 1000.0, 100.0, 1.0),
@@ -585,17 +585,17 @@ def _owner(
         generation_provenance=None,
         source_trace=None,
     )
-    hypothesis_id = f"{sample_stem}|hypothesis|{suffix}"
+    hypothesis_id = f"{raw_stem}|hypothesis|{suffix}"
     return SampleLocalMS1Owner(
-        owner_id=f"OWN-{sample_stem}-{suffix}",
-        sample_stem=sample_stem,
-        raw_file=f"{sample_stem}.raw",
+        owner_id=f"OWN-{raw_stem}-{suffix}",
+        raw_stem=raw_stem,
+        raw_file=f"{raw_stem}.raw",
         peak=physical_peak,
         primary_identity_event=event,
         supporting_events=(),
         assignment_reason="owner_exact_apex_match",
         cross_sample_member_subject=CrossSampleGroupMemberSubject(
-            sample_key=f"test-sample:{sample_stem}",
+            raw_stem=f"test-sample:{raw_stem}",
             subject_kind="peak_hypothesis",
             subject_id=hypothesis_id,
             physical_peaks=(physical_peak,),

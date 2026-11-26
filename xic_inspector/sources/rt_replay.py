@@ -25,13 +25,13 @@ def read_calibration(payload: Any) -> BatchRtCalibration | None:
 
 def align_curve(
     curve: dict[str, Any],
-    sample_stem: str | None,
+    raw_stem: str | None,
     calibration: BatchRtCalibration | None,
 ) -> None:
     """Retain intensities and measured bounds; only project displayed RTs."""
     sample = (
-        calibration.samples.get(sample_stem)
-        if calibration is not None and sample_stem is not None
+        calibration.samples.get(raw_stem)
+        if calibration is not None and raw_stem is not None
         else None
     )
     methods: set[str] = set()

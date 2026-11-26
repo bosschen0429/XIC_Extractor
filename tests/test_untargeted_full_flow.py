@@ -2,7 +2,7 @@
 
 import csv
 import json
-from dataclasses import asdict, replace
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -19,7 +19,11 @@ from xic_extractor.configuration.execution_profile import ExecutionProfile
 from xic_extractor.discovery.delta_mass_pipeline import run_delta_mass_discovery
 from xic_extractor.presets import load_preset
 from xic_extractor.presets.delta_mass import resolve_delta_mass_discovery
-from xic_extractor.sample_metadata import SampleMetadata, load_sample_metadata
+from xic_extractor.sample_metadata import (
+    SampleMetadata,
+    load_sample_metadata,
+    sample_metadata_payload,
+)
 from xic_workbench.untargeted import parse_request
 
 
@@ -78,7 +82,7 @@ def test_complete_cid_nl_matches_workbench_intake_with_sample_values(
                 "raw_dir": str(tmp_path),
                 "dll_dir": str(tmp_path),
                 "output_dir": str(tmp_path / "workbench-intake"),
-                "samples": [asdict(s) for s in samples],
+                "samples": [sample_metadata_payload(s) for s in samples],
             }
         ),
         execution_profile=request.execution_profile,

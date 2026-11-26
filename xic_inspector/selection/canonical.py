@@ -13,14 +13,14 @@ ItemKind = Literal["row", "group", "candidate", "target"]
 class Witness:
     """A witness chain linking an item to an actual candidate/sample observation."""
 
-    sample_key: str
+    raw_stem: str
     candidate_id: str
     group_hypothesis_id: str | None = None
     row_key_id: str | None = None
     precursor_mz: float | None = None
     rt_apex_min: float | None = None
     observation_id: str | None = None
-    sample_stem: str | None = None
+    sample_label: str | None = field(default=None, compare=False)
 
 
 @dataclass(frozen=True, slots=True)

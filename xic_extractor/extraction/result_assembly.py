@@ -91,7 +91,7 @@ def build_extraction_result(
     cid_nl_relations: CidNlMethodRelations | None = None,
     cid_nl_candidate_evidence: tuple[CandidateMS2Evidence, ...] = (),
     selected_cid_nl_candidate_index: int | None = None,
-    sample_name: str = "",
+    raw_stem: str = "",
     method_candidate_evidence: tuple[MethodCandidateEvidence, ...] = (),
     selected_method_candidate_index: int | None = None,
 ) -> ExtractionResult:
@@ -148,7 +148,7 @@ def build_extraction_result(
         targeted_product_projection=project_targeted_result(
             result,
             target=target,
-            sample_name=sample_name,
+            raw_stem=raw_stem,
         ),
     )
 
@@ -157,7 +157,7 @@ def reproject_extraction_result(
     result: ExtractionResult,
     *,
     target: Target,
-    sample_name: str,
+    raw_stem: str,
     selection_decision: PeakHypothesisSelectionDecision | None = None,
 ) -> ExtractionResult:
     resolved_selection_decision = (
@@ -178,7 +178,7 @@ def reproject_extraction_result(
         targeted_product_projection=project_targeted_result(
             updated,
             target=target,
-            sample_name=sample_name,
+            raw_stem=raw_stem,
         ),
     )
 

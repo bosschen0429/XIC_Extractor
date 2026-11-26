@@ -494,9 +494,14 @@ def write_curve_bundle(bundle: CurveBundle, path: str | Path) -> int:
     """Write a validated handoff atomically; return its UTF-8 byte count."""
     if not isinstance(bundle, CurveBundle):
         raise _fail("$", "expected CurveBundle")
-    _decode_bundle(asdict(bundle))
+    payload = asdict(bundle)
+    for transition in payload["transitions"]:
+        for peak in transition["same_mz_peaks"]:
+            peak["sample_key"] = peak.pop("raw_stem")
+            peak["sample_stem"] = peak.pop("sample_label")
+    _decode_bundle(payload)
     data = json.dumps(
-        asdict(bundle), ensure_ascii=False, allow_nan=False, separators=(",", ":")
+        payload, ensure_ascii=False, allow_nan=False, separators=(",", ":")
     ).encode("utf-8")
     if len(data) > MAX_BUNDLE_SIZE_BYTES:
         raise _fail("$", "source exceeds 50 MiB limit")
@@ -550,7 +555,7 @@ class CurveBundleSource:
             if locator is not None
             else bundle.transitions[0].key,
             "samples": [
-                {"sample_key": sid, "sample_stem": label}
+                {"raw_stem": sid, "sample_label": label}
                 for sid, label in sorted(labels.items())
             ],
         }
@@ -581,12 +586,12 @@ class CurveBundleSource:
             _, ref = build_canonical_ref("group", transition.key, transition.key)
             witnesses = tuple(
                 Witness(
-                    sample_key=trace.sample_id,
+                    raw_stem=trace.sample_id,
                     candidate_id=trace.trace_id,
                     group_hypothesis_id=transition.key,
                     precursor_mz=trace.mz,
                     rt_apex_min=trace.peak_bounds.apex if trace.peak_bounds else None,
-                    sample_stem=trace.sample_label,
+                    sample_label=trace.sample_label,
                 )
                 for trace in scoped
             )
@@ -768,7 +773,7 @@ class CurveBundleSource:
             samples = [
                 {
                     "sample_id": sid,
-                    "sample_stem": next(
+                    "sample_label": next(
                         t.sample_label for t in traces if t.sample_id == sid
                     ),
                     "support_origin": {
@@ -847,12 +852,12 @@ class CurveBundleSource:
             {
                 **asdict(peak),
                 "aligned_apex_rt_min": self._aligned(peak),
-                "injection_order": order.get(peak.sample_stem),
+                "injection_order": order.get(peak.raw_stem),
             }
             for peak in transition.same_mz_peaks
         ]
         own = sorted(
-            (p["injection_order"], p["aligned_apex_rt_min"], p["sample_key"])
+            (p["injection_order"], p["aligned_apex_rt_min"], p["raw_stem"])
             for p in points
             if p["feature_id"] == transition.key and p["injection_order"] is not None
         )
@@ -873,9 +878,7 @@ class CurveBundleSource:
         )
         rows_by_sample: dict[str, set[str]] = {}
         for point in points:
-            rows_by_sample.setdefault(point["sample_key"], set()).add(
-                point["feature_id"]
-            )
+            rows_by_sample.setdefault(point["raw_stem"], set()).add(point["feature_id"])
         far_ids = {entry["sample_id"] for entry in far}
         apexes = {sid: apex for _, apex, sid in own}
         center = statistics.median(apexes.values()) if apexes else 0.0
@@ -912,7 +915,7 @@ class CurveBundleSource:
 
     def _aligned(self, peak: SameMzPeak) -> float:
         sample = (
-            self.rt_calibration.samples.get(peak.sample_stem)
+            self.rt_calibration.samples.get(peak.raw_stem)
             if self.rt_calibration is not None
             else None
         )

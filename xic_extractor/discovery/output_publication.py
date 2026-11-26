@@ -69,10 +69,10 @@ def publish_discovery_batch_sample(
         peaks,
         events,
         timing_recorder=timing_recorder,
-        sample_stem=raw_path.stem,
+        raw_stem=raw_path.stem,
     )
     receipt = mint_discovery_peak_universe_receipt(
-        sample_stem=raw_path.stem,
+        raw_stem=raw_path.stem,
         acquisition_source=acquisition_source,
         peak_csv=outputs.peaks_csv,
         peaks=peaks,
@@ -98,7 +98,7 @@ def _write_sample_outputs(
     events: tuple[EventAttachment, ...],
     *,
     timing_recorder: TimingRecorder,
-    sample_stem: str,
+    raw_stem: str,
 ) -> DiscoveryRunOutputs:
     output_dir.mkdir(parents=True, exist_ok=True)
     peaks_path = output_dir / "discovery_peaks.csv"
@@ -114,7 +114,7 @@ def _write_sample_outputs(
             path.unlink(missing_ok=True)
         with timing_recorder.stage(
             "discover.write_peaks_csv",
-            sample_stem=sample_stem,
+            raw_stem=raw_stem,
             metrics={"row_count": len(peaks)},
         ):
             write_discovery_peaks_csv(temp_paths[0], peaks)
@@ -125,7 +125,7 @@ def _write_sample_outputs(
             )
         with timing_recorder.stage(
             "discover.write_events_csv",
-            sample_stem=sample_stem,
+            raw_stem=raw_stem,
             metrics={"row_count": len(events)},
         ):
             write_discovery_events_csv(temp_paths[1], events)
@@ -142,7 +142,7 @@ def _write_sample_outputs(
 
     with timing_recorder.stage(
         "discover.publish_outputs",
-        sample_stem=sample_stem,
+        raw_stem=raw_stem,
         metrics={
             "artifact_count": len(final_paths),
             "replaced_existing_count": sum(

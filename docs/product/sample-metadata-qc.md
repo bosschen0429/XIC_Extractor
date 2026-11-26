@@ -9,16 +9,13 @@ interpretation, and future activation gates.
 
 - `sample_metadata` owns sample identity, injection-order projection, role,
   batch and exclusion inputs.
-- Within `sample_metadata`, `sample_name` is the owner-stable,
-  case-sensitive primary sample key.
-- `raw_stem` is a lookup alias only.
-- Injection order, role, batch, `matrix_type`, group, and exclusion fields do not
-  participate in canonical sample identity.
-- Renaming `sample_name` creates a new sample identity. Changing only a
-  projection field (order, role, batch, group, exclusion) does not.
-- Sample lookup accepts only an exact `sample_name` or an unambiguous current
-  `raw_stem` alias. A missing, ambiguous or stale alias fails; lookup never
-  infers identity from padded tokens, filename suffixes, paths or row order.
+- The [RAW stem](domain-glossary.md#evidence-terms) is the sole sample key.
+  The existing `sample_name` column stores the sample label; repeated labels
+  and labels equal to another RAW stem do not identify a second sample.
+- Changing the display label, injection order, role, batch, `matrix_type`,
+  group or exclusions does not change sample identity.
+- After RAW input resolution, joins use the RAW stem, never the label or row
+  position. Matrix curation binds the published column to the RAW stem only.
 - One analysis folder holds one independent canonical sample per RAW source.
   QC replicates and meaningful reinjections keep their full distinct names;
   suffixes are never stripped to collapse them into one specimen.
@@ -106,14 +103,14 @@ is not proof that an injection never occurred.
 Targeted, Untargeted, and their command-line entry points. Injection order comes
 from the copy-aware acquisition timeline (`CreationDate` plus `RunHeaderEx`),
 not filesystem modification time, directory enumeration, or sequence row numbers.
-Sample names come from RAW headers, with local RAW stems as the fallback for
-missing or duplicate names or names that collide with another RAW lookup alias.
-All RAW aliases are reserved before names are chosen; repeated context-file
-stems receive a unique display-name suffix rather than taking another RAW alias.
+Display labels come from matched sequence rows, then the RAW header, with the
+RAW stem as the fallback. The label is not made unique.
 
-Word, Excel, CSV, and TSV sequence inputs supply role, group, batch, and exclusion
-annotations; they do not rename samples or replace acquisition order. Partial
-coverage is allowed. Matching reports unmatched entries in both directions,
+Word, Excel, CSV, and TSV sequence inputs supply labels, roles, groups, batches
+and exclusions. Sequence resolution matches the supplied RAW filename; older
+sequence files without a filename column supply its filename token in the
+sample-name column. Annotating an already resolved sample never replaces its
+RAW stem or acquisition order. Partial coverage is allowed. Matching reports unmatched entries in both directions,
 duplicate printed sequence numbers, and contradictory sample codes. Unreadable
 RAWs that would be analyzed fail with a file list; other unreadable RAWs stay
 listed, without injection order, with a warning. The workbench displays these conflicts and

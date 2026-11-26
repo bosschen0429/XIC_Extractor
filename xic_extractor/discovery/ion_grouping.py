@@ -50,9 +50,9 @@ def build_discovery_ions(
     tolerance = settings.precursor_mz_tolerance_ppm
     by_sample: dict[tuple[str, str], list[DiscoveryEvent]] = {}
     for event in dict.fromkeys(events):
-        by_sample.setdefault((str(event.raw_file), event.sample_stem), []).append(event)
+        by_sample.setdefault((str(event.raw_file), event.raw_stem), []).append(event)
     ions: list[DiscoveryIon] = []
-    for (_raw_text, sample_stem), sample_events in sorted(by_sample.items()):
+    for (_raw_text, raw_stem), sample_events in sorted(by_sample.items()):
         ordered = sorted(
             sample_events,
             key=lambda event: (event_ion_mz(event), *_event_order(event, settings)),
@@ -83,7 +83,7 @@ def build_discovery_ions(
             ions.append(
                 DiscoveryIon(
                     raw_file=Path(members[0].raw_file),
-                    sample_stem=sample_stem,
+                    raw_stem=raw_stem,
                     mz=event_ion_mz(representative),
                     events=members,
                 )

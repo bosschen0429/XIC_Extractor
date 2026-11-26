@@ -225,7 +225,7 @@ def test_pt_envelope_orders_review_without_reclassifying_candidates(
             replace(
                 candidates[0],
                 candidate_id="no-envelope",
-                sample_stem="no-envelope",
+                raw_stem="no-envelope",
                 envelope=PtEnvelopeComparison("unavailable", "rt_grid_mismatch"),
             ),
         ),

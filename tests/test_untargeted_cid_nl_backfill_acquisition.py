@@ -53,7 +53,7 @@ def test_backfill_uses_sample_pattern_location_without_claiming_method_support(
         SignalProcessingProfile,
     )
 
-    fixture = build_sample_adapter_fixture(tmp_path, sample_stem=sample)
+    fixture = build_sample_adapter_fixture(tmp_path, raw_stem=sample)
     profile = SignalProcessingProfile()
     source = _FakeRaw((7.8, 8.5))
     if tolerance is not None:
@@ -599,7 +599,7 @@ def test_backfill_containing_peak_closes_assessment_outside_apex_window(
     peak = physical_backfill_observation(
         sample=sample,
         trace=Trace(
-            sample_name="S1",
+            raw_stem="S1",
             mz=500.0,
             rt=rt,
             intensity=intensity,

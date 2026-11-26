@@ -88,10 +88,10 @@ def _query_views(db: sqlite3.Connection) -> None:
                    WHERE m.item=ic.item AND m.sample=c.sample
                      AND m.peak=c.terminal_peak))"""
     db.execute(f"""CREATE TEMP VIEW review_witnesses AS
-        SELECT ic.item, c.sample, s.sample_key, c.candidate_id, c.precursor_mz AS mz,
+        SELECT ic.item, c.sample, s.raw_stem, c.candidate_id, c.precursor_mz AS mz,
             CASE WHEN {observed} THEN p.rt_apex_min END AS rt,
             CASE WHEN {observed} THEN p.physical_peak_key END AS peak,
-            s.sample_stem
+            s.sample_label
         FROM review_item_candidates ic
         JOIN main.candidates c ON c.id=ic.candidate
         JOIN main.samples s ON s.id=c.sample
@@ -131,8 +131,7 @@ class ReviewQuery:
     def __init__(self, db: sqlite3.Connection, summary: Mapping[str, Any]):
         self._db = db
         self._samples = {
-            sample["sample_key"]: index
-            for index, sample in enumerate(summary["samples"])
+            sample["raw_stem"]: index for index, sample in enumerate(summary["samples"])
         }
         _query_views(db)
         self._items: dict[int, _Item] = {}
@@ -154,7 +153,7 @@ class ReviewQuery:
                 ).encode(),
                 group_attention(disposition),
             )
-        for item, cid, sid in db.execute("""SELECT ic.item,c.candidate_id,s.sample_key
+        for item, cid, sid in db.execute("""SELECT ic.item,c.candidate_id,s.raw_stem
             FROM review_item_candidates ic JOIN candidates c ON c.id=ic.candidate
             JOIN samples s ON s.id=c.sample WHERE ic.item<0 ORDER BY c.id"""):
             self._items[item] = _Item(
@@ -264,7 +263,7 @@ class ReviewQuery:
         rows = self._db.execute(
             """SELECT item,mz FROM (
             SELECT item,mz,ROW_NUMBER() OVER (
-                PARTITION BY item ORDER BY candidate_id,sample_key) AS witness_order
+                PARTITION BY item ORDER BY candidate_id,raw_stem) AS witness_order
             FROM review_witnesses WHERE sample IN (SELECT value FROM json_each(?))
               AND item IN (SELECT value FROM json_each(?))) WHERE witness_order=1""",
             (self._scope(scope), json.dumps(ids)),
@@ -410,16 +409,16 @@ class ReviewQuery:
     def item(self, item_id: int, scope: Sequence[str]) -> IndexedItem:
         item = self._items[item_id]
         samples = self._db.execute(
-            """SELECT s.sample_key FROM review_samples r
+            """SELECT s.raw_stem FROM review_samples r
             JOIN samples s ON s.id=r.sample WHERE item=?
-              AND sample IN (SELECT value FROM json_each(?)) ORDER BY s.sample_key""",
+              AND sample IN (SELECT value FROM json_each(?)) ORDER BY s.raw_stem""",
             (item_id, self._scope(scope)),
         )
         witnesses = self._db.execute(
-            """SELECT sample_key,candidate_id,mz,rt,peak,sample_stem
+            """SELECT raw_stem,candidate_id,mz,rt,peak,sample_label
             FROM review_witnesses WHERE item=?
               AND sample IN (SELECT value FROM json_each(?))
-            ORDER BY candidate_id,sample_key""",
+            ORDER BY candidate_id,raw_stem""",
             (item_id, self._scope(scope)),
         )
         return IndexedItem(
