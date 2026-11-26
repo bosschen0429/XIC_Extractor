@@ -131,6 +131,17 @@ def test_ms1_fill_needs_a_recurring_direct_row_and_does_not_train_it():
     assert (slots["r1"].peers, slots["fill"].peers) == (20, 21)
 
 
+def test_ms1_only_peak_fills_an_ordinary_direct_row_it_lacks():
+    """Below the band quorum, a direct row is localized the same way."""
+    ref = tuple(_owner(f"r{i}", "ref", apex_rt=10) for i in range(3))
+    fill = ms1("fill", 10)
+    _, groups = replay((*ref, fill))
+    assert not any(BAND in g.evidence for g in groups)
+    assert {frozenset(g.owner_ids) for g in groups} == {
+        frozenset(o.owner_id for o in (*ref, fill))
+    }
+
+
 def test_known_identity_row_takes_no_ms1_fill():
     """A known identity is exact; a peak it never bound cannot join it."""
     ref = tuple(_owner(f"r{i}", "ref", apex_rt=10) for i in range(21))

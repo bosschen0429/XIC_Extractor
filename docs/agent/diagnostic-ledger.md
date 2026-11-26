@@ -398,10 +398,7 @@ replayed with `ddacf394` code, no RAW except three ions read for MS2.
   direct owners only to 15+9+8+5+3 with all owners.
 - Cause: a row costs 1 plus its worst pair whatever its size, so once enough
   unconfirmed peaks occupy each RT band, placing direct owners in those bands
-  is nearly free. With direct rows kept together, 348.21 is 37+3 with one X
-  label in the main row, the 268.1184 blind classes are unchanged, and the
-  merged rows in 14 checked windows fall from 21 to 0. Across 91 windows rows
-  go 604 to 615 with multi-member rows unchanged at 516.
+  is nearly free. Final grouping now scores direct owners only.
 - Rejected on the two judged windows: worst pair replaced by the median peer
   cost or by the worst pair after dropping the least-agreeing 5% of members;
   coefficient cost set to zero; unconfirmed peaks admitted by mean cost to a
@@ -423,8 +420,8 @@ replayed with `ddacf394` code, no RAW except three ions read for MS2.
   recurring sparse cases, about 79 ions, are why a repeat keeps a region read.
   Only the four-sample line was tested, not neighbouring thresholds.
 
-Rerun when the row cost, the direct-first ordering or the first-pass peak
-population changes.
+Rerun when the row cost, which owners final grouping scores, or the first-pass
+peak population changes.
 
 ### Grouping time concentrates in dense windows
 

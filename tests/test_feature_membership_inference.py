@@ -213,26 +213,7 @@ def test_ms1_only_owner_requires_physical_signal_quality() -> None:
     )
 
 
-def test_measured_ms1_only_peak_can_match_cid_in_another_sample():
-    ms1 = replace(
-        cid_nl_owner("a", "ms1"),
-        primary_identity_event=None,
-        assignment_reason=MS1_OBSERVATION_ASSIGNMENT,
-    )
-    cid = cid_nl_owner("b", "cid")
-    result = _infer_feature_memberships(
-        (ms1, cid),
-        config=AlignmentConfig(),
-        rt_frame=SampleRtFrame(injection_order={"a": 1, "b": 2}),
-        rules=CID_NL_GROUPING_RULES,
-    )
-    assert _memberships(result) == {frozenset((ms1.owner_id, cid.owner_id))}
-
-
-@pytest.mark.parametrize("bootstrap", (False, True))
-def test_ms1_only_cannot_bridge_a_method_conflict_or_two_peaks_of_one_sample(
-    bootstrap,
-):
+def test_ms1_only_cannot_bridge_a_method_conflict_or_two_peaks_of_one_sample():
     first = cid_nl_owner("a", "first", apex_rt=10.0)
     local_second = replace(
         cid_nl_owner("a", "second", apex_rt=10.10),
@@ -252,12 +233,10 @@ def test_ms1_only_cannot_bridge_a_method_conflict_or_two_peaks_of_one_sample(
         ),
     )
     rows = (first, local_second, unknown, conflicting)
-    result = _infer_feature_memberships(
+    result = infer_feature_memberships(
         rows,
         config=AlignmentConfig(),
         rt_frame=SampleRtFrame(injection_order={"a": 1, "b": 2, "c": 3}),
-        bootstrap=bootstrap,
-        rules=CID_NL_GROUPING_RULES,
     )
     memberships = _memberships(result)
     assert set().union(*memberships) == {owner.owner_id for owner in rows}
