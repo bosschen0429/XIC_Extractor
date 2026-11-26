@@ -23,7 +23,7 @@ from dataclasses import asdict, replace
 from pathlib import Path
 from typing import Any, cast, get_type_hints
 
-from xic_extractor.alignment.config import AlignmentConfig
+from xic_extractor.alignment.config import AlignmentConfig, validate_alignment_config
 from xic_extractor.alignment.cross_sample.identity_models import (
     CrossSampleGroupMemberSubject,
 )
@@ -42,9 +42,16 @@ from xic_extractor.peak_detection.elution_context import (
     ElutionLandmark,
     SampleElutionContext,
 )
-from xic_extractor.peak_detection.integration_result import IntegrationResult
+from xic_extractor.peak_detection.integration_result import (
+    IntegrationResult,
+    validate_stored_integration_numbers,
+)
 from xic_extractor.peak_detection.ms1_shape_identity import LocalPeakShape
-from xic_extractor.peak_detection.observations import PeakObservation
+from xic_extractor.peak_detection.observations import (
+    PeakObservation,
+    PeakObservationContractError,
+    canonical_peak_value,
+)
 from xic_extractor.peak_detection.physical_peak_models import PhysicalSegment
 from xic_extractor.peak_detection.signal_quality import (
     SignalQuality,
@@ -244,7 +251,9 @@ def parse_grouping_alignment_config(value: object) -> AlignmentConfig:
             raise ValueError(f"{name} must be an integer")
         if annotation is float and not isinstance(setting, (int, float)):
             raise ValueError(f"{name} must be numeric")
-    return AlignmentConfig(**value)
+    config = AlignmentConfig(**value)
+    validate_alignment_config(config)
+    return config
 
 
 def _read_rt_model(value: Mapping[str, Any]) -> _RtModel:
@@ -311,24 +320,58 @@ def _read_elution_context(value: dict[str, Any]) -> SampleElutionContext:
     landmarks = []
     for item in value["landmarks"]:
         segment = item["physical_segment"]
-        landmarks.append(
-            ElutionLandmark(
-                **{
-                    **item,
-                    "physical_segment": None
-                    if segment is None
-                    else PhysicalSegment(
-                        **{
-                            **segment,
-                            "evidence_sources": tuple(segment["evidence_sources"]),
-                        }
-                    ),
-                }
-            )
+        landmark = ElutionLandmark(
+            **{
+                **item,
+                "physical_segment": None
+                if segment is None
+                else PhysicalSegment(
+                    **{
+                        **segment,
+                        "evidence_sources": tuple(segment["evidence_sources"]),
+                    }
+                ),
+            }
         )
-    return SampleElutionContext(
+        if (
+            any(
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or not math.isfinite(value)
+                for value in (landmark.apex_rt, landmark.height, landmark.width)
+            )
+            or landmark.apex_rt < 0.0
+            or landmark.height <= 0.0
+            or landmark.width <= 0.0
+        ):
+            raise ValueError(
+                "elution landmark requires finite RT, positive height and width"
+            )
+        landmarks.append(landmark)
+    context = SampleElutionContext(
         **{**value, "rt": (), "raw": (), "landmarks": tuple(landmarks)}
     )
+    if (
+        not context.sample_stem.strip()
+        or any(
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(value)
+            for value in (context.mz, context.rt_start, context.rt_end)
+        )
+        or context.mz <= 0.0
+        or context.rt_start < 0.0
+        or context.rt_end <= context.rt_start
+    ):
+        raise ValueError(
+            "elution context requires a sample, mass, bounds and landmarks"
+        )
+    apices = tuple(peak.apex_rt for peak in context.landmarks)
+    if tuple(sorted(set(apices))) != apices or any(
+        not context.rt_start <= apex <= context.rt_end for apex in apices
+    ):
+        raise ValueError("elution landmarks must be ordered within acquired context")
+    return context
 
 
 def _owner_payload(owner: SampleLocalMS1Owner) -> dict[str, Any]:
@@ -388,19 +431,70 @@ def _peak_payload(peak: PeakObservation) -> dict[str, Any]:
 
 
 def _read_peak(value: dict[str, Any]) -> PeakObservation:
-    rt = tuple(value["rt"])
-    integration = value["integration"]
+    mz = canonical_peak_value(value["mz"], field="mz")
+    if mz <= 0.0:
+        raise PeakObservationContractError("mz must be positive")
+    rt = tuple(canonical_peak_value(item, field="rt") for item in value["rt"])
+    intensity = tuple(
+        canonical_peak_value(item, field="intensity") for item in value["intensity"]
+    )
+    if not rt or len(rt) != len(intensity):
+        raise PeakObservationContractError(
+            "selected rt and intensity must be matching non-empty tuples"
+        )
+    if any(right <= left for left, right in zip(rt, rt[1:], strict=False)):
+        raise PeakObservationContractError(
+            "selected rt values must be strictly increasing"
+        )
+    stored = value["integration"]
+    integration = _read_integration(stored) if stored is not None else None
+    if integration is not None and integration.raw_scan_indices != tuple(
+        range(len(rt))
+    ):
+        raise PeakObservationContractError(
+            "content integration indices must address the selected subtrace"
+        )
+    _validate_integration(integration, selected_rt=rt)
     return PeakObservation(
         sample_key=value["sample_key"],
-        mz=value["mz"],
+        mz=mz,
         rt=rt,
-        intensity=tuple(value["intensity"]),
-        integration=(
-            _read_integration(integration) if integration is not None else None
-        ),
+        intensity=intensity,
+        integration=integration,
         generation_provenance=None,  # type: ignore[arg-type]
         source_trace=None,  # type: ignore[arg-type]
     )
+
+
+def _validate_integration(
+    integration: IntegrationResult | None,
+    *,
+    selected_rt: tuple[float, ...],
+) -> None:
+    if integration is None:
+        return
+    if not (
+        integration.rt_left_min <= integration.rt_apex_min <= integration.rt_right_min
+    ):
+        raise PeakObservationContractError(
+            "integration RT bounds must contain the selected apex"
+        )
+    if not (
+        selected_rt[0] <= integration.rt_apex_min <= selected_rt[-1]
+        and selected_rt[0] <= integration.raw_apex_rt_min <= selected_rt[-1]
+    ):
+        raise PeakObservationContractError(
+            "integration apex is outside the selected trace region"
+        )
+    if not math.isclose(
+        integration.rt_width_min,
+        integration.rt_right_min - integration.rt_left_min,
+        rel_tol=1e-12,
+        abs_tol=1e-12,
+    ):
+        raise PeakObservationContractError(
+            "integration rt_width_min mismatches its RT bounds"
+        )
 
 
 def _read_identity_event(value: dict[str, Any]) -> IdentityEvent:
@@ -417,7 +511,7 @@ def _read_owner(value: dict[str, Any]) -> SampleLocalMS1Owner:
     if (shape := value["peak_shape"]) is not None:
         if type(shape["source_point_count"]) is not int:
             raise ValueError("local peak shape requires a finite normalized RT grid")
-        value["peak_shape"] = LocalPeakShape(
+        model = LocalPeakShape(
             half_window_min=shape["half_window_min"],
             intensity=tuple(shape["intensity"]),
             source_point_count=shape["source_point_count"],
@@ -428,6 +522,40 @@ def _read_owner(value: dict[str, Any]) -> SampleLocalMS1Owner:
                 else None
             ),
         )
+        if (
+            isinstance(model.half_window_min, bool)
+            or not math.isfinite(model.half_window_min)
+            or model.half_window_min <= 0
+            or len(model.intensity) < 5
+            or isinstance(model.source_point_count, bool)
+            or model.source_point_count < 0
+            or (
+                model.half_height_point_count is not None
+                and (
+                    type(model.half_height_point_count) is not int
+                    or not 0
+                    <= model.half_height_point_count
+                    <= model.source_point_count
+                )
+            )
+            or (
+                model.edge_intensity_ratio is not None
+                and (
+                    len(model.edge_intensity_ratio) != 2
+                    or any(
+                        isinstance(value, bool) or not math.isfinite(value) or value > 1
+                        for value in model.edge_intensity_ratio
+                    )
+                )
+            )
+            or any(
+                value is not None
+                and (isinstance(value, bool) or not math.isfinite(value) or value > 1.0)
+                for value in model.intensity
+            )
+        ):
+            raise ValueError("local peak shape requires a finite normalized RT grid")
+        value["peak_shape"] = model
     value["primary_identity_event"] = (
         _read_identity_event(value["primary_identity_event"])
         if value["primary_identity_event"]
@@ -478,6 +606,7 @@ def _read_owner_peak(
     (member_peak,) = physical_peaks
     selected = value.pop("selected_integration")
     integration = _read_integration(selected) if selected is not None else None
+    _validate_integration(integration, selected_rt=member_peak.rt)
     return replace(
         member_peak,
         integration=(
@@ -489,6 +618,7 @@ def _read_owner_peak(
 
 
 def _read_integration(value: dict[str, Any]) -> IntegrationResult:
+    validate_stored_integration_numbers(value)
     return IntegrationResult(
         **{
             **value,

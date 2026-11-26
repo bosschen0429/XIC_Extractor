@@ -137,6 +137,25 @@ def test_regroup_rejects_wrong_setting_types_in_json_and_cli(tmp_path, override)
         read_grouping_inputs(snapshot)
 
 
+@pytest.mark.parametrize("field", ["mz", "raw_scan_indices", "rt_width_min"])
+def test_snapshot_rejects_corrupt_measurement_of_a_selected_peak(tmp_path, field):
+    path = _two_sample_snapshot(tmp_path / "grouping-inputs.json.gz")
+
+    def corrupt(payload):
+        owner = payload["worksets"][0]["owners"][0]
+        (peak,) = owner["cross_sample_member_subject"]["physical_peaks"]
+        if field == "mz":
+            peak[field] = 0
+        elif field == "raw_scan_indices":
+            peak["integration"][field] = [999]
+        else:
+            owner["selected_integration"][field] = 999
+
+    _rewrite(path, corrupt)
+    with pytest.raises(ValueError, match="capture it again"):
+        read_grouping_inputs(path)
+
+
 @pytest.mark.parametrize("repeat_equal_priority", (False, True))
 def test_compact_snapshot_keeps_curve_tie_priority_and_distinct_anchor_bindings(
     tmp_path,

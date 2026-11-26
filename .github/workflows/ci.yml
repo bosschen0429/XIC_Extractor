@@ -37,7 +37,7 @@ jobs:
         env:
           COMMENT_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: uv run python scripts/check_comments.py --base "$COMMENT_BASE"
-      - name: Internal-defense, typed-input, ppm and test-source gates
+      - name: Post-init, subclass growth, typed-input, ppm and test-source gates
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         env:
           ARCHITECTURE_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}

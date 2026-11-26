@@ -84,6 +84,20 @@ def test_batch_trace_contract_records_observed_backend_call_delta(
     assert batch.adapter_chromatogram_call_count == 2
 
 
+def test_acquisition_rejects_a_reversed_window_from_the_adapter(tmp_path: Path) -> None:
+    class ReversedWindowAdapter(_NoRawBatchAdapter):
+        def scan_window_for_request(self, request):
+            return (120, 100)
+
+    capability = mint_trace_acquisition_capability(
+        _source(tmp_path), adapter_namespace="tests.reversed_window"
+    )
+    request = XICRequest(mz=258.1085, rt_min=8.0, rt_max=10.0, ppm_tol=20.0)
+
+    with pytest.raises(AcquisitionContractError, match="ordered non-negative window"):
+        acquire_trace_batch(capability, (request,), ReversedWindowAdapter())
+
+
 def test_batch_trace_contract_requires_observed_backend_call_counter(
     tmp_path: Path,
 ) -> None:

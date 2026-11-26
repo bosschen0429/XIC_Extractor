@@ -179,6 +179,8 @@ def apply_to_delta_mass_discovery(preset: Preset) -> DeltaMassPatternSettings:
     from xic_extractor.configuration.delta_mass import (
         DeltaMassPatternSettings,
         DeltaMassPosition,
+        validate_delta_mass_pattern,
+        validate_delta_mass_position,
     )
 
     validate_delta_mass_preset_tags(preset.tags, combine_mode=preset.combine_mode)
@@ -197,14 +199,14 @@ def apply_to_delta_mass_discovery(preset: Preset) -> DeltaMassPatternSettings:
             raise PresetError(
                 "each position requires label, delta_da, ratio_min, ratio_max"
             )
-        positions.append(
-            DeltaMassPosition(
-                label=_str_setting(raw, "label", ""),
-                delta_da=cast(float, raw["delta_da"]),
-                ratio_min=cast(float, raw["ratio_min"]),
-                ratio_max=cast(float, raw["ratio_max"]),
-            )
+        position = DeltaMassPosition(
+            label=_str_setting(raw, "label", ""),
+            delta_da=cast(float, raw["delta_da"]),
+            ratio_min=cast(float, raw["ratio_min"]),
+            ratio_max=cast(float, raw["ratio_max"]),
         )
+        validate_delta_mass_position(position)
+        positions.append(position)
     roles = {}
     for key in (
         "anchor_positions",
@@ -217,7 +219,7 @@ def apply_to_delta_mass_discovery(preset: Preset) -> DeltaMassPatternSettings:
         roles[key] = tuple(value)
     tag = next(t for t in preset.tags if t.strategy == "delta_mass")
     assert tag.pattern_id is not None
-    return DeltaMassPatternSettings(
+    pattern = DeltaMassPatternSettings(
         pattern_id=tag.pattern_id,
         method_label=_str_setting(overrides, "method_label", tag.pattern_id),
         positions=tuple(positions),
@@ -248,6 +250,8 @@ def apply_to_delta_mass_discovery(preset: Preset) -> DeltaMassPatternSettings:
             overrides, "min_background_sigma", 5
         ),
     )
+    validate_delta_mass_pattern(pattern)
+    return pattern
 
 
 def apply_to_alignment(preset: Preset) -> AlignmentConfig:

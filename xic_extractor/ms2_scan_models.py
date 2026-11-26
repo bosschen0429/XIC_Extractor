@@ -17,22 +17,23 @@ class Ms2PrecursorMetadata:
     isolation_offset_da: float | None = None
     master_scan_number: int | None = None
 
-    def __post_init__(self) -> None:
-        for name in ("monoisotopic_mz", "isolation_width_da", "isolation_offset_da"):
-            value = getattr(self, name)
-            if value is not None and (
-                isinstance(value, bool)
-                or not isinstance(value, (int, float))
-                or not math.isfinite(value)
-                or (name != "isolation_offset_da" and value <= 0)
-            ):
-                raise ValueError(f"invalid precursor metadata {name}")
-        for name in ("charge", "master_scan_number"):
-            value = getattr(self, name)
-            if value is not None and (
-                isinstance(value, bool) or not isinstance(value, int) or value <= 0
-            ):
-                raise ValueError(f"invalid precursor metadata {name}")
+
+def validate_precursor_metadata(model: Ms2PrecursorMetadata) -> None:
+    for name in ("monoisotopic_mz", "isolation_width_da", "isolation_offset_da"):
+        value = getattr(model, name)
+        if value is not None and (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(value)
+            or (name != "isolation_offset_da" and value <= 0)
+        ):
+            raise ValueError(f"invalid precursor metadata {name}")
+    for name in ("charge", "master_scan_number"):
+        value = getattr(model, name)
+        if value is not None and (
+            isinstance(value, bool) or not isinstance(value, int) or value <= 0
+        ):
+            raise ValueError(f"invalid precursor metadata {name}")
 
 
 @dataclass(frozen=True)

@@ -7,10 +7,7 @@ from xic_extractor.configuration.cid_nl_profile import (
     DEFAULT_CID_NL_MASS_POLICY,
     NeutralLossProfile,
 )
-from xic_extractor.configuration.mass_recalibration import (
-    MassRecalibration,
-    resolve_mass_recalibration,
-)
+from xic_extractor.configuration.mass_recalibration import MassRecalibration
 from xic_extractor.discovery.evidence_config import (
     DEFAULT_EVIDENCE_PROFILE,
     DiscoveryEvidenceProfile,
@@ -44,20 +41,15 @@ class DiscoverySettings:
     mass_recalibration: MassRecalibration = MassRecalibration.EASY_IC_RESTORE
 
     def __post_init__(self) -> None:
-        object.__setattr__(
-            self,
-            "mass_recalibration",
-            resolve_mass_recalibration(self.mass_recalibration),
-        )
         profiles = self.neutral_loss_profiles
         if self.neutral_loss_profile is not None and (
             not profiles or self.neutral_loss_profile != profiles[0]
         ):
             profiles = (self.neutral_loss_profile,) + profiles
-        if not profiles:
-            raise ValueError("at least one neutral-loss profile is required")
         object.__setattr__(self, "neutral_loss_profiles", profiles)
-        object.__setattr__(self, "neutral_loss_profile", profiles[0])
+        object.__setattr__(
+            self, "neutral_loss_profile", profiles[0] if profiles else None
+        )
         if not self.selected_tag_names:
             object.__setattr__(
                 self,

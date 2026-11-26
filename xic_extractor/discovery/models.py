@@ -204,10 +204,6 @@ class EventAttachment:
     peak_id: str = ""
     unattached_reason: UnattachedReason = ""
 
-    def __post_init__(self) -> None:
-        if not self.peak_id and not self.unattached_reason:
-            raise ValueError("a Discovery event without a located peak needs a reason")
-
     @property
     def attached(self) -> bool:
         return not self.unattached_reason

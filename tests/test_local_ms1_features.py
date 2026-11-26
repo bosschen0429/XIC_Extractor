@@ -39,35 +39,6 @@ def test_local_ms1_feature_settings_use_lab_default_noise_level() -> None:
     assert LocalMs1FeatureSettings().mass_detection_noise_level == 25_000.0
 
 
-@pytest.mark.parametrize(
-    "overrides",
-    [
-        {"mass_detection_noise_level": float("nan")},
-        {"feature_link_ppm": float("inf")},
-        {"feature_link_ppm": 0.0},
-        {"max_missing_scans": -1},
-        {"min_observed_scans": 0},
-        {"min_duration_min": -0.1},
-        {"max_duration_min": 0.0},
-        {"min_duration_min": 2.0, "max_duration_min": 1.0},
-        {"gaussian_window_points": 0},
-        {"max_ok_gap_fraction": float("nan")},
-        {"max_weak_gap_fraction": 1.1},
-        {"split_valley_fraction_of_smaller_apex": float("inf")},
-        {"feature_link_ppm": True},
-        {"feature_link_ppm": "20"},
-        {"min_ok_prominence": 2.0, "weak_support_prominence": 3.0},
-        {"max_ok_gap_fraction": 0.5, "max_weak_gap_fraction": 0.4},
-        {"max_ok_mz_ppm_std": 20.0, "max_weak_mz_ppm_std": 10.0},
-    ],
-)
-def test_local_ms1_feature_settings_reject_invalid_domain_values(
-    overrides: dict[str, object],
-) -> None:
-    with pytest.raises(ValueError):
-        LocalMs1FeatureSettings(**overrides)
-
-
 def test_build_local_ms1_feature_table_rejects_empty_index() -> None:
     with pytest.raises(ValueError, match="at least one MS1 scan"):
         build_local_ms1_feature_table(

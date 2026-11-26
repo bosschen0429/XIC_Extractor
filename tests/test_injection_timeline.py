@@ -154,9 +154,23 @@ def test_identity_keeps_reinjections_and_same_time_distinct_sources() -> None:
         {"max_previous_run_fraction": 1},
     ],
 )
-def test_invalid_policy_is_rejected(kwargs: dict[str, float]) -> None:
-    with pytest.raises(ValueError):
-        PerturbationPolicy(**kwargs)
+def test_timeline_cli_rejects_invalid_thresholds_before_reading_raw(
+    kwargs: dict[str, float], tmp_path: Path
+) -> None:
+    from tools.diagnostics.build_injection_timeline import main
+
+    ((key, value),) = kwargs.items()
+    with pytest.raises(ValueError, match="thresholds must be|must be between"):
+        main(
+            [
+                "--preflight-only",
+                "--raw-root",
+                str(tmp_path),
+                "--dll-dir",
+                str(tmp_path),
+                f"--{key.replace('_', '-')}={value}",
+            ]
+        )
 
 
 def test_sequence_preserves_segments_missing_and_ambiguous_rows() -> None:

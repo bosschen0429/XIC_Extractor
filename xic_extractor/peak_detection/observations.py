@@ -67,31 +67,6 @@ class PeakObservation:
     background_contrast: float | None = field(default=None, compare=False)
     """Height over the median nearby bump of its channel; see background_contrast."""
 
-    def __post_init__(self) -> None:
-        mz = _finite_float(self.mz, field="mz")
-        if mz <= 0.0:
-            raise PeakObservationContractError("mz must be positive")
-        rt = _finite_float_tuple(self.rt, field="rt")
-        intensity = _finite_float_tuple(self.intensity, field="intensity")
-        if not rt or len(rt) != len(intensity):
-            raise PeakObservationContractError(
-                "selected rt and intensity must be matching non-empty tuples"
-            )
-        if any(right <= left for left, right in zip(rt, rt[1:], strict=False)):
-            raise PeakObservationContractError(
-                "selected rt values must be strictly increasing"
-            )
-        if self.integration is not None and self.integration.raw_scan_indices != tuple(
-            range(len(rt))
-        ):
-            raise PeakObservationContractError(
-                "content integration indices must address the selected subtrace"
-            )
-        _validate_integration(self.integration, selected_rt=rt)
-        object.__setattr__(self, "mz", mz)
-        object.__setattr__(self, "rt", rt)
-        object.__setattr__(self, "intensity", intensity)
-
     @property
     def physical_identity(self) -> PeakObservation:
         """This peak without advisory measurement quality, for in-process joins."""
@@ -234,11 +209,11 @@ def _project_peak_observation(
 ) -> PeakObservation:
     """Project signals and integration already validated by their input owner."""
     selected_rt = tuple(
-        _finite_float(float(trace.rt[index]), field="selected_rt")
+        canonical_peak_value(float(trace.rt[index]), field="selected_rt")
         for index in selected_indices
     )
     selected_intensity = tuple(
-        _finite_float(float(trace.intensity[index]), field="selected_intensity")
+        canonical_peak_value(float(trace.intensity[index]), field="selected_intensity")
         for index in selected_indices
     )
     normalized_integration = (
@@ -259,7 +234,7 @@ def _project_peak_observation(
             proposal_sources=proposal_sources,
         )
     )
-    return _owner_minted_peak_observation(
+    return PeakObservation(
         sample_key=sample_key,
         mz=float(mz),
         rt=selected_rt,
@@ -291,69 +266,6 @@ def prepare_peak_observation_provenance(
     )
 
 
-def _owner_minted_peak_observation(
-    *,
-    sample_key: str,
-    mz: float,
-    rt: tuple[float, ...],
-    intensity: tuple[float, ...],
-    integration: IntegrationResult | None,
-    generation_provenance: PeakObservationGenerationProvenance,
-    source_trace: Trace,
-    physical_evaluation: PhysicalPeakEvaluation | None,
-    signal_processing_profile: SignalProcessingProfile | None,
-    capture_stage: str,
-) -> PeakObservation:
-    """Issue an observation from values normalized by the observation owner once."""
-
-    observation = object.__new__(PeakObservation)
-    object.__setattr__(observation, "sample_key", sample_key)
-    object.__setattr__(observation, "mz", mz)
-    object.__setattr__(observation, "rt", rt)
-    object.__setattr__(observation, "intensity", intensity)
-    object.__setattr__(observation, "integration", integration)
-    object.__setattr__(observation, "generation_provenance", generation_provenance)
-    object.__setattr__(observation, "source_trace", source_trace)
-    object.__setattr__(observation, "physical_evaluation", physical_evaluation)
-    object.__setattr__(
-        observation, "signal_processing_profile", signal_processing_profile
-    )
-    object.__setattr__(observation, "capture_stage", capture_stage)
-    object.__setattr__(observation, "background_contrast", None)
-    return observation
-
-
-def _validate_integration(
-    integration: IntegrationResult | None,
-    *,
-    selected_rt: tuple[float, ...],
-) -> None:
-    if integration is None:
-        return
-    if not (
-        integration.rt_left_min <= integration.rt_apex_min <= integration.rt_right_min
-    ):
-        raise PeakObservationContractError(
-            "integration RT bounds must contain the selected apex"
-        )
-    if not (
-        selected_rt[0] <= integration.rt_apex_min <= selected_rt[-1]
-        and selected_rt[0] <= integration.raw_apex_rt_min <= selected_rt[-1]
-    ):
-        raise PeakObservationContractError(
-            "integration apex is outside the selected trace region"
-        )
-    if not math.isclose(
-        integration.rt_width_min,
-        integration.rt_right_min - integration.rt_left_min,
-        rel_tol=1e-12,
-        abs_tol=1e-12,
-    ):
-        raise PeakObservationContractError(
-            "integration rt_width_min mismatches its RT bounds"
-        )
-
-
 def physical_peak_observation_integration(
     evaluation: PhysicalPeakEvaluation,
 ) -> IntegrationResult:
@@ -370,11 +282,7 @@ def physical_peak_observation_integration(
     )
 
 
-def _finite_float_tuple(value: tuple[float, ...], *, field: str) -> tuple[float, ...]:
-    return tuple(_finite_float(item, field=field) for item in value)
-
-
-def _finite_float(value: object, *, field: str) -> float:
+def canonical_peak_value(value: object, *, field: str) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise PeakObservationContractError(f"{field} must be a finite number")
     normalized = float(value)

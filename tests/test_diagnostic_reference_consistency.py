@@ -197,9 +197,21 @@ def test_sample_count_does_not_overrule_cross_group_ordinal() -> None:
 
 
 @pytest.mark.parametrize("value", [0, -1, float("nan"), float("inf")])
-def test_invalid_policy_is_rejected(value: float) -> None:
-    with pytest.raises(ValueError):
-        ReferencePolicy(mapping_residual_min=value)
+def test_reference_cli_rejects_invalid_policy_before_reading_manifest(
+    value: float, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from tools.diagnostics.check_reference_consistency import main
+
+    with pytest.raises(SystemExit, match="2"):
+        main(
+            [
+                "--manifest",
+                str(tmp_path / "missing.json"),
+                "--preflight-only",
+                f"--mapping-residual-min={value}",
+            ]
+        )
+    assert "mapping_residual_min must be finite and positive" in capsys.readouterr().err
 
 
 def test_cli_writes_review_rows_and_distribution_without_mutating_inputs(

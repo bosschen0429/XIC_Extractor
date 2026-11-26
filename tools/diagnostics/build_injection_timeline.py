@@ -27,6 +27,7 @@ from xic_extractor.injection_timeline import (
     PerturbationPolicy,
     build_injection_timeline,
     compare_sequence,
+    validate_perturbation_policy,
 )
 from xic_extractor.raw_reader import preflight_raw_reader, read_raw_injection_header
 from xic_extractor.raw_sequence import read_sld_injections
@@ -78,6 +79,7 @@ def main(argv: list[str] | None = None) -> int:
     policy = PerturbationPolicy(
         args.max_previous_run_min, args.max_previous_run_fraction, args.max_idle_min
     )
+    validate_perturbation_policy(policy)
     paths = discover_raw_files(args.raw_root)
     if not paths:
         raise ValueError(f"No RAW files found: {args.raw_root}")

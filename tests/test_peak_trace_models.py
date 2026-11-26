@@ -3,7 +3,6 @@ import pytest
 
 from xic_extractor.peak_detection.traces import (
     Trace,
-    TraceGroup,
     targeted_trace_group,
     trace_from_xic_request,
     untargeted_trace_group,
@@ -33,7 +32,7 @@ def test_trace_from_xic_request_preserves_xic_metadata() -> None:
 
 def test_trace_rejects_mismatched_arrays() -> None:
     with pytest.raises(ValueError, match="matching 1D arrays"):
-        Trace(
+        Trace.from_arrays(
             sample_name="s1",
             mz=250.0,
             rt=np.asarray([1.0, 2.0]),
@@ -41,17 +40,6 @@ def test_trace_rejects_mismatched_arrays() -> None:
             rt_min=1.0,
             rt_max=2.0,
             ppm_tol=10.0,
-        )
-
-
-def test_trace_group_requires_a_trace() -> None:
-    with pytest.raises(ValueError, match="at least one trace"):
-        TraceGroup(
-            trace_group_id="empty",
-            sample_name="s1",
-            analysis_mode="targeted",
-            context_id="target",
-            traces=(),
         )
 
 

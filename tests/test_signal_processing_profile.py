@@ -93,7 +93,7 @@ def test_profile_reader_rejects_superseded_boundaries(boundary_basis: bytes) -> 
 @pytest.mark.parametrize("window_points", [True, False, 2, 4, 1000, 3.0, "15"])
 def test_profile_rejects_non_bool_odd_integer_contract(window_points: object) -> None:
     with pytest.raises((TypeError, ValueError)):
-        SignalProcessingProfile(window_points=window_points)  # type: ignore[arg-type]
+        resolve_signal_processing_profile(signal_processing_window_points=window_points)
 
 
 def test_resolver_supports_only_gaussian_and_9_is_default() -> None:
@@ -132,7 +132,11 @@ def test_every_fixed_profile_field_rejects_mutation(field_name: str) -> None:
     )
 
     with pytest.raises(ValueError):
-        replace(profile, **{field_name: mutated})
+        deserialize_signal_processing_profile(
+            serialize_signal_processing_profile(
+                replace(profile, **{field_name: mutated})
+            )
+        )
 
 
 def test_profile_reader_rejects_noncanonical_unknown_duplicate_and_invalid() -> None:

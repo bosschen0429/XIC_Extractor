@@ -216,12 +216,31 @@ def test_event_table_keeps_the_located_peak_of_an_unattached_event(
     ]
 
 
-def test_an_event_without_a_located_peak_records_why() -> None:
-    with pytest.raises(ValueError, match="without a located peak needs a reason"):
-        EventAttachment(
-            event=_seed(scan_number=10, rt=7.6),
-            xic_mz=500.0,
-            precursor_verified=True,
+def test_event_reader_rejects_a_row_without_a_located_peak_or_reason(
+    tmp_path: Path,
+) -> None:
+    event = _seed(scan_number=10, rt=7.6)
+    path = write_discovery_events_csv(
+        tmp_path / "events.csv",
+        [EventAttachment(event, 500.0, True, unattached_reason="no_peak_at_rt")],
+    )
+    (row,) = _read_csv(path)
+    row["unattached_reason"] = ""
+    with path.open("w", encoding="utf-8", newline="") as stream:
+        writer = csv.DictWriter(stream, fieldnames=DISCOVERY_EVENT_COLUMNS)
+        writer.writeheader()
+        writer.writerow(row)
+
+    with pytest.raises(
+        ValueError, match="row 2: .*without a located peak needs a reason"
+    ):
+        read_discovery_events_csv(
+            path,
+            raw_file=event.raw_file,
+            sample_stem=event.sample_stem,
+            neutral_loss_by_tag={
+                event.neutral_loss_tag: event.configured_neutral_loss_da
+            },
         )
 
 

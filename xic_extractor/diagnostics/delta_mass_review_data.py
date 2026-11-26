@@ -13,7 +13,10 @@ from typing import Any, TypeVar, cast
 
 from xic_extractor.configuration.cid_nl_profile import CidNlMassPolicy
 from xic_extractor.evidence.pt_envelope import PtEnvelopeComparison
-from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
+from xic_extractor.ms2_scan_models import (
+    Ms2PrecursorMetadata,
+    validate_precursor_metadata,
+)
 from xic_extractor.tabular_io import write_delimited_rows
 
 REVIEW_SCHEMA = "delta_mass_candidate_review"
@@ -211,15 +214,18 @@ def decode_delta_mass_review(payload: object) -> DeltaMassReview:
             if len(mz) != len(intensity):
                 raise ValueError("MS2 arrays must pair")
             meta = spectrum["precursor_metadata"]
+            precursor_metadata = (
+                Ms2PrecursorMetadata(**meta) if meta is not None else None
+            )
+            if precursor_metadata is not None:
+                validate_precursor_metadata(precursor_metadata)
             spectra.append(
                 _record(
                     ReviewSpectrum,
                     spectrum,
                     mz=mz,
                     intensity=intensity,
-                    precursor_metadata=Ms2PrecursorMetadata(**meta)
-                    if meta is not None
-                    else None,
+                    precursor_metadata=precursor_metadata,
                 )
             )
         losses = tuple(

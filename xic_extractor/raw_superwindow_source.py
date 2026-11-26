@@ -11,7 +11,12 @@ from collections.abc import Sequence
 from typing import Protocol
 
 from xic_extractor.acquisition_contract import BatchXICAdapter
-from xic_extractor.xic_models import XICRequest, XICTrace, crop_xic_trace_by_rt
+from xic_extractor.xic_models import (
+    XICRequest,
+    XICTrace,
+    crop_xic_trace_by_rt,
+    validate_xic_window,
+)
 
 _WindowedRequest = tuple[int, XICRequest, tuple[int, int]]
 
@@ -44,6 +49,8 @@ class RawSuperWindowSource:
         if not requests:
             return ()
         requests = tuple(requests)
+        for request in requests:
+            validate_xic_window(request.rt_min, request.rt_max, request.ppm_tol)
         groups = _superwindow_groups(
             self,
             requests,

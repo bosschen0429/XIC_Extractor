@@ -40,14 +40,14 @@ def _defense_gate_repo(tmp_path: Path, source: str) -> Path:
     return path
 
 
-_HOOK = "class Ref:\n def __post_init__(self):\n  require(self.value)\n"
+_HOOK = "class Ref:\n def __init_subclass__(self):\n  require(self.value)\n"
 
 
 @pytest.mark.parametrize(
     "after",
     (
         _HOOK,
-        "class Ref:\n def __post_init__(self):\n  if self.value < 0:\n"
+        "class Ref:\n def __init_subclass__(self):\n  if self.value < 0:\n"
         "   raise ValueError\n",
         "class Ref:\n def __init_subclass__(cls):\n  raise TypeError\n",
         "if condition:\n" + "".join(" " + line + "\n" for line in _HOOK.splitlines()),
@@ -73,10 +73,10 @@ def test_internal_defense_growth_is_rejected(tmp_path: Path, after: str) -> None
         (_HOOK + "  require(self.other)\n", _HOOK),
         (
             _HOOK,
-            'class Ref:\n """Updated explanation."""\n def __post_init__(self):\n'
+            'class Ref:\n """Updated explanation."""\n def __init_subclass__(self):\n'
             '  """Updated explanation."""\n  require(self.value)\n',
         ),
-        (_HOOK, "class Ref:\n def __post_init__(self):\n  require(self.renamed)\n"),
+        (_HOOK, "class Ref:\n def __init_subclass__(self):\n  require(self.renamed)\n"),
     ),
 )
 def test_internal_defense_gate_preserves_existing_boundaries_and_cleanup(
@@ -169,7 +169,7 @@ def test_internal_defense_gate_allows_ordinary_functions(
 def test_internal_defense_gate_compares_duplicate_scopes_by_occurrence(
     tmp_path: Path,
 ) -> None:
-    empty = "class Ref:\n def __post_init__(self):\n  pass\n"
+    empty = "class Ref:\n def __init_subclass__(self):\n  pass\n"
     nested = "if condition:\n" + "".join(
         " " + line + "\n" for line in empty.splitlines()
     )
@@ -246,6 +246,48 @@ def test_internal_defense_cli_blocks_growth_and_missing_base(
     assert "construction-hook" in capsys.readouterr().err
     assert census.main(["--internal-defense-base", "missing-ref"]) == 1
     assert "baseline" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("source", "diagnostic"),
+    (
+        (
+            "class Ref:\n def __post_init__(self):\n  raise ValueError\n",
+            "3: __post_init__ must not raise",
+        ),
+        (
+            "def reject(x):\n if x < 0:\n  raise ValueError\n"
+            "class Ref:\n def __post_init__(self):\n  reject(self.x)\n",
+            "6: __post_init__ calls raising helper reject",
+        ),
+        (
+            "class Ref:\n def reject(self):\n  raise ValueError\n"
+            " def __post_init__(self):\n  self.reject()\n",
+            "5: __post_init__ calls raising helper self.reject",
+        ),
+    ),
+)
+def test_census_rejects_raises_in_post_init_even_if_already_in_head(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    source: str,
+    diagnostic: str,
+) -> None:
+    _defense_gate_repo(tmp_path, source)
+    monkeypatch.setattr(census, "ROOT", tmp_path)
+    assert census.main(["--internal-defense-base", "HEAD"]) == 1
+    assert f"xic_extractor/example.py:{diagnostic}" in capsys.readouterr().err
+
+
+def test_post_init_allows_normalization_and_independent_parser(tmp_path: Path) -> None:
+    _defense_gate_repo(
+        tmp_path,
+        "def parse(text):\n if not text:\n  raise ValueError\n"
+        " return Ref(float(text))\nclass Ref:\n"
+        " def __post_init__(self):\n  self.x = float(self.x)\n",
+    )
+    assert census.validate_post_init_raises(tmp_path) == []
 
 
 def test_internal_defense_cli_also_blocks_handwritten_ppm_arithmetic(

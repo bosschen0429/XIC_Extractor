@@ -25,6 +25,7 @@ from xic_extractor.processing_identity import (
     AcquisitionSourceIdentity,
     IdentityContractError,
     fingerprint_file_content,
+    validate_acquisition_names,
 )
 from xic_extractor.validation_primitives import (
     require_integer,
@@ -171,15 +172,26 @@ def discovery_receipt_from_index_fields(
             raise IdentityContractError(
                 "acquisition_local_file_revision must be an array"
             )
+        byte_size = _nonnegative_int(
+            row["acquisition_byte_size"], field="acquisition_byte_size"
+        )
+        acquisition_format, observation_namespace = (
+            row["acquisition_format"],
+            row["observation_namespace"],
+        )
+        validate_acquisition_names(acquisition_format, observation_namespace)
+        if (
+            len(revision) != 5
+            or any(type(field) is not int for field in revision)
+            or revision[2] != byte_size
+        ):
+            raise IdentityContractError("invalid local acquisition file revision")
         source = AcquisitionSourceIdentity(
             content_sha256=None,
             local_file_revision=tuple(revision),
-            byte_size=_nonnegative_int(
-                row["acquisition_byte_size"],
-                field="acquisition_byte_size",
-            ),
-            acquisition_format=row["acquisition_format"],
-            observation_namespace=row["observation_namespace"],
+            byte_size=byte_size,
+            acquisition_format=acquisition_format,
+            observation_namespace=observation_namespace,
         )
         return DiscoveryPeakUniverseReceipt(
             sample_stem=require_owner_normalized_text(

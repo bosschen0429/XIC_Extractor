@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import os
-import re
 import stat
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -20,19 +19,17 @@ class FingerprintCancelledError(IdentityContractError):
     """Raised when a caller cancels an in-progress content fingerprint."""
 
 
-_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
-
-
-def _validate_digest(value: object, *, field: str) -> str:
-    if not isinstance(value, str) or _SHA256_RE.fullmatch(value) is None:
-        raise IdentityContractError(f"{field} must be a lower-case SHA-256 hex digest")
-    return value
-
-
 def _require_nonempty_text(value: object, *, field: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise IdentityContractError(f"{field} must be non-empty text")
     return value
+
+
+def validate_acquisition_names(
+    acquisition_format: str, observation_namespace: str
+) -> None:
+    _require_nonempty_text(acquisition_format, field="acquisition_format")
+    _require_nonempty_text(observation_namespace, field="observation_namespace")
 
 
 @dataclass(frozen=True, slots=True)
@@ -41,11 +38,6 @@ class FileContentFingerprint:
 
     content_sha256: str
     byte_size: int
-
-    def __post_init__(self) -> None:
-        _validate_digest(self.content_sha256, field="content_sha256")
-        if isinstance(self.byte_size, bool) or self.byte_size < 0:
-            raise IdentityContractError("byte_size must be a non-negative integer")
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,29 +49,6 @@ class AcquisitionSourceIdentity:
     acquisition_format: str
     observation_namespace: str
     local_file_revision: tuple[int, int, int, int, int] | None = None
-
-    def __post_init__(self) -> None:
-        if isinstance(self.byte_size, bool) or self.byte_size < 0:
-            raise IdentityContractError("byte_size must be a non-negative integer")
-        _require_nonempty_text(self.acquisition_format, field="acquisition_format")
-        _require_nonempty_text(
-            self.observation_namespace, field="observation_namespace"
-        )
-        if self.local_file_revision is None:
-            _validate_digest(self.content_sha256, field="content_sha256")
-        else:
-            revision = self.local_file_revision
-            if (
-                self.content_sha256 is not None
-                or not isinstance(revision, tuple)
-                or len(revision) != 5
-                or any(
-                    isinstance(value, bool) or not isinstance(value, int)
-                    for value in revision
-                )
-                or revision[2] != self.byte_size
-            ):
-                raise IdentityContractError("invalid local acquisition file revision")
 
     @property
     def acquisition_source_id(self) -> str:
@@ -96,19 +65,6 @@ class AcquisitionSourceExpectation:
 
     source: AcquisitionSourceIdentity
     path_identity: tuple[int, int, int, int, int]
-
-    def __post_init__(self) -> None:
-        if len(self.path_identity) != 5 or any(
-            isinstance(value, bool) or not isinstance(value, int)
-            for value in self.path_identity
-        ):
-            raise IdentityContractError(
-                "path_identity must be a five-integer stat identity"
-            )
-        if self.path_identity[2] != self.source.byte_size:
-            raise IdentityContractError(
-                "path_identity size mismatches acquisition source content"
-            )
 
 
 def build_local_acquisition_source_identity(
@@ -131,6 +87,7 @@ def build_local_acquisition_source_identity(
         state.st_mtime_ns,
         state.st_ctime_ns,
     )
+    validate_acquisition_names(acquisition_format, observation_namespace)
     return AcquisitionSourceIdentity(
         content_sha256=None,
         byte_size=state.st_size,
@@ -150,6 +107,7 @@ def build_acquisition_source_identity(
     """Hash one regular file and bind its acquisition observation namespace."""
 
     fingerprint = fingerprint_file_content(path, should_cancel=should_cancel)
+    validate_acquisition_names(acquisition_format, observation_namespace)
     return AcquisitionSourceIdentity(
         content_sha256=fingerprint.content_sha256,
         byte_size=fingerprint.byte_size,

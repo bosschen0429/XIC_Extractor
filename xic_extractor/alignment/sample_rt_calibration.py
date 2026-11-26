@@ -37,17 +37,18 @@ class RtCalibrationPolicy:
     perturbation_mad_multiplier: float = 5.0
     perturbation_min_shift_min: float = 0.1
 
-    def __post_init__(self) -> None:
-        if not 0 < self.loess_fraction <= 1:
-            raise ValueError("loess_fraction must be in (0, 1]")
-        if self.front_knot_count < 1:
-            raise ValueError("front_knot_count must be at least 1")
-        values = (
-            self.perturbation_mad_multiplier,
-            self.perturbation_min_shift_min,
-        )
-        if not all(math.isfinite(v) and v >= 0 for v in values):
-            raise ValueError("calibration tolerances must be finite and nonnegative")
+
+def validate_rt_calibration_policy(model: RtCalibrationPolicy) -> None:
+    if not 0 < model.loess_fraction <= 1:
+        raise ValueError("loess_fraction must be in (0, 1]")
+    if model.front_knot_count < 1:
+        raise ValueError("front_knot_count must be at least 1")
+    values = (
+        model.perturbation_mad_multiplier,
+        model.perturbation_min_shift_min,
+    )
+    if not all(math.isfinite(v) and v >= 0 for v in values):
+        raise ValueError("calibration tolerances must be finite and nonnegative")
 
 
 @dataclass(frozen=True)

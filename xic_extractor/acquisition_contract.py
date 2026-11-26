@@ -9,10 +9,7 @@ from typing import Protocol
 import numpy as np
 
 from xic_extractor.processing_identity import AcquisitionSourceIdentity
-from xic_extractor.validation_primitives import (
-    require_integer,
-    require_owner_normalized_text,
-)
+from xic_extractor.validation_primitives import require_owner_normalized_text
 from xic_extractor.xic_models import XICRequest, XICTrace
 
 NATIVE_SCAN_COORDINATE_KIND = "native_scan"
@@ -39,13 +36,6 @@ class TraceAcquisitionCapability:
     acquisition_source: AcquisitionSourceIdentity
     adapter_namespace: str
 
-    def __post_init__(self) -> None:
-        require_owner_normalized_text(
-            self.adapter_namespace,
-            field="adapter_namespace",
-            error_factory=AcquisitionContractError,
-        )
-
 
 @dataclass(frozen=True, slots=True)
 class TraceCoordinate:
@@ -55,38 +45,11 @@ class TraceCoordinate:
     last_scan: int
     trace_point_count: int
 
-    def __post_init__(self) -> None:
-        if isinstance(self.trace_point_count, bool) or self.trace_point_count < 0:
-            raise AcquisitionContractError(
-                "trace_point_count must be a non-negative integer"
-            )
-        if (
-            isinstance(self.first_scan, bool)
-            or isinstance(self.last_scan, bool)
-            or self.first_scan < 0
-            or self.last_scan < self.first_scan
-        ):
-            raise AcquisitionContractError(
-                "scan coordinates require an ordered non-negative window"
-            )
-
 
 @dataclass(frozen=True, slots=True, eq=False)
 class AcquiredTrace:
     coordinate: TraceCoordinate
     trace: XICTrace
-
-    def __post_init__(self) -> None:
-        rt = np.asarray(self.trace.rt)
-        intensity = np.asarray(self.trace.intensity)
-        if rt.ndim != 1 or intensity.ndim != 1 or rt.shape != intensity.shape:
-            raise AcquisitionContractError(
-                "trace arrays must be matching one-dimensional arrays"
-            )
-        if len(rt) != self.coordinate.trace_point_count:
-            raise AcquisitionContractError("trace length mismatches trace coordinates")
-        if not np.all(np.isfinite(rt)) or not np.all(np.isfinite(intensity)):
-            raise AcquisitionContractError("trace values must be finite")
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, AcquiredTrace):
@@ -104,16 +67,6 @@ class TraceAcquisitionBatch:
     traces: tuple[AcquiredTrace, ...]
     adapter_chromatogram_call_count: int
 
-    def __post_init__(self) -> None:
-        _nonnegative_integer(
-            self.adapter_chromatogram_call_count,
-            "adapter_chromatogram_call_count",
-        )
-        if any(trace.coordinate.capability != self.capability for trace in self.traces):
-            raise AcquisitionContractError(
-                "all trace coordinates must bind the batch capability"
-            )
-
     @property
     def logical_xic_request_count(self) -> int:
         return len(self.traces)
@@ -128,6 +81,11 @@ def mint_trace_acquisition_capability(
     *,
     adapter_namespace: str,
 ) -> TraceAcquisitionCapability:
+    require_owner_normalized_text(
+        adapter_namespace,
+        field="adapter_namespace",
+        error_factory=AcquisitionContractError,
+    )
     return TraceAcquisitionCapability(
         acquisition_source=acquisition_source,
         adapter_namespace=adapter_namespace,
@@ -157,12 +115,29 @@ def acquire_trace_batch(
         if not isinstance(trace, XICTrace):
             raise AcquisitionContractError("batch adapter returned an invalid trace")
         first_scan, last_scan = adapter.scan_window_for_request(request)
+        if (
+            isinstance(first_scan, bool)
+            or isinstance(last_scan, bool)
+            or first_scan < 0
+            or last_scan < first_scan
+        ):
+            raise AcquisitionContractError(
+                "scan coordinates require an ordered non-negative window"
+            )
+        rt = np.asarray(trace.rt)
+        intensity = np.asarray(trace.intensity)
+        if rt.ndim != 1 or intensity.ndim != 1 or rt.shape != intensity.shape:
+            raise AcquisitionContractError(
+                "trace arrays must be matching one-dimensional arrays"
+            )
+        if not np.all(np.isfinite(rt)) or not np.all(np.isfinite(intensity)):
+            raise AcquisitionContractError("trace values must be finite")
         coordinate = TraceCoordinate(
             capability=capability,
             request=request,
             first_scan=first_scan,
             last_scan=last_scan,
-            trace_point_count=len(trace.rt),
+            trace_point_count=len(rt),
         )
         acquired.append(AcquiredTrace(coordinate=coordinate, trace=trace))
     return TraceAcquisitionBatch(
@@ -179,16 +154,6 @@ def _adapter_chromatogram_call_count(adapter: BatchXICAdapter) -> int:
             "adapter must expose a non-negative raw chromatogram call counter"
         )
     return value
-
-
-def _nonnegative_integer(value: object, field: str) -> int:
-    return require_integer(
-        value,
-        field=field,
-        non_negative=True,
-        error_factory=AcquisitionContractError,
-        type_error_factory=AcquisitionContractError,
-    )
 
 
 __all__ = [

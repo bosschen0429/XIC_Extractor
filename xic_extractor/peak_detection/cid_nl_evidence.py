@@ -82,84 +82,6 @@ class CidNlEvidenceObservation:
             self.precursor_metadata,
         )
 
-    def __post_init__(self) -> None:
-        if isinstance(self.scan_number, bool) or self.scan_number <= 0:
-            raise CidNlEvidenceContractError("scan_number must be a positive integer")
-        for field in (
-            "precursor_mz",
-            "product_mz",
-            "configured_neutral_loss_da",
-            "observed_neutral_loss_da",
-            "scan_rt_min",
-            "product_intensity",
-            "scan_precursor_mz",
-        ):
-            object.__setattr__(
-                self,
-                field,
-                _finite_float(getattr(self, field), field=field),
-            )
-        if self.precursor_mz <= 0.0 or self.product_mz <= 0.0:
-            raise CidNlEvidenceContractError(
-                "precursor_mz and product_mz must be positive"
-            )
-        if self.scan_precursor_mz <= 0.0:
-            raise CidNlEvidenceContractError("scan_precursor_mz must be positive")
-        if (
-            self.precursor_metadata is not None
-            and self.precursor_metadata.charge not in (None, 1)
-        ):
-            raise CidNlEvidenceContractError(
-                "CID-NL evidence requires singly charged or unknown charge"
-            )
-        if self.precursor_mz_basis == "product_plus_neutral_loss":
-            tolerance = self.precursor_inference_tolerance_da
-            if tolerance is None:
-                raise CidNlEvidenceContractError(
-                    "inferred evidence requires precursor_inference_tolerance_da"
-                )
-            tolerance = _finite_float(
-                tolerance, field="precursor_inference_tolerance_da"
-            )
-            if tolerance <= 0.0:
-                raise CidNlEvidenceContractError(
-                    "precursor_inference_tolerance_da must be positive"
-                )
-            object.__setattr__(self, "precursor_inference_tolerance_da", tolerance)
-            if self.observed_loss_error_ppm is not None:
-                raise CidNlEvidenceContractError(
-                    "inferred precursor has no independent observed_loss_error_ppm"
-                )
-        else:
-            if self.precursor_inference_tolerance_da is not None:
-                raise CidNlEvidenceContractError(
-                    "direct evidence cannot declare precursor inference tolerance"
-                )
-            if self.observed_loss_error_ppm is None:
-                raise CidNlEvidenceContractError(
-                    "recorded precursor requires observed_loss_error_ppm"
-                )
-            error_ppm = _finite_float(
-                self.observed_loss_error_ppm, field="observed_loss_error_ppm"
-            )
-            if error_ppm < 0.0:
-                raise CidNlEvidenceContractError(
-                    "observed_loss_error_ppm must be non-negative"
-                )
-            object.__setattr__(self, "observed_loss_error_ppm", error_ppm)
-        if self.configured_neutral_loss_da <= 0.0:
-            raise CidNlEvidenceContractError(
-                "configured_neutral_loss_da must be positive"
-            )
-        if self.observed_neutral_loss_da <= 0.0:
-            raise CidNlEvidenceContractError(
-                "observed_neutral_loss_da must be positive"
-            )
-        if self.scan_rt_min < 0.0:
-            raise CidNlEvidenceContractError("scan_rt_min must be non-negative")
-        if self.product_intensity <= 0.0:
-            raise CidNlEvidenceContractError("product_intensity must be positive")
-
 
 def cid_nl_evidence_observation(
     *,
@@ -191,6 +113,68 @@ def cid_nl_evidence_observation(
                 "inferred evidence requires explicit scan_precursor_mz"
             )
         scan_precursor_mz = precursor_mz
+    if isinstance(scan_number, bool) or scan_number <= 0:
+        raise CidNlEvidenceContractError("scan_number must be a positive integer")
+    precursor_mz = _finite_float(precursor_mz, field="precursor_mz")
+    product_mz = _finite_float(product_mz, field="product_mz")
+    configured_neutral_loss_da = _finite_float(
+        configured_neutral_loss_da, field="configured_neutral_loss_da"
+    )
+    observed_neutral_loss_da = _finite_float(
+        observed_neutral_loss_da, field="observed_neutral_loss_da"
+    )
+    scan_rt_min = _finite_float(scan_rt_min, field="scan_rt_min")
+    product_intensity = _finite_float(product_intensity, field="product_intensity")
+    scan_precursor_mz = _finite_float(scan_precursor_mz, field="scan_precursor_mz")
+    if precursor_mz <= 0.0 or product_mz <= 0.0:
+        raise CidNlEvidenceContractError("precursor_mz and product_mz must be positive")
+    if scan_precursor_mz <= 0.0:
+        raise CidNlEvidenceContractError("scan_precursor_mz must be positive")
+    if precursor_metadata is not None and precursor_metadata.charge not in (None, 1):
+        raise CidNlEvidenceContractError(
+            "CID-NL evidence requires singly charged or unknown charge"
+        )
+    if precursor_mz_basis == "product_plus_neutral_loss":
+        tolerance = precursor_inference_tolerance_da
+        if tolerance is None:
+            raise CidNlEvidenceContractError(
+                "inferred evidence requires precursor_inference_tolerance_da"
+            )
+        tolerance = _finite_float(tolerance, field="precursor_inference_tolerance_da")
+        if tolerance <= 0.0:
+            raise CidNlEvidenceContractError(
+                "precursor_inference_tolerance_da must be positive"
+            )
+        precursor_inference_tolerance_da = tolerance
+        if observed_loss_error_ppm is not None:
+            raise CidNlEvidenceContractError(
+                "inferred precursor has no independent observed_loss_error_ppm"
+            )
+    else:
+        if precursor_inference_tolerance_da is not None:
+            raise CidNlEvidenceContractError(
+                "direct evidence cannot declare precursor inference tolerance"
+            )
+        if observed_loss_error_ppm is None:
+            raise CidNlEvidenceContractError(
+                "recorded precursor requires observed_loss_error_ppm"
+            )
+        error_ppm = _finite_float(
+            observed_loss_error_ppm, field="observed_loss_error_ppm"
+        )
+        if error_ppm < 0.0:
+            raise CidNlEvidenceContractError(
+                "observed_loss_error_ppm must be non-negative"
+            )
+        observed_loss_error_ppm = error_ppm
+    if configured_neutral_loss_da <= 0.0:
+        raise CidNlEvidenceContractError("configured_neutral_loss_da must be positive")
+    if observed_neutral_loss_da <= 0.0:
+        raise CidNlEvidenceContractError("observed_neutral_loss_da must be positive")
+    if scan_rt_min < 0.0:
+        raise CidNlEvidenceContractError("scan_rt_min must be non-negative")
+    if product_intensity <= 0.0:
+        raise CidNlEvidenceContractError("product_intensity must be positive")
     return CidNlEvidenceObservation(
         sample_key=sample.sample_name,
         acquisition_source_id=acquisition_source.acquisition_source_id,

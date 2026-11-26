@@ -303,6 +303,8 @@ class StreamedResultStore:
             )
         size_bytes = reservation.path.stat().st_size
         validated_lengths = {str(name): int(value) for name, value in lengths.items()}
+        if any(length < 0 for length in validated_lengths.values()):
+            raise ValueError("chunk lengths must be non-negative integers")
         validated_records = {
             str(name): tuple((int(offset), int(length)) for offset, length in entries)
             for name, entries in records.items()
@@ -513,6 +515,12 @@ def open_preserved_results(path: Path) -> StreamedResultStore:
         raise ValueError(
             "unsupported preserved partition structure; rerun the analysis"
         )
+    if any(
+        type(length) is not int or length < 0
+        for lengths in index["field_lengths"]
+        for length in lengths.values()
+    ):
+        raise ValueError("chunk lengths must be non-negative integers")
     store = object.__new__(StreamedResultStore)
     store._directory = resolved.parent
     store._shared_objects = index["shared_objects"]

@@ -25,8 +25,14 @@ from xic_extractor.discovery.models import (
     PeakStatus,
     located_event_order,
 )
-from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
-from xic_extractor.precursor_evidence import Ms1PrecursorObservation
+from xic_extractor.ms2_scan_models import (
+    Ms2PrecursorMetadata,
+    validate_precursor_metadata,
+)
+from xic_extractor.precursor_evidence import (
+    Ms1PrecursorObservation,
+    validate_ms1_precursor_observation,
+)
 from xic_extractor.processing_identity import IdentityContractError
 
 _BATCH_UNESCAPE_FIELDS = {"sample_stem", "raw_file", "peak_csv", "event_csv"}
@@ -269,6 +275,7 @@ def parse_discovery_event_row(
             isolation_offset_da=optional("isolation_offset_da"),
             master_scan_number=optional_int("master_scan_number"),
         )
+        validate_precursor_metadata(recorded)
         metadata = None if recorded == Ms2PrecursorMetadata() else recorded
         observation = (
             None
@@ -281,6 +288,8 @@ def parse_discovery_event_row(
                 ),
             )
         )
+        if observation is not None:
+            validate_ms1_precursor_observation(observation)
         event = DiscoveryEvent(
             raw_file=raw_file,
             sample_stem=sample_stem,
@@ -298,14 +307,14 @@ def parse_discovery_event_row(
             precursor_metadata=metadata,
             ms1_precursor_observation=observation,
         )
+        xic_mz = number("xic_mz")
+        precursor_verified = _parse_bool(path, row_number, values, "precursor_verified")
+        peak_id = _machine_field(values, "peak_id")
+        unattached_reason = values.get("unattached_reason", "")
+        if not peak_id and not unattached_reason:
+            raise ValueError("a Discovery event without a located peak needs a reason")
         return EventAttachment(
-            event=event,
-            xic_mz=number("xic_mz"),
-            precursor_verified=_parse_bool(
-                path, row_number, values, "precursor_verified"
-            ),
-            peak_id=_machine_field(values, "peak_id"),
-            unattached_reason=values.get("unattached_reason", ""),
+            event, xic_mz, precursor_verified, peak_id, unattached_reason
         )
     except (TypeError, ValueError) as exc:
         if str(exc).startswith(f"{path}:"):

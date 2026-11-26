@@ -29,6 +29,7 @@ from xic_extractor.alignment.cid_nl_evidence_spine import (
     build_cid_nl_reference_spine,
 )
 from xic_extractor.alignment.config import AlignmentConfig
+from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
 from xic_extractor.peak_detection import cid_nl_method_assessment as assessment_module
 from xic_extractor.peak_detection.cid_nl_evidence import (
     CidNlEvidenceContractError,
@@ -244,8 +245,6 @@ def test_inferred_evidence_persists_scan_provenance_and_exact_projection(
         candidate_peaks=(cid_nl_peak(fixture, "s1"),),
         policy=cid_nl_support_policy(),
     ) == ((), ())
-    with pytest.raises(CidNlEvidenceContractError, match="no independent"):
-        replace(inferred, observed_loss_error_ppm=0.0)
     assert inferred.scan_precursor_mz == observation.precursor_mz + 0.25
     assert inferred.precursor_inference_tolerance_da == 0.25
     assert direct.precursor_mz_basis == "scan_precursor"
@@ -261,6 +260,8 @@ def test_inferred_evidence_persists_scan_provenance_and_exact_projection(
         ({"precursor_inference_tolerance_da": 0.0}, "positive"),
         ({"precursor_inference_tolerance_da": float("nan")}, "finite"),
         ({"scan_precursor_mz": float("inf")}, "finite"),
+        ({"observed_loss_error_ppm": 0.0}, "no independent"),
+        ({"precursor_metadata": Ms2PrecursorMetadata(charge=2)}, "singly charged"),
         (
             {"precursor_mz_basis": "scan_precursor", "scan_precursor_mz": PRECURSOR_MZ},
             "cannot declare",
@@ -279,7 +280,7 @@ def test_inferred_evidence_rejects_unbound_or_crossed_precursor_provenance(
         "product_mz": PRECURSOR_MZ - NEUTRAL_LOSS_DA,
         "configured_neutral_loss_da": NEUTRAL_LOSS_DA,
         "observed_neutral_loss_da": NEUTRAL_LOSS_DA,
-        "observed_loss_error_ppm": 0.0,
+        "observed_loss_error_ppm": None,
         "scan_rt_min": 8.0,
         "product_intensity": 400.0,
         "precursor_mz_basis": "product_plus_neutral_loss",
@@ -1018,8 +1019,6 @@ def test_monoisotopic_canonical_evidence_binds_vendor_metadata(tmp_path):
     assert mono.precursor_metadata.master_scan_number == 40
     assert mono.precursor_mz_basis == "scan_monoisotopic"
     assert mono.scan_precursor_mz != mono.precursor_mz
-    with pytest.raises(CidNlEvidenceContractError, match="singly charged"):
-        replace(mono, precursor_metadata=replace(metadata, charge=2))
 
 
 def test_cell_rejects_hypothesis_from_a_different_assessment_relation_set(

@@ -60,6 +60,12 @@ def _support_from_scans(
             key=_member_sort_key,
         )
     )
+    if any(member.configured_neutral_loss_da is None for member in members) and any(
+        member.configured_neutral_loss_da is not None for member in members
+    ):
+        raise CidNlChromatographicSupportContractError(
+            "composite scan support loss dimensions must be complete"
+        )
     return CidNlChromatographicSupport(
         sample_key=sample.sample_name,
         peak_observation=first.peak_observation,
