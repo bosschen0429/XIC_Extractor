@@ -8,7 +8,7 @@ follows from those facts:
 - a peak binds the candidate whose terminal peak it is, and the candidates of a
   Backfill SUPPORT assessment that lists the peak (Backfill has no terminal).
   A Backfill assessment is the one whose stored ``detector_invocation_id`` is
-  ``GROUP_BACKFILL_DETECTOR``;
+  ``GROUP_BACKFILL_DETECTOR``.
 - an initial group keeps only candidates of the method subjects its
   hypothesis members belong to;
 - a curve relates only its own candidate. A Backfill observation has none: it
@@ -23,14 +23,18 @@ from __future__ import annotations
 
 import sqlite3
 
-_PEAK_CANDIDATES = """
-    SELECT terminal_peak AS peak, id AS candidate FROM {candidates}
+from xic_extractor.peak_detection.cid_nl_method_assessment import (
+    GROUP_BACKFILL_DETECTOR,
+)
+
+_PEAK_CANDIDATES = f"""
+    SELECT terminal_peak AS peak, id AS candidate FROM {{candidates}}
     WHERE terminal_peak IS NOT NULL
     UNION
     SELECT j.value, c.id FROM main.method_assessments a, json_each(a.peaks) j
-    JOIN {candidates} c
+    JOIN {{candidates}} c
       ON c.method_subject = a.method_subject AND c.sample = a.sample
-    WHERE a.detector_invocation_id = 'untargeted-cid-nl-backfill'
+    WHERE a.detector_invocation_id = '{GROUP_BACKFILL_DETECTOR}'
       AND a.method_result = 'SUPPORT'"""
 
 _MEMBER_CANDIDATES = """

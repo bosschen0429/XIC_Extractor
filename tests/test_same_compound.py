@@ -54,8 +54,9 @@ def row(
     for index, sample in enumerate(samples):
         factor = ratios[index] if ratios is not None else scale
         shift = shifts[index] if shifts is not None else shift_sec
+        detected = direct[index] if isinstance(direct, tuple) else direct
         cells[sample] = CellEvidence(
-            direct=direct[index] if isinstance(direct, tuple) else direct,
+            origin="detected" if detected else "backfilled",
             value=1e6 * SAMPLE_SCALE[index] * factor,
             apex_rt_min=base_rt + index * 0.5 + shift / 60.0,
         )
@@ -438,7 +439,7 @@ def test_backfill_can_collapse_a_metal_isotope_but_not_support_a_family(carrier,
         (
             feature,
             {
-                sample: replace(cell, direct=direct)
+                sample: replace(cell, origin="detected" if direct else "backfilled")
                 for (sample, cell), direct in zip(
                     cells.items(), TWO_DIRECT, strict=True
                 )

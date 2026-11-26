@@ -150,7 +150,7 @@ def load_cell_evidence(
         if row is None or cell.value is None:
             continue
         row[cell.sample] = CellEvidence(
-            direct=cell.origin == "detected",
+            origin=cell.origin,
             value=cell.value,
             apex_rt_min=cell.apex_rt_min,
         )
