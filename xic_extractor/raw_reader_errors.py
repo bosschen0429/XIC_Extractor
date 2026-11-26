@@ -10,6 +10,4 @@ class RawReaderOpenError(RawReaderError):
 
     def __init__(self, message: str, *, cleanup_failed: bool) -> None:
         super().__init__(message)
-        if not isinstance(cleanup_failed, bool):
-            raise TypeError("cleanup_failed must be a bool")
         self.cleanup_failed = cleanup_failed

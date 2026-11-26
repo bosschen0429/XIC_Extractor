@@ -35,17 +35,11 @@ class Ms1PrecursorObservation:
     centroid_mzs: tuple[float, ...]
 
     def __post_init__(self) -> None:
-        if (
-            isinstance(self.scan_number, bool)
-            or not isinstance(self.scan_number, int)
-            or self.scan_number <= 0
-        ):
+        if isinstance(self.scan_number, bool) or self.scan_number <= 0:
             raise ValueError("parent MS1 scan_number must be a positive integer")
         if not math.isfinite(self.rt_min) or self.rt_min < 0:
             raise ValueError("parent MS1 RT must be finite and non-negative")
-        if not isinstance(self.centroid_mzs, tuple) or any(
-            not math.isfinite(mz) or mz <= 0 for mz in self.centroid_mzs
-        ):
+        if any(not math.isfinite(mz) or mz <= 0 for mz in self.centroid_mzs):
             raise ValueError("parent MS1 centroids must be positive finite masses")
 
 

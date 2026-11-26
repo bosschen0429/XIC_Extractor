@@ -142,8 +142,11 @@ own exception.
 - `scripts/check_architecture_census.py` owns what import contracts cannot
   express: versioned identifiers, documented names that no source defines, ppm
   arithmetic outside its owner, tests that patch or read production source,
-  frozen entry points calling `freeze_support` first, and internal-defense
-  growth.
+  frozen entry points calling `freeze_support` first, internal-defense growth,
+  and redundant type guards. In `xic_extractor`, a raising branch must not
+  reject an annotated parameter or dataclass field with `not isinstance` or
+  `type(...) is not ...` when the guard already covers the declared types.
+  Unparsed input is typed as `object` or `Any`, or admitted at its parser.
 - A dependency ignore is temporary migration debt: it needs a named owner and
   rationale, and unmatched-ignore alerting must remove it when the edge closes.
 

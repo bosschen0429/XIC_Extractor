@@ -214,7 +214,7 @@ def test_evidence_thresholds_reject_unordered_or_out_of_bounds_population(
         DiscoveryEvidenceThresholds(**values)
 
 
-@pytest.mark.parametrize("invalid", [True, 1.0, 0, -1])
+@pytest.mark.parametrize("invalid", [True, 0, -1])
 def test_evidence_thresholds_reject_invalid_scan_support_target(
     invalid: object,
 ) -> None:

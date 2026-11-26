@@ -58,7 +58,10 @@ from xic_extractor.diagnostics.grouping_experiment_io import (
     write_rt_calibration,
     write_table,
 )
-from xic_extractor.diagnostics.stage_snapshot import read_grouping_inputs
+from xic_extractor.diagnostics.stage_snapshot import (
+    parse_grouping_alignment_config,
+    read_grouping_inputs,
+)
 from xic_extractor.execution.workers import WorkerAdmissionPool
 
 
@@ -211,11 +214,12 @@ def _execute(parser: argparse.ArgumentParser, argv: Sequence[str] | None) -> int
                 key, value = setting.split("=", 1)
                 if key not in config_values:
                     raise ValueError(f"Unknown AlignmentConfig field: {key}")
-                decoded = json.loads(value)
-                overrides[key] = (
-                    tuple(decoded) if isinstance(config_values[key], tuple) else decoded
-                )
-            config = replace(inputs.alignment_config, **overrides)
+                overrides[key] = json.loads(value)
+            config = (
+                parse_grouping_alignment_config(config_values | overrides)
+                if overrides
+                else inputs.alignment_config
+            )
             rt_frame = None
             if args.rt_calibration:
                 calibration = read_rt_calibration(args.rt_calibration)

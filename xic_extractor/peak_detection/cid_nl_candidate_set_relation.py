@@ -42,17 +42,11 @@ class DdaCidNlCandidateSetRelation:
     relationship: str = RELATIONSHIP
 
     def __post_init__(self) -> None:
-        if (
-            isinstance(self.dda_scan_number, bool)
-            or not isinstance(self.dda_scan_number, int)
-            or self.dda_scan_number <= 0
-        ):
+        if isinstance(self.dda_scan_number, bool) or self.dda_scan_number <= 0:
             raise DdaCidNlCandidateSetRelationContractError(
                 "dda_scan_number must be a positive integer"
             )
-        if isinstance(self.scan_rt_min, bool) or not isinstance(
-            self.scan_rt_min, (int, float)
-        ):
+        if isinstance(self.scan_rt_min, bool):
             raise DdaCidNlCandidateSetRelationContractError(
                 "scan_rt_min must be finite and non-negative"
             )

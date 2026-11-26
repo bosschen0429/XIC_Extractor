@@ -237,10 +237,7 @@ class StreamedResultStore:
     def _require_writable_key(self, partition_key: str) -> None:
         if self._sealed:
             raise ValueError("partition store is sealed")
-        if (
-            not isinstance(partition_key, str)
-            or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", partition_key) is None
-        ):
+        if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", partition_key) is None:
             raise ValueError("invalid partition key")
         if partition_key in self._keys or partition_key in self._reserved_keys:
             raise ValueError("duplicate partition key")
@@ -323,7 +320,7 @@ class StreamedResultStore:
         return entry
 
     def read(self, index: int) -> object:
-        if type(index) is not int or not 0 <= index < len(self._partitions):
+        if isinstance(index, bool) or not 0 <= index < len(self._partitions):
             raise IndexError("partition index out of range")
         with self._path(self._partitions[index].index).open("rb") as stream:
             payload_type, values = _OwnerUnpickler(stream, self._shared_objects).load()
@@ -340,7 +337,7 @@ class StreamedResultStore:
         Stage inputs and acquired records can share one atomic spool write
         without forcing their consumers to rehydrate both graphs.
         """
-        if type(index) is not int or not 0 <= index < len(self._partitions):
+        if isinstance(index, bool) or not 0 <= index < len(self._partitions):
             raise IndexError("partition index out of range")
         with self._path(index).open("rb") as stream:
             _, values = _OwnerUnpickler(stream, self._shared_objects).load()
@@ -355,7 +352,7 @@ class StreamedResultStore:
         instead of copying them into each derived payload. Both bulk and
         individually addressable tuple fields use their sealed record offsets.
         """
-        if type(index) is not int or not 0 <= index < len(self._partitions):
+        if isinstance(index, bool) or not 0 <= index < len(self._partitions):
             raise IndexError("partition index out of range")
         if field_name not in self._field_records[index]:
             raise ValueError("read_tuple requires a stored tuple field")
@@ -384,7 +381,7 @@ class StreamedResultStore:
         self, index: int, field_name: str, positions: tuple[int, ...]
     ) -> tuple[Any, ...]:
         """Read selected elements of an independently addressable owner field."""
-        if type(index) is not int or not 0 <= index < len(self._partitions):
+        if isinstance(index, bool) or not 0 <= index < len(self._partitions):
             raise IndexError("partition index out of range")
         if field_name not in self._individually_addressable_fields:
             raise ValueError("field does not have individually addressable results")
@@ -410,8 +407,7 @@ class StreamedResultStore:
         if not self._sealed:
             raise ValueError("seal partition store before creating a sequence")
         if (
-            not isinstance(field_name, str)
-            or field_name.startswith("_")
+            field_name.startswith("_")
             or not field_name.isidentifier()
             or any(field_name not in lengths for lengths in self._field_lengths)
         ):

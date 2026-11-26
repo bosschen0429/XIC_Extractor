@@ -57,6 +57,7 @@ def validate_repository(repo_root: Path) -> list[str]:
     problems.extend(validate_semantic_identifiers(repo_root))
     problems.extend(validate_documented_code_names(repo_root))
     problems.extend(validate_ppm_arithmetic(repo_root))
+    problems.extend(validate_typed_input_guards(repo_root))
     problems.extend(validate_test_source_boundaries(repo_root))
     problems.extend(validate_frozen_entrypoints(repo_root))
     return problems
@@ -387,6 +388,140 @@ def _is_ppm_scale(node: ast.expr) -> bool:
         and not isinstance(node.value, bool)
         and abs(node.value) in _PPM_SCALES
     )
+
+
+def validate_typed_input_guards(
+    repo_root: Path,
+    paths: Sequence[Path] | None = None,
+) -> list[str]:
+    """Reject directly raising negative type guards covered by input annotations."""
+    if paths is None:
+        paths = repository_python_paths(repo_root)
+    problems = []
+    for path in paths:
+        if path.parts[0] != "xic_extractor":
+            continue
+        tree = ast.parse((repo_root / path).read_text(encoding="utf-8-sig"))
+        for line, value in sorted(_typed_input_guards(tree)):
+            problems.append(
+                f"{path.as_posix()}:{line}: redundant type guard for {value}; "
+                "the input annotation is already covered by the runtime types"
+            )
+    return problems
+
+
+def _typed_input_guards(tree: ast.Module) -> Iterator[tuple[int, str]]:
+    parents = {
+        child: node for node in ast.walk(tree) for child in ast.iter_child_nodes(node)
+    }
+    scopes = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.If) or not any(
+            isinstance(statement, ast.Raise) for statement in node.body
+        ):
+            continue
+        owner = parents[node]
+        while owner is not tree and not isinstance(owner, scopes):
+            owner = parents[owner]
+        if not isinstance(owner, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        positional = owner.args.posonlyargs + owner.args.args
+        annotations = {
+            arg.arg: arg.annotation for arg in positional + owner.args.kwonlyargs
+        }
+        cls = parents[owner]
+        if (
+            isinstance(cls, ast.ClassDef)
+            and positional
+            and not any(
+                ast.unparse(decorator) in {"classmethod", "staticmethod"}
+                for decorator in owner.decorator_list
+            )
+            and any(
+                ast.unparse(
+                    decorator.func if isinstance(decorator, ast.Call) else decorator
+                )
+                in {"dataclass", "dataclasses.dataclass"}
+                for decorator in cls.decorator_list
+            )
+        ):
+            receiver = positional[0].arg
+            annotations.update(
+                {
+                    f"{receiver}.{field.target.id}": field.annotation
+                    for field in cls.body
+                    if isinstance(field, ast.AnnAssign)
+                    and isinstance(field.target, ast.Name)
+                }
+            )
+        for test in _guard_terms(node.test):
+            guard = _negative_type_guard(test)
+            if guard is None:
+                continue
+            target, runtime = guard
+            value = ast.unparse(target)
+            annotation = annotations.get(value)
+            if annotation is None:
+                continue
+            declared = _declared_guard_types(annotation)
+            if not declared & {"object", "Any", "typing.Any"} and declared <= runtime:
+                yield test.lineno, value
+
+
+def _guard_terms(test: ast.expr) -> Iterator[ast.expr]:
+    if isinstance(test, ast.BoolOp):
+        for term in test.values:
+            yield from _guard_terms(term)
+    else:
+        yield test
+
+
+def _negative_type_guard(test: ast.expr) -> tuple[ast.expr, set[str]] | None:
+    match test:
+        case ast.UnaryOp(
+            op=ast.Not(),
+            operand=ast.Call(func=ast.Name(id="isinstance"), args=[target, types]),
+        ):
+            return target, _runtime_guard_types(types)
+        case ast.Compare(
+            left=ast.Call(func=ast.Name(id="type"), args=[target]),
+            ops=[ast.IsNot()],
+            comparators=[kind],
+        ):
+            return target, {ast.unparse(kind)}
+        case _:
+            return None
+
+
+def _runtime_guard_types(types: ast.expr) -> set[str]:
+    if isinstance(types, ast.Tuple):
+        return set().union(*map(_runtime_guard_types, types.elts))
+    if isinstance(types, ast.BinOp) and isinstance(types.op, ast.BitOr):
+        return _runtime_guard_types(types.left) | _runtime_guard_types(types.right)
+    name = ast.unparse(types)
+    return {"None"} if name in {"type(None)", "NoneType", "types.NoneType"} else {name}
+
+
+def _declared_guard_types(annotation: ast.expr) -> set[str]:
+    if isinstance(annotation, ast.Constant) and isinstance(annotation.value, str):
+        try:
+            annotation = ast.parse(annotation.value, mode="eval").body
+        except SyntaxError:
+            return {ast.unparse(annotation)}
+    if isinstance(annotation, ast.BinOp) and isinstance(annotation.op, ast.BitOr):
+        return _declared_guard_types(annotation.left) | _declared_guard_types(
+            annotation.right
+        )
+    if isinstance(annotation, ast.Subscript):
+        kind = ast.unparse(annotation.value)
+        if kind in {"Optional", "typing.Optional"}:
+            return _declared_guard_types(annotation.slice) | {"None"}
+        if kind in {"Union", "typing.Union"} and isinstance(
+            annotation.slice, ast.Tuple
+        ):
+            return set().union(*map(_declared_guard_types, annotation.slice.elts))
+        return {kind}
+    return {ast.unparse(annotation)}
 
 
 DOCUMENTED_CODE_NAME = re.compile(r"`([a-z][a-z0-9]*(?:_[a-z0-9]+)+)`")
@@ -738,11 +873,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         except (OSError, subprocess.CalledProcessError, SyntaxError, ValueError) as exc:
             problems = [str(exc)]
         problems.extend(validate_ppm_arithmetic(ROOT))
+        problems.extend(validate_typed_input_guards(ROOT))
         problems.extend(validate_test_source_boundaries(ROOT))
         for problem in problems:
             print(problem, file=sys.stderr)
         if not problems:
-            print("Internal-defense, ppm and test-source gates passed.")
+            print("Internal-defense, typed-input, ppm and test-source gates passed.")
         return int(bool(problems))
     problems = validate_repository(ROOT)
     if problems:

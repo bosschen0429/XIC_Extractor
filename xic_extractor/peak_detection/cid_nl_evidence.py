@@ -83,11 +83,7 @@ class CidNlEvidenceObservation:
         )
 
     def __post_init__(self) -> None:
-        if (
-            isinstance(self.scan_number, bool)
-            or not isinstance(self.scan_number, int)
-            or self.scan_number <= 0
-        ):
+        if isinstance(self.scan_number, bool) or self.scan_number <= 0:
             raise CidNlEvidenceContractError("scan_number must be a positive integer")
         for field in (
             "precursor_mz",

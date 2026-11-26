@@ -150,7 +150,7 @@ class PartitionPipelineScheduler:
         acquisition_cleanup: Callable[[], None] | None = None,
     ) -> TFinalResult:
         """Execute finite partitions; any failure or cancellation fails the batch."""
-        if type(acquisition_workers) is not int or acquisition_workers not in (1, 2):
+        if isinstance(acquisition_workers, bool) or acquisition_workers not in (1, 2):
             raise ValueError("acquisition_workers must be 1 or 2")
         pipeline_phases = (
             tuple(phases)

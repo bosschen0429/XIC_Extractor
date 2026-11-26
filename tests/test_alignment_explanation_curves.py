@@ -252,6 +252,7 @@ def test_shared_curve_is_reused_and_distinct_data_gets_its_own_row(tmp_path):
         "nonfinite",
         "provenance_type",
         "profile_field",
+        "envelope_type",
     ],
 )
 def test_selected_reader_rejects_corrupt_payload_binding_and_shape(
@@ -276,6 +277,8 @@ def test_selected_reader_rejects_corrupt_payload_binding_and_shape(
         payload["provenance"] = "malformed"
     elif corruption == "profile_field":
         payload["provenance"]["profile"] = {"invented_profile": True}
+    elif corruption == "envelope_type":
+        payload = []
     else:
         payload["curves"]["raw"][1] = float("nan")
     with sqlite3.connect(report) as connection:

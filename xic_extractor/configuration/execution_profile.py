@@ -70,7 +70,7 @@ def load_execution_profile(
 
 
 def _validate_workers(value: int, *, field: str) -> int:
-    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+    if isinstance(value, bool) or value < 1:
         raise ValueError(f"{field} must be an integer >= 1")
     return value
 

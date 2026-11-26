@@ -106,6 +106,37 @@ def test_snapshot_from_a_previous_format_asks_for_a_new_capture(
     assert list(output.iterdir()) == []
 
 
+@pytest.mark.parametrize(
+    "override",
+    ("backfill_enabled=1", "anchor_min_seed_events=2.5", 'preferred_rt_sec="60"'),
+)
+def test_regroup_rejects_wrong_setting_types_in_json_and_cli(tmp_path, override):
+    snapshot = _two_sample_snapshot(tmp_path / "grouping-inputs.json.gz")
+    output = tmp_path / "replay"
+    with pytest.raises(SystemExit) as error:
+        run_alignment(
+            [
+                "regroup",
+                "--inputs",
+                str(snapshot),
+                "--output-dir",
+                str(output),
+                "--set",
+                override,
+            ]
+        )
+    assert error.value.code == 2
+    assert list(output.iterdir()) == []
+
+    key, raw = override.split("=", 1)
+    _rewrite(
+        snapshot,
+        lambda payload: payload["alignment_config"].update({key: json.loads(raw)}),
+    )
+    with pytest.raises(ValueError, match="capture it again"):
+        read_grouping_inputs(snapshot)
+
+
 @pytest.mark.parametrize("repeat_equal_priority", (False, True))
 def test_compact_snapshot_keeps_curve_tie_priority_and_distinct_anchor_bindings(
     tmp_path,

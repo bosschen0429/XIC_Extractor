@@ -262,6 +262,77 @@ def test_internal_defense_cli_also_blocks_handwritten_ppm_arithmetic(
     assert census.main(["--internal-defense-base", "HEAD"]) == 0
 
 
+def test_census_cli_rejects_a_redundant_typed_input_guard(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = _defense_gate_repo(tmp_path, "")
+    monkeypatch.setattr(census, "ROOT", tmp_path)
+    path.write_text(
+        "def count(value: int) -> int:\n"
+        "    if not isinstance(value, int):\n"
+        "        raise TypeError('expected an int')\n"
+        "    return value\n",
+        encoding="utf-8",
+    )
+
+    assert census.main(["--internal-defense-base", "HEAD"]) == 1
+    assert capsys.readouterr().err.strip() == (
+        "xic_extractor/example.py:2: redundant type guard for value; "
+        "the input annotation is already covered by the runtime types"
+    )
+
+
+@pytest.mark.parametrize(
+    ("annotation", "condition", "rejects"),
+    [
+        ("int", "type(value) is not int or value < 1", True),
+        ("str | int", "not isinstance(value, (str, int))", True),
+        ("Optional[str]", "not isinstance(value, (str, type(None)))", True),
+        ("str | int", "not isinstance(value, str | int)", True),
+        ("tuple[int, ...]", "not isinstance(value, tuple)", True),
+        ("str | int", "not isinstance(value, str)", False),
+        ("Optional[str]", "not isinstance(value, str)", False),
+        ("object", "not isinstance(value, str)", False),
+        ("Any", "not isinstance(value, str)", False),
+        ("int", "isinstance(value, bool) or value < 1", False),
+        ("int", "not isinstance(parsed, int)", False),
+    ],
+)
+def test_typed_guard_gate_distinguishes_redundancy_from_narrowing(
+    tmp_path: Path, annotation: str, condition: str, rejects: bool
+) -> None:
+    relative = Path("xic_extractor/example.py")
+    path = tmp_path / relative
+    path.parent.mkdir()
+    path.write_text(
+        f"def count(*, value: {annotation}):\n"
+        "    parsed = json.loads(data)\n"
+        f"    if {condition}:\n"
+        "        raise ValueError('not usable')\n",
+        encoding="utf-8",
+    )
+    assert bool(census.validate_typed_input_guards(tmp_path, (relative,))) is rejects
+
+
+def test_typed_guard_gate_rejects_dataclass_field_guard(tmp_path: Path) -> None:
+    relative = Path("xic_extractor/example.py")
+    path = tmp_path / relative
+    path.parent.mkdir()
+    path.write_text(
+        "@dataclass(frozen=True)\n"
+        "class Model:\n"
+        "    value: int\n"
+        "    def __post_init__(self):\n"
+        "        if isinstance(self.value, bool) or not isinstance(self.value, int):\n"
+        "            raise ValueError('not usable')\n",
+        encoding="utf-8",
+    )
+    assert census.validate_typed_input_guards(tmp_path, (relative,)) == [
+        "xic_extractor/example.py:5: redundant type guard for self.value; "
+        "the input annotation is already covered by the runtime types"
+    ]
+
+
 @pytest.mark.parametrize(
     "line",
     (

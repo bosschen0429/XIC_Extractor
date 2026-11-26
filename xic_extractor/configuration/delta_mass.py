@@ -16,7 +16,7 @@ class DeltaMassPosition:
     ratio_max: float
 
     def __post_init__(self) -> None:
-        if not isinstance(self.label, str) or not self.label.strip():
+        if not self.label.strip():
             raise ValueError("position requires a non-empty text label")
         for name in ("delta_da", "ratio_min", "ratio_max"):
             require_finite_real(getattr(self, name), name=name)
@@ -49,7 +49,7 @@ class DeltaMassPatternSettings:
     ratio_reference_position: str = ""
 
     def __post_init__(self) -> None:
-        if not isinstance(self.method_label, str) or not self.method_label.strip():
+        if not self.method_label.strip():
             raise ValueError("method_label must be non-empty text")
         labels = [p.label for p in self.positions]
         if any(
@@ -75,9 +75,7 @@ class DeltaMassPatternSettings:
             raise ValueError(
                 "anchor and discriminating roles must name pattern positions"
             )
-        if not isinstance(self.lowest_position, str) or (
-            self.lowest_position and self.lowest_position not in labels
-        ):
+        if self.lowest_position and self.lowest_position not in labels:
             raise ValueError("lowest_position must name a pattern position or be empty")
         if len(set(self.base_support_positions)) != len(
             self.base_support_positions

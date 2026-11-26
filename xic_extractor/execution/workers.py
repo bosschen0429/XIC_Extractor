@@ -119,7 +119,7 @@ class WorkerAdmissionPool:
         mp_context: BaseContext | None = None,
         shared_objects: tuple[object, ...] = (),
     ) -> None:
-        if type(max_workers) is not int or max_workers < 1:
+        if isinstance(max_workers, bool) or max_workers < 1:
             raise ValueError("max_workers must be a positive integer")
         if backend not in {"thread", "process"}:
             raise ValueError("backend must be 'thread' or 'process'")

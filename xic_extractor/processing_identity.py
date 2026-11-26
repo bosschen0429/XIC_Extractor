@@ -44,11 +44,7 @@ class FileContentFingerprint:
 
     def __post_init__(self) -> None:
         _validate_digest(self.content_sha256, field="content_sha256")
-        if (
-            isinstance(self.byte_size, bool)
-            or not isinstance(self.byte_size, int)
-            or self.byte_size < 0
-        ):
+        if isinstance(self.byte_size, bool) or self.byte_size < 0:
             raise IdentityContractError("byte_size must be a non-negative integer")
 
 
@@ -63,11 +59,7 @@ class AcquisitionSourceIdentity:
     local_file_revision: tuple[int, int, int, int, int] | None = None
 
     def __post_init__(self) -> None:
-        if (
-            isinstance(self.byte_size, bool)
-            or not isinstance(self.byte_size, int)
-            or self.byte_size < 0
-        ):
+        if isinstance(self.byte_size, bool) or self.byte_size < 0:
             raise IdentityContractError("byte_size must be a non-negative integer")
         _require_nonempty_text(self.acquisition_format, field="acquisition_format")
         _require_nonempty_text(
@@ -106,15 +98,9 @@ class AcquisitionSourceExpectation:
     path_identity: tuple[int, int, int, int, int]
 
     def __post_init__(self) -> None:
-        if not isinstance(self.source, AcquisitionSourceIdentity):
-            raise IdentityContractError("source must be an AcquisitionSourceIdentity")
-        if (
-            not isinstance(self.path_identity, tuple)
-            or len(self.path_identity) != 5
-            or any(
-                isinstance(value, bool) or not isinstance(value, int)
-                for value in self.path_identity
-            )
+        if len(self.path_identity) != 5 or any(
+            isinstance(value, bool) or not isinstance(value, int)
+            for value in self.path_identity
         ):
             raise IdentityContractError(
                 "path_identity must be a five-integer stat identity"
@@ -293,7 +279,7 @@ def _build_acquisition_source_identity(
     observation_namespace: str,
 ) -> AcquisitionSourceIdentity:
     content_sha256 = _validate_digest(content_sha256, field="content_sha256")
-    if isinstance(byte_size, bool) or not isinstance(byte_size, int) or byte_size < 0:
+    if isinstance(byte_size, bool) or byte_size < 0:
         raise IdentityContractError("byte_size must be a non-negative integer")
     acquisition_format = _require_nonempty_text(
         acquisition_format, field="acquisition_format"

@@ -58,15 +58,13 @@ _PROVENANCE_KEYS = frozenset(
 def validate_curve_payload(
     payload: Mapping[str, Any],
     *,
-    sample_id: str,
+    sample_id: object,
     kind: str,
     record_id: str,
 ) -> None:
     """Validate the selected persisted envelope once at its storage boundary."""
     if kind not in VALID_CURVE_KINDS:
         raise ExplanationError(f"undeclared curve kind: {kind}; rerun Alignment")
-    if not isinstance(payload, Mapping):
-        raise ExplanationError("curve payload must be an object")
     extra = set(payload) - ALLOWED_CURVE_PAYLOAD_KEYS
     if extra:
         raise ExplanationError(
