@@ -1,0 +1,36 @@
+worksets with direct peaks: 1541; identical to current: 1030
+direct peaks: 24134; placed differently vs current: 2642 (10.9%); vs no band: 2430 (10.1%)
+prototype grouping time, all worksets, one process: 0.5 s
+windows 52, direct 4032; ridge tracing 3.0 s
+  ridges vs per-band   : identical windows 12/52, direct placed differently 1298 (32.2%)
+  ridges vs cost search: identical windows 13/52, direct placed differently 1469 (36.4%)
+  ridges vs calibrated : identical windows 12/52, direct placed differently 1376 (34.1%)
+  (per-band vs cost search on the same windows: 728 (18.1%))
+  direct peaks outside every ridge envelope: 749
+  in row ridges: cells holding 2+ picked peaks 212, cells with signal >= 0.25 and no picked peak 1593
+
+targets (rows: direct peaks, injections, calibrated RT):
+  348.21: vs per-band 17, vs cost search 19
+     ridges   [65 d, inj 1-85, RT 9.4-15.7], [9 d, inj 2-85, RT 12.4-16.7], [7 d, inj 4-84, RT 11.4-13.6]
+     per-band [74 d, inj 1-85, RT 9.4-15.3], [5 d, inj 2-85, RT 14.5-15.3], [4 d, inj 45-83, RT 13.4-14.2]
+  302.18: vs per-band 41, vs cost search 44
+     ridges   [59 d, inj 2-85, RT 23.2-23.9], [39 d, inj 2-83, RT 8.9-11.4], [17 d, inj 1-85, RT 10.0-11.8], [6 d, inj 39-82, RT 13.3-13.7], [6 d, inj 12-81, RT 8.8-9.3]
+     per-band [78 d, inj 1-85, RT 8.8-13.7], [60 d, inj 2-85, RT 23.2-23.9]
+  334.05: vs per-band 13, vs cost search 7
+     ridges   [42 d, inj 2-85, RT 14.1-14.5], [26 d, inj 4-85, RT 14.4-14.6]
+     per-band [39 d, inj 13-85, RT 14.3-14.6], [29 d, inj 16-85, RT 14.1-14.4]
+  504.19: not among the traced windows
+  297.06: not among the traced windows
+  311.14: not among the traced windows
+  277.13: vs per-band 40, vs cost search 46
+     ridges   [33 d, inj 1-85, RT 6.2-9.6], [4 d, inj 41-63, RT 7.4-7.9]
+     per-band [50 d, inj 1-84, RT 6.4-8.2], [5 d, inj 1-26, RT 6.1-6.7], [2 d, inj 59-85, RT 8.8-8.9], [2 d, inj 53-56, RT 9.5-9.5]
+  300.16: vs per-band 140, vs cost search 176
+     ridges   [85 d, inj 1-85, RT 23.2-23.9], [64 d, inj 2-85, RT 8.8-11.8], [24 d, inj 1-85, RT 9.8-13.7]
+     per-band [85 d, inj 1-85, RT 23.2-23.9], [82 d, inj 1-85, RT 7.3-13.7], [62 d, inj 1-85, RT 15.9-16.5], [41 d, inj 2-82, RT 17.5-18.2], [18 d, inj 1-85, RT 13.2-13.7]
+  406.22: vs per-band 88, vs cost search 92
+     ridges   [85 d, inj 2-85, RT 9.5-11.6], [22 d, inj 2-84, RT 10.1-13.0], [10 d, inj 1-84, RT 7.2-10.2], [10 d, inj 1-50, RT 10.7-11.6], [6 d, inj 1-85, RT 11.6-13.9]
+     per-band [51 d, inj 1-85, RT 10.0-11.2], [41 d, inj 20-84, RT 10.5-11.3], [25 d, inj 39-85, RT 11.0-12.2], [15 d, inj 2-37, RT 9.6-10.1], [7 d, inj 1-31, RT 7.2-7.6]
+  282.15: vs per-band 81, vs cost search 94
+     ridges   [68 d, inj 1-84, RT 10.5-12.5], [58 d, inj 1-82, RT 9.2-11.1], [49 d, inj 2-85, RT 7.9-9.6], [18 d, inj 9-83, RT 8.9-10.5], [10 d, inj 38-85, RT 12.2-13.5]
+     per-band [73 d, inj 5-84, RT 9.0-11.5], [73 d, inj 1-85, RT 10.6-13.4], [72 d, inj 1-85, RT 7.1-10.5], [6 d, inj 7-50, RT 10.6-11.5]

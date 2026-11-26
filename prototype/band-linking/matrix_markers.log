@@ -1,0 +1,36 @@
+ratio to the median of injections within +-3 (excluding the injection itself); apex RT in min
+ inj sample                                Tris        EDTA TIC < 3 min         TIC   MS2 scans  Tris apex
+   1 Breast_Cancer_Tissue_pooled_QC          --        0.79        0.97        1.25        1.01    0.00
+   2 TumorBC2257_DNA                         --        1.07        0.95        0.99        0.99    0.00
+   3 TumorBC2258_DNA                         --        0.49        0.70        0.78        0.97    0.00  <==
+   4 TumorBC2259_DNA                         --        1.22        1.29        0.85        1.01    0.00
+   5 TumorBC2261_DNA                         --        1.62        1.14        1.19        1.01    0.00
+   6 TumorBC2263_DNA                         --        0.41        0.80        1.70        1.00    0.00
+   7 TumorBC2264_DNA                         --        1.43        1.11        0.84        0.99    0.00
+  63 Breast_Cancer_Tissue_pooled_QC          --       14.46        2.06        0.88        1.04    0.00
+  64 BenignfatBC0979_DNA                     --        0.10        1.06        1.65        0.97    0.00
+  65 BenignfatBC0980_DNA                     --        0.15        0.39        0.54        0.96    0.00
+  66 BenignfatBC1020_DNA                     --        0.57        1.20        1.18        1.00    0.00
+  67 BenignfatBC1025_DNA                     --        2.36        0.84        0.61        1.01    0.00  <==
+  68 BenignfatBC1028_DNA                     --        0.79        0.76        1.20        0.99    0.00
+  69 BenignfatBC1037_DNA                     --        1.62        1.72        0.94        1.00    0.00
+  70 BenignfatBC1055_DNA                     --        1.15        0.97        1.13        1.00    0.00
+  71 BenignfatBC1067_DNA                     --        0.66        1.18        0.83        1.01    0.00
+
+absolute values:
+   1 Tris 0, EDTA 9.66e+06, TIC<3 3.7e+09, TIC 2.96e+11, MS2 48568
+   2 Tris 0, EDTA 1.23e+07, TIC<3 3.83e+09, TIC 2.64e+11, MS2 47968
+   3 Tris 0, EDTA 6e+06, TIC<3 2.66e+09, TIC 2.31e+11, MS2 47268
+   4 Tris 0, EDTA 1.34e+07, TIC<3 4.85e+09, TIC 2.37e+11, MS2 48583
+   5 Tris 0, EDTA 2e+07, TIC<3 4.36e+09, TIC 3.07e+11, MS2 48508
+   6 Tris 0, EDTA 6.64e+06, TIC<3 3.68e+09, TIC 4.2e+11, MS2 48327
+   7 Tris 0, EDTA 1.91e+07, TIC<3 4.85e+09, TIC 2.57e+11, MS2 47806
+  63 Tris 0, EDTA 1.72e+07, TIC<3 3.44e+09, TIC 2.7e+11, MS2 47519
+  64 Tris 0, EDTA 1.06e+06, TIC<3 1.67e+09, TIC 3.63e+11, MS2 45826
+  65 Tris 0, EDTA 1.19e+06, TIC<3 6.48e+08, TIC 1.53e+11, MS2 45462
+  66 Tris 0, EDTA 5.86e+06, TIC<3 1.81e+09, TIC 3.06e+11, MS2 47383
+  67 Tris 0, EDTA 1.61e+07, TIC<3 1.34e+09, TIC 1.7e+11, MS2 47642
+  68 Tris 0, EDTA 7.76e+06, TIC<3 1.26e+09, TIC 2.84e+11, MS2 47414
+  69 Tris 0, EDTA 1.27e+07, TIC<3 2.62e+09, TIC 2.51e+11, MS2 47829
+  70 Tris 0, EDTA 1.18e+07, TIC<3 1.53e+09, TIC 2.68e+11, MS2 47917
+  71 Tris 0, EDTA 7.86e+06, TIC<3 1.79e+09, TIC 2.21e+11, MS2 48135

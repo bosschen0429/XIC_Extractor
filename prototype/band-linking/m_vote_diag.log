@@ -1,0 +1,22 @@
+worksets with direct peaks: 1541; identical to current: 1030
+direct peaks: 24134; placed differently vs current: 2642 (10.9%); vs no band: 2430 (10.1%)
+prototype grouping time, all worksets, one process: 0.3 s
+1. samples that keep the anchors' M:
+   cost-search rows: [67] BenignfatBC1025_DNA
+   per-band rows: [3] TumorBC2258_DNA, [67] BenignfatBC1025_DNA, [79] BenignfatBC1152_DNA
+
+2. injections 3 and 79 in the rows:
+   [3] TumorBC2258_DNA: in 179 cost-search rows and 160 per-band rows; cost-search rows whose matching per-band row lacks it: 16, of which more than 0.4 min from its 8 neighbours: 3 (median distance 0.11 min)
+   [79] BenignfatBC1152_DNA: in 151 cost-search rows and 138 per-band rows; cost-search rows whose matching per-band row lacks it: 13, of which more than 0.4 min from its 8 neighbours: 7 (median distance 0.50 min)
+
+3. direct peaks placed differently by the per-band-rows model vs the captured model:
+   total 255; injections with the most: [(6, 8), (14, 7), (82, 7), (79, 7), (17, 6), (81, 6), (39, 6), (9, 6)]; share of injections 3 and 79: 10/255
+   348.21: 8 moved, by injection [(70, 1), (72, 1), (73, 1), (75, 1), (78, 1), (79, 1), (82, 1), (85, 1)]
+
+4. drift anchor coefficients, per-band-rows model vs cost-search-rows model:
+   404.25167: (time -1.71, shift +0.00) -> (+0.00, +1.46), change 3.17
+   574.33391: (time +3.88, shift -0.94) -> (+4.71, +0.00), change 1.78
+   299.15475: (time +6.18, shift +1.41) -> (+7.15, +1.42), change 0.98
+   348.21 own anchor: (time +2.49, shift +1.36) -> (+2.54, +1.38)
+
+figure written

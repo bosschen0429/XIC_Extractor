@@ -1,0 +1,47 @@
+worksets with direct peaks: 1541; identical to current: 1030
+direct peaks: 24134; placed differently vs current: 2642 (10.9%); vs no band: 2430 (10.1%)
+prototype grouping time, all worksets, one process: 0.3 s
+[captured model, cost-search rows] voting rows 21; vote spread per sample: median 5.0 s, p90 12.5 s, outlier limit 14.4 s
+   untrusted [ 3] TumorBC2258_DNA                votes   4, spread   39.0 s, M  -141.3 s
+   untrusted [37] NormalBC2261_DNA               votes  14, spread   16.0 s, M   -62.3 s
+   untrusted [39] NormalBC2264_DNA               votes   9, spread   16.2 s, M  +104.6 s
+   untrusted [67] BenignfatBC1025_DNA            votes   2, spread    nan s, M  -158.7 s (too few votes)
+   untrusted [79] BenignfatBC1152_DNA            votes   6, spread   14.6 s, M  -156.0 s
+  [captured model] windows changed 201/910, direct moved 592 (2.52%); direct in rows 22526 -> 22178; emptied 357 in 203 rows; by injection [(3, 87), (79, 73), (37, 65), (67, 64), (39, 54), (25, 2), (2, 2), (77, 1)]
+  [captured model] vs cost search: 8.63% -> 10.63%
+    297.06 before: [85 n, 85 d, inj 1-85, RT 13.1-13.6]
+    297.06 after:  [85 n, 85 d, inj 1-85, RT 13.1-13.6]
+    302.18 before: [80 n, 78 d, inj 1-85, RT 8.8-13.7], [71 n, 60 d, inj 2-85, RT 23.2-23.9]
+    302.18 after:  [78 n, 76 d, inj 1-85, RT 8.8-13.7], [71 n, 60 d, inj 2-85, RT 23.2-23.9]
+    311.14 before: [85 n, 85 d, inj 1-85, RT 17.0-17.6]
+    311.14 after:  [80 n, 80 d, inj 1-85, RT 17.0-17.5], [2 n, 2 d, inj 37-39, RT 17.1-17.1]
+    334.05 before: [44 n, 39 d, inj 13-85, RT 14.3-14.6], [31 n, 29 d, inj 16-85, RT 14.1-14.4]
+    334.05 after:  [37 n, 35 d, inj 16-85, RT 14.1-14.4], [34 n, 29 d, inj 13-85, RT 14.4-14.6]
+    348.21 before: [77 n, 74 d, inj 1-85, RT 9.4-15.3], [62 n, 5 d, inj 2-85, RT 14.5-15.3], [13 n, 4 d, inj 45-83, RT 13.4-14.2]
+    348.21 after:  [73 n, 71 d, inj 1-85, RT 9.4-15.3], [62 n, 5 d, inj 2-85, RT 14.5-15.3], [13 n, 4 d, inj 45-83, RT 13.4-14.2]
+    504.19 before: [85 n, 85 d, inj 1-85, RT 40.3-40.8]
+    504.19 after:  [85 n, 85 d, inj 1-85, RT 40.3-40.8]
+
+[chain A, per-band rows] voting rows 18; vote spread per sample: median 4.9 s, p90 13.4 s, outlier limit 13.5 s
+   untrusted [25] TumorBC2297_DNA                votes   8, spread   14.8 s, M   +74.2 s
+   untrusted [30] TumorBC2306_DNA                votes  17, spread   13.8 s, M   -42.3 s
+   untrusted [35] NormalBC2258_DNA               votes  17, spread   17.2 s, M   -53.8 s
+   untrusted [65] BenignfatBC0980_DNA            votes   7, spread   15.9 s, M   -85.5 s
+   untrusted [67] BenignfatBC1025_DNA            votes   4, spread   20.2 s, M  -361.0 s
+   untrusted [69] BenignfatBC1037_DNA            votes   7, spread   42.6 s, M   +44.7 s
+   untrusted [71] BenignfatBC1067_DNA            votes  11, spread   16.0 s, M   -70.0 s
+   untrusted [84] BenignfatBC1248_DNA            votes  12, spread   13.6 s, M   -73.1 s
+  [chain A] windows changed 235/910, direct moved 1103 (4.69%); direct in rows 22518 -> 22244; emptied 299 in 228 rows; by injection [(84, 110), (25, 39), (69, 34), (30, 24), (35, 24), (71, 24), (67, 16), (65, 8)]
+  [chain A] vs cost search: 8.61% -> 12.28%
+    297.06 before: [85 n, 85 d, inj 1-85, RT 13.0-13.7]
+    297.06 after:  [77 n, 77 d, inj 1-85, RT 13.1-13.7], [4 n, 4 d, inj 65-71, RT 13.0-13.3], [3 n, 3 d, inj 25-35, RT 13.2-13.4]
+    302.18 before: [80 n, 78 d, inj 1-85, RT 3.4-13.7], [71 n, 60 d, inj 2-85, RT 23.2-23.8]
+    302.18 after:  [74 n, 73 d, inj 1-85, RT 3.4-13.7], [64 n, 55 d, inj 2-85, RT 23.2-23.8], [4 n, 2 d, inj 65-71, RT 23.3-23.4], [2 n, 2 d, inj 65-71, RT 9.3-9.6], [2 n, 2 d, inj 30-35, RT 23.5-23.5], [2 n, 2 d, inj 30-35, RT 9.2-9.5]
+    311.14 before: [85 n, 85 d, inj 1-85, RT 17.0-17.7]
+    311.14 after:  [85 n, 85 d, inj 1-85, RT 17.0-17.7]
+    334.05 before: [44 n, 39 d, inj 13-85, RT 14.3-14.6], [31 n, 29 d, inj 16-85, RT 14.1-14.4]
+    334.05 after:  [39 n, 35 d, inj 13-85, RT 14.3-14.6], [29 n, 27 d, inj 16-85, RT 14.1-14.4], [4 n, 4 d, inj 65-71, RT 14.3-14.4]
+    348.21 before: [79 n, 75 d, inj 1-84, RT 4.9-15.3], [12 n, 4 d, inj 54-85, RT 13.4-14.1], [4 n, 2 d, inj 68-81, RT 11.7-12.2]
+    348.21 after:  [77 n, 71 d, inj 1-85, RT 4.9-15.3], [11 n, 3 d, inj 54-83, RT 13.4-14.2], [4 n, 2 d, inj 63-71, RT 11.0-11.2], [4 n, 2 d, inj 68-81, RT 11.7-12.2], [2 n, 2 d, inj 30-35, RT 10.2-10.4]
+    504.19 before: [85 n, 85 d, inj 1-85, RT 40.6-40.8]
+    504.19 after:  [85 n, 85 d, inj 1-85, RT 40.6-40.8]

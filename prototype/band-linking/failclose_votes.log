@@ -1,0 +1,10 @@
+worksets with direct peaks: 1541; identical to current: 1030
+direct peaks: 24134; placed differently vs current: 2642 (10.9%); vs no band: 2430 (10.1%)
+prototype grouping time, all worksets, one process: 0.3 s
+[擷取模型（成本搜尋的列）] voting rows 21; |median vote - M| over injections with >= 3 votes: max 0.94 s
+   injection 3: votes 4, spread 39.0 s, limit 14.4 s, flagged True
+   injection 67: votes 2, spread nan s, limit 14.4 s, flagged True
+[整段 A（逐帶漂移的列）] voting rows 18; |median vote - M| over injections with >= 3 votes: max 0.83 s
+   injection 3: votes 3, spread 0.2 s, limit 13.5 s, flagged False
+   injection 67: votes 4, spread 20.2 s, limit 13.5 s, flagged True
+figure written

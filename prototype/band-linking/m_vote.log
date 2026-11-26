@@ -1,0 +1,49 @@
+worksets with direct peaks: 1541; identical to current: 1030
+direct peaks: 24134; placed differently vs current: 2642 (10.9%); vs no band: 2430 (10.1%)
+prototype grouping time, all worksets, one process: 0.3 s
+rows: cost search 377 (335 s), linked 347 (0.1 s), per-band with the preliminary model 348 (0.5 s)
+
+sample shift M:
+  control vs captured: M known 85 vs 85 samples; |diff| s median 0.00, p95 0.00, max 0.00; > 1 s: 0
+     [33] TumorBC2313_DNA                  -1.2 s vs   -1.2 s
+     [32] TumorBC2312_DNA                (#786)  -13.7 s vs  -13.7 s
+     [30] TumorBC2306_DNA                 -34.8 s vs  -34.8 s
+     [29] TumorBC2304_DNAandRNA           -21.4 s vs  -21.4 s
+     [28] TumorBC2304_DNA                 -31.7 s vs  -31.7 s
+  control vs captured: anchors 61 vs 61, shared 61, largest coefficient change 0.000
+  linked rows vs control: M known 85 vs 85 samples; |diff| s median 8.27, p95 36.13, max 82.42; > 1 s: 81
+     [79] BenignfatBC1152_DNA            -238.4 s vs -156.0 s
+     [ 3] TumorBC2258_DNA                 -79.3 s vs -141.3 s
+     [81] BenignfatBC1181_DNA            -138.3 s vs  -87.4 s
+     [65] BenignfatBC0980_DNA            -117.2 s vs  -78.8 s
+     [60] NormalBC2306_DNA                +72.5 s vs +108.6 s
+  linked rows vs control: anchors 61 vs 61, shared 61, largest coefficient change 14.262
+  per-band rows vs control: M known 85 vs 85 samples; |diff| s median 2.05, p95 7.74, max 82.42; > 1 s: 69
+     [79] BenignfatBC1152_DNA            -238.4 s vs -156.0 s
+     [ 3] TumorBC2258_DNA                 -79.3 s vs -141.3 s
+     [53] NormalBC2290_DNA                +94.5 s vs +107.1 s
+     [55] NormalBC2294_DNA                -20.2 s vs  -12.1 s
+     [82] BenignfatBC1214_DNA            +103.7 s vs +111.4 s
+  per-band rows vs control: anchors 61 vs 61, shared 61, largest coefficient change 3.167
+  no rows (anchors only) vs control: M known 85 vs 85 samples; |diff| s median 10.51, p95 38.41, max 82.42; > 1 s: 83
+     [79] BenignfatBC1152_DNA            -238.4 s vs -156.0 s
+     [ 3] TumorBC2258_DNA                 -79.3 s vs -141.3 s
+     [81] BenignfatBC1181_DNA            -138.3 s vs  -87.4 s
+     [84] BenignfatBC1248_DNA            -105.1 s vs  -66.1 s
+     [65] BenignfatBC0980_DNA            -117.2 s vs  -78.8 s
+  no rows (anchors only) vs control: anchors 61 vs 61, shared 61, largest coefficient change 13.276
+  samples whose M moved off the anchors' M (cost search rows): 84/85
+  samples whose M moved off the anchors' M (linked rows): 69/85
+  samples whose M moved off the anchors' M (per-band rows): 82/85
+
+per-band drift linking with the linked-rows model vs the captured model:
+  348.21: placed differently between the two models 13; vs cost search: linked-rows model 19, captured model 8
+  302.18: placed differently between the two models 3; vs cost search: linked-rows model 7, captured model 4
+  334.05: placed differently between the two models 7; vs cost search: linked-rows model 3, captured model 8
+  whole batch: windows changed 58/910, direct moved 377 (1.60%); vs cost search 2087 (8.88%) with the linked-rows model, 2029 (8.63%) with the captured model
+
+per-band drift linking with the per-band-rows model vs the captured model:
+  348.21: placed differently between the two models 8; vs cost search: per-band-rows model 16, captured model 8
+  302.18: placed differently between the two models 0; vs cost search: per-band-rows model 4, captured model 4
+  334.05: placed differently between the two models 0; vs cost search: per-band-rows model 8, captured model 8
+  whole batch: windows changed 44/910, direct moved 255 (1.08%); vs cost search 2081 (8.85%) with the per-band-rows model, 2029 (8.63%) with the captured model

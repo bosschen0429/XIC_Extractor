@@ -1,0 +1,24 @@
+worksets with direct peaks: 1541; identical to current: 1030
+direct peaks: 24134; placed differently vs current: 2642 (10.9%); vs no band: 2430 (10.1%)
+prototype grouping time, all worksets, one process: 0.3 s
+anchor observations 24134 (22553 in bands); drift anchors 69 (captured 61); M rows 341
+M vs captured: median 4.7 s, p95 18.4 s, max 202.3 s
+
+windows 910, direct 23503
+  A vs per-band with the captured models: windows changed 162, direct moved 799 (3.40%)
+  vs cost search: A 2024 (8.61%), identical windows 467/910; per-band with captured models 2029 (8.63%)
+  windows with the most moved direct peaks: [('282.1507', 95), ('416.2082', 76), ('406.2242', 64), ('359.0418', 31), ('291.1804', 26), ('375.1973', 26), ('825.1611', 21), ('824.2707', 16), ('266.1087', 15), ('277.1251', 14)]
+
+targets (A | per-band with captured models):
+  348.21 A:        [79 n, 75 d, inj 1-84, RT 4.9-15.3], [12 n, 4 d, inj 54-85, RT 13.4-14.1], [4 n, 2 d, inj 68-81, RT 11.7-12.2]
+  348.21 captured: [77 n, 74 d, inj 1-85, RT 9.4-15.3], [62 n, 5 d, inj 2-85, RT 14.5-15.3], [13 n, 4 d, inj 45-83, RT 13.4-14.2]
+  302.18 A:        [80 n, 78 d, inj 1-85, RT 3.4-13.7], [71 n, 60 d, inj 2-85, RT 23.2-23.8]
+  302.18 captured: [80 n, 78 d, inj 1-85, RT 8.8-13.7], [71 n, 60 d, inj 2-85, RT 23.2-23.9]
+  334.05 A:        [44 n, 39 d, inj 13-85, RT 14.3-14.6], [31 n, 29 d, inj 16-85, RT 14.1-14.4]
+  334.05 captured: [44 n, 39 d, inj 13-85, RT 14.3-14.6], [31 n, 29 d, inj 16-85, RT 14.1-14.4]
+  504.19 A:        [85 n, 85 d, inj 1-85, RT 40.6-40.8]
+  504.19 captured: [85 n, 85 d, inj 1-85, RT 40.3-40.8]
+  297.06 A:        [85 n, 85 d, inj 1-85, RT 13.0-13.7]
+  297.06 captured: [85 n, 85 d, inj 1-85, RT 13.1-13.6]
+  311.14 A:        [85 n, 85 d, inj 1-85, RT 17.0-17.7]
+  311.14 captured: [85 n, 85 d, inj 1-85, RT 17.0-17.6]

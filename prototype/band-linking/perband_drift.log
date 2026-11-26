@@ -1,0 +1,76 @@
+worksets with direct peaks: 1541; identical to current: 1030
+direct peaks: 24134; placed differently vs current: 2642 (10.9%); vs no band: 2430 (10.1%)
+prototype grouping time, all worksets, one process: 0.3 s
+== target windows (rows: members, direct, injections, calibrated RT)
+
+348.21142 (own anchor), direct 86, 5 ms, seeds used [(46, 77, 2.36, 1.12)]
+  calibrated    direct in rows  79; vs no-band: placed differently  44, main-row gap  42;  rows [46 n, 38 d, inj 1-84, RT 10.4-13.1], [23 n, 20 d, inj 2-37, RT 9.4-10.5], [19 n, 10 d, inj 45-85, RT 13.4-14.2], [63 n, 6 d, inj 2-85, RT 14.5-15.3], [5 n, 3 d, inj 63-71, RT 11.1-11.6], [3 n, 2 d, inj 76-83, RT 12.1-12.3]
+  complementary direct in rows  84; vs no-band: placed differently   5, main-row gap   5;  rows [84 n, 81 d, inj 1-85, RT 9.4-15.3], [21 n, 3 d, inj 60-84, RT 10.7-16.7]
+  per-band      direct in rows  83; vs no-band: placed differently   8, main-row gap   6;  rows [77 n, 74 d, inj 1-85, RT 9.4-15.3], [62 n, 5 d, inj 2-85, RT 14.5-15.3], [13 n, 4 d, inj 45-83, RT 13.4-14.2]
+  no-band       rows [81 n, 78 d, inj 1-85, RT 6.5-15.3], [19 n, 7 d, inj 47-84, RT 10.7-15.3]
+  per-band: injections with 2+ direct peaks 3, of which both top rows hold one: 1
+
+302.17663 (own anchor), direct 141, 3 ms, seeds used [(41, 80, 0.0, 1.39)]
+  calibrated    direct in rows 132; vs no-band: placed differently  40, main-row gap 138;  rows [71 n, 60 d, inj 2-85, RT 23.2-23.9], [41 n, 41 d, inj 26-85, RT 10.0-12.2], [17 n, 17 d, inj 4-30, RT 9.3-10.5], [6 n, 5 d, inj 2-24, RT 8.8-9.2], [4 n, 4 d, inj 53-64, RT 13.5-13.7], [3 n, 3 d, inj 65-71, RT 9.3-9.7]
+  complementary direct in rows 117; vs no-band: placed differently  30, main-row gap  10;  rows [72 n, 70 d, inj 10-85, RT 8.8-23.5], [48 n, 41 d, inj 14-85, RT 23.2-23.8], [3 n, 2 d, inj 65-71, RT 23.3-23.5], [2 n, 2 d, inj 35-37, RT 23.5-23.5], [2 n, 2 d, inj 7-11, RT 9.5-9.7]
+  per-band      direct in rows 138; vs no-band: placed differently   4, main-row gap   2;  rows [80 n, 78 d, inj 1-85, RT 8.8-13.7], [71 n, 60 d, inj 2-85, RT 23.2-23.9]
+  no-band       rows [80 n, 78 d, inj 1-85, RT 8.8-13.7], [71 n, 60 d, inj 2-85, RT 23.2-23.9], [2 n, 2 d, inj 3-67, RT 3.4-3.5]
+  per-band: injections with 2+ direct peaks 56, of which both top rows hold one: 56
+
+334.05041 (no own anchor), direct 68, 2 ms, seeds used [(46, 44, -0.13, 0.02), (29, 31, 0.03, 0.0)]
+  calibrated    direct in rows  68; vs no-band: placed differently  10, main-row gap  58;  rows [46 n, 41 d, inj 13-85, RT 14.3-14.6], [29 n, 27 d, inj 16-85, RT 14.1-14.3]
+  complementary direct in rows  68; vs no-band: placed differently  10, main-row gap  58;  rows [46 n, 41 d, inj 13-85, RT 14.3-14.6], [29 n, 27 d, inj 16-85, RT 14.1-14.3]
+  per-band      direct in rows  68; vs no-band: placed differently   8, main-row gap  60;  rows [44 n, 39 d, inj 13-85, RT 14.3-14.6], [31 n, 29 d, inj 16-85, RT 14.1-14.4]
+  no-band       rows [39 n, 35 d, inj 2-85, RT 14.1-14.4], [39 n, 33 d, inj 4-85, RT 14.2-14.6]
+  per-band: injections with 2+ direct peaks 17, of which both top rows hold one: 17
+
+504.19134 (no own anchor), direct 85, 2 ms, seeds used []
+  calibrated    direct in rows  85; vs no-band: placed differently   2, main-row gap   2;  rows [85 n, 85 d, inj 1-85, RT 40.3-40.8]
+  complementary direct in rows  85; vs no-band: placed differently   2, main-row gap   2;  rows [85 n, 85 d, inj 1-85, RT 40.3-40.8]
+  per-band      direct in rows  85; vs no-band: placed differently   2, main-row gap   2;  rows [85 n, 85 d, inj 1-85, RT 40.3-40.8]
+  no-band       rows [83 n, 83 d, inj 1-85, RT 40.6-40.8], [2 n, 2 d, inj 7-8, RT 40.3-40.3]
+
+297.05786 (no own anchor), direct 85, 2 ms, seeds used []
+  calibrated    direct in rows  85; vs no-band: placed differently   0, main-row gap   0;  rows [85 n, 85 d, inj 1-85, RT 13.1-13.6]
+  complementary direct in rows  85; vs no-band: placed differently   0, main-row gap   0;  rows [85 n, 85 d, inj 1-85, RT 13.1-13.6]
+  per-band      direct in rows  85; vs no-band: placed differently   0, main-row gap   0;  rows [85 n, 85 d, inj 1-85, RT 13.1-13.6]
+  no-band       rows [85 n, 85 d, inj 1-85, RT 13.1-13.6]
+
+311.14129 (no own anchor), direct 85, 2 ms, seeds used []
+  calibrated    direct in rows  85; vs no-band: placed differently   0, main-row gap   0;  rows [85 n, 85 d, inj 1-85, RT 17.0-17.6]
+  complementary direct in rows  85; vs no-band: placed differently   0, main-row gap   0;  rows [85 n, 85 d, inj 1-85, RT 17.0-17.6]
+  per-band      direct in rows  85; vs no-band: placed differently   0, main-row gap   0;  rows [85 n, 85 d, inj 1-85, RT 17.0-17.6]
+  no-band       rows [85 n, 85 d, inj 1-85, RT 17.0-17.6]
+
+== whole batch
+[own anchor] windows 47, direct 1759, seeded bands 57, windows changed vs calibrated 23, direct moved 443 (25.2%)
+   vs no-band: calibrated identical 22/47, differ 31.5%; per-band identical 24/47, differ 14.2%
+[no own anchor] windows 863, direct 21744, seeded bands 599, windows changed vs calibrated 40, direct moved 433 (2.0%)
+   vs no-band: calibrated identical 436/863, differ 8.4%; per-band identical 443/863, differ 8.2%
+per-band linking time, all windows: 1.22 s; drift fits 905
+rows that joined 2+ calibrated pieces (direct >= 2 each): 40
+  315.15782 [no own anchor] pieces 3, sizes 6+2, shared injections 0, RT gap 2.40 min
+  349.21487 [own anchor] pieces 6, sizes 24+17, shared injections 0, RT gap 2.26 min
+  348.21142 [own anchor] pieces 5, sizes 37+20, shared injections 0, RT gap 1.74 min
+  273.15004 [own anchor] pieces 3, sizes 42+20, shared injections 0, RT gap 1.74 min
+  347.20538 [own anchor] pieces 6, sizes 21+17, shared injections 0, RT gap 1.64 min
+  323.14657 [no own anchor] pieces 2, sizes 4+2, shared injections 0, RT gap 1.46 min
+  285.15017 [own anchor] pieces 3, sizes 37+25, shared injections 0, RT gap 1.34 min
+  301.16294 [no own anchor] pieces 4, sizes 41+25, shared injections 0, RT gap 1.27 min
+  322.14309 [no own anchor] pieces 2, sizes 41+25, shared injections 0, RT gap 1.27 min
+  299.15475 [own anchor] pieces 4, sizes 41+26, shared injections 0, RT gap 1.27 min
+  302.17663 [own anchor] pieces 6, sizes 41+16, shared injections 0, RT gap 1.25 min
+  302.16463 [no own anchor] pieces 2, sizes 25+10, shared injections 0, RT gap 1.21 min
+  474.2932 [no own anchor] pieces 2, sizes 14+4, shared injections 0, RT gap 1.20 min
+  300.16024 [no own anchor] pieces 5, sizes 46+21, shared injections 0, RT gap 1.17 min
+  277.12512 [own anchor] pieces 2, sizes 28+22, shared injections 0, RT gap 1.15 min
+  350.21682 [own anchor] pieces 4, sizes 12+10, shared injections 0, RT gap 1.12 min
+  495.2547 [own anchor] pieces 2, sizes 8+2, shared injections 0, RT gap 1.00 min
+  466.24057 [own anchor] pieces 2, sizes 49+2, shared injections 0, RT gap 0.89 min
+  514.29168 [own anchor] pieces 3, sizes 23+13, shared injections 0, RT gap 0.86 min
+  282.15066 [no own anchor] pieces 4, sizes 35+19, shared injections 0, RT gap 0.69 min
+  416.20819 [no own anchor] pieces 2, sizes 25+2, shared injections 0, RT gap 0.67 min
+  282.15066 [no own anchor] pieces 6, sizes 41+10, shared injections 0, RT gap 0.58 min
+  416.20819 [no own anchor] pieces 2, sizes 42+5, shared injections 0, RT gap 0.52 min
+  282.15066 [no own anchor] pieces 5, sizes 45+14, shared injections 0, RT gap 0.51 min
+  416.20819 [no own anchor] pieces 2, sizes 50+19, shared injections 0, RT gap 0.51 min

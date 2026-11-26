@@ -1,0 +1,28 @@
+worksets with direct peaks: 1541; identical to current: 1030
+direct peaks: 24134; placed differently vs current: 2642 (10.9%); vs no band: 2430 (10.1%)
+prototype grouping time, all worksets, one process: 0.2 s
+
+== precursor|348.21142578125|10.0|116.0474: 275 peaks, 86 direct
+  channel anchor: reference RT 11.49, family 8, coefficients (time +2.49, shift +1.36), 80 owners, 80 in this window; their calibrated RTs: [4.7, 6.5, 9.4, 9.4, 9.5, 9.6, 9.6, 9.7, 9.7, 10.0, 10.0, 10.0, 10.0, 10.1, 10.1, 10.2, 10.2, 10.2, 10.3, 10.3, 10.4, 10.4, 10.5, 10.5, 10.7, 10.7, 10.7, 10.9, 11.0, 11.0, 11.0, 11.1, 11.1, 11.3, 11.4, 11.4, 11.4, 11.5, 11.5, 11.5, 11.5, 11.5, 11.6, 11.6, 11.7, 11.8, 11.8, 11.8, 12.0, 12.0, 12.1, 12.1, 12.2, 12.3, 12.3, 12.3, 12.4, 12.4, 12.4, 12.5, 12.5, 12.5, 12.6, 12.7, 12.8, 12.9, 13.1, 13.4, 13.4, 13.6, 13.6, 13.7, 13.8, 14.0, 14.2, 14.9, 15.0, 15.3, 15.3, 15.3]
+  calibrated-RT segments with 2+ peaks: 21
+   seg0: n  63 direct   6 injections  2-85 RT 14.52-15.34  B range 1.01 (known 63)  candidates 3  own fit (time -0.09, shift +0.00)  shape from anchor 348.2114
+   seg1: n  46 direct  38 injections  1-84 RT 10.39-13.09  B range 1.01 (known 46)  candidates 3  own fit (time +2.36, shift +1.12)  shape from anchor 348.2114
+   seg2: n  23 direct  20 injections  2-37 RT  9.42-10.48  B range 0.45 (known 23)  candidates 3  own fit (time +2.47, shift +1.30)  shape from anchor 348.2114
+   seg3: n  23 direct   0 injections  2-47 RT 15.58-16.55  B range 0.62 (known 23)  candidates 3  own fit (time +0.00, shift -0.00)  shape from RT-borrowed blend
+   seg4: n  19 direct  10 injections 45-85 RT 13.35-14.22  B range 0.36 (known 19)  candidates 3  own fit (time +1.11, shift +0.00)  shape from anchor 348.2114
+   seg5: n  11 direct   0 injections  1-13 RT 17.28-18.33  B range 0.04 (known 11)  candidates 1  own fit (time +0.00, shift +0.00)  shape from RT-borrowed blend
+   seg6: n  11 direct   0 injections  4-32 RT 12.62-12.95  B range 0.27 (known 11)  candidates 3  own fit (time +0.77, shift +0.00)  shape from RT-borrowed blend
+   seg7: n  10 direct   0 injections 59-83 RT 15.54-15.89  B range 0.27 (known 10)  candidates 3  own fit (time +0.09, shift +0.06)  shape from RT-borrowed blend
+   seg8: n   9 direct   0 injections 51-81 RT  6.65- 7.28  B range 0.34 (known 9)  candidates 3  own fit (time +0.24, shift -0.09)  shape from RT-borrowed blend
+   seg9: n   6 direct   0 injections  1-14 RT  5.39- 5.92  B range 0.21 (known 6)  candidates 1  own fit (time +0.00, shift +0.21)  shape from RT-borrowed blend
+
+== precursor|302.1766357421875|10.0|116.0474: 154 peaks, 141 direct
+  channel anchor: reference RT 11.34, family 6, coefficients (time +8.03, shift +1.43), 28 owners, 28 in this window; their calibrated RTs: [3.4, 3.5, 9.6, 9.6, 9.6, 10.0, 10.0, 10.5, 10.6, 10.6, 10.7, 10.9, 10.9, 11.1, 11.3, 11.4, 11.4, 11.5, 11.9, 13.3, 13.5, 13.6, 13.7, 13.7, 23.4, 23.5, 23.5, 23.5]
+  calibrated-RT segments with 2+ peaks: 7
+   seg0: n  71 direct  60 injections  2-85 RT 23.22-23.93  B range 1.69 (known 71)  candidates 2  own fit (time +0.00, shift +0.00)  shape from anchor 302.1766
+   seg1: n  41 direct  41 injections 26-85 RT 10.02-12.18  B range 0.05 (known 41)  candidates 1  own fit (time +0.00, shift +1.39)  shape from anchor 302.1766
+   seg2: n  17 direct  17 injections  4-30 RT  9.31-10.54  B range 1.67 (known 17)  candidates 3  own fit (time -0.07, shift +0.00)  shape from anchor 302.1766
+   seg3: n   6 direct   5 injections  2-24 RT  8.81- 9.23  B range 0.58 (known 6)  candidates 3  own fit (time +0.29, shift +0.99)  shape from RT-borrowed blend
+   seg4: n   4 direct   4 injections 53-64 RT 13.52-13.66  B range 0.01 (known 4)  candidates 0  own fit (time +0.00, shift +0.00)  shape from anchor 302.1766
+   seg5: n   3 direct   3 injections 65-71 RT  9.31- 9.67  B range 0.02 (known 3)  candidates 0  own fit (time +0.00, shift +0.00)  shape from anchor 302.1766
+   seg6: n   2 direct   2 injections 35-37 RT  8.94- 9.15  B range 0.01 (known 2)  candidates 0  own fit (time +0.00, shift +0.00)  shape from RT-borrowed blend

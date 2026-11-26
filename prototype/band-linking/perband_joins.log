@@ -1,0 +1,44 @@
+worksets with direct peaks: 1541; identical to current: 1030
+direct peaks: 24134; placed differently vs current: 2642 (10.9%); vs no band: 2430 (10.1%)
+prototype grouping time, all worksets, one process: 0.3 s
+joined rows: 40; no-band holds >= 90% of the row's direct peaks in one row: 26
+   300.1602 borrowed direct  82 pieces [46, 21, 6, 3, 3] RT gap 1.17  inj 1-85 RT 7.3-13.7  no-band agreement 51%
+   406.2242 anchored direct  51 pieces [31, 13, 6] RT gap 0.21  inj 1-85 RT 10.0-11.2  no-band agreement 55%
+   282.1507 borrowed direct  72 pieces [35, 19, 11, 6] RT gap 0.69  inj 1-85 RT 7.1-10.5  no-band agreement 57%
+   417.2104 anchored direct  57 pieces [49, 6, 2] RT gap 0.25  inj 1-85 RT 9.1-10.3  no-band agreement 61%
+   290.1724 borrowed direct  77 pieces [47, 13, 12] RT gap 0.29  inj 1-85 RT 6.4-9.4  no-band agreement 62%
+   416.2082 borrowed direct  69 pieces [50, 19] RT gap 0.51  inj 2-85 RT 8.7-10.1  no-band agreement 64%
+   291.1804 anchored direct  75 pieces [57, 11, 3] RT gap 0.47  inj 1-85 RT 6.4-9.7  no-band agreement 69%
+   282.1507 borrowed direct  73 pieces [45, 14, 5, 5, 3] RT gap 0.51  inj 5-84 RT 9.0-11.5  no-band agreement 71%
+   406.2242 anchored direct  25 pieces [14, 7] RT gap 0.39  inj 39-85 RT 11.0-12.2  no-band agreement 72%
+   277.1251 anchored direct  50 pieces [28, 22] RT gap 1.15  inj 1-84 RT 6.4-8.2  no-band agreement 76%
+   406.2242 anchored direct  41 pieces [21, 19] RT gap 0.28  inj 20-84 RT 10.5-11.3  no-band agreement 78%
+   416.2082 borrowed direct  28 pieces [25, 2] RT gap 0.67  inj 13-62 RT 11.1-13.0  no-band agreement 79%
+   282.1507 borrowed direct  73 pieces [41, 10, 10, 5, 3, 2] RT gap 0.58  inj 1-85 RT 10.6-13.4  no-band agreement 79%
+   388.0547 borrowed direct  26 pieces [23, 3] RT gap 0.08  inj 34-85 RT 14.2-14.5  no-band agreement 88%
+   297.1394 borrowed direct  18 pieces [16, 2] RT gap 0.34  inj 2-28 RT 10.5-11.8  no-band agreement 94%
+   416.2082 borrowed direct  47 pieces [42, 5] RT gap 0.52  inj 1-85 RT 10.2-11.6  no-band agreement 96%
+   466.2406 anchored direct  55 pieces [49, 2] RT gap 0.89  inj 1-85 RT 9.6-13.9  no-band agreement 96%
+   334.0504 borrowed direct  29 pieces [27, 2] RT gap 0.19  inj 16-85 RT 14.1-14.4  no-band agreement 97%
+   348.2114 anchored direct  74 pieces [37, 20, 6, 3, 2] RT gap 1.74  inj 1-85 RT 9.4-15.3  no-band agreement 99%
+   302.1766 anchored direct  78 pieces [41, 16, 5, 4, 3, 2] RT gap 1.25  inj 1-85 RT 8.8-13.7  no-band agreement 99%
+   248.1498 anchored direct   7 pieces [4, 3] RT gap 0.27  inj 1-42 RT 11.2-12.1  no-band agreement 100%
+   273.1500 anchored direct  67 pieces [42, 20, 2] RT gap 1.74  inj 2-85 RT 10.8-16.7  no-band agreement 100%
+   285.1502 anchored direct  73 pieces [37, 25, 5] RT gap 1.34  inj 1-85 RT 8.8-13.7  no-band agreement 100%
+   299.1548 anchored direct  80 pieces [41, 26, 4, 3] RT gap 1.27  inj 1-85 RT 8.8-13.8  no-band agreement 100%
+   301.1629 borrowed direct  82 pieces [41, 25, 5, 3] RT gap 1.27  inj 1-85 RT 7.2-13.7  no-band agreement 100%
+   302.1646 borrowed direct  39 pieces [25, 10] RT gap 1.21  inj 1-85 RT 7.2-13.7  no-band agreement 100%
+   315.1578 borrowed direct  12 pieces [6, 2, 2] RT gap 2.40  inj 40-74 RT 10.3-13.7  no-band agreement 100%
+   322.1431 borrowed direct  71 pieces [41, 25] RT gap 1.27  inj 1-85 RT 8.9-12.2  no-band agreement 100%
+   323.1466 borrowed direct   8 pieces [4, 2] RT gap 1.46  inj 1-33 RT 8.9-11.2  no-band agreement 100%
+   332.1874 borrowed direct  25 pieces [10, 6, 3, 2] RT gap 0.11  inj 5-85 RT 9.0-13.7  no-band agreement 100%
+   347.2054 anchored direct  53 pieces [21, 17, 4, 4, 2, 2] RT gap 1.64  inj 1-85 RT 9.4-13.9  no-band agreement 100%
+   348.0452 borrowed direct  18 pieces [16, 2] RT gap 0.16  inj 1-34 RT 8.4-8.8  no-band agreement 100%
+   349.2149 anchored direct  71 pieces [24, 17, 13, 5, 3, 2] RT gap 2.26  inj 1-85 RT 9.4-15.3  no-band agreement 100%
+   350.2168 anchored direct  32 pieces [12, 10, 3, 3] RT gap 1.12  inj 1-85 RT 9.4-15.4  no-band agreement 100%
+   404.0705 anchored direct  19 pieces [15, 2] RT gap 0.24  inj 20-85 RT 10.3-11.9  no-band agreement 100%
+   474.2932 borrowed direct  19 pieces [14, 4] RT gap 1.20  inj 1-85 RT 26.3-28.5  no-band agreement 100%
+   495.2547 anchored direct  10 pieces [8, 2] RT gap 1.00  inj 1-85 RT 15.1-16.6  no-band agreement 100%
+   514.2917 anchored direct  40 pieces [23, 13, 2] RT gap 0.86  inj 1-85 RT 10.1-15.1  no-band agreement 100%
+   553.1347 borrowed direct   7 pieces [5, 2] RT gap 0.14  inj 2-64 RT 15.3-15.6  no-band agreement 100%
+   622.2938 borrowed direct  10 pieces [7, 3] RT gap 0.10  inj 1-85 RT 34.8-35.8  no-band agreement 100%

@@ -1,0 +1,37 @@
+worksets with direct peaks: 1541; identical to current: 1030
+direct peaks: 24134; placed differently vs current: 2642 (10.9%); vs no band: 2430 (10.1%)
+prototype grouping time, all worksets, one process: 0.3 s
+windows with 2+ direct peaks: 910, direct peaks: 23503
+  raw vs calibrated     : identical windows 643/910 (71%), direct placed differently 1469 (6.3%)
+  raw vs no band        : identical windows 392/910 (43%), direct placed differently 3153 (13.4%)
+  calibrated vs no band : identical windows 458/910 (50%), direct placed differently 2384 (10.1%)
+  direct peaks in rows: calibrated 22448, raw 22112
+
+by excess shift (min) of direct peaks that sit in a row on calibrated RT:
+    < 0.1: direct  18312, in a row  17984, still in a row on raw  17935 (100%), kept most row mates  17570 (98%)
+    < 0.2: direct   2309, in a row   2230, still in a row on raw   2213 (99%), kept most row mates   2131 (96%)
+    < 0.4: direct   1514, in a row   1476, still in a row on raw   1460 (99%), kept most row mates   1400 (95%)
+   >= 0.4: direct    775, in a row    758, still in a row on raw    413 (54%), kept most row mates    175 (23%)
+
+samples with the largest median excess shift:
+  BenignfatBC1116_DNA          median excess 0.259 min, in rows calibrated  270, raw  258, kept mates  210 (78%)
+  Breast_Cancer_Tissue_pooled_QC_4 median excess 0.232 min, in rows calibrated  300, raw  227, kept mates  218 (73%)
+  Breast_Cancer_Tissue_pooled_QC3 median excess 0.222 min, in rows calibrated  297, raw  274, kept mates  188 (63%)
+  Breast_Cancer_Tissue_pooled_QC6 median excess 0.222 min, in rows calibrated  315, raw  292, kept mates  254 (81%)
+  Breast_Cancer_Tissue_pooled_QC5 median excess 0.208 min, in rows calibrated  314, raw  245, kept mates  234 (75%)
+  Breast_Cancer_Tissue_pooled_QC2 median excess 0.198 min, in rows calibrated  291, raw  215, kept mates  188 (65%)
+  Breast_Cancer_Tissue_pooled_QC7 median excess 0.188 min, in rows calibrated  299, raw  246, kept mates  236 (79%)
+  TumorBC2312_DNA              median excess 0.172 min, in rows calibrated  327, raw  309, kept mates  223 (68%)
+  TumorBC2258_DNA              median excess 0.136 min, in rows calibrated  218, raw  215, kept mates  200 (92%)
+  Breast_Cancer_Tissue_pooled_QC1 median excess 0.130 min, in rows calibrated  279, raw  276, kept mates  262 (94%)
+  TumorBC2257_DNA              median excess 0.098 min, in rows calibrated  281, raw  279, kept mates  270 (96%)
+  TumorBC2259_DNA              median excess 0.095 min, in rows calibrated  296, raw  295, kept mates  279 (94%)
+
+precursor|298.0708923339844|10.0|116.0474: direct 48; direct peaks far from 8.6 on raw but near it calibrated: 7
+  rank   0 Breast_Cancer_Tissue_pooled_QC1 raw 8.903 cal 8.791  row calibrated True, row raw True, raw row size 42
+  rank  16 Breast_Cancer_Tissue_pooled_QC2 raw 8.071 cal 8.660  row calibrated True, row raw False, raw row size 1
+  rank  30 Breast_Cancer_Tissue_pooled_QC3 raw 8.016 cal 8.604  row calibrated True, row raw True, raw row size 2
+  rank  31 TumorBC2312_DNA              raw 8.114 cal 8.597  row calibrated True, row raw True, raw row size 2
+  rank  46 Breast_Cancer_Tissue_pooled_QC_4 raw 8.025 cal 8.562  row calibrated True, row raw False, raw row size 1
+  rank  62 Breast_Cancer_Tissue_pooled_QC5 raw 8.046 cal 8.617  row calibrated True, row raw False, raw row size 1
+  rank  74 Breast_Cancer_Tissue_pooled_QC6 raw 8.063 cal 8.622  row calibrated True, row raw False, raw row size 1

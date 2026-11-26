@@ -1,0 +1,16 @@
+worksets with direct peaks: 1541; identical to current: 1030
+direct peaks: 24134; placed differently vs current: 2642 (10.9%); vs no band: 2430 (10.1%)
+prototype grouping time, all worksets, one process: 0.3 s
+299.15 main row (per-band; cost search agrees 100%): 80 direct peaks
+  300.16 per-band    row 1:  85 direct; injections shared with 299.15 main row  80: same RT (<= 3 s)   0, different  80
+  300.16 per-band    row 2:  82 direct; injections shared with 299.15 main row  79: same RT (<= 3 s)  72, different   7
+  300.16 per-band    row 3:  62 direct; injections shared with 299.15 main row  58: same RT (<= 3 s)   0, different  58
+  300.16 cost search row 1:  85 direct; injections shared with 299.15 main row  80: same RT (<= 3 s)   0, different  80
+  300.16 cost search row 2:  61 direct; injections shared with 299.15 main row  57: same RT (<= 3 s)   0, different  57
+  300.16 cost search row 3:  42 direct; injections shared with 299.15 main row  39: same RT (<= 3 s)  36, different   3
+  301.16 per-band    row 1:  85 direct; injections shared with 299.15 main row  80: same RT (<= 3 s)   0, different  80
+  301.16 per-band    row 2:  82 direct; injections shared with 299.15 main row  79: same RT (<= 3 s)  69, different  10
+  301.16 per-band    row 3:  64 direct; injections shared with 299.15 main row  60: same RT (<= 3 s)   0, different  60
+  301.16 cost search row 1:  85 direct; injections shared with 299.15 main row  80: same RT (<= 3 s)   0, different  80
+  301.16 cost search row 2:  82 direct; injections shared with 299.15 main row  79: same RT (<= 3 s)  69, different  10
+  301.16 cost search row 3:  64 direct; injections shared with 299.15 main row  60: same RT (<= 3 s)   0, different  60

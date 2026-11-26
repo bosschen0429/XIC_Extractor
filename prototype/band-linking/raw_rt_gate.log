@@ -1,0 +1,8 @@
+worksets with direct peaks: 1541; identical to current: 1030
+direct peaks: 24134; placed differently vs current: 2642 (10.9%); vs no band: 2430 (10.1%)
+prototype grouping time, all worksets, one process: 0.3 s
+windows 910, direct 23503; reference = calibrated RT, 0.4 min step
+raw RT, step 0.4 min: identical windows 643/910 (71%), direct placed differently 1469 (6.3%); shift < 0.4: kept row mates 21101/21690 (97%); shift >= 0.4: kept row mates 175/758 (23%);
+raw RT, step 0.6 min: identical windows 727/910 (80%), direct placed differently 1241 (5.3%); shift < 0.4: kept row mates 21141/21690 (97%); shift >= 0.4: kept row mates 641/758 (85%);
+raw RT, step 0.8 min: identical windows 722/910 (79%), direct placed differently 1311 (5.6%); shift < 0.4: kept row mates 21168/21690 (98%); shift >= 0.4: kept row mates 650/758 (86%);
+raw RT, step 1.0 min: identical windows 721/910 (79%), direct placed differently 1340 (5.7%); shift < 0.4: kept row mates 21168/21690 (98%); shift >= 0.4: kept row mates 651/758 (86%);

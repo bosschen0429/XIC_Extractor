@@ -1,0 +1,19 @@
+worksets with direct peaks: 1541; identical to current: 1030
+direct peaks: 24134; placed differently vs current: 2642 (10.9%); vs no band: 2430 (10.1%)
+prototype grouping time, all worksets, one process: 0.6 s
+
+[chain A] M at injection 3 / 67: preliminary -257.1 / -381.6 s, voted -267.1 / -361.0 s; captured -141.3 / -158.7 s
+  302.18: main row 78 direct; members below 8.0 min: ['3.40 min [3]']; seeds [(69, 80, 1.06, 1.47), (71, 71, -0.2, 0.0)]
+  348.21: main row 75 direct; members below 9.0 min: ['4.87 min [3]']; seeds [(51, 79, 2.6, 1.25)]
+  302.18: no drift anchor in the preliminary model
+  302.18: no drift anchor in the voted model
+  348.21 preliminary anchor holds an off-band peak: calibrated 4.70 min, injection 67
+  348.21 preliminary anchor holds an off-band peak: calibrated 6.49 min, injection 3
+  348.21 voted anchor holds an off-band peak: calibrated 4.70 min, injection 67
+  348.21 voted anchor holds an off-band peak: calibrated 6.49 min, injection 3
+removing 2 anchor observations
+
+[chain A without those observations] M at injection 3 / 67: preliminary -282.0 / -298.5 s, voted -282.1 / -299.9 s; captured -141.3 / -158.7 s
+  302.18: main row 78 direct; members below 8.0 min: ['3.50 min [67]']; seeds [(69, 80, 1.04, 1.48), (71, 71, -0.21, 0.02)]
+  348.21: main row 76 direct; members below 9.0 min: ['4.87 min [3]']; seeds [(51, 81, 2.63, 1.25)]
+figure written

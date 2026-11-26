@@ -1,0 +1,5 @@
+worksets with direct peaks: 1541; identical to current: 1030
+direct peaks: 24134; placed differently vs current: 2642 (10.9%); vs no band: 2430 (10.1%)
+prototype grouping time, all worksets, one process: 0.3 s
+348.21 rows, captured M:       [77 n, 74 d, inj 1-85, RT 9.4-15.3], [62 n, 5 d, inj 2-85, RT 14.5-15.3], [13 n, 4 d, inj 45-83, RT 13.4-14.2]
+348.21 rows, per-band-rows M:  [69 n, 66 d, inj 1-84, RT 9.4-14.0], [18 n, 9 d, inj 45-85, RT 13.4-14.2], [63 n, 6 d, inj 2-85, RT 14.5-15.3]

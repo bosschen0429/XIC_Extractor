@@ -1,0 +1,184 @@
+worksets with direct peaks: 1541; identical to current: 1030
+direct peaks: 24134; placed differently vs current: 2642 (10.9%); vs no band: 2430 (10.1%)
+prototype grouping time, all worksets, one process: 0.3 s
+batch models in capture: inputs 1, calibrations 1; worksets without a calibration: 0
+bootstrap anchor observations: 24249 (7828 in agreed groups), cohorts ['20260106_CSMU_NAA_Tissue_R'], ISTD readings 510, QC 7
+windows with 2+ direct peaks: 910
+
+control fit from the bootstrap anchors (1.1 s):
+  control vs captured map: direct peaks newly without a coordinate 0, newly with one 0
+    other injections  n  19310  |diff| s: median  0.00, p95   0.00, max    0.0
+    #786, RT < 12     n    793  |diff| s: median  0.00, p95   0.00, max    0.0
+    #786, RT >= 12    n   1543  |diff| s: median  0.00, p95   0.00, max    0.0
+  knots per #786 injection (control): {'BenignfatBC1116': 23, 'QC2': 24, 'QC3': 29, 'QC5': 27, 'QC6': 24, 'QC7': 24, '4': 25, 'TumorBC2312': 29}
+
+linked on raw RT, step cap 0.4 min: 22112 anchor observations in 1292 rows; fit 0.9 s
+  knots per #786 injection: {'BenignfatBC1116': 37, 'QC2': 41, 'QC3': 40, 'QC5': 42, 'QC6': 39, 'QC7': 41, '4': 35, 'TumorBC2312': 47}
+  linked map vs control map: direct peaks newly without a coordinate 277, newly with one 1356
+    other injections  n  19289  |diff| s: median  0.91, p95  13.46, max  117.9
+    #786, RT < 12     n    537  |diff| s: median  4.65, p95  26.22, max   39.8
+    #786, RT >= 12    n   1543  |diff| s: median  1.04, p95   5.81, max   18.0
+  linked map: relinked on this map vs on the reference map: identical windows 693/910 (76%), direct placed differently 862 (3.7%); vs no-band grouping 11.1%
+
+linked on raw RT, step cap 0.6 min: 22553 anchor observations in 1203 rows; fit 0.9 s
+  knots per #786 injection: {'BenignfatBC1116': 44, 'QC2': 47, 'QC3': 49, 'QC5': 49, 'QC6': 50, 'QC7': 49, '4': 45, 'TumorBC2312': 58}
+  linked map vs control map: direct peaks newly without a coordinate 21, newly with one 1387
+    other injections  n  19307  |diff| s: median  0.98, p95  13.50, max  118.0
+    #786, RT < 12     n    775  |diff| s: median  1.99, p95  30.04, max   43.1
+    #786, RT >= 12    n   1543  |diff| s: median  1.06, p95   6.54, max   26.0
+  linked map: relinked on this map vs on the reference map: identical windows 752/910 (83%), direct placed differently 804 (3.4%); vs no-band grouping 9.9%
+
+ISTD labels: {'15N5-8-oxodG': 85, 'd3-5-hmdC': 85, 'd3-5-medC': 85, 'd3-N6-medA': 85, 'd3-dG-C8-MeIQx': 85, 'd4-N6-2HE-dA': 85}
+  raw RT (no map)
+    d3-5-hmdC                RT   9.0  covered 85/85  other injections |dev| median   1.2 s, p95   5.7 s  #786 injections mean dev  -33.6 s
+    d3-5-medC                RT  12.5  covered 85/85  other injections |dev| median   5.3 s, p95  64.6 s  #786 injections mean dev  -20.7 s
+    15N5-8-oxodG             RT  16.6  covered 85/85  other injections |dev| median   2.1 s, p95  16.8 s  #786 injections mean dev  -10.6 s
+    d4-N6-2HE-dA             RT  23.5  covered 85/85  other injections |dev| median  10.5 s, p95  40.5 s  #786 injections mean dev   -2.7 s
+    d3-N6-medA               RT  25.7  covered 85/85  other injections |dev| median  27.4 s, p95  87.1 s  #786 injections mean dev   +1.8 s
+    d3-dG-C8-MeIQx           RT  40.6  covered 85/85  other injections |dev| median   8.5 s, p95  19.9 s  #786 injections mean dev   +1.8 s
+  bootstrap anchors, ISTDs held out
+    d3-5-hmdC                RT   9.0  covered 84/85  other injections |dev| median   2.3 s, p95  17.6 s  #786 injections mean dev   -1.3 s
+    d3-5-medC                RT  12.5  covered 84/85  other injections |dev| median   1.8 s, p95  16.6 s  #786 injections mean dev   -0.3 s
+    15N5-8-oxodG             RT  16.6  covered 84/85  other injections |dev| median   5.8 s, p95  30.2 s  #786 injections mean dev   -1.4 s
+    d4-N6-2HE-dA             RT  23.4  covered 81/85  other injections |dev| median   5.9 s, p95  30.3 s  #786 injections mean dev   -9.0 s
+    d3-N6-medA               RT  25.7  covered 74/85  other injections |dev| median   6.4 s, p95  21.3 s  #786 injections mean dev   -8.2 s
+    d3-dG-C8-MeIQx           covered  0/85
+  rows linked on raw RT (cap 0.4), ISTDs held out
+    d3-5-hmdC                RT   9.0  covered 84/85  other injections |dev| median   2.6 s, p95   9.9 s  #786 injections mean dev   -9.1 s
+    d3-5-medC                RT  12.5  covered 85/85  other injections |dev| median   3.1 s, p95  60.1 s  #786 injections mean dev   -5.6 s
+    15N5-8-oxodG             RT  16.6  covered 85/85  other injections |dev| median   5.3 s, p95  34.2 s  #786 injections mean dev   -2.7 s
+    d4-N6-2HE-dA             RT  23.4  covered 84/85  other injections |dev| median   3.6 s, p95  28.3 s  #786 injections mean dev   +2.4 s
+    d3-N6-medA               RT  25.7  covered 83/85  other injections |dev| median   5.7 s, p95  56.5 s  #786 injections mean dev   +0.8 s
+    d3-dG-C8-MeIQx           RT  40.6  covered 60/85  other injections |dev| median   2.3 s, p95  12.0 s  #786 injections mean dev   +2.5 s
+  rows linked on raw RT (cap 0.6), ISTDs held out
+    d3-5-hmdC                RT   9.0  covered 85/85  other injections |dev| median   3.0 s, p95   8.7 s  #786 injections mean dev   -3.2 s
+    d3-5-medC                RT  12.4  covered 85/85  other injections |dev| median   3.2 s, p95  39.4 s  #786 injections mean dev   -6.3 s
+    15N5-8-oxodG             RT  16.6  covered 85/85  other injections |dev| median   5.9 s, p95  33.7 s  #786 injections mean dev   -1.8 s
+    d4-N6-2HE-dA             RT  23.5  covered 84/85  other injections |dev| median   5.1 s, p95  22.5 s  #786 injections mean dev   +0.0 s
+    d3-N6-medA               RT  25.7  covered 83/85  other injections |dev| median   6.0 s, p95  46.5 s  #786 injections mean dev   -0.2 s
+    d3-dG-C8-MeIQx           RT  40.6  covered 65/85  other injections |dev| median   3.2 s, p95  12.1 s  #786 injections mean dev   +1.2 s
+
+clean windows only (420 of 910 windows), cap 0.6: 6597 anchor observations in 397 rows
+  clean-window map vs control map: direct peaks newly without a coordinate 977, newly with one 408
+    other injections  n  18403  |diff| s: median  1.10, p95  16.50, max  109.5
+    #786, RT < 12     n    723  |diff| s: median  0.43, p95   4.17, max    9.4
+    #786, RT >= 12    n   1543  |diff| s: median  1.24, p95  10.72, max   25.4
+  clean-window map: relinked on this map vs on the reference map: identical windows 691/910 (76%), direct placed differently 836 (3.6%); vs no-band grouping 11.1%
+  clean-window rows (cap 0.6), ISTDs held out
+    d3-5-hmdC                RT   9.0  covered 66/85  other injections |dev| median   1.4 s, p95   8.6 s  #786 injections mean dev   +0.1 s
+    d3-5-medC                RT  12.5  covered 69/85  other injections |dev| median   3.3 s, p95  43.8 s  #786 injections mean dev   +2.1 s
+    15N5-8-oxodG             RT  16.6  covered 77/85  other injections |dev| median   3.0 s, p95  13.6 s  #786 injections mean dev   -2.9 s
+    d4-N6-2HE-dA             RT  23.4  covered 74/85  other injections |dev| median   3.6 s, p95  26.9 s  #786 injections mean dev   +5.5 s
+    d3-N6-medA               RT  25.7  covered 66/85  other injections |dev| median   7.9 s, p95  34.2 s  #786 injections mean dev   +2.6 s
+    d3-dG-C8-MeIQx           covered  0/85
+
+largest map disagreements (all rows, cap 0.6) - |diff| s, sample, raw RT, control, linked:
+   118.0  TumorBC2257_DNA                  raw  28.34  control  30.78  linked  28.82
+   115.2  TumorBC2258_DNA                  raw  28.39  control  30.75  linked  28.83
+   109.4  TumorBC2257_DNA                  raw  29.21  control  31.50  linked  29.68
+   108.4  TumorBC2258_DNA                  raw  29.09  control  31.33  linked  29.53
+    96.1  TumorBC2258_DNA                  raw  27.27  control  29.31  linked  27.71
+    91.2  TumorBC2259_DNA                  raw  28.46  control  30.81  linked  29.29
+    87.0  TumorBC2259_DNA                  raw  29.00  control  31.25  linked  29.80
+    81.0  TumorBC2257_DNA                  raw  26.22  control  28.07  linked  26.72
+direct peaks with |diff| > 10 s: 1553; samples 58; by raw RT: [(5, 431), (10, 734), (15, 166), (20, 97), (25, 71), (30, 52), (35, 2)]
+
+ISTD raw RT and calibrated RT near TumorBC2257-2259 (min); columns: raw | control | linked(cap 0.6) | holdout bootstrap | holdout linked
+  d4-N6-2HE-dA (batch median raw 23.48)
+      1 Breast_Cancer_Tissue_pooled_QC1  22.81 |  23.73 |  23.75 |  23.87 |  23.60
+      2 TumorBC2257_DNA           22.81 |  23.48 |  23.48 |  23.95 |  23.48
+      3 TumorBC2258_DNA           22.83 |  23.48 |  23.42 |  23.87 |  23.41
+      4 TumorBC2259_DNA           22.85 |  23.48 |  23.48 |  24.08 |  23.44
+      5 TumorBC2261_DNA           22.79 |  23.48 |  23.48 |  23.53 |  22.80
+      6 TumorBC2263_DNA           22.73 |  23.48 |  23.48 |  23.74 |  23.76
+      7 TumorBC2264_DNA           22.75 |  23.93 |  23.73 |  24.02 |  24.00
+  d3-N6-medA (batch median raw 25.73)
+      1 Breast_Cancer_Tissue_pooled_QC1  24.18 |  25.45 |  25.24 |  25.32 |  24.96
+      2 TumorBC2257_DNA           24.22 |  25.52 |  24.76 |  25.65 |  24.78
+      3 TumorBC2258_DNA           24.28 |  25.50 |  24.75 |  25.60 |  24.76
+      4 TumorBC2259_DNA           24.30 |  25.51 |  25.30 |  25.77 |  24.80
+      5 TumorBC2261_DNA           24.28 |  25.74 |  25.11 |  25.05 |  24.09
+      6 TumorBC2263_DNA           24.27 |  25.74 |  25.74 |  25.31 |  25.29
+      7 TumorBC2264_DNA           24.28 |  25.74 |  25.68 |  25.78 |  25.63
+  d3-dG-C8-MeIQx (batch median raw 40.62)
+      1 Breast_Cancer_Tissue_pooled_QC1  40.26 |  40.62 |  40.62 |   --   |  40.56
+      2 TumorBC2257_DNA           40.29 |  40.62 |  40.62 |   --   |  40.44
+      3 TumorBC2258_DNA           40.29 |  40.62 |  40.62 |   --   |  40.43
+      4 TumorBC2259_DNA           40.29 |  40.62 |  40.62 |   --   |  40.43
+      5 TumorBC2261_DNA           40.27 |  40.62 |  40.62 |   --   |  40.39
+      6 TumorBC2263_DNA           40.28 |  40.67 |  40.62 |   --   |  40.63
+      7 TumorBC2264_DNA           40.27 |   --   |  40.62 |   --   |  40.78
+
+iteration with ISTDs in the fit (production-like):
+  round 1 (raw RT rows, cap 0.6): d3-N6-medA in TumorBC2257/2258/2259 -> 24.76, 24.75, 25.30 (batch median 25.73)
+ round 2: 22474 anchor observations
+  round 2 vs round 1: direct peaks newly without a coordinate 19, newly with one 0
+    other injections  n  20542  |diff| s: median  0.47, p95   8.76, max   51.7
+    #786, RT < 12     n    835  |diff| s: median  0.70, p95   8.33, max   32.3
+    #786, RT >= 12    n   1616  |diff| s: median  0.32, p95   4.26, max   24.8
+  round 2 vs control: direct peaks newly without a coordinate 40, newly with one 1387
+    other injections  n  19289  |diff| s: median  1.05, p95  13.12, max  117.9
+    #786, RT < 12     n    774  |diff| s: median  1.27, p95  21.39, max   38.2
+    #786, RT >= 12    n   1543  |diff| s: median  0.97, p95   5.20, max   16.5
+  round 2: relinked on this map vs on the reference map: identical windows 757/910 (83%), direct placed differently 786 (3.3%); vs no-band grouping 9.5%
+  round 2: d3-N6-medA in TumorBC2257/2258/2259 -> 24.76, 24.75, 24.74 (batch median 25.73)
+ round 3: 22488 anchor observations
+  round 3 vs round 2: direct peaks newly without a coordinate 0, newly with one 1
+    other injections  n  20542  |diff| s: median  0.17, p95   4.59, max   43.3
+    #786, RT < 12     n    835  |diff| s: median  0.45, p95   3.45, max   16.2
+    #786, RT >= 12    n   1616  |diff| s: median  0.05, p95   1.01, max    2.1
+  round 3 vs control: direct peaks newly without a coordinate 39, newly with one 1387
+    other injections  n  19290  |diff| s: median  1.06, p95  12.07, max  117.8
+    #786, RT < 12     n    774  |diff| s: median  2.51, p95  23.74, max   39.8
+    #786, RT >= 12    n   1543  |diff| s: median  0.90, p95   4.76, max   17.1
+  round 3: relinked on this map vs on the reference map: identical windows 758/910 (83%), direct placed differently 799 (3.4%); vs no-band grouping 9.8%
+  round 3: d3-N6-medA in TumorBC2257/2258/2259 -> 24.76, 24.75, 24.76 (batch median 25.73)
+
+iteration with ISTDs held out throughout:
+  round 2, ISTDs held out
+    d3-5-hmdC                RT   9.0  covered 85/85  other injections |dev| median   3.5 s, p95  10.1 s  #786 injections mean dev   -2.7 s
+    d3-5-medC                RT  12.5  covered 85/85  other injections |dev| median   3.4 s, p95  50.7 s  #786 injections mean dev   -4.5 s
+    15N5-8-oxodG             RT  16.5  covered 85/85  other injections |dev| median   5.4 s, p95  30.5 s  #786 injections mean dev   -1.8 s
+    d4-N6-2HE-dA             RT  23.4  covered 83/85  other injections |dev| median   4.1 s, p95  21.1 s  #786 injections mean dev   +2.5 s
+    d3-N6-medA               RT  25.7  covered 81/85  other injections |dev| median   5.8 s, p95  38.1 s  #786 injections mean dev   +2.4 s
+    d3-dG-C8-MeIQx           RT  40.6  covered 57/85  other injections |dev| median   2.3 s, p95  11.0 s  #786 injections mean dev   +2.1 s
+  round 3, ISTDs held out
+    d3-5-hmdC                RT   9.0  covered 85/85  other injections |dev| median   3.4 s, p95  10.5 s  #786 injections mean dev   -3.2 s
+    d3-5-medC                RT  12.4  covered 85/85  other injections |dev| median   4.5 s, p95  43.3 s  #786 injections mean dev   -9.5 s
+    15N5-8-oxodG             RT  16.6  covered 85/85  other injections |dev| median   5.6 s, p95  29.5 s  #786 injections mean dev   -1.8 s
+    d4-N6-2HE-dA             RT  23.4  covered 84/85  other injections |dev| median   4.2 s, p95  31.0 s  #786 injections mean dev   +1.7 s
+    d3-N6-medA               RT  25.7  covered 83/85  other injections |dev| median   5.6 s, p95  56.2 s  #786 injections mean dev   +1.8 s
+    d3-dG-C8-MeIQx           RT  40.6  covered 59/85  other injections |dev| median   3.5 s, p95  11.4 s  #786 injections mean dev   -1.0 s
+
+worst ISTD deviations (s) under each holdout map, injection order in brackets:
+  d3-5-medC      bootstrap: BC2261[5] 59, BC2263[6] 30, Breast[1] 27, BC2257[2] 23, BC0979[64] 17
+  d3-5-medC      linked   : BC2261[5] 71, BC2265[8] 57, BC2264[7] 53, BC2267[9] 44, BC1068[72] 39
+  d3-N6-medA     bootstrap: BC2261[5] 38, BC2275[12] 27, BC2283[16] 23, BC2263[6] 22, Breast[1] 21
+  d3-N6-medA     linked   : BC2261[5] 99, BC2258[3] 59, BC2257[2] 58, BC2259[4] 57, Breast[1] 47
+  d4-N6-2HE-dA   bootstrap: BC2259[4] 38, BC2267[9] 36, BC2265[8] 35, BC2264[7] 34, BC2257[2] 30
+  d4-N6-2HE-dA   linked   : BC2261[5] 40, BC2264[7] 32, BC2265[8] 32, BC2267[9] 30, BC2270[10] 23
+  d3-5-hmdC      bootstrap: BC2258[3] 26, BC2259[4] 24, BC2257[2] 24, Breast[1] 23, BC2267[9] 18
+  d3-5-hmdC      linked   : BC2258[3] 15, Breast[1] 12, BC1037[69] 9, BC2290[53] 9, BC1068[72] 9
+
+ISTD peaks among calibrating anchors (removed by holdout / present within 0.01 Da and 0.05 min):
+  bootstrap: removed by the holdout 1619; d3-5-hmdC 85/85; d3-5-medC 83/83; 15N5-8-oxodG 85/85; d4-N6-2HE-dA 85/85; d3-N6-medA 85/85; d3-dG-C8-MeIQx 85/85;
+  linked cap 0.6: removed by the holdout 2472; d3-5-hmdC 85/85; d3-5-medC 83/83; 15N5-8-oxodG 85/85; d4-N6-2HE-dA 85/85; d3-N6-medA 85/85; d3-dG-C8-MeIQx 85/85;
+
+TumorBC2257 knots, observed 20-32 min (observed, reference - observed s):
+  control            [(22.81, 40), (22.85, 58), (24.22, 78), (24.27, 79), (28.34, 147)]
+  linked cap 0.6     [(22.81, 40), (22.85, 39), (23.98, 33), (24.22, 32), (24.27, 32)]
+  holdout bootstrap  [(22.85, 69), (24.27, 86), (28.34, 137)]
+  holdout linked     [(22.85, 40), (23.98, 34), (24.27, 33)]
+
+medA window precursor|269.1391330929313|10.0|116.0474|precursor|269.14434814453125|10.0|116.0474: 85 owners sit on the ISTD readings; their rows (cap 0.6, raw RT): {0: 85}; row sizes [85]
+  [ 1] Breast_Cancer_Tissue_poole ISTD 24.18  peaks 23-27 min (RT, row, direct/ms1): [(24.18, 0, 'd')]
+  [ 2] TumorBC2257_DNA            ISTD 24.22  peaks 23-27 min (RT, row, direct/ms1): [(24.22, 0, 'd')]
+  [ 3] TumorBC2258_DNA            ISTD 24.28  peaks 23-27 min (RT, row, direct/ms1): [(24.28, 0, 'd')]
+  [ 4] TumorBC2259_DNA            ISTD 24.30  peaks 23-27 min (RT, row, direct/ms1): [(24.3, 0, 'd')]
+  [ 5] TumorBC2261_DNA            ISTD 24.28  peaks 23-27 min (RT, row, direct/ms1): [(24.28, 0, 'd')]
+  [ 6] TumorBC2263_DNA            ISTD 24.27  peaks 23-27 min (RT, row, direct/ms1): [(24.27, 0, 'd')]
+  [ 7] TumorBC2264_DNA            ISTD 24.28  peaks 23-27 min (RT, row, direct/ms1): [(24.28, 0, 'd')]
+  [ 8] TumorBC2265_DNA            ISTD 24.34  peaks 23-27 min (RT, row, direct/ms1): [(24.34, 0, 'd')]
+  [ 9] TumorBC2267_DNA            ISTD 24.38  peaks 23-27 min (RT, row, direct/ms1): [(24.38, 0, 'd')]
+  [10] TumorBC2270_DNA            ISTD 24.44  peaks 23-27 min (RT, row, direct/ms1): [(24.44, 0, 'd')]
+figure written
