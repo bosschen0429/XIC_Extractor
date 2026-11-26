@@ -849,7 +849,6 @@ def test_workbench_summary_consumes_the_finalized_publication_view(
     final_result = final_output.file_results[0].results[target.label]
     assert final_result.reported_peak_area is not None
     summary = build_summary(
-        config,
         [target],
         final_output,
         config.output_csv.with_name("xic_results.xlsx"),

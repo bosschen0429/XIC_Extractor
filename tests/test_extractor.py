@@ -1452,7 +1452,7 @@ def test_run_reports_nd_without_peak_scoped_nl(
     assert result.targeted_product_projection.product_state == "not_counted"
 
 
-def test_run_reports_file_error_rows(
+def test_formal_run_does_not_publish_on_raw_read_failure(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     config = _config(tmp_path)
@@ -1463,32 +1463,16 @@ def test_run_reports_file_error_rows(
         _open_raw_factory(errors={"Bad.raw": RuntimeError("file locked")}),
     )
 
-    output = _run(config, targets)
+    workbook_path = config.output_csv.with_suffix(".xlsx")
+    with pytest.raises(
+        RuntimeError, match="Targeted RAW acquisition failed.*Bad.*file locked"
+    ):
+        _run_formal_selection(config, targets, workbook_path=workbook_path)
 
-    long_rows = _run_output_to_long_rows(output, targets)
-    assert [_core_long_row(row) for row in long_rows] == [
-        {
-            "SampleName": "Bad",
-            "Group": "Other",
-            "Target": "WithNL",
-            "Role": "Analyte",
-            "ISTD Pair": "",
-            "RT": "ERROR",
-            "Area": "ERROR",
-            "NL": "ERROR",
-            "Int": "ERROR",
-            "PeakStart": "ERROR",
-            "PeakEnd": "ERROR",
-            "PeakWidth": "ERROR",
-            "依據": "RAW 失敗",
-        }
-    ]
-    assert long_rows[0]["Product State"] == "excluded"
-    assert long_rows[0]["Counted Detection"] == "FALSE"
-    assert long_rows[0]["Projection Exclusion Reasons"] == "file_error"
+    assert not workbook_path.exists()
 
 
-def test_run_writes_file_error_row_and_continues(
+def test_acquisition_records_file_error_and_continues(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     config = _config(tmp_path)
