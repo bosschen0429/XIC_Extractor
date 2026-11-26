@@ -59,7 +59,7 @@ class BackfillPlanningPosition:
     group: CrossSamplePeakGroupHypothesis
     sample: SampleMetadata
     planning_reason: BackfillPlanningReason
-    cell: CellObservation | None = None
+    cell: CellObservation | None
     no_request_decision: BackfillNoRequestDecision | None = None
 
     @property

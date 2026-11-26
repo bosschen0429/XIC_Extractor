@@ -51,6 +51,7 @@ NoWriteState: TypeAlias = Literal[
     "not_quantifiable",
     "unavailable",
 ]
+CellOrigin: TypeAlias = Literal["detected", "backfilled", "ms1_only"]
 CellSubject: TypeAlias = TargetCellSubject | GroupCellSubject
 CellEvidence: TypeAlias = (
     ObservedSearchSubject | SearchedNoObservationSubject | FinalGroupCellObservation
@@ -125,18 +126,29 @@ class ProductionCellDecision:
         return peak
 
     @property
-    def support_origin(self) -> str:
-        """Origin of the observation selected for the Untargeted value."""
-        evidence = self.evidence
-        if self.value is None or type(evidence) is not FinalGroupCellObservation:
-            return "unavailable"
-        if evidence.backfill_cell is not None or (
-            "ms1_only_backfill_observation" in evidence.evidence_states
-        ):
-            return "backfill_support"
-        if "ms1_only_group_observation" in evidence.evidence_states:
-            return "unavailable"
-        return "discovery_support"
+    def origin(self) -> CellOrigin | None:
+        """Where the Untargeted cell's peak came from, or ``None`` without one.
+
+        A peak with CID-NL support is ``detected``, whichever search found it;
+        only a numeric value read from an MS1-only Backfill peak is
+        ``backfilled``. A no-write cell that still retains a supported peak
+        reports ``detected``.
+        """
+        evidence = cast(FinalGroupCellObservation, self.evidence)
+        if evidence.ms1_only_group_observations and self.variant != "unresolved":
+            return "ms1_only"
+        if self.value is not None:
+            if evidence.direct_observations and not (
+                evidence.ms1_only_backfill_observations
+            ):
+                return "detected"
+            return "backfilled"
+        if evidence.direct_observations and self.variant not in {
+            "not_searched",
+            "unresolved",
+        }:
+            return "detected"
+        return None
 
     @property
     def backfill_query_bounds(self) -> tuple[float | None, float | None]:
