@@ -292,11 +292,13 @@ lab has no mature DIA method.
   inside another measured peak of the same trace never attaches through the
   margin. A peak with no attached event is `no_nl_event`.
 
-- **Strict support.** A scan strictly inside exactly one candidate peak, with no
-  positive-width overlap with another m/z-compatible peak, supports that peak
-  individually. Adjacent peaks can share a valley endpoint without blocking it.
-- **Set relation.** A scan on a peak boundary, or a peak with positive-width
-  overlap, relates to the connected candidate set. A set relation grants no
+- **Strict support.** Method assessment uses the same attachment rule. An event
+  that attaches to exactly one m/z-compatible candidate peak, with no
+  positive-width overlap with another compatible peak, supports that peak
+  individually; this includes a scan at an isolated peak's boundary or within
+  its 0.1 min margin.
+- **Set relation.** A scan on an endpoint shared by adjacent peaks, or a peak
+  with positive-width overlap, relates to the connected candidate set. A set relation grants no
   individual vote and no hypothesis.
 - **One event per peak.** Repeated strict scans inside one MS1 peak are one
   chromatographic support event with several scans, not independent votes. The

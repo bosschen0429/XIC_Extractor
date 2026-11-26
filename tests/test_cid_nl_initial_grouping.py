@@ -76,7 +76,7 @@ def test_owner_decides_membership_and_exact_exclusion_from_acquired_evidence(
         if index == 1 and "unsearched" in scenario:
             raw.scans = ()
         if scenario in {"unsupported", "unsupported_unsearched"}:
-            raw.intensity = np.roll(raw.intensity, 60)
+            raw.intensity = np.roll(raw.intensity, 100)
         if scenario == "rejected" or scenario == "missing_capture" and index == 1:
             raw.intensity[:] = 0.0
         raws[path] = raw

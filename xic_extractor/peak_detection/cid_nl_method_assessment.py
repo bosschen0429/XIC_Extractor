@@ -7,6 +7,7 @@ searches, HOLD, and REJECT do not need fake ``PeakHypothesis`` objects.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Literal, TypeAlias
 
@@ -46,6 +47,26 @@ CidNlTechnicalState: TypeAlias = Literal[
     "not_evaluated",
 ]
 CidNlMethodResult: TypeAlias = Literal["SUPPORT", "HOLD", "REJECT"]
+
+NL_PEAK_ATTACHMENT_TOLERANCE_MIN = 0.1
+
+
+def nl_event_rt_attaches(
+    rt: float,
+    left: float,
+    right: float,
+    others: Iterable[tuple[float, float]],
+) -> bool:
+    """Inside the peak bounds, or within the DDA margin and inside no other peak.
+
+    DDA often samples a peak's foot or tail just past its integration bounds;
+    the margin never takes an RT that another measured peak contains.
+    """
+    if left <= rt <= right:
+        return True
+    return left - NL_PEAK_ATTACHMENT_TOLERANCE_MIN <= rt <= (
+        right + NL_PEAK_ATTACHMENT_TOLERANCE_MIN
+    ) and not any(other_left <= rt <= other_right for other_left, other_right in others)
 
 
 class CidNlMethodAssessmentContractError(ValueError):
@@ -106,8 +127,10 @@ def evaluate_cid_nl_method_relations(
 ) -> CidNlMethodRelations:
     """Attribute the complete in-memory universe without request/attempt IDs.
 
-    Only a strictly interior event in a non-overlapping compatible interval
-    supports an individual peak. Boundary and overlap evidence stays set-level.
+    An event supports an individual peak when it attaches to exactly one
+    m/z-compatible interval (``nl_event_rt_attaches``, for both its MS2 scan and
+    its support RT) and that interval overlaps no other compatible interval.
+    Shared valley endpoints and overlap evidence stay set-level.
     """
     individual: list[tuple[int, int]] = []
     set_relations: list[tuple[int, tuple[int, ...]]] = []
@@ -124,22 +147,32 @@ def evaluate_cid_nl_method_relations(
         containing = tuple(
             index
             for index in compatible
-            if candidate_intervals[index].rt_left_min <= event.support_rt_min
-            and event.scan_rt_min <= candidate_intervals[index].rt_right_min
+            if all(
+                nl_event_rt_attaches(
+                    rt,
+                    candidate_intervals[index].rt_left_min,
+                    candidate_intervals[index].rt_right_min,
+                    (
+                        (
+                            candidate_intervals[other].rt_left_min,
+                            candidate_intervals[other].rt_right_min,
+                        )
+                        for other in compatible
+                        if other != index
+                    ),
+                )
+                for rt in (event.support_rt_min, event.scan_rt_min)
+            )
         )
         if not containing:
             continue
         selected_index = containing[0]
         selected = candidate_intervals[selected_index]
-        strictly_unique = (
-            len(containing) == 1
-            and selected.rt_left_min < event.scan_rt_min < selected.rt_right_min
-            and not any(
-                index != selected_index
-                and selected.rt_left_min < candidate_intervals[index].rt_right_min
-                and candidate_intervals[index].rt_left_min < selected.rt_right_min
-                for index in compatible
-            )
+        strictly_unique = len(containing) == 1 and not any(
+            index != selected_index
+            and selected.rt_left_min < candidate_intervals[index].rt_right_min
+            and candidate_intervals[index].rt_left_min < selected.rt_right_min
+            for index in compatible
         )
         if strictly_unique:
             individual.append((event_index, selected_index))
@@ -552,6 +585,8 @@ __all__ = [
     "CidNlMethodRelations",
     "CidNlTechnicalState",
     "evaluate_cid_nl_method_relations",
+    "nl_event_rt_attaches",
+    "NL_PEAK_ATTACHMENT_TOLERANCE_MIN",
     "mint_cid_nl_method_assessment",
     "resolve_cid_nl_method_relations",
 ]
