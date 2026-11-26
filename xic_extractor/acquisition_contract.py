@@ -118,10 +118,7 @@ class AcquiredTrace:
 class TraceAcquisitionBatch:
     capability: TraceAcquisitionCapability
     traces: tuple[AcquiredTrace, ...]
-    logical_xic_request_count: int
-    xic_batch_count: int
     adapter_chromatogram_call_count: int
-    trace_point_count: int
 
     def __post_init__(self) -> None:
         if not isinstance(self.capability, TraceAcquisitionCapability):
@@ -132,16 +129,6 @@ class TraceAcquisitionBatch:
             not isinstance(trace, AcquiredTrace) for trace in self.traces
         ):
             raise AcquisitionContractError("traces must contain AcquiredTrace values")
-        expected_counts = {
-            "logical_xic_request_count": len(self.traces),
-            "xic_batch_count": 1,
-            "trace_point_count": sum(len(item.trace.rt) for item in self.traces),
-        }
-        for field, expected in expected_counts.items():
-            if getattr(self, field) != expected:
-                raise AcquisitionContractError(
-                    f"{field} mismatches the acquired batch content"
-                )
         _nonnegative_integer(
             self.adapter_chromatogram_call_count,
             "adapter_chromatogram_call_count",
@@ -150,6 +137,14 @@ class TraceAcquisitionBatch:
             raise AcquisitionContractError(
                 "all trace coordinates must bind the batch capability"
             )
+
+    @property
+    def logical_xic_request_count(self) -> int:
+        return len(self.traces)
+
+    @property
+    def trace_point_count(self) -> int:
+        return sum(len(item.trace.rt) for item in self.traces)
 
 
 def mint_trace_acquisition_capability(
@@ -207,14 +202,10 @@ def acquire_trace_batch(
             trace_point_count=len(trace.rt),
         )
         acquired.append(AcquiredTrace(coordinate=coordinate, trace=trace))
-    point_count = sum(len(item.trace.rt) for item in acquired)
     return TraceAcquisitionBatch(
         capability=capability,
         traces=tuple(acquired),
-        logical_xic_request_count=len(requests),
-        xic_batch_count=1,
         adapter_chromatogram_call_count=call_count_after - call_count_before,
-        trace_point_count=point_count,
     )
 
 

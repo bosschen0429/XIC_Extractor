@@ -1,5 +1,35 @@
 """Synthetic Targeted inputs shared by method and Workbench tests."""
 
+from xic_extractor.peak_detection.hypotheses import (
+    AuditTrail,
+    EvidenceVector,
+    IntegrationResult,
+    PeakHypothesis,
+)
+
+
+def selected_targeted_hypothesis(
+    integration: IntegrationResult,
+    *,
+    sample_name: str = "SampleA",
+    target_label: str = "WithNL",
+    role: str = "Analyte",
+    istd_pair: str = "",
+) -> PeakHypothesis:
+    """A selected owner measurement for presentation and anchor fixtures."""
+    return PeakHypothesis(
+        hypothesis_id=f"{sample_name}|{target_label}|selected",
+        trace_group_id=f"{sample_name}|{target_label}|targeted",
+        target_label=target_label,
+        role=role,
+        istd_pair=istd_pair,
+        analysis_mode="targeted",
+        resolver_mode="local_minimum",
+        integration=integration,
+        evidence=EvidenceVector(reason="selected spine"),
+        audit=AuditTrail(selected=True),
+    )
+
 
 def targeted_rows():
     """A synthetic deuterated ISTD and its paired analyte."""

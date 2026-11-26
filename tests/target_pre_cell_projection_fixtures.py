@@ -167,7 +167,6 @@ def _finalized_case(
             )
     cell_observations = compose_final_group_cell_observation_population(
         handoff=handoff,
-        predecessor_cells=spine.cells,
     )
     result = FinalizedScientificAlignment(
         scope=scope,

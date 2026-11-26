@@ -16,7 +16,6 @@ from xic_extractor.evidence.neutral_loss import (
     MS2ProductEvidence,
     NLResult,
 )
-from xic_extractor.extraction.scoring_factory import selected_candidate
 from xic_extractor.output.messages import (
     DiagnosticRecord,
 )
@@ -125,69 +124,40 @@ class ExtractionResult:
 
     @property
     def reported_rt(self) -> float | None:
-        """User-facing RT uses selected integration apex when available."""
+        """User-facing RT is the selected integration apex."""
         integration = self._selected_integration
-        if integration is not None:
-            return integration.rt_apex_min
-        candidate = selected_candidate(self.peak_result)
-        if candidate is not None:
-            return candidate.selection_apex_rt
-        peak = self.peak
-        if peak is None:
-            return None
-        return peak.rt
+        return None if integration is None else integration.rt_apex_min
 
     @property
     def reported_peak_area(self) -> float | None:
         integration = self._selected_integration
-        if integration is not None:
-            return integration.area_ms1_morphology
-        peak = self.peak
-        return None if peak is None else peak.area
+        return None if integration is None else integration.area_ms1_morphology
 
     @property
     def reported_peak_intensity(self) -> float | None:
         integration = self._selected_integration
-        if integration is not None:
-            return integration.height_raw
-        peak = self.peak
-        return None if peak is None else peak.intensity
+        return None if integration is None else integration.height_raw
 
     @property
     def reported_smoothed_peak_intensity(self) -> float | None:
         """Reuse the selected peak owner's smoothed height without recomputation."""
         integration = self._selected_integration
-        if integration is not None:
-            return integration.height_smoothed
-        peak = self.peak
-        return None if peak is None else peak.intensity_smoothed
+        return None if integration is None else integration.height_smoothed
 
     @property
     def reported_peak_start(self) -> float | None:
         integration = self._selected_integration
-        if integration is not None:
-            return integration.rt_left_min
-        peak = self.peak
-        return None if peak is None else peak.peak_start
+        return None if integration is None else integration.rt_left_min
 
     @property
     def reported_peak_end(self) -> float | None:
         integration = self._selected_integration
-        if integration is not None:
-            return integration.rt_right_min
-        peak = self.peak
-        return None if peak is None else peak.peak_end
+        return None if integration is None else integration.rt_right_min
 
     @property
     def reported_peak_width(self) -> float | None:
         integration = self._selected_integration
-        if integration is not None:
-            return abs(integration.rt_width_min)
-        start = self.reported_peak_start
-        end = self.reported_peak_end
-        if start is None or end is None:
-            return None
-        return abs(end - start)
+        return None if integration is None else abs(integration.rt_width_min)
 
 
 @dataclass

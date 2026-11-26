@@ -63,7 +63,7 @@ def record_discovery_ms1_measurements(
         ),
         (
             "xic_batch_count",
-            sum(batch.xic_batch_count for batch in batches),
+            len(batches),
             "batches",
             acquisition_source,
         ),

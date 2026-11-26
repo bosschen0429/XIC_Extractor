@@ -70,7 +70,6 @@ from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.configuration.execution_profile import ExecutionProfile
 from xic_extractor.diagnostics.stage_snapshot import load_snapshot
 from xic_extractor.execution.timing import TimingRecorder
-from xic_extractor.output.alignment.tsv_writer import backfill_query_bounds
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlEvaluationReceipt,
     mint_cid_nl_method_assessment,
@@ -381,13 +380,13 @@ def test_backfill_query_and_empty_completion_keep_sample_rt_separate_from_group(
         apex = 8.0 + shifts[sample_stem]
         if empty:
             assert cell.value is None
-            assert backfill_query_bounds(cell) == pytest.approx(
+            assert cell.backfill_query_bounds == pytest.approx(
                 (apex - BACKFILL_HALF_WINDOW_MIN, apex + BACKFILL_HALF_WINDOW_MIN)
             )
         else:
             assert cell.value is not None
             assert cell.selected_integration.rt_apex_min == pytest.approx(apex)
-            assert backfill_query_bounds(cell) == (None, None)
+            assert cell.backfill_query_bounds == (None, None)
 
 
 @pytest.mark.parametrize(

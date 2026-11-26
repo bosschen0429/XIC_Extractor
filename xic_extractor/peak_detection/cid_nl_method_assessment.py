@@ -283,7 +283,6 @@ def resolve_cid_nl_method_relations(
     ordered_candidates = tuple(sorted(candidate_peaks, key=_measured_order))
     individual_refs = tuple(
         bind_dda_cid_nl_peak_support(
-            sample=sample,
             evidence=evidence_refs[event_index],
             precursor=queries[event_index].precursor,
             peak_observation=candidate_peaks[candidate_index],
@@ -434,7 +433,7 @@ def is_ms1_only_cid_nl_backfill_assessment(
     The group owner authorized the revisit; the result grants no detection.
     """
     return (
-        assessment.detector_invocation_id == "untargeted-cid-nl-backfill"
+        assessment.evaluation_receipt.physical_query_mz is not None
         and assessment.technical_state == "evaluated"
         and assessment.method_result == "HOLD"
         and assessment.reason_codes == ("no_unique_qualifying_relation",)

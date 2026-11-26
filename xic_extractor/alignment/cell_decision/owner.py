@@ -125,6 +125,31 @@ class ProductionCellDecision:
         return peak
 
     @property
+    def support_origin(self) -> str:
+        """Origin of the observation selected for the Untargeted value."""
+        evidence = self.evidence
+        if self.value is None or type(evidence) is not FinalGroupCellObservation:
+            return "unavailable"
+        if evidence.backfill_cell is not None or (
+            "ms1_only_backfill_observation" in evidence.evidence_states
+        ):
+            return "backfill_support"
+        if "ms1_only_group_observation" in evidence.evidence_states:
+            return "unavailable"
+        return "discovery_support"
+
+    @property
+    def backfill_query_bounds(self) -> tuple[float | None, float | None]:
+        """RT window of the cell's single group-bounded search, if retained."""
+        evidence = cast(FinalGroupCellObservation, self.evidence)
+        bounds = {
+            (receipt.query_rt_min, receipt.query_rt_max)
+            for assessment in evidence.method_assessments
+            if (receipt := assessment.evaluation_receipt).physical_query_mz is not None
+        }
+        return bounds.pop() if len(bounds) == 1 else (None, None)
+
+    @property
     def source(self) -> str:
         if type(self.payload) is NumericCellDecision:
             return self.payload.source

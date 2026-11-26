@@ -6,9 +6,6 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal, TypeAlias
 
-from xic_extractor.alignment.backfill.evaluation_coverage import (
-    BackfillPlanningPosition,
-)
 from xic_extractor.alignment.cell_observation.group_context import (
     CidNlCellGroupContext,
     CidNlCellGroupSupport,
@@ -20,7 +17,6 @@ from xic_extractor.alignment.cell_observation.records import (
     CellObservation,
     CellObservationContractError,
     OutsideGroupCellRelation,
-    _direct_member_integration,
     mint_cell_observation,
 )
 from xic_extractor.alignment.cross_sample.association import (
@@ -56,8 +52,8 @@ FinalCellEvidenceAggregate: TypeAlias = FinalCellEvidenceState | Literal["mixed"
 class FinalGroupCellObservation:
     """One immutable final ``CrossSamplePeakGroupHypothesis × sample`` closure.
 
-    ``position_associations`` retain every coverage lane. ``predecessor_cells``
-    retain actual method evidence; a declared no-input position has no synthetic
+    ``position_associations`` retain every coverage lane and its method evidence;
+    a declared no-input position has no synthetic
     cell. A merge keeps every lane, while a split remainder has no associations.
     This object carries evidence only; it has no value, Matrix, writer, or
     quantifiability authority.
@@ -66,7 +62,6 @@ class FinalGroupCellObservation:
     group: CrossSamplePeakGroupHypothesis
     canonical_sample: SampleMetadata
     position_associations: tuple[CrossSampleCoveragePositionAssociation, ...]
-    predecessor_cells: tuple[CellObservation, ...]
     evidence_states: tuple[FinalCellEvidenceState, ...]
     backfill_cell: CellObservation | None = None
 
@@ -97,6 +92,14 @@ class FinalGroupCellObservation:
     @property
     def method_assessments(self) -> tuple[CidNlMethodAssessment, ...]:
         return tuple(cell.method_assessment for cell in self.effective_cells)
+
+    @property
+    def predecessor_cells(self) -> tuple[CellObservation, ...]:
+        return tuple(
+            association.position.cell
+            for association in self.position_associations
+            if association.position.cell is not None
+        )
 
     @property
     def effective_cells(self) -> tuple[CellObservation, ...]:
@@ -200,20 +203,18 @@ class FinalGroupCellObservation:
 def compose_final_group_cell_observation_population(
     *,
     handoff: CrossSampleAssociationLineageHandoff,
-    predecessor_cells: Sequence[CellObservation],
     backfill_cells: Sequence[CellObservation] = (),
 ) -> tuple[FinalGroupCellObservation, ...]:
     """Compose one exact final closure for every final Group × sample key.
 
     The complete Backfill coverage and CrossSample handoff are the only source
-    of correlation. ``predecessor_cells`` cover every searched handoff position
-    exactly once. Declared no-input positions remain explicit coverage without
+    of correlation. Each coverage position retains its searched cell.
+    Declared no-input positions remain explicit coverage without
     materializing method evidence.
     """
 
     return _compose_final_group_cell_observation_population(
         handoff=handoff,
-        predecessor_cells=tuple(predecessor_cells),
         backfill_cells=tuple(backfill_cells),
     )
 
@@ -221,7 +222,6 @@ def compose_final_group_cell_observation_population(
 def _compose_final_group_cell_observation_population(
     *,
     handoff: CrossSampleAssociationLineageHandoff,
-    predecessor_cells: tuple[CellObservation, ...],
     backfill_cells: tuple[CellObservation, ...] = (),
 ) -> tuple[FinalGroupCellObservation, ...]:
     backfilled_by_key: dict[tuple[str, str], CellObservation] = {}
@@ -233,11 +233,6 @@ def _compose_final_group_cell_observation_population(
         if key in backfilled_by_key:
             raise CellObservationContractError("duplicate completed backfill cell")
         backfilled_by_key[key] = backfill_ref
-    positions = tuple(handoff.coverage.positions)
-    source_by_position = _index_predecessor_cells(
-        predecessor_cells,
-        positions=positions,
-    )
     associations_by_key: dict[
         tuple[int, int], list[CrossSampleCoveragePositionAssociation]
     ] = {}
@@ -253,11 +248,6 @@ def _compose_final_group_cell_observation_population(
                     associations_by_key.get((id(group), id(sample)), ()),
                     key=lambda item: item.position.key,
                 )
-            )
-            source_lanes = tuple(
-                source_by_position[item.position.key]
-                for item in associations
-                if item.position.key in source_by_position
             )
             states: tuple[FinalCellEvidenceState, ...]
             recovered = backfilled_by_key.pop(
@@ -287,7 +277,7 @@ def _compose_final_group_cell_observation_population(
                 states = tuple(
                     _derive_lane_evidence_state(
                         association=association,
-                        source_cell=source_by_position.get(association.position.key),
+                        source_cell=association.position.cell,
                         final_group=group,
                         canonical_sample=sample,
                     )
@@ -298,7 +288,6 @@ def _compose_final_group_cell_observation_population(
                     group=group,
                     canonical_sample=sample,
                     position_associations=associations,
-                    predecessor_cells=source_lanes,
                     evidence_states=states,
                     backfill_cell=recovered,
                 )
@@ -310,60 +299,6 @@ def _compose_final_group_cell_observation_population(
     return tuple(sorted(cells, key=_final_cell_sort_key))
 
 
-def _index_predecessor_cells(
-    predecessor_cells: Sequence[CellObservation],
-    *,
-    positions: tuple[BackfillPlanningPosition, ...],
-) -> dict[tuple[str, str], CellObservation]:
-    cells = tuple(predecessor_cells)
-    if len({id(cell) for cell in cells}) != len(cells):
-        raise CellObservationContractError(
-            "predecessor cell population duplicates an exact source object"
-        )
-    result: dict[tuple[str, str], CellObservation] = {}
-    positions_by_key: dict[tuple[str, str], list[BackfillPlanningPosition]] = {}
-    for position in positions:
-        key = (
-            position.sample.sample_name,
-            position.group.group_hypothesis_id,
-        )
-        positions_by_key.setdefault(key, []).append(position)
-    for cell in cells:
-        source_group = cell.group_context.group
-        matches = tuple(
-            position
-            for position in positions_by_key.get(
-                (
-                    cell.sample_key,
-                    source_group.group_hypothesis_id,
-                ),
-                (),
-            )
-            if source_group == position.group
-        )
-        if len(matches) != 1:
-            raise CellObservationContractError(
-                "predecessor CellObservation does not bind exactly one "
-                "Backfill coverage position by full group identity and sample"
-            )
-        position = matches[0]
-        if position.key in result:
-            raise CellObservationContractError(
-                "predecessor CellObservation population duplicates a coverage position"
-            )
-        result[position.key] = cell
-    expected_ids = {
-        position.key
-        for position in positions
-        if position.planning_reason != "no_discovery_input"
-    }
-    if set(result) != expected_ids:
-        raise CellObservationContractError(
-            "predecessor CellObservation population is incomplete or extra"
-        )
-    return result
-
-
 def _derive_lane_evidence_state(
     *,
     association: CrossSampleCoveragePositionAssociation,
@@ -372,28 +307,8 @@ def _derive_lane_evidence_state(
     canonical_sample: SampleMetadata,
 ) -> FinalCellEvidenceState:
     if source_cell is None:
-        if (
-            association.position.planning_reason != "no_discovery_input"
-            or association.position.sample is not canonical_sample
-            or association.final_successor is not final_group
-        ):
-            raise CellObservationContractError(
-                "missing source cell requires exact no-input coverage"
-            )
         return "not_searched"
     source_group = source_cell.group_context.group
-    if source_group != association.position.group:
-        raise CellObservationContractError(
-            "source CellObservation crossed the exact predecessor group identity"
-        )
-    if (
-        source_cell.sample_key != association.position.sample.sample_name
-        or association.position.sample is not canonical_sample
-        or association.final_successor is not final_group
-    ):
-        raise CellObservationContractError(
-            "source CellObservation crossed the exact canonical sample"
-        )
     source_member = _member_for_sample(
         source_group,
         association.position.sample.sample_name,
@@ -458,15 +373,6 @@ def _derive_lane_evidence_state(
             raise CellObservationContractError(
                 "SUPPORT evidence has no exact final CrossSample member"
             )
-        _direct_member_integration(
-            member=final_member,
-            canonical_sample=canonical_sample,
-            terminal_variant="observed",
-            terminal_hypothesis=source_cell.peak_hypothesis,
-            method_assessment=source_cell.method_assessment,
-            peak_observation=source_cell.peak_observation,
-            peak_hypothesis=source_cell.peak_hypothesis,
-        )
     elif final_member is not None and state != "unavailable":
         raise CellObservationContractError(
             "final CrossSample member cannot carry a HOLD or REJECT method lane"

@@ -9,7 +9,7 @@ from tests.target_extraction_fixtures import (
     _candidate,
     _peak_result,
 )
-from tests.targeted_fixtures import ScopedMs2WindowReader
+from tests.targeted_fixtures import ScopedMs2WindowReader, selected_targeted_hypothesis
 from xic_extractor.configuration.models import Target
 from xic_extractor.configuration.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
@@ -21,6 +21,7 @@ from xic_extractor.ms2_scan_models import Ms2Scan, Ms2ScanEvent
 from xic_extractor.output.targeted_product_model import (
     TargetedProductProjection,
 )
+from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_extractor.peak_detection.models import (
     PeakCandidate,
     PeakCandidatesResult,
@@ -44,6 +45,21 @@ _OPEN_RAW_SEAM = "xic_extractor.extraction.target_extraction.open_raw"
 def test_credible_istd_anchor_rt_uses_selected_ms1_reported_rt() -> None:
     candidate = _candidate(rt=9.2)
     result = ExtractionResult(
+        selected_hypothesis=selected_targeted_hypothesis(
+            IntegrationResult(
+                rt_left_min=9.1,
+                rt_apex_min=9.2,
+                rt_right_min=9.3,
+                raw_apex_rt_min=9.2,
+                rt_width_min=0.2,
+                height_raw=100.0,
+                height_smoothed=100.0,
+                area_raw_counts_seconds=1000.0,
+                area_ms1_morphology=1000.0,
+            ),
+            target_label="ISTD",
+            role="ISTD",
+        ),
         peak_result=_peak_result(candidate),
         nl=None,
         target_label="ISTD",

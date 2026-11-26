@@ -307,7 +307,7 @@ def project_untarget_child_rows(
                                     "backfill_query_rt_min",
                                     "backfill_query_rt_max",
                                 ),
-                                map(format_value, backfill_query_bounds(cell)),
+                                map(format_value, cell.backfill_query_bounds),
                                 strict=True,
                             )
                         ),
@@ -622,23 +622,6 @@ def cell_status(decision: ProductionCellDecision) -> str:
     """The cell's origin, or its no-write state when it reports no peak."""
 
     return cell_origin(decision) or decision.variant
-
-
-def backfill_query_bounds(
-    decision: ProductionCellDecision,
-) -> tuple[float | None, float | None]:
-    """The RT window of the cell's single Backfill search, when it has one."""
-
-    evidence = cast(FinalGroupCellObservation, decision.evidence)
-    bounds = {
-        (
-            assessment.evaluation_receipt.query_rt_min,
-            assessment.evaluation_receipt.query_rt_max,
-        )
-        for assessment in evidence.method_assessments
-        if assessment.detector_invocation_id == "untargeted-cid-nl-backfill"
-    }
-    return bounds.pop() if len(bounds) == 1 else (None, None)
 
 
 def _cell_fields(

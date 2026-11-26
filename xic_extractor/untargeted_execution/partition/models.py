@@ -5,7 +5,7 @@ from __future__ import annotations
 import copyreg
 from collections.abc import Callable, Mapping
 from copy import copy
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
 from typing import TYPE_CHECKING
@@ -13,7 +13,6 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from xic_extractor.raw_mass_recalibration import PreparedRawMassRecalibration
 
-from xic_extractor.acquisition_contract import AcquiredTrace, TraceAcquisitionBatch
 from xic_extractor.alignment.backfill.completion_evidence import (
     BackfillCompletionProjection,
 )
@@ -44,7 +43,6 @@ from xic_extractor.untargeted_execution.partition.cid_nl_sample_acquisition impo
     CidNlAcquisitionResult,
     _bounded_subject_candidates,
 )
-from xic_extractor.xic_models import XICRequest
 
 
 def _rebuild_mapping_proxy(
@@ -238,22 +236,6 @@ def project_completed_backfill(
     group_context: CidNlCellGroupContext,
 ) -> BackfillCompletionProjection:
     """Project an existing completed empty backfill without executing it again."""
-    return _project_completed_backfill(
-        result,
-        group_context=group_context,
-        exact_traces=_exact_acquisition_traces,
-    )
-
-
-def _project_completed_backfill(
-    result: UntargetedSampleResult,
-    *,
-    group_context: CidNlCellGroupContext,
-    exact_traces: Callable[
-        [TraceAcquisitionBatch, XICRequest, str], tuple[AcquiredTrace, ...]
-    ],
-) -> BackfillCompletionProjection:
-    """Project the completed group query from its actual assessment and trace."""
     job = result.job
     group = group_context.group
     center = group.group_center_rt
@@ -268,35 +250,16 @@ def _project_completed_backfill(
         assessment.technical_state != "evaluated"
         or assessment.method_result != "HOLD"
         or assessment.candidate_peaks
-        or assessment.detector_invocation_id != "untargeted-cid-nl-backfill"
         or not receipt.search_completed
         or not receipt.acquisition_supported
         or backfill.backfill_input is not None
         or backfill.acquisition is None
     ):
         raise UntargetedPartitionError("backfill is not a completed empty epoch")
-    query_rt = center if backfill.query_rt is None else backfill.query_rt
-    expected_request = XICRequest(
-        mz=group.group_center_mz,
-        rt_min=max(0.0, query_rt - BACKFILL_HALF_WINDOW_MIN),
-        rt_max=query_rt + BACKFILL_HALF_WINDOW_MIN,
-        ppm_tol=job.method_subject.precursor_tolerance_ppm,
-    )
-    exact = exact_traces(
-        backfill.acquisition, expected_request, assessment.acquisition_source_id
-    )
-    if len(exact) != 1:
-        raise UntargetedPartitionError("backfill crossed its exact request coordinates")
-    (acquired,) = exact
     return BackfillCompletionProjection(
         sample=job.sample,
         group=group,
-        group_center_mz=group.group_center_mz,
-        group_center_rt=center,
-        query_rt=query_rt,
-        query_rt_basis=backfill.query_rt_basis,
         backfill_assessment=assessment,
-        trace_coordinate=acquired.coordinate,
     )
 
 
@@ -314,18 +277,6 @@ class UntargetedPartitionResult:
     @property
     def succeeded(self) -> bool:
         return self.failure is None
-
-
-def _exact_acquisition_traces(
-    acquisition: TraceAcquisitionBatch, request: XICRequest, source_id: str
-) -> tuple[AcquiredTrace, ...]:
-    return tuple(
-        replace(acquired)
-        for acquired in acquisition.traces
-        if acquired.coordinate.request == request
-        and acquired.coordinate.capability.acquisition_source.acquisition_source_id
-        == source_id
-    )
 
 
 def _index_request_subject_candidates(
@@ -356,47 +307,3 @@ def _request_subject_candidates(
     return job._request_candidates_by_subject.get(
         job.method_subject.method_subject_id, ()
     )
-
-
-class _SampleResultContext:
-    """Reuse completed adapter snapshots within one synchronous owner phase."""
-
-    def __init__(self) -> None:
-        self._traces: dict[
-            int,
-            tuple[
-                TraceAcquisitionBatch,
-                dict[tuple[XICRequest, str], tuple[AcquiredTrace, ...]],
-            ],
-        ] = {}
-
-    def exact_traces(
-        self, acquisition: TraceAcquisitionBatch, request: XICRequest, source_id: str
-    ) -> tuple[AcquiredTrace, ...]:
-        cached = self._traces.get(id(acquisition))
-        if cached is None:
-            grouped: dict[tuple[XICRequest, str], list[AcquiredTrace]] = {}
-            for acquired in acquisition.traces:
-                key = (
-                    acquired.coordinate.request,
-                    acquired.coordinate.capability.acquisition_source.acquisition_source_id,
-                )
-                grouped.setdefault(key, []).append(acquired)
-            cached = (
-                acquisition,
-                {key: tuple(values) for key, values in grouped.items()},
-            )
-            self._traces[id(acquisition)] = cached
-        return cached[1].get((request, source_id), ())
-
-    def project_completed_backfill(
-        self,
-        result: UntargetedSampleResult,
-        *,
-        group_context: CidNlCellGroupContext,
-    ) -> BackfillCompletionProjection:
-        return _project_completed_backfill(
-            result,
-            group_context=group_context,
-            exact_traces=self.exact_traces,
-        )

@@ -200,7 +200,6 @@ def _untarget_projection_inputs(
         terminal_subjects=terminals,
         grouping_result=receipt,
         cell_observation_handoff=handoff,
-        predecessor_cell_observations=predecessor_cells,
     )
     return scope, terminals, receipt, alignment
 

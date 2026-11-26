@@ -681,7 +681,7 @@ def prepare_batch_alignment_explanation(
             if content in emitted_assessments:
                 return
             if (
-                content.detector_invocation_id == "untargeted-cid-nl-backfill"
+                content.evaluation_receipt.physical_query_mz is not None
                 and content.method_result == "SUPPORT"
             ):
                 if not capture_evidence:
