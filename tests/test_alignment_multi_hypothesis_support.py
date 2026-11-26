@@ -182,8 +182,10 @@ def test_identity_membership_is_geometry_not_group_center_reclassification(
         if candidate.direct_support_assessment is None
     )
     assert len(direct_ids) == len(observation_ids) == 2
+    channel = sample_assessments[0][1].method_subject.method_subject_id
     final_scope, final = regroup_cid_nl_cross_sample_groups(
         samples=samples,
+        channel=channel,
         grouping_scope=grouping_scope,
         grouping_result=initial,
         alignment_config=config,
@@ -218,6 +220,7 @@ def test_identity_membership_is_geometry_not_group_center_reclassification(
     )
     _, reversed_final = regroup_cid_nl_cross_sample_groups(
         samples=samples[::-1],
+        channel=channel,
         grouping_scope=reversed_scope,
         grouping_result=reversed_initial,
         alignment_config=config,

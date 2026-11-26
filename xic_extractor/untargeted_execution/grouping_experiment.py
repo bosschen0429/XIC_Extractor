@@ -77,9 +77,7 @@ def grouping_experiment_from_prepared(
             )
             worksets.append(
                 GroupingWorkset(
-                    key="|".join(
-                        subject.method_subject_id for subject in workset.subjects
-                    ),
+                    key=workset.subject_key,
                     owners=tuple(owners[key] for key in sorted(owners)),
                     known_identity_bindings=bindings,
                     rt_warp=partition.rt_frame.warp_for_snapshot,

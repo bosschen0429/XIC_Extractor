@@ -300,6 +300,26 @@ membership, not bootstrap or Targeted selection. Backfill admission applies the
 same membership cost to fixed groups within its own search eligibility; see
 [Backfill](backfill.md).
 
+A recurring CID-NL row is fixed first
+([`cid_nl_drift_band.py`](../../xic_extractor/alignment/cid_nl_drift_band.py))
+when the workset is one calibrated scalar channel: one neutral-loss tag,
+precursor and product masses within tolerance of their medians, and no
+composite or known-identity owner. A sample whose only direct peak has a
+supported coordinate is a reference. Coordinates are calibrated RT minus the
+channel anchor's frozen B and M drift; a channel without an anchor keeps the
+calibrated RT. With at least 21 references, each sample's band centre is the
+median of the other references, and the band admits apices no farther from it
+than the width of their 5–95% quantile range. A sample's member is the nearest
+direct apex in the band, else the nearest quantifiable MS1-only apex in it,
+else a quantifiable envelope covering the centre, direct first. An equally
+near pair leaves the slot empty, and a direct peak without a coordinate blocks
+the MS1-only choices. A direct peak outside the band keeps its CID-NL evidence
+but does not occupy the row. The row is not fixed when its precursor masses
+span more than the full-group tolerance. Its members leave the search below,
+which groups the other owners; shoulder handling then sees every group.
+Without a fixed row, every owner enters the search. Snapshot replay
+(`scripts.run_alignment regroup`) runs the same step.
+
 - A connected precursor-mass neighborhood is the comparison universe. Every
   cost comparison in it uses common apices only when all members have estimated
   coordinates; otherwise the whole universe uses raw coordinates. Unsupported

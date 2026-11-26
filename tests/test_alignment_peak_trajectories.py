@@ -460,6 +460,46 @@ def test_single_peak_samples_cannot_hide_an_informative_doublet(
     assert result.source_contexts == tuple(contexts)
 
 
+@pytest.mark.parametrize("reverse", [False, True])
+def test_order_contradictions_count_each_peak_once_in_the_strongest_contrast(
+    reverse,
+):
+    """Five injections each resolve the same three ordered peaks a < b < c."""
+    from tests.alignment_pipeline_helpers import resolved_elution_context
+
+    apices = {"a": 9.86, "b": 10.0, "c": 10.14}
+    contexts, owners, orders = [], [], {}
+    for i in range(5):
+        sample, shift = f"D{i}", i * 0.005
+        contexts.append(
+            resolved_elution_context(
+                sample,
+                tuple(
+                    (rt + shift, height)
+                    for rt, height in zip(
+                        apices.values(), (100.0, 70.0, 40.0), strict=True
+                    )
+                ),
+            )
+        )
+        owners += [_owner(sample, label, rt + shift) for label, rt in apices.items()]
+        orders[sample] = i
+    if reverse:
+        contexts.reverse()
+        owners.reverse()
+    model = resolve_peak_trajectories(
+        owners, contexts, config=AlignmentConfig(), injection_order=orders
+    )
+
+    def separation(*members: str) -> int:
+        return model.corroborated_separation(members)
+
+    assert separation("D0:a", "D1:a", "D2:a") == 0
+    assert separation("D0:a", "D1:a", "D2:a", "D3:b") == 1
+    assert separation("D0:a", "D1:a", "D2:b", "D3:b") == 2
+    assert separation("D0:a", "D1:b", "D2:c") == 1
+
+
 @pytest.mark.parametrize("second_sample_supported", [False, True])
 def test_pattern_calibration_requires_support_for_both_samples(second_sample_supported):
     owners = [_owner("a", "early", 10.0), _owner("b", "early", 11.6)]

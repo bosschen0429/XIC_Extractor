@@ -290,7 +290,7 @@ def test_application_outputs_formal_groups_with_an_optional_snapshot(
     import xic_extractor.alignment.grouping_experiment as experiment
 
     with monkeypatch.context() as diagnostic_guard:
-        diagnostic_guard.setattr(experiment, "group_cid_nl_owners", forbidden)
+        diagnostic_guard.setattr(experiment, "group_cid_nl_workset", forbidden)
         output = application.run_untargeted_grouping(
             UntargetedRequest(
                 discovery_batch_index=write_batch(tmp_path, ("S0", "S1", "S2", "S3")),
@@ -886,6 +886,7 @@ def test_calibrated_patterns_reject_shifted_decoys_without_merging_real_peaks(
         )
         scope, result = regroup_cid_nl_cross_sample_groups(
             samples=fixture.samples,
+            channel=workset.key,
             grouping_scope=InitialGroupingScope(
                 (499.0, 501.0),
                 (7.0, 16.0),

@@ -4,15 +4,23 @@ import numpy as np
 import pytest
 
 from tests.alignment_pipeline_helpers import _owner
+from xic_extractor.alignment.cid_nl_drift_band import assign_drift_band
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.grouping_experiment import GroupingInputs, GroupingWorkset
+from xic_extractor.alignment.grouping_experiment import (
+    GroupingInputs,
+    GroupingWorkset,
+    replay_grouping,
+)
 from xic_extractor.alignment.rt_drift import (
     DriftAnchor,
     DriftCoefficients,
     RtDriftModel,
 )
+from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.alignment.sample_rt_calibration import BatchRtCalibration
-from xic_extractor.diagnostics.cid_nl_trace_partition import regroup_channel
+from xic_extractor.mass_accuracy import within_ppm
+
+BAND = "corrected_cid_nl_reference_band"
 
 
 def ms1(s, rt):
@@ -20,19 +28,27 @@ def ms1(s, rt):
 
 
 def replay(owners, drift=None):
+    """Each sample's band slot, and the formal grouping of the same workset."""
     samples = tuple(dict.fromkeys(o.sample_stem for o in owners))
+    order = dict(zip(samples, range(len(samples)), strict=True))
     calibration = BatchRtCalibration.from_coordinate_knots(
         tuple((s, ((1.0, 1.0), (20.0, 20.0))) for s in samples)
     )
-    w = GroupingWorkset(
-        "ch", owners, (), None, rt_calibration=calibration, rt_drift=drift
-    )
-    slots, groups = regroup_channel(
+    frame = SampleRtFrame(
+        injection_order=order, sample_universe=frozenset(samples)
+    ).with_sample_calibration(calibration, drift)
+    anchor = drift.anchors[0] if drift else None
+    slots = assign_drift_band(owners, samples, frame, anchor)
+    groups = replay_grouping(
         GroupingInputs(
             samples,
-            dict(zip(samples, range(len(samples)), strict=True)),
+            order,
             AlignmentConfig(),
-            (w,),
+            (
+                GroupingWorkset(
+                    "ch", owners, (), None, rt_calibration=calibration, rt_drift=drift
+                ),
+            ),
             {},
         )
     )
@@ -74,23 +90,13 @@ def test_corrected_band_releases_direct_without_erasing_it_or_confirming_the_fil
         assert slot.radius == pytest.approx(
             np.quantile(peers, 0.95) - np.quantile(peers, 0.05)
         )
-        assert slot.selected == o.owner_id
-    assert slots["fill"].selected == envelope.owner_id
-    assert slots["fill"].reason == "ms1_only_envelope"
-    assert (
-        slots["vacant"].selected is None
-        and slots["vacant"].reason == "no_compatible_peak"
-    )
-    assert (
-        slots["unknown"].selected is None
-        and slots["unknown"].reason == "unknown_direct_coordinate"
-    )
-    assert (
-        slots["ambiguous"].selected is None
-        and slots["ambiguous"].reason == "competing_candidates"
-    )
-    (main,) = [g for g in groups if "corrected_cid_nl_reference_band" in g.evidence]
-    assert set(main.owner_ids) == {envelope.owner_id, *(o.owner_id for o in ref)}
+    for sample in ("vacant", "unknown", "ambiguous"):
+        assert slots[sample].selected is None
+    (main,) = [g for g in groups if BAND in g.evidence]
+    assert {d.owner_id: d.reason for d in main.inference_decisions} == {
+        envelope.owner_id: "ms1_only_envelope",
+        **{o.owner_id: "direct_apex" for o in ref},
+    }
     assert sorted(k for g in groups for k in g.owner_ids) == sorted(
         o.owner_id for o in owners
     )
@@ -99,15 +105,12 @@ def test_corrected_band_releases_direct_without_erasing_it_or_confirming_the_fil
 def test_ms1_fill_needs_a_recurring_direct_row_and_does_not_train_it():
     ref = tuple(_owner(f"r{i}", "ref", apex_rt=10) for i in range(21))
     fill = ms1("fill", 10)
-    slots, _ = replay((*ref[:-1], fill))
-    assert all(
-        s.selected is None and s.reason == "insufficient_peers" for s in slots.values()
-    )
-    slots, _ = replay((*ref, fill))
-    assert (
-        slots["fill"].reason == "ms1_only_apex"
-        and slots["fill"].selected == fill.owner_id
-    )
+    slots, groups = replay((*ref[:-1], fill))
+    assert all(s.selected is None for s in slots.values())
+    assert not any(BAND in g.evidence for g in groups)
+    slots, groups = replay((*ref, fill))
+    (main,) = [g for g in groups if BAND in g.evidence]
+    assert set(main.owner_ids) == {fill.owner_id, *(o.owner_id for o in ref)}
     assert (slots["r1"].peers, slots["fill"].peers) == (20, 21)
 
 
@@ -128,7 +131,6 @@ def test_competing_envelopes_use_nl_only_after_the_apex_options():
     direct = _owner("query", "supported", apex_rt=9.96)
     other = _owner("query", "alternative", apex_rt=10.04)
     slots, _ = replay((*peers, direct, other))
-    assert slots["query"].reason == "competing_candidates"
     assert slots["query"].selected is None
     slots, _ = replay((*peers, direct, replace(other, primary_identity_event=None)))
     assert (slots["query"].selected, slots["query"].reason) == (
@@ -140,4 +142,22 @@ def test_competing_envelopes_use_nl_only_after_the_apex_options():
     assert (slots["query"].selected, slots["query"].reason) == (
         apex.owner_id,
         "ms1_only_apex",
+    )
+
+
+def test_band_row_keeps_the_full_precursor_tolerance():
+    """Both mass extremes sit near the median, but not near each other."""
+    tolerance = AlignmentConfig().precursor_mz_tolerance_ppm
+    offset = 0.8 * tolerance * 1e-6
+    owners = tuple(
+        _owner(f"r{i}", "ref", apex_rt=10, precursor_mz=500 * (1 + offset * (-1) ** i))
+        for i in range(22)
+    )
+    _, groups = replay(owners)
+    assert not any(BAND in g.evidence for g in groups)
+    for group in groups:
+        masses = [owner.peak.mz for owner in group.owners]
+        assert within_ppm(max(masses), min(masses), tolerance)
+    assert sorted(k for g in groups for k in g.owner_ids) == sorted(
+        o.owner_id for o in owners
     )

@@ -1163,25 +1163,19 @@ class MembershipComparison:
                 for p in group
             }
             selected_cost, selected_fit = self.cost(partition), self.peer_fit(partition)
-            scores: dict[Partition, float] = {}
-            for alternatives in alternatives_by_owner.values():
-                better = [
-                    (p, score)
-                    for p, score in alternatives
-                    if score < selected_cost - 1e-12
-                    or (
-                        score <= selected_cost
-                        and self.peer_fit(p) < selected_fit - 1e-12
-                    )
-                ]
-                scores.update(self._rank_retained(alternatives, better))
+            scores = {
+                p: score
+                for alternatives in alternatives_by_owner.values()
+                for p, score in alternatives
+                if score < selected_cost - 1e-12
+                or (score <= selected_cost and self.peer_fit(p) < selected_fit - 1e-12)
+            }
             if not scores:
                 return partition, alternatives_by_owner
-            improvements = {p for p in scores}
             best_cost = min(scores.values())
             partition = self.merge(
                 min(
-                    (p for p in improvements if scores[p] == best_cost),
+                    (p for p, score in scores.items() if score == best_cost),
                     key=lambda p: (self.peer_fit(p), self.partition_key(p)),
                 )
             )

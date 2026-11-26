@@ -73,6 +73,11 @@ class CidNlWorksetGrouping:
     grouping_result: CrossSampleGroupingResult
     retained_candidates: tuple[RetainedGroupingCandidate, ...]
 
+    @property
+    def subject_key(self) -> str:
+        """The method subjects grouped together; one subject is its drift channel."""
+        return "|".join(subject.method_subject_id for subject in self.subjects)
+
 
 @dataclass(frozen=True, slots=True)
 class CidNlWorksetEvidence:

@@ -459,6 +459,7 @@ def regroup_cid_nl_grouping(
         operation_counts: list[FeatureInferenceOperationCounts] = []
         grouping_scope, grouping_result = regroup_cid_nl_cross_sample_groups(
             samples=prepared.request.scope.samples,
+            channel=workset.subject_key,
             grouping_scope=workset.grouping_scope,
             grouping_result=workset.grouping_result,
             alignment_config=alignment_config,

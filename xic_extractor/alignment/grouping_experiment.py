@@ -14,7 +14,7 @@ from xic_extractor.alignment.feature_membership_inference import (
 )
 from xic_extractor.alignment.grouping_workflow import (
     direct_evidence_rt_rows,
-    group_cid_nl_owners,
+    group_cid_nl_workset,
 )
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 from xic_extractor.alignment.peak_trajectories import (
@@ -101,8 +101,9 @@ def replay_grouping(
             rt_frame=frame,
         )
         groups.extend(
-            group_cid_nl_owners(
+            group_cid_nl_workset(
                 workset.owners,
+                channel=workset.key,
                 config=config or inputs.alignment_config,
                 sample_universe=sample_universe,
                 rt_frame=frame,

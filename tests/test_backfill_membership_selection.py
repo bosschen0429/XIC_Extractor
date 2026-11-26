@@ -175,25 +175,43 @@ def test_complete_extension_still_rejects_two_rt_populations():
 
 @pytest.mark.parametrize("reverse", [False, True])
 def test_order_support_can_choose_a_backfill_peak_but_cannot_exclude_one(reverse):
-    from xic_extractor.alignment.peak_trajectories import PeakTrajectory
+    """S's two peaks sit equally far from the fixed later peaks.
 
-    a, b = (cid_nl_owner(s, s) for s in ("A", "B"))
-    first, second = ("later", "earlier") if reverse else ("earlier", "later")
-    match = cid_nl_owner("S", first, apex_rt=9.93)
-    other = cid_nl_owner("S", second, apex_rt=10.07)
-    owners = (a, b, match, other)
-    ids = tuple(o.owner_id for o in owners)
-    original = {"fixed": ids[:2]}
+    Doublets in the other injections order the two tracks; S's earlier peak
+    still remains a feasible member when it is the only proposal.
+    """
+    from tests.alignment_pipeline_helpers import resolved_elution_context
+    from xic_extractor.alignment.peak_trajectories import resolve_peak_trajectories
+
+    apices = {"A": 10.0, "B": 10.0, "S": 10.07, "W1": 10.0, "W2": 10.0}
+    first, second = ("second", "first") if reverse else ("first", "second")
+    contexts, owners = [], {}
+    for sample, rt in apices.items():
+        contexts.append(
+            resolved_elution_context(sample, ((rt, 100.0), (rt + 0.14, 60.0)))
+        )
+        names = (first, second) if sample == "S" else ("early", "late")
+        for track, name, apex in zip(
+            ("early", "late"), names, (rt, rt + 0.14), strict=True
+        ):
+            owners[sample, track] = cid_nl_owner(sample, name, apex_rt=apex)
+    order = {sample: i for i, sample in enumerate(apices)}
+    fixed = (owners["A", "late"], owners["B", "late"])
+    match, other = owners["S", "late"], owners["S", "early"]
+    compared = (*fixed, match, other)
     comparison = MembershipComparison(
-        owners[::-1] if reverse else owners,
+        compared[::-1] if reverse else compared,
         rules=CID_NL_GROUPING_RULES,
         config=AlignmentConfig(),
-        rt_frame=SampleRtFrame(injection_order={"A": 1, "B": 2, "S": 12}),
-        trajectories=PeakTrajectories(
-            tracks=(PeakTrajectory(ids[:3], ()), PeakTrajectory(ids[3:], ())),
-            physical_order=((ids[2], ids[3]),),
+        rt_frame=SampleRtFrame(injection_order=order),
+        trajectories=resolve_peak_trajectories(
+            tuple(owners.values()),
+            contexts,
+            config=AlignmentConfig(),
+            injection_order=order,
         ),
     )
+    original = {"fixed": tuple(owner.owner_id for owner in fixed)}
     for candidates in ((other,), (other, match) if reverse else (match, other)):
         proposals = [("fixed", o.owner_id) for o in candidates]
         selected, _ = select_backfill_memberships(

@@ -10,6 +10,7 @@ from typing import cast
 from xic_extractor.alignment.backfill.membership_selection import (
     select_backfill_memberships,
 )
+from xic_extractor.alignment.cid_nl_drift_band import drift_band_membership
 from xic_extractor.alignment.cid_nl_grouping import CID_NL_GROUPING_RULES
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample.grouping_result import (
@@ -23,6 +24,7 @@ from xic_extractor.alignment.cross_sample.peak_groups import (
     _expected_cross_sample_lineage,
     _hypothesis_from_owner_group,
     construct_cross_sample_peak_group_hypotheses,
+    hypothesis_from_membership,
 )
 from xic_extractor.alignment.feature_membership_inference import (
     FeatureInferenceOperationCounts,
@@ -192,6 +194,7 @@ def build_initial_cid_nl_cross_sample_groups(
 def regroup_cid_nl_cross_sample_groups(
     *,
     samples: tuple[SampleMetadata, ...],
+    channel: str,
     grouping_scope: InitialGroupingScope,
     grouping_result: CrossSampleGroupingResult,
     alignment_config: AlignmentConfig,
@@ -207,8 +210,9 @@ def regroup_cid_nl_cross_sample_groups(
         injection_order=rt_frame.injection_order,
         rt_frame=rt_frame,
     )
-    groups = group_cid_nl_owners(
+    groups = group_cid_nl_workset(
         owners,
+        channel=channel,
         config=alignment_config,
         sample_universe=frozenset(sample.raw_stem for sample in samples),
         rt_frame=rt_frame,
@@ -250,6 +254,63 @@ def group_cid_nl_owners(
         rules=CID_NL_GROUPING_RULES,
     )
     return reject_shoulder_groups(groups, config=config)
+
+
+def group_cid_nl_workset(
+    owners: Sequence[SampleLocalMS1Owner],
+    *,
+    channel: str,
+    config: AlignmentConfig,
+    sample_universe: frozenset[str],
+    rt_frame: SampleRtFrame,
+    peak_trajectories: PeakTrajectories,
+    known_identity_bindings: Sequence[tuple[str, str]] = (),
+    operation_counts_sink: list[FeatureInferenceOperationCounts] | None = None,
+) -> tuple[CrossSamplePeakGroupHypothesis, ...]:
+    """Final workset grouping under the frozen drift model.
+
+    A recurring scalar CID-NL channel first fixes its drift-band row; ordinary
+    membership then groups the other owners. Without such a row every owner is
+    grouped ordinarily.
+    """
+    band = drift_band_membership(
+        owners,
+        channel=channel,
+        samples=tuple(sorted(sample_universe)),
+        rt_frame=rt_frame,
+        config=config,
+        known_identity_bindings=known_identity_bindings,
+    )
+    if band is None:
+        return group_cid_nl_owners(
+            owners,
+            config=config,
+            sample_universe=sample_universe,
+            rt_frame=rt_frame,
+            known_identity_bindings=known_identity_bindings,
+            operation_counts_sink=operation_counts_sink,
+            peak_trajectories=peak_trajectories,
+        )
+    basis, decisions = band
+    by_id = {owner.owner_id: owner for owner in owners}
+    row = hypothesis_from_membership(
+        tuple(by_id[owner_id] for owner_id in basis.owner_ids),
+        basis,
+        decisions,
+        CID_NL_GROUPING_RULES,
+    )
+    members = frozenset(basis.owner_ids)
+    rest = construct_cross_sample_peak_group_hypotheses(
+        tuple(owner for owner in owners if owner.owner_id not in members),
+        accept_competition=True,
+        config=config,
+        sample_universe=sample_universe,
+        rt_frame=rt_frame,
+        operation_counts_sink=operation_counts_sink,
+        peak_trajectories=peak_trajectories,
+        rules=CID_NL_GROUPING_RULES,
+    )
+    return reject_shoulder_groups((row, *rest), config=config)
 
 
 def direct_evidence_rt_rows(
