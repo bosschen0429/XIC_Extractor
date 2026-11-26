@@ -95,7 +95,6 @@ WorkflowRequest: TypeAlias = TargetWorkflowRequest | UntargetWorkflowComposition
 @dataclass(frozen=True, slots=True)
 class _WorkflowAdapterFields:
     terminal_subjects: tuple[TerminalSearchObservation, ...]
-    predecessor_cell_observations: tuple[CellObservation, ...]
     rt_frame: SampleRtFrame
     backfill_cell_observations: tuple[CellObservation, ...] = ()
 
@@ -126,10 +125,6 @@ def compose_untarget_subject(
     adapter: UntargetWorkflowAdapter,
 ) -> FinalizedUntargetApplicationResult:
     """Close one bounded subject workset without asserting runtime completion."""
-    if type(request) is not UntargetWorkflowCompositionRequest:
-        raise AlignmentWorkflowContractError(
-            "Subject composition requires exact inputs"
-        )
     subjects = set(_untarget_scope_memberships(request.scope).values())
     provider_subjects = {
         provider.method_subject_id for provider in request.scope.evidence_providers
@@ -145,11 +140,7 @@ def compose_untarget_subject(
             f"Untarget subject composition failed at {failure.stage.value}: "
             f"{failure.error}"
         ) from failure.error
-    if type(result) is not FinalizedUntargetApplicationResult:
-        raise AlignmentWorkflowContractError(
-            "Subject composition returned crossed result"
-        )
-    return result
+    return cast(FinalizedUntargetApplicationResult, result)
 
 
 def _compose_application_result(
@@ -192,11 +183,6 @@ def _compose_application_result(
             terminal_subjects=adapter.terminal_subjects,
             grouping_result=final_receipt,
             cell_observation_handoff=handoff,
-            predecessor_cell_observations=(
-                adapter.predecessor_cell_observations
-                if closed_coverage is not None
-                else ()
-            ),
             backfill_cell_observations=adapter.backfill_cell_observations,
             targeted_backfill_decisions=(
                 adapter.targeted_backfill_decisions

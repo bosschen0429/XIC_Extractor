@@ -101,16 +101,11 @@ def finalize_scientific_alignment(
     terminal_subjects: Sequence[TerminalSearchObservation],
     grouping_result: CrossSampleGroupingResult,
     cell_observation_handoff: CrossSampleAssociationLineageHandoff | None,
-    predecessor_cell_observations: Sequence[CellObservation],
     backfill_cell_observations: Sequence[CellObservation] = (),
     targeted_backfill_decisions: tuple[ConservativeBackfillCellDecision, ...] = (),
 ) -> FinalizedScientificAlignment:
     """Close one complete terminal population into its shared core."""
 
-    if type(grouping_result) is not CrossSampleGroupingResult:
-        raise FinalizedScientificAlignmentContractError(
-            "finalization requires an exact CrossSample final receipt"
-        )
     terminals = tuple(sorted(terminal_subjects, key=_terminal_sort_key))
     _require_terminal_population(scope, terminals)
     canonical_samples: tuple[SampleMetadata, ...]
@@ -129,7 +124,7 @@ def finalize_scientific_alignment(
         )
     canonical_cells: tuple[FinalGroupCellObservation, ...]
     if cell_observation_handoff is None:
-        if predecessor_cell_observations or backfill_cell_observations:
+        if backfill_cell_observations:
             raise FinalizedScientificAlignmentContractError(
                 "repair-free finalization cannot carry repair lineage"
             )
@@ -138,7 +133,6 @@ def finalize_scientific_alignment(
         try:
             canonical_cells = compose_final_group_cell_observation_population(
                 handoff=cell_observation_handoff,
-                predecessor_cells=predecessor_cell_observations,
                 backfill_cells=backfill_cell_observations,
             )
         except CellObservationContractError as exc:

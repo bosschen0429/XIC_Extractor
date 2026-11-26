@@ -7,6 +7,7 @@ from zipfile import ZipFile
 import pytest
 from openpyxl import load_workbook
 
+from tests.targeted_fixtures import selected_targeted_hypothesis
 from xic_extractor.configuration.execution_profile import in_process_execution
 from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.evidence.neutral_loss import NLResult
@@ -19,6 +20,7 @@ from xic_extractor.output.messages import DiagnosticRecord
 from xic_extractor.output.targeted_product_model import (
     TargetedProductProjection,
 )
+from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_extractor.peak_detection.models import (
     PeakCandidate,
     PeakDetectionResult,
@@ -419,6 +421,20 @@ def _run_output(*, with_diagnostics: bool) -> RunOutput:
         ),
     )
     result = ExtractionResult(
+        selected_hypothesis=selected_targeted_hypothesis(
+            IntegrationResult(
+                rt_left_min=8.9,
+                rt_apex_min=9.0,
+                rt_right_min=9.2,
+                raw_apex_rt_min=9.03,
+                rt_width_min=0.29999999999999893,
+                height_raw=500.0,
+                height_smoothed=450.0,
+                area_raw_counts_seconds=123.45,
+                area_ms1_morphology=123.45,
+            ),
+            target_label="WithNL",
+        ),
         peak_result=peak_result,
         nl=NLResult("WARN", 12.34, None, 3, 0, 2),
         target_label="WithNL",

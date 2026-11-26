@@ -221,9 +221,7 @@ def test_group_closed_state_table_maps_owner_observations_without_reason_parsing
     tmp_path,
 ):
     _, spine, handoff = _owner_handoff(tmp_path)
-    observations = compose_final_group_cell_observation_population(
-        handoff=handoff, predecessor_cells=spine.cells
-    )
+    observations = compose_final_group_cell_observation_population(handoff=handoff)
     answers = tuple(
         decision_owner._decide_group(
             observation,
@@ -253,7 +251,6 @@ def test_group_hold_counterexample_distinguishes_observed_and_zero_candidate(
     fixture, spine, handoff = _owner_handoff(tmp_path)
     observed_cells = compose_final_group_cell_observation_population(
         handoff=handoff,
-        predecessor_cells=spine.cells,
     )
     sample = fixture.sample("s4")
     observed = next(item for item in observed_cells if item.canonical_sample is sample)
@@ -286,7 +283,6 @@ def test_group_hold_counterexample_distinguishes_observed_and_zero_candidate(
     )
     negative_cells = compose_final_group_cell_observation_population(
         handoff=handoff,
-        predecessor_cells=predecessor_cells,
     )
     negative = next(item for item in negative_cells if item.canonical_sample is sample)
     assert (
@@ -301,7 +297,6 @@ def test_group_reject_decides_rejected_observation(
     _fixture, spine, handoff = _owner_handoff(tmp_path)
     cells = compose_final_group_cell_observation_population(
         handoff=handoff,
-        predecessor_cells=spine.cells,
     )
     reject = next(
         item for item in cells if item.evidence_state == "rejected_observation"
@@ -366,7 +361,6 @@ def test_group_merge_selects_one_direct_integration_among_lanes(
     )
     observations = compose_final_group_cell_observation_population(
         handoff=handoff,
-        predecessor_cells=predecessor_cells,
     )
 
     assert all(
@@ -432,7 +426,6 @@ def test_group_split_nonmember_maps_exact_not_searched_closure(
     )
     cells = compose_final_group_cell_observation_population(
         handoff=handoff,
-        predecessor_cells=spine.cells,
     )
     not_searched = next(item for item in cells if item.evidence_state == "not_searched")
     assert (

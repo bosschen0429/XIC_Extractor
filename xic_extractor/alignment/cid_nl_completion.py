@@ -106,7 +106,6 @@ class CidNlWorksetCompletion:
     _terminal_subjects: tuple[TerminalSearchObservation, ...]
     _sample_assessments: tuple[tuple[SampleMetadata, CidNlMethodAssessment], ...]
     _grouping_result: CrossSampleGroupingResult
-    _predecessor_cells: tuple[CellObservation, ...]
     _backfill_cells: tuple[CellObservation, ...]
     _coverage_plan: _CellCoveragePlan
     _samples: tuple[SampleMetadata, ...]
@@ -139,7 +138,6 @@ class CidNlWorksetCompletion:
                 completed_grouping=self._grouping_result,
                 sample_assessments=self._sample_assessments,
                 closed_cell_coverage=coverage,
-                predecessor_cell_observations=self._predecessor_cells,
                 backfill_cell_observations=self._backfill_cells,
             ),
         )
@@ -169,7 +167,6 @@ def prepare_cid_nl_workset(
         _terminal_subjects=grouping.terminal_subjects,
         _sample_assessments=evidence.sample_assessments,
         _grouping_result=grouping_result,
-        _predecessor_cells=predecessor_cells,
         _backfill_cells=backfill_cells,
         _coverage_plan=coverage_plan,
         _samples=samples,
@@ -414,6 +411,7 @@ def _close_cell_coverage(
             planning_reason=_cell_planning_reason(
                 cell, no_request, backfill_enabled=plan.backfill_enabled
             ),
+            cell=cell,
             no_request_decision=no_request,
         )
         for group in repair_groups

@@ -5,6 +5,7 @@ import pytest
 from openpyxl import Workbook, load_workbook
 
 from scripts.csv_to_excel import run
+from tests.targeted_fixtures import selected_targeted_hypothesis
 from xic_extractor.configuration.execution_profile import in_process_execution
 from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.evidence.neutral_loss import NLResult
@@ -13,6 +14,7 @@ from xic_extractor.output.detection import MissingTargetedProductProjectionError
 from xic_extractor.output.messages import build_diagnostic_records
 from xic_extractor.output.sheet_results import _build_data_sheet
 from xic_extractor.output.workbook_styles import FOCUS, INK, MUTED
+from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_extractor.peak_detection.models import PeakDetectionResult, PeakResult
 
 _COUNTED = {"counted_detection": "TRUE", "product_state": "detected_clean"}
@@ -268,6 +270,20 @@ def test_csv_to_excel_retains_multi_peak_selection_and_candidate_count(
     config = _config(tmp_path)
     target = _target("Analyte")
     result = ExtractionResult(
+        selected_hypothesis=selected_targeted_hypothesis(
+            IntegrationResult(
+                rt_left_min=8.9,
+                rt_apex_min=9.0,
+                rt_right_min=9.1,
+                raw_apex_rt_min=9.0,
+                rt_width_min=0.1999999999999993,
+                height_raw=200.0,
+                height_smoothed=190.0,
+                area_raw_counts_seconds=123.0,
+                area_ms1_morphology=123.0,
+            ),
+            target_label="Analyte",
+        ),
         peak_result=PeakDetectionResult(
             status="OK",
             peak=PeakResult(9.0, 200.0, 190.0, 123.0, 8.9, 9.1),

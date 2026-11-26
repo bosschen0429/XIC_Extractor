@@ -330,8 +330,7 @@ def _support_observation_refs(sample_id, members, witnesses, cell):
 
 
 def _support_origin(sample_id, observation_refs, cell, curves, assessments):
-    """The cell's recorded origin; without a cell, derive it from the sample's
-    retained captures and supporting method assessments of its observations."""
+    """Read the cell owner; without a cell, show evidence but no origin."""
     if cell is not None:
         kind = cell["support_origin"]
         return {
@@ -361,15 +360,7 @@ def _support_origin(sample_id, observation_refs, cell, curves, assessments):
         and facts["method_result"] == "SUPPORT"
         and observation_set.intersection(facts["candidate_physical_peak_keys"])
     ]
-    capture_kinds = {facts["kind"] for _, facts in captures}
-    invocations = {facts["detector_invocation_id"] for _, facts in methods}
-    if "initial_capture" in capture_kinds and any(
-        isinstance(value, str) and value.startswith("untargeted-cid-nl-real-data:")
-        for value in invocations
-    ):
-        kind = "discovery_support"
-    else:
-        kind = "unavailable"
+    kind = "unavailable"
     return {
         "kind": kind,
         "label": presentation.support_origin_label(kind),

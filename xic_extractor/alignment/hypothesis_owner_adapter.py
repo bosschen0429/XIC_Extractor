@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from typing import cast
 
 from xic_extractor.alignment.cross_sample.peak_groups import (
     group_member_subject_from_peak_hypothesis,
@@ -119,13 +120,14 @@ def owner_from_cid_nl_assessment_support(
     )
     measured = support_relations
     aggregate_precursor_mz = math.fsum(
-        relation.precursor_mz for relation in measured
+        cast(float, relation.precursor.reference_mz) for relation in measured
     ) / len(measured)
     aggregate_product_mz = math.fsum(
-        relation.observed_product_mz for relation in measured
+        relation.evidence.product_mz for relation in measured
     ) / len(measured)
     aggregate_observed_loss = math.fsum(
-        relation.precursor_mz - relation.observed_product_mz for relation in measured
+        cast(float, relation.precursor.reference_mz) - relation.evidence.product_mz
+        for relation in measured
     ) / len(measured)
     neutral_loss_tag = (
         assessment.method_subject.method_subject_id
@@ -146,7 +148,7 @@ def owner_from_cid_nl_assessment_support(
         source_scans=tuple(
             sorted(
                 {
-                    (relation.dda_scan_number, relation.scan_rt_min)
+                    (relation.dda_scan_number, relation.evidence.scan_rt_min)
                     for relation in measured
                 }
             )

@@ -14,6 +14,10 @@ if TYPE_CHECKING:
 
 RECORDED_ORIGINS = ("backfill_support", "discovery_support")
 SUPPORT_ORIGINS = frozenset((*RECORDED_ORIGINS, "unavailable"))
+_RECORDED_ORIGIN_BY_CELL_ORIGIN = {
+    "backfilled": "backfill_support",
+    "detected": "discovery_support",
+}
 
 
 def validate_membership_risks(risks: object) -> None:
@@ -146,16 +150,6 @@ def review_cell(decision: ProductionCellDecision) -> dict[str, Any]:
     """Project the decision owner and its effective observations without hashing."""
     evidence = cast("FinalGroupCellObservation", decision.evidence)
     cells = evidence.effective_cells
-    value_peak = decision.value_peak
-    stages = {value_peak.capture_stage} if value_peak is not None else set()
-    origin = (
-        "backfill_support"
-        if "backfill_observation" in stages or "method_backfill" in stages
-        else "discovery_support"
-        if "initial_capture" in stages
-        and "ms1_only_group_observation" not in evidence.evidence_states
-        else "unavailable"
-    )
     qualities = {}
     for cell in cells:
         observation = cell.peak_observation
@@ -181,7 +175,11 @@ def review_cell(decision: ProductionCellDecision) -> dict[str, Any]:
         "reason_codes": sorted(
             {reason for cell in cells for reason in cell.reason_codes}
         ),
-        "support_origin": origin,
+        "support_origin": (
+            _RECORDED_ORIGIN_BY_CELL_ORIGIN.get(decision.origin or "", "unavailable")
+            if decision.value is not None
+            else "unavailable"
+        ),
         "signal_quality": [qualities[key] for key in sorted(qualities)],
         "observation_ids": sorted(
             {

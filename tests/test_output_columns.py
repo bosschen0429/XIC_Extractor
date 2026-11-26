@@ -2,6 +2,7 @@ from pathlib import Path
 
 from openpyxl import load_workbook
 
+from tests.targeted_fixtures import selected_targeted_hypothesis
 from xic_extractor import extractor as extractor_module
 from xic_extractor.configuration.execution_profile import in_process_execution
 from xic_extractor.configuration.models import ExtractionConfig, Target
@@ -17,6 +18,7 @@ from xic_extractor.output.excel_pipeline import write_excel_from_run_output
 from xic_extractor.output.targeted_product_model import (
     TargetedProductProjection,
 )
+from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_extractor.peak_detection.models import (
     PeakCandidate,
     PeakDetectionResult,
@@ -68,6 +70,20 @@ def _fabricate_run_output() -> RunOutput:
         reason="all checks passed",
     )
     extraction_result = ExtractionResult(
+        selected_hypothesis=selected_targeted_hypothesis(
+            IntegrationResult(
+                rt_left_min=8.9,
+                rt_apex_min=9.0,
+                rt_right_min=9.2,
+                raw_apex_rt_min=9.03,
+                rt_width_min=0.29999999999999893,
+                height_raw=500.0,
+                height_smoothed=450.0,
+                area_raw_counts_seconds=123.0,
+                area_ms1_morphology=123.0,
+            ),
+            target_label="d3-5-hmdC",
+        ),
         peak_result=peak_result,
         nl=None,
         target_label="d3-5-hmdC",

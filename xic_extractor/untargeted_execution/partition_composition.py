@@ -66,7 +66,7 @@ from xic_extractor.untargeted_execution.partition.models import (
     UntargetedInitialSampleResult,
     UntargetedPartitionJob,
     UntargetedSampleResult,
-    _SampleResultContext,
+    project_completed_backfill,
 )
 from xic_extractor.untargeted_execution.partition.request import (
     UntargetedPartitionContext,
@@ -418,7 +418,6 @@ def _build_production_composition_inputs(
     alignment_config: AlignmentConfig,
     known_istd_reference: KnownIstdReference | None,
 ) -> _ProductionCompositionInputs:
-    result_context = _SampleResultContext()
     result_by_key = {
         (
             result.job.sample.raw_stem,
@@ -551,7 +550,7 @@ def _build_production_composition_inputs(
             alignment_config=alignment_config,
         )
         receipts = tuple(
-            result_context.project_completed_backfill(
+            project_completed_backfill(
                 result_by_key[(sample.raw_stem, context.method_subject_id)],
                 group_context=context,
             )

@@ -227,12 +227,10 @@ def test_cell_handoff_never_reconstructs_completed_groups(
     )
     first = compose_final_group_cell_observation_population(
         handoff=handoff,
-        predecessor_cells=sources,
     )
     assert constructions == []
     second = compose_final_group_cell_observation_population(
         handoff=handoff,
-        predecessor_cells=sources,
     )
     assert second == first
     assert constructions == []
@@ -345,7 +343,6 @@ def test_composer_mints_exact_cartesian_owner_population_and_states(
 
     cells = compose_final_group_cell_observation_population(
         handoff=handoff,
-        predecessor_cells=spine.cells,
     )
 
     assert len(cells) == len(handoff.final_population) * len(handoff.coverage.samples)
@@ -362,24 +359,6 @@ def test_composer_mints_exact_cartesian_owner_population_and_states(
         assert all(
             any(association is item for item in handoff.position_associations)
             for association in cell.position_associations
-        )
-
-
-def test_composer_rejects_missing_or_duplicate_owner_source_cells(
-    tmp_path: Path,
-) -> None:
-    _fixture, spine, handoff = _owner_handoff(tmp_path)
-
-    with pytest.raises(CellObservationContractError, match="incomplete"):
-        compose_final_group_cell_observation_population(
-            handoff=handoff,
-            predecessor_cells=spine.cells[:-1],
-        )
-
-    with pytest.raises(CellObservationContractError, match="duplicates"):
-        compose_final_group_cell_observation_population(
-            handoff=handoff,
-            predecessor_cells=spine.cells + (spine.cells[0],),
         )
 
 
@@ -416,7 +395,6 @@ def test_composer_distinguishes_completed_negative_search(
 
     cells = compose_final_group_cell_observation_population(
         handoff=handoff,
-        predecessor_cells=predecessor_cells,
     )
 
     s4 = next(cell for cell in cells if cell.canonical_sample is sample)
@@ -430,7 +408,7 @@ def test_composer_distinguishes_completed_negative_search(
         assert not s4.integrations and not s4.direct_hypotheses
 
 
-def test_composer_rejects_same_sample_crossed_source_to_position(
+def test_composer_keeps_same_sample_sources_with_their_groups(
     tmp_path: Path,
 ) -> None:
     fixture = build_processing_identity_no_raw_fixture(tmp_path, sample_stems=("s1",))
@@ -480,7 +458,6 @@ def test_composer_rejects_same_sample_crossed_source_to_position(
     )
     composed = compose_final_group_cell_observation_population(
         handoff=handoff,
-        predecessor_cells=(first_cell, second_cell),
     )
     assert len(composed) == 2
 
@@ -557,11 +534,12 @@ def test_composer_merge_retains_both_predecessor_lanes_deterministically(
     )
     forward = compose_final_group_cell_observation_population(
         handoff=handoff,
-        predecessor_cells=predecessor_cells,
     )
     reverse = compose_final_group_cell_observation_population(
-        handoff=handoff,
-        predecessor_cells=tuple(reversed(predecessor_cells)),
+        handoff=replace(
+            handoff,
+            position_associations=tuple(reversed(handoff.position_associations)),
+        ),
     )
     assert forward == reverse
     assert len(forward) == 2
@@ -645,7 +623,6 @@ def test_composer_split_keeps_cartesian_not_searched_remainder(
     )
     composed = compose_final_group_cell_observation_population(
         handoff=handoff,
-        predecessor_cells=predecessor_spine.cells,
     )
     assert len(composed) == 4
     by_key = {(item.group, item.canonical_sample): item for item in composed}
@@ -678,8 +655,9 @@ def test_final_member_rejects_hold_method_lane(tmp_path: Path) -> None:
         invalid_source if cell is source else cell for cell in spine.cells
     )
 
+    handoff = _owner_handoff_for_cells(fixture, spine.group, predecessor_cells)
+
     with pytest.raises(CellObservationContractError, match="HOLD or REJECT"):
         compose_final_group_cell_observation_population(
             handoff=handoff,
-            predecessor_cells=predecessor_cells,
         )

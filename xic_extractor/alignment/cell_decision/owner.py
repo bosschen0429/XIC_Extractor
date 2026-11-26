@@ -51,6 +51,7 @@ NoWriteState: TypeAlias = Literal[
     "not_quantifiable",
     "unavailable",
 ]
+CellOrigin: TypeAlias = Literal["detected", "backfilled", "ms1_only"]
 CellSubject: TypeAlias = TargetCellSubject | GroupCellSubject
 CellEvidence: TypeAlias = (
     ObservedSearchSubject | SearchedNoObservationSubject | FinalGroupCellObservation
@@ -123,6 +124,42 @@ class ProductionCellDecision:
             return None
         (peak,) = self.evidence.value_peaks
         return peak
+
+    @property
+    def origin(self) -> CellOrigin | None:
+        """Where the Untargeted cell's peak came from, or ``None`` without one.
+
+        A peak with CID-NL support is ``detected``, whichever search found it;
+        only a numeric value read from an MS1-only Backfill peak is
+        ``backfilled``. A no-write cell that still retains a supported peak
+        reports ``detected``.
+        """
+        evidence = cast(FinalGroupCellObservation, self.evidence)
+        if evidence.ms1_only_group_observations and self.variant != "unresolved":
+            return "ms1_only"
+        if self.value is not None:
+            if evidence.direct_observations and not (
+                evidence.ms1_only_backfill_observations
+            ):
+                return "detected"
+            return "backfilled"
+        if evidence.direct_observations and self.variant not in {
+            "not_searched",
+            "unresolved",
+        }:
+            return "detected"
+        return None
+
+    @property
+    def backfill_query_bounds(self) -> tuple[float | None, float | None]:
+        """RT window of the cell's single group-bounded search, if retained."""
+        evidence = cast(FinalGroupCellObservation, self.evidence)
+        bounds = {
+            (receipt.query_rt_min, receipt.query_rt_max)
+            for assessment in evidence.method_assessments
+            if (receipt := assessment.evaluation_receipt).physical_query_mz is not None
+        }
+        return bounds.pop() if len(bounds) == 1 else (None, None)
 
     @property
     def source(self) -> str:

@@ -220,7 +220,6 @@ def _quality_review_report(
         observation = NS(
             physical_peak_key=f"obs-{sid}",
             integration=NS(signal_quality=quality, rt_apex_min=1.0),
-            capture_stage="initial_capture",
         )
         cell = NS(
             peak_observation=observation,
@@ -235,7 +234,7 @@ def _quality_review_report(
             value=value,
             source="raw_trapezoid",
             selected_integration=observation.integration,
-            value_peak=observation if value is not None else None,
+            origin="detected",
         )
         cells.append(review_cell(decision))
         cells[-1]["membership_risks"] = [

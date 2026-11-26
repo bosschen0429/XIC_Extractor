@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from xic_extractor.alignment.backfill.conservative import (
         ConservativeBackfillCellDecision,
     )
+    from xic_extractor.alignment.cell_observation.records import CellObservation
 
 BackfillPlanningReason = Literal[
     "retained_local_owner",
@@ -58,6 +59,7 @@ class BackfillPlanningPosition:
     group: CrossSamplePeakGroupHypothesis
     sample: SampleMetadata
     planning_reason: BackfillPlanningReason
+    cell: CellObservation | None
     no_request_decision: BackfillNoRequestDecision | None = None
 
     @property

@@ -16,20 +16,6 @@ from xic_extractor.alignment.projection.untarget import (
     UntargetProjectionContractError,
     project_untarget_matrix,
 )
-from xic_extractor.alignment.result import (
-    FinalizedScientificAlignment,
-)
-
-
-def _predecessor_cells(base: FinalizedScientificAlignment):
-    predecessor_cells = []
-    seen = set()
-    for cell in base.cell_observations:
-        for predecessor_cell in cell.predecessor_cells:
-            if id(predecessor_cell) not in seen:
-                seen.add(id(predecessor_cell))
-                predecessor_cells.append(predecessor_cell)
-    return tuple(predecessor_cells)
 
 
 @pytest.mark.parametrize("group_mode", ["single", "two", "merged"])
@@ -114,7 +100,6 @@ def test_projection_is_deterministic_for_reversed_terminal_order(tmp_path, monke
         terminal_subjects=tuple(reversed(terminals)),
         grouping_result=forward.grouping_result,
         cell_observation_handoff=forward.cell_observation_handoff,
-        predecessor_cell_observations=_predecessor_cells(forward),
     )
     assert project_untarget_matrix(forward, decide_group_cell_population(forward)) == (
         project_untarget_matrix(reverse, decide_group_cell_population(reverse))

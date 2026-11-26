@@ -6,7 +6,7 @@ from collections.abc import Iterator, Mapping
 from copy import deepcopy
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any, cast
+from typing import cast
 
 from xic_extractor.alignment.cell_decision.owner import ProductionCellDecision
 from xic_extractor.alignment.completion import (
@@ -16,16 +16,12 @@ from xic_extractor.alignment.completion import (
     complete_analysis,
 )
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.result.application_result import (
-    FinalizedTargetApplicationResult,
-)
+from xic_extractor.alignment.projection.target.pre_cell import TargetCellSubject
 from xic_extractor.alignment.result.scientific_alignment import ObservedSearchSubject
 from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.applications.targeted.application import (
     FinalizedTargetProductionResult,
-    TargetedApplicationError,
     TargetedApplicationRequest,
-    TargetedOutputBoundaryError,
 )
 from xic_extractor.configuration.models import ConfigError, ExtractionConfig, Target
 from xic_extractor.extraction.result_models import (
@@ -148,9 +144,8 @@ def execute_targeted_production_workflow(
     finalized_results = tuple(
         _execute_target(prepared, request, target) for target in prepared.targets
     )
-    _validate_finalized_result_population(request, finalized_results)
     publication_output = _build_publication_output(
-        finalized_results, prepared.acquisition_evidence, config=request.config
+        finalized_results, prepared, config=request.config
     )
     return CompletedTargetedProductionWorkflow(
         finalized_results=finalized_results,
@@ -160,120 +155,33 @@ def execute_targeted_production_workflow(
     )
 
 
-def _validate_finalized_result_population(
-    request: TargetedApplicationRequest,
-    results: tuple[FinalizedTargetProductionResult, ...],
-) -> None:
-    if type(results) is not tuple or any(
-        type(result) is not FinalizedTargetApplicationResult for result in results
-    ):
-        raise TargetedApplicationError(
-            "finalized workflow must return an exact immutable Target result tuple"
-        )
-    _validate_target_population(request, results)
-
-
-def _validate_target_population(
-    request: TargetedApplicationRequest,
-    results: tuple[FinalizedTargetProductionResult, ...],
-) -> None:
-    if len(results) != len(request.targets):
-        raise TargetedApplicationError(
-            "finalized workflow did not cover every declared Target"
-        )
-    for target, result in zip(request.targets, results, strict=True):
-        finalized_target = result.completed_projection.row_binding.target
-        if finalized_target != target:
-            raise TargetedApplicationError(
-                "finalized Target result order differs from the declared Target list"
-            )
-
-
 def _build_publication_output(
     finalized_results: tuple[FinalizedTargetProductionResult, ...],
-    acquisition_evidence: RunOutput,
+    prepared: _PreparedTargetedProductionWorkflow,
     *,
     config: ExtractionConfig,
 ) -> RunOutput:
-    expected_samples = finalized_results[0].canonical_samples
-    expected_sample_ids = tuple(sample.sample_name for sample in expected_samples)
-    samples_by_raw_stem = {sample.raw_stem: sample for sample in expected_samples}
-    if len(samples_by_raw_stem) != len(expected_samples):
-        raise TargetedOutputBoundaryError(
-            "finalized Targeted sample population contains duplicate RAW identities"
-        )
-
-    decisions: dict[tuple[str, str], ProductionCellDecision] = {}
-    target_ids_by_label: dict[str, str] = {}
-    targets_by_label: dict[str, Target] = {}
-    backfills = {}
-    backfill_diagnostics = []
+    files: dict[SampleMetadata, tuple[FileResult, dict[str, ExtractionResult]]] = {
+        sample: (replace(file_result, sample_metadata=sample), {})
+        for sample, file_result in prepared.results_by_sample
+    }
+    cells: dict[tuple[str, str], _RenderCell] = {}
+    targets_by_label = {}
+    backfill_diagnostics = {}
     for result in finalized_results:
         target = result.completed_projection.row_binding.target
         target_label = target.label
-        target_id = target_label
-        if target_label in target_ids_by_label:
-            raise TargetedOutputBoundaryError(
-                "finalized Targeted result population contains duplicate Targets"
-            )
-        target_ids_by_label[target_label] = target_id
         targets_by_label[target_label] = target
-        for backfill in result.scientific_core.targeted_backfill_decisions:
-            sample_id = backfill.target_cell.sample_key
-            backfills[(sample_id, target_id)] = backfill
-        for projection_decision in result.completed_projection.decisions:
-            subject = cast(Any, projection_decision.subject)
-            sample_id = subject.sample.sample_name
-            if sample_id not in expected_sample_ids:
-                raise TargetedOutputBoundaryError(
-                    "finalized Targeted decision crossed the canonical "
-                    "sample population"
-                )
-            key = (sample_id, target_id)
-            if key in decisions:
-                raise TargetedOutputBoundaryError(
-                    "finalized Targeted decision population contains duplicates"
-                )
-            decisions[key] = projection_decision
-
-    files: list[tuple[int | None, FileResult, dict[str, ExtractionResult]]] = []
-    cells: dict[tuple[str, str], _RenderCell] = {}
-    consumed: set[tuple[str, str]] = set()
-    consumed_sample_ids: set[str] = set()
-    for file_result in acquisition_evidence.file_results:
-        sample = samples_by_raw_stem.get(file_result.sample_name)
-        if sample is None:
-            raise TargetedOutputBoundaryError(
-                "acquisition evidence does not resolve to a canonical sample identity"
-            )
-        sample_id = sample.sample_name
-        if sample_id in consumed_sample_ids:
-            raise TargetedOutputBoundaryError(
-                "acquisition evidence contains duplicate canonical samples"
-            )
-        consumed_sample_ids.add(sample_id)
-        rendered: dict[str, ExtractionResult] = {}
-        for target_label, extraction in file_result.results.items():
-            if extraction.target_label != target_label:
-                raise TargetedOutputBoundaryError(
-                    "acquisition evidence crossed its declared Target identity"
-                )
-            resolved_target_id = target_ids_by_label.get(target_label)
-            if resolved_target_id is None:
-                raise TargetedOutputBoundaryError(
-                    "acquisition evidence does not resolve to a finalized "
-                    "Target identity"
-                )
-            key = (sample_id, resolved_target_id)
-            render_decision = decisions.get(key)
-            if render_decision is None:
-                raise TargetedOutputBoundaryError(
-                    "finalized Targeted decisions do not cover acquisition evidence"
-                )
-            consumed.add(key)
-            backfill_decision = backfills.get(key)
+        backfills = {
+            backfill.target_cell.sample_key: backfill
+            for backfill in result.scientific_core.targeted_backfill_decisions
+        }
+        for decision in result.completed_projection.decisions:
+            sample = cast(TargetCellSubject, decision.subject).canonical_sample
+            file_result, rendered = files[sample]
+            backfill_decision = backfills.get(sample.sample_name)
             if backfill_decision is not None:
-                backfill_diagnostics.append(
+                backfill_diagnostics[(file_result.sample_name, target_label)] = (
                     DiagnosticRecord(
                         file_result.sample_name,
                         target_label,
@@ -285,23 +193,15 @@ def _build_publication_output(
                         + "; direct CID/NL remains HOLD; "
                         + (
                             "ISTD identity confirmed by Backfill."
-                            if targets_by_label[target_label].is_istd
+                            if target.is_istd
                             and backfill_decision.matched_candidate is not None
                             else "confirmed=False."
                         ),
                     )
                 )
-            no_write_reason = (
-                ""
-                if render_decision.variant == "numeric"
-                else f"finalized_{render_decision.variant}"
-            )
             cell = _RenderCell(
-                extraction=extraction,
-                target=targets_by_label[target_label],
-                value=render_decision.value,
-                no_write_reason=no_write_reason,
-                evidence=render_decision.evidence,
+                extraction=file_result.results[target_label],
+                decision=decision,
                 backfill_supported=(
                     backfill_decision is not None
                     and backfill_decision.matched_candidate is not None
@@ -309,42 +209,47 @@ def _build_publication_output(
             )
             cells[(file_result.sample_name, target_label)] = cell
             rendered[target_label] = cell.render()
-        files.append(
-            (
-                sample.injection_order,
-                replace(file_result, sample_metadata=sample),
-                rendered,
-            )
-        )
-    if consumed != set(decisions):
-        raise TargetedOutputBoundaryError(
-            "finalized Targeted decisions crossed the acquisition sample population"
-        )
     position_diagnostics = _apply_paired_istd_positions(
-        {file_result.sample_name: rendered for _, file_result, rendered in files},
+        {file_result.sample_name: rendered for file_result, rendered in files.values()},
         cells,
         targets_by_label,
     )
-    files.sort(key=lambda item: (item[0] is None, item[0] or 0, item[1].sample_name))
+    ordered_files = sorted(
+        files.items(),
+        key=lambda item: (
+            item[0].injection_order is None,
+            item[0].injection_order or 0,
+            item[1][0].sample_name,
+        ),
+    )
     return RunOutput(
         file_results=[
-            replace(file_result, results=rendered) for _, file_result, rendered in files
+            replace(file_result, results=rendered)
+            for _, (file_result, rendered) in ordered_files
         ],
         diagnostics=[
             *(
                 record
-                for record in acquisition_evidence.diagnostics
+                for record in prepared.acquisition_evidence.diagnostics
                 if record.issue not in {"NL_FAIL", "NO_MS2"}
             ),
             *(
                 record
-                for _, file_result, rendered in files
-                for label, result in rendered.items()
+                for _, (file_result, rendered) in ordered_files
+                for label in file_result.results
                 for record in build_ms2_diagnostic_records(
-                    file_result.sample_name, targets_by_label[label], result, config
+                    file_result.sample_name,
+                    targets_by_label[label],
+                    rendered[label],
+                    config,
                 )
             ),
-            *backfill_diagnostics,
+            *(
+                backfill_diagnostics[(file.sample_name, label)]
+                for file in prepared.acquisition_evidence.file_results
+                for label in file.results
+                if (file.sample_name, label) in backfill_diagnostics
+            ),
             *position_diagnostics,
         ],
     )
@@ -358,10 +263,7 @@ class _RenderCell:
     """One finalized sample/target decision and the evidence that renders it."""
 
     extraction: ExtractionResult
-    target: Target
-    value: float | None
-    no_write_reason: str
-    evidence: object
+    decision: ProductionCellDecision
     backfill_supported: bool
 
     def render(
@@ -372,10 +274,15 @@ class _RenderCell:
     ) -> ExtractionResult:
         return _finalized_extraction_result(
             self.extraction,
-            target=self.target,
-            value=self.value,
-            no_write_reason=no_write_reason or self.no_write_reason,
-            evidence=self.evidence,
+            target=cast(TargetCellSubject, self.decision.subject).target,
+            value=self.decision.value,
+            no_write_reason=no_write_reason
+            or (
+                ""
+                if self.decision.variant == "numeric"
+                else f"finalized_{self.decision.variant}"
+            ),
+            evidence=self.decision.evidence,
             backfill_supported=self.backfill_supported,
             paired_istd_identity=paired_istd_identity,
         )
@@ -480,8 +387,8 @@ def _finalized_extraction_result(
 ) -> ExtractionResult:
     captured_physical_evaluation = extraction.physical_evaluation
     reported_evaluation = (
-        evidence.hypothesis.peak.physical_evaluation
-        if not no_write_reason and type(evidence) is ObservedSearchSubject
+        cast(ObservedSearchSubject, evidence).hypothesis.peak.physical_evaluation
+        if not no_write_reason
         else None
     )
     extraction = reselect_targeted_peak_evidence(extraction, reported_evaluation)
@@ -496,16 +403,9 @@ def _finalized_extraction_result(
         captured_physical_evaluation=captured_physical_evaluation,
     )
     if not no_write_reason:
-        if (
-            value is None
-            or type(evidence) is not ObservedSearchSubject
-            or (integral := evidence.hypothesis.peak.integration) is None
-            or integral.area_ms1_morphology != value
-        ):
-            raise TargetedOutputBoundaryError(
-                "finalized Targeted value does not match its public result model"
-            )
-        physical_evaluation = evidence.hypothesis.peak.physical_evaluation
+        physical_evaluation = cast(
+            ObservedSearchSubject, evidence
+        ).hypothesis.peak.physical_evaluation
         rendered = replace(
             extraction,
             peak_result=replace(
@@ -516,7 +416,7 @@ def _finalized_extraction_result(
             ),
             selected_hypothesis=None,
             selection_decision=None,
-            measured_hypothesis=evidence.hypothesis,
+            measured_hypothesis=cast(ObservedSearchSubject, evidence).hypothesis,
             physical_evaluation=physical_evaluation,
             quality_flags=(
                 extraction.quality_flags
@@ -528,10 +428,6 @@ def _finalized_extraction_result(
             ),
             targeted_product_projection=projection,
         )
-        if rendered.reported_peak_area != value:
-            raise TargetedOutputBoundaryError(
-                "finalized Targeted hypothesis did not produce its numeric value"
-            )
         return rendered
     return replace(
         extraction,
@@ -608,10 +504,7 @@ def _finalized_product_projection(
             review_state="review_required",
             projection_reason=no_write_reason,
         )
-    if type(evidence) is not ObservedSearchSubject:
-        raise TargetedOutputBoundaryError(
-            "numeric projection lost its finalized evidence"
-        )
+    evidence = cast(ObservedSearchSubject, evidence)
     physical_evaluation = evidence.hypothesis.peak.physical_evaluation
     projection = _projection_with_reported_peak_quality(
         projection,
@@ -836,7 +729,6 @@ def _execute_target(
             rt_frame=context.rt_frame,
             sample_assessments=assessment_tuple,
             alignment_config=alignment_config,
-            predecessor_cell_observations=(),
             targeted_backfill_decisions=backfill.decisions,
         ),
     )
@@ -854,9 +746,7 @@ def _complete_retained_target(
             "Targeted workflow failed before publication: "
             f"stage={failure.stage}; reason={failure.error}"
         ) from failure.error
-    if type(result) is not FinalizedTargetProductionResult:
-        raise RuntimeError("Targeted completion returned a crossed result")
-    return result
+    return cast(FinalizedTargetProductionResult, result)
 
 
 __all__ = ["execute_targeted_production_workflow"]

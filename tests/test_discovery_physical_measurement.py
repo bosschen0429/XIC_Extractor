@@ -55,12 +55,12 @@ def _acquisition_totals(batches):
     """Sum the per-batch acquisition counts that timing reports."""
     names = (
         "logical_xic_request_count",
-        "xic_batch_count",
         "adapter_chromatogram_call_count",
         "trace_point_count",
     )
     return SimpleNamespace(
-        **{name: sum(getattr(batch, name) for batch in batches) for name in names}
+        xic_batch_count=len(batches),
+        **{name: sum(getattr(batch, name) for batch in batches) for name in names},
     )
 
 
