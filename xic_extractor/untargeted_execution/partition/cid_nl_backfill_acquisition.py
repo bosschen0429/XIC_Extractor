@@ -32,7 +32,6 @@ from xic_extractor.peak_detection.cid_nl_evidence import (
     cid_nl_evidence_observation,
 )
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
-    GROUP_BACKFILL_DETECTOR,
     CidNlEvaluationReceipt,
     CidNlMethodAssessment,
     CidNlMethodAssessmentContractError,
@@ -47,6 +46,7 @@ from xic_extractor.peak_detection.cid_nl_peak_support import (
     DdaCidNlPeakSupport,
     DdaCidNlPeakSupportPolicy,
 )
+from xic_extractor.peak_detection.detector_invocations import GROUP_BACKFILL_DETECTOR
 from xic_extractor.peak_detection.observations import (
     PeakObservation,
     RetainedCaptureEvidence,

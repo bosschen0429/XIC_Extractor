@@ -31,6 +31,7 @@ from xic_extractor.peak_detection.cid_nl_peak_support import (
     DdaCidNlPeakSupportPolicy,
     bind_dda_cid_nl_peak_support,
 )
+from xic_extractor.peak_detection.detector_invocations import GROUP_BACKFILL_DETECTOR
 from xic_extractor.peak_detection.observations import (
     PeakObservation,
 )
@@ -220,10 +221,6 @@ class CidNlEvaluationReceipt:
             value = getattr(self, name)
             if value is not None:
                 object.__setattr__(self, name, float(value) or 0.0)
-
-
-GROUP_BACKFILL_DETECTOR = "untargeted-cid-nl-backfill"
-"""Detector id of a group-bounded Backfill search; stored and read as written."""
 
 
 @dataclass(frozen=True, slots=True)

@@ -23,9 +23,7 @@ from __future__ import annotations
 
 import sqlite3
 
-from xic_extractor.peak_detection.cid_nl_method_assessment import (
-    GROUP_BACKFILL_DETECTOR,
-)
+from xic_extractor.peak_detection.detector_invocations import GROUP_BACKFILL_DETECTOR
 
 _PEAK_CANDIDATES = f"""
     SELECT terminal_peak AS peak, id AS candidate FROM {{candidates}}
