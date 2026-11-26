@@ -82,37 +82,6 @@ class _DiscoveryMs1Measurements:
     reacquisition_request_count: int = 0
     remeasurement_request_count: int = 0
 
-    def __post_init__(self) -> None:
-        count_values = (
-            self.input_ion_count,
-            self.input_event_count,
-            self.exact_scan_window_count,
-            self.predicted_chunked_call_count,
-            self.initial_request_count,
-            self.reacquisition_request_count,
-            self.remeasurement_request_count,
-        )
-        if any(
-            isinstance(value, bool) or not isinstance(value, int)
-            for value in (*count_values, self.batch_max_requests)
-        ):
-            raise ValueError("Discovery MS1 measurements must be integral")
-        if any(value < 0 for value in count_values) or self.batch_max_requests < 1:
-            raise ValueError("Discovery MS1 measurements must be non-negative")
-        logical_request_count = sum(
-            batch.logical_xic_request_count for batch in self.acquisition_batches
-        )
-        if self.initial_request_count > self.input_event_count:
-            raise ValueError("Discovery MS1 acquisition request population is invalid")
-        if self.reacquisition_request_count > self.initial_request_count:
-            raise ValueError(
-                "Discovery MS1 reacquisition exceeds its initial population"
-            )
-        if self.exact_scan_window_count > logical_request_count:
-            raise ValueError("exact scan-window count exceeds logical requests")
-        if self.predicted_chunked_call_count > logical_request_count:
-            raise ValueError("predicted call count exceeds logical requests")
-
 
 @dataclass(frozen=True, slots=True)
 class _DiscoveryMs1AcquisitionResult:

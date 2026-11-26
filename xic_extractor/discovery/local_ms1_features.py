@@ -19,7 +19,6 @@ from xic_extractor.peak_detection.ms1_morphology import (
     DEFAULT_GAUSSIAN15_WINDOW_POINTS,
     gaussian15_morphology_trace,
 )
-from xic_extractor.validation_primitives import require_finite_real, require_integer
 
 
 @dataclass(frozen=True)
@@ -40,52 +39,6 @@ class LocalMs1FeatureSettings:
     max_ok_mz_ppm_std: float = 10.0
     max_weak_mz_ppm_std: float = 20.0
     split_valley_fraction_of_smaller_apex: float = 0.50
-
-    def __post_init__(self) -> None:
-        for name in (
-            "mass_detection_noise_level",
-            "min_trace_seed_intensity",
-            "min_consecutive_trace_intensity",
-            "min_duration_min",
-            "min_ok_prominence",
-            "weak_support_prominence",
-            "max_ok_mz_ppm_std",
-            "max_weak_mz_ppm_std",
-        ):
-            value = require_finite_real(getattr(self, name), name=name)
-            if value < 0:
-                raise ValueError(f"{name} must be finite and >= 0")
-        for name in ("feature_link_ppm", "max_duration_min"):
-            value = require_finite_real(getattr(self, name), name=name)
-            if value <= 0:
-                raise ValueError(f"{name} must be finite and > 0")
-        for name in (
-            "max_ok_gap_fraction",
-            "max_weak_gap_fraction",
-            "split_valley_fraction_of_smaller_apex",
-        ):
-            value = require_finite_real(getattr(self, name), name=name)
-            if not 0 <= value <= 1:
-                raise ValueError(f"{name} must be finite and between 0 and 1")
-        for name in ("max_missing_scans",):
-            value = require_integer(getattr(self, name), name=name)
-            if value < 0:
-                raise ValueError(f"{name} must be an integer >= 0")
-        for name in (
-            "min_observed_scans",
-            "gaussian_window_points",
-        ):
-            value = require_integer(getattr(self, name), name=name)
-            if value <= 0:
-                raise ValueError(f"{name} must be an integer > 0")
-        if self.max_duration_min < self.min_duration_min:
-            raise ValueError("max_duration_min must be >= min_duration_min")
-        if self.min_ok_prominence < self.weak_support_prominence:
-            raise ValueError("min_ok_prominence must be >= weak_support_prominence")
-        if self.max_ok_gap_fraction > self.max_weak_gap_fraction:
-            raise ValueError("max_ok_gap_fraction must be <= max_weak_gap_fraction")
-        if self.max_ok_mz_ppm_std > self.max_weak_mz_ppm_std:
-            raise ValueError("max_ok_mz_ppm_std must be <= max_weak_mz_ppm_std")
 
 
 @dataclass

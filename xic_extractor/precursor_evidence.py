@@ -34,13 +34,18 @@ class Ms1PrecursorObservation:
     rt_min: float
     centroid_mzs: tuple[float, ...]
 
-    def __post_init__(self) -> None:
-        if isinstance(self.scan_number, bool) or self.scan_number <= 0:
-            raise ValueError("parent MS1 scan_number must be a positive integer")
-        if not math.isfinite(self.rt_min) or self.rt_min < 0:
-            raise ValueError("parent MS1 RT must be finite and non-negative")
-        if any(not math.isfinite(mz) or mz <= 0 for mz in self.centroid_mzs):
-            raise ValueError("parent MS1 centroids must be positive finite masses")
+
+def validate_ms1_precursor_observation(model: Ms1PrecursorObservation) -> None:
+    validate_ms1_precursor_coordinates(model.scan_number, model.rt_min)
+    if any(not math.isfinite(mz) or mz <= 0 for mz in model.centroid_mzs):
+        raise ValueError("parent MS1 centroids must be positive finite masses")
+
+
+def validate_ms1_precursor_coordinates(scan_number: int, rt_min: float) -> None:
+    if isinstance(scan_number, bool) or scan_number <= 0:
+        raise ValueError("parent MS1 scan_number must be a positive integer")
+    if not math.isfinite(rt_min) or rt_min < 0:
+        raise ValueError("parent MS1 RT must be finite and non-negative")
 
 
 class MS1MassWindowSource(Protocol):

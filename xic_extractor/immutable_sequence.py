@@ -5,6 +5,7 @@ from __future__ import annotations
 from bisect import bisect_right
 from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, field
+from itertools import accumulate
 from typing import Generic, TypeVar, overload
 
 T = TypeVar("T")
@@ -27,18 +28,7 @@ class ImmutableSequence(Sequence[T], Generic[T]):
     _ends: tuple[int, ...] = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
-        if any(type(length) is not int or length < 0 for length in self.chunk_lengths):
-            raise ValueError("chunk lengths must be non-negative integers")
-        if not callable(self.load_chunk):
-            raise TypeError("result chunk loader must be callable")
-        if self.load_chunks is not None and not callable(self.load_chunks):
-            raise TypeError("sequential result chunk loader must be callable")
-        total = 0
-        ends = []
-        for length in self.chunk_lengths:
-            total += length
-            ends.append(total)
-        object.__setattr__(self, "_ends", tuple(ends))
+        object.__setattr__(self, "_ends", tuple(accumulate(self.chunk_lengths)))
 
     def __len__(self) -> int:
         return self._ends[-1] if self._ends else 0

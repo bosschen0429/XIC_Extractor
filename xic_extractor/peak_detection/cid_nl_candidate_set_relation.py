@@ -7,7 +7,6 @@ one peak or minting one vote per candidate.
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 
 from xic_extractor.peak_detection.cid_nl_evidence import (
@@ -42,20 +41,8 @@ class DdaCidNlCandidateSetRelation:
     relationship: str = RELATIONSHIP
 
     def __post_init__(self) -> None:
-        if isinstance(self.dda_scan_number, bool) or self.dda_scan_number <= 0:
-            raise DdaCidNlCandidateSetRelationContractError(
-                "dda_scan_number must be a positive integer"
-            )
-        if isinstance(self.scan_rt_min, bool):
-            raise DdaCidNlCandidateSetRelationContractError(
-                "scan_rt_min must be finite and non-negative"
-            )
-        scan_rt = float(self.scan_rt_min)
-        if scan_rt < 0.0 or not math.isfinite(scan_rt):
-            raise DdaCidNlCandidateSetRelationContractError(
-                "scan_rt_min must be finite and non-negative"
-            )
-        object.__setattr__(self, "scan_rt_min", 0.0 if scan_rt == 0.0 else scan_rt)
+        rt = float(self.scan_rt_min)
+        object.__setattr__(self, "scan_rt_min", 0.0 if rt == 0.0 else rt)
 
 
 __all__ = [

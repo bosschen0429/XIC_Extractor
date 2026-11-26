@@ -25,8 +25,14 @@ from xic_extractor.discovery.models import (
     PeakStatus,
     located_event_order,
 )
-from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
-from xic_extractor.precursor_evidence import Ms1PrecursorObservation
+from xic_extractor.ms2_scan_models import (
+    Ms2PrecursorMetadata,
+    validate_precursor_metadata,
+)
+from xic_extractor.precursor_evidence import (
+    Ms1PrecursorObservation,
+    validate_ms1_precursor_observation,
+)
 from xic_extractor.processing_identity import IdentityContractError
 
 _BATCH_UNESCAPE_FIELDS = {"sample_stem", "raw_file", "peak_csv", "event_csv"}
@@ -269,6 +275,7 @@ def parse_discovery_event_row(
             isolation_offset_da=optional("isolation_offset_da"),
             master_scan_number=optional_int("master_scan_number"),
         )
+        validate_precursor_metadata(recorded)
         metadata = None if recorded == Ms2PrecursorMetadata() else recorded
         observation = (
             None
@@ -281,6 +288,8 @@ def parse_discovery_event_row(
                 ),
             )
         )
+        if observation is not None:
+            validate_ms1_precursor_observation(observation)
         event = DiscoveryEvent(
             raw_file=raw_file,
             sample_stem=sample_stem,

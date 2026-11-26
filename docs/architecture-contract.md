@@ -122,17 +122,20 @@ identified:
   ambiguity instead of inventing an identity.
 - Check file fingerprints at file handoffs.
 
-### Internal Defense Growth Gate
+### Construction Validation Gates
 
-`scripts/check_architecture_census.py --internal-defense-base REF` blocks
-construction-time self-validation growth in changed `xic_extractor` source
-(pre-commit against HEAD, CI against the base commit): a `__post_init__` or
+`scripts/check_architecture_census.py` rejects a `raise` in `__post_init__`
+or in a known same-module function or method it calls directly. Parse input
+at its ingress and check computed results at the decision owner; a separate
+helper called from the hook does not change ownership.
+
+With `--internal-defense-base REF`, the gate also blocks a changed
 `__init_subclass__` body with more statements than its counterpart in REF. A
 hook keeps its counterpart when it keeps its qualified name, moves with that
 name to another changed module, or is renamed with an identical body; a copy
-counts as new. Validation moved into helpers, plain functions, `__init__`, new wrapper
-classes and restated vocabulary are not gated; each ticket's acceptance owns
-those. There is no suppression flag. A blocked change removes the unnecessary
+counts as new. The subclass growth check does not trace helpers or inspect
+plain functions or `__init__` as hooks. There is no suppression flag.
+A blocked change removes the unnecessary
 machinery or gets an explicit maintainer decision; the agent does not grant its
 own exception.
 

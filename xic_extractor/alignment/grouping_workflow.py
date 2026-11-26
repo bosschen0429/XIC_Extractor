@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections import defaultdict
+from collections import Counter, defaultdict
 from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from typing import cast
@@ -18,6 +18,7 @@ from xic_extractor.alignment.cross_sample.grouping_result import (
     CrossSampleGroupingResult,
 )
 from xic_extractor.alignment.cross_sample.peak_groups import (
+    CrossSampleContractError,
     CrossSampleGroupMemberSubject,
     CrossSamplePartitionTransition,
     CrossSamplePeakGroupHypothesis,
@@ -519,6 +520,7 @@ def admit_cid_nl_group_backfills(
         reason="membership_changed",
         admitted_members=tuple(admitted),
     )
+    _validate_complete_partition(partition)
     return (
         replace(result, partition_transition=partition),
         successors,
@@ -602,12 +604,27 @@ def contested_backfill_peaks(
     return frozenset(contested)
 
 
+def _validate_complete_partition(model: CrossSamplePartitionTransition) -> None:
+    if model.status == "assessable":
+        expected = Counter(
+            member for group in model.predecessors for member in group.member_subjects
+        )
+        expected.update(model.admitted_members)
+        actual = Counter(
+            member for group in model.successors for member in group.member_subjects
+        )
+        if actual != expected:
+            raise CrossSampleContractError(
+                "partition transition is not a complete partition"
+            )
+
+
 def _partition_transition(
     *,
     predecessors: tuple[CrossSamplePeakGroupHypothesis, ...],
     successors: tuple[CrossSamplePeakGroupHypothesis, ...],
 ) -> CrossSamplePartitionTransition:
-    return CrossSamplePartitionTransition(
+    transition = CrossSamplePartitionTransition(
         status="assessable",
         predecessors=predecessors,
         successors=successors,
@@ -620,3 +637,5 @@ def _partition_transition(
             else "membership_changed"
         ),
     )
+    _validate_complete_partition(transition)
+    return transition

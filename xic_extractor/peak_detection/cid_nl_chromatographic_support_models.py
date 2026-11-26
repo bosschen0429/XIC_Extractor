@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 
 from xic_extractor.peak_detection.cid_nl_peak_support import (
@@ -25,17 +24,6 @@ class DdaCidNlScanSupportMember:
     support: DdaCidNlPeakSupport
     configured_neutral_loss_da: float | None = None
 
-    def __post_init__(self) -> None:
-        if self.configured_neutral_loss_da is not None and (
-            isinstance(self.configured_neutral_loss_da, bool)
-            or not isinstance(self.configured_neutral_loss_da, (float, int))
-            or not math.isfinite(self.configured_neutral_loss_da)
-            or self.configured_neutral_loss_da <= 0
-        ):
-            raise CidNlChromatographicSupportContractError(
-                "configured loss must be positive and finite"
-            )
-
 
 @dataclass(frozen=True, slots=True)
 class CidNlChromatographicSupport:
@@ -50,34 +38,6 @@ class CidNlChromatographicSupport:
     strict_nl_scan_count: int
     chromatographic_support_event_count: int
     relationship: str
-
-    def __post_init__(self) -> None:
-        if not self.scan_supports:
-            raise CidNlChromatographicSupportContractError(
-                "missing strict DDA scan support"
-            )
-        canonical_members = tuple(sorted(self.scan_supports, key=_member_sort_key))
-        if self.scan_supports != canonical_members:
-            raise CidNlChromatographicSupportContractError(
-                "scan_supports must be canonical-sorted"
-            )
-        scan_numbers = tuple(
-            member.support.dda_scan_number for member in self.scan_supports
-        )
-        loss_values = tuple(
-            member.configured_neutral_loss_da for member in self.scan_supports
-        )
-        if any(value is None for value in loss_values) and not all(
-            value is None for value in loss_values
-        ):
-            raise CidNlChromatographicSupportContractError(
-                "composite scan support loss dimensions must be complete"
-            )
-        event_keys = tuple(zip(scan_numbers, loss_values, strict=True))
-        if len(set(event_keys)) != len(event_keys):
-            raise CidNlChromatographicSupportContractError(
-                "duplicate DDA scan support cannot multiply one event"
-            )
 
 
 def _member_sort_key(

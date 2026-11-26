@@ -13,10 +13,6 @@ from tests.processing_run_spec_fixtures import (
 )
 from xic_extractor.configuration.cid_nl_profile import NeutralLossProfile
 from xic_extractor.configuration.execution_profile import in_process_execution
-from xic_extractor.configuration.signal_processing_profile import (
-    SignalProcessingProfile,
-)
-from xic_extractor.discovery.evidence_config import DiscoveryEvidenceThresholds
 from xic_extractor.discovery.processing_run_spec_adapter import (
     compile_discovery_processing_run_spec,
 )
@@ -145,82 +141,6 @@ def test_run_spec_rejects_duplicate_local_file_aliases_once(
         )
 
     assert calls == [first, alias]
-
-
-def test_run_spec_rejects_invalid_direct_profile_type() -> None:
-    with pytest.raises(ValueError, match="method"):
-        SignalProcessingProfile(method="savgol")
-
-
-_THRESHOLD_FLOAT_FIELDS = (
-    "rt_aligned_max_min",
-    "rt_near_max_min",
-    "rt_shifted_max_min",
-    "product_intensity_high_min",
-    "product_intensity_med_min",
-    "area_high_min",
-    "area_med_min",
-    "scan_support_high_score_min",
-    "scan_support_low_score_max",
-)
-
-
-@pytest.mark.parametrize("field", _THRESHOLD_FLOAT_FIELDS)
-@pytest.mark.parametrize("invalid", [True, "1.0"])
-def test_evidence_thresholds_reject_non_numeric_population(
-    field: str,
-    invalid: object,
-) -> None:
-    values = DiscoveryEvidenceThresholds().__dict__ | {field: invalid}
-    with pytest.raises(TypeError, match=field):
-        DiscoveryEvidenceThresholds(**values)
-
-
-@pytest.mark.parametrize("field", _THRESHOLD_FLOAT_FIELDS)
-@pytest.mark.parametrize("invalid", [float("nan"), float("inf")])
-def test_evidence_thresholds_reject_non_finite_population(
-    field: str,
-    invalid: float,
-) -> None:
-    values = DiscoveryEvidenceThresholds().__dict__ | {field: invalid}
-    with pytest.raises(ValueError, match=field):
-        DiscoveryEvidenceThresholds(**values)
-
-
-@pytest.mark.parametrize("field", _THRESHOLD_FLOAT_FIELDS)
-def test_evidence_thresholds_reject_negative_population(field: str) -> None:
-    values = DiscoveryEvidenceThresholds().__dict__ | {field: -1.0}
-    with pytest.raises(ValueError, match=field):
-        DiscoveryEvidenceThresholds(**values)
-
-
-@pytest.mark.parametrize(
-    "overrides",
-    [
-        {"rt_aligned_max_min": 0.21},
-        {"rt_near_max_min": 0.41},
-        {"product_intensity_high_min": 9_999.0},
-        {"area_high_min": 99_999.0},
-        {"scan_support_low_score_max": 0.9},
-        {"scan_support_high_score_min": 1.01},
-        {"scan_support_low_score_max": 1.01},
-    ],
-)
-def test_evidence_thresholds_reject_unordered_or_out_of_bounds_population(
-    overrides: dict[str, float],
-) -> None:
-    values = DiscoveryEvidenceThresholds().__dict__ | overrides
-    with pytest.raises(ValueError):
-        DiscoveryEvidenceThresholds(**values)
-
-
-@pytest.mark.parametrize("invalid", [True, 0, -1])
-def test_evidence_thresholds_reject_invalid_scan_support_target(
-    invalid: object,
-) -> None:
-    values = DiscoveryEvidenceThresholds().__dict__ | {"scan_support_target": invalid}
-    with pytest.raises((TypeError, ValueError), match="scan_support_target"):
-        DiscoveryEvidenceThresholds(**values)
 
 
 @pytest.mark.parametrize(

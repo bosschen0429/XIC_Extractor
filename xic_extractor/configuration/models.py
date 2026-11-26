@@ -2,13 +2,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from xic_extractor.configuration.execution_profile import ExecutionProfile
-from xic_extractor.configuration.mass_recalibration import (
-    MassRecalibration,
-    resolve_mass_recalibration,
-)
+from xic_extractor.configuration.mass_recalibration import MassRecalibration
 from xic_extractor.configuration.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
-    resolve_signal_processing_profile,
 )
 from xic_extractor.configuration.targeted_identification import TargetIdentification
 
@@ -32,17 +28,6 @@ class ExtractionConfig:
         DEFAULT_SIGNAL_PROCESSING_PROFILE.window_points
     )
     mass_recalibration: MassRecalibration = MassRecalibration.EASY_IC_RESTORE
-
-    def __post_init__(self) -> None:
-        object.__setattr__(
-            self,
-            "mass_recalibration",
-            resolve_mass_recalibration(self.mass_recalibration),
-        )
-        resolve_signal_processing_profile(
-            signal_processing_method=self.signal_processing_method,
-            signal_processing_window_points=self.signal_processing_window_points,
-        )
 
 
 @dataclass(frozen=True)

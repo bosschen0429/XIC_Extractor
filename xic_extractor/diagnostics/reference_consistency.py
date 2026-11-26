@@ -26,12 +26,13 @@ class ReferencePolicy:
     peak_separation_min: float = 0.35
     peak_min_width_points: float = 6.0
 
-    def __post_init__(self) -> None:
-        for name, value in asdict(self).items():
-            if not math.isfinite(value) or value <= 0:
-                raise ValueError(f"{name} must be finite and positive")
-        if self.peak_prominence_ratio >= 1:
-            raise ValueError("peak_prominence_ratio must be < 1")
+
+def validate_reference_policy(model: ReferencePolicy) -> None:
+    for name, value in asdict(model).items():
+        if not math.isfinite(value) or value <= 0:
+            raise ValueError(f"{name} must be finite and positive")
+    if model.peak_prominence_ratio >= 1:
+        raise ValueError("peak_prominence_ratio must be < 1")
 
 
 @dataclass(frozen=True)

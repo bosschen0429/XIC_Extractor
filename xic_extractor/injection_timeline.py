@@ -18,16 +18,6 @@ class InjectionHeader:
     end_time_min: float
     instrument_method: str
 
-    def __post_init__(self) -> None:
-        if not self.acquisition_source.strip():
-            raise ValueError("RAW acquisition source is missing")
-        if (
-            not math.isfinite(self.start_time_min)
-            or not math.isfinite(self.end_time_min)
-            or not 0 <= self.start_time_min < self.end_time_min
-        ):
-            raise ValueError("RAW run times must be finite and 0 <= start < end")
-
     @property
     def run_length_min(self) -> float:
         return self.end_time_min - self.start_time_min
@@ -39,16 +29,17 @@ class PerturbationPolicy:
     max_previous_run_fraction: float = 0.5
     max_idle_min: float = 5.0
 
-    def __post_init__(self) -> None:
-        values = (
-            self.max_previous_run_min,
-            self.max_previous_run_fraction,
-            self.max_idle_min,
-        )
-        if not all(math.isfinite(v) and v >= 0 for v in values):
-            raise ValueError("perturbation thresholds must be finite and nonnegative")
-        if not 0 < self.max_previous_run_fraction < 1:
-            raise ValueError("max_previous_run_fraction must be between 0 and 1")
+
+def validate_perturbation_policy(model: PerturbationPolicy) -> None:
+    values = (
+        model.max_previous_run_min,
+        model.max_previous_run_fraction,
+        model.max_idle_min,
+    )
+    if not all(math.isfinite(v) and v >= 0 for v in values):
+        raise ValueError("perturbation thresholds must be finite and nonnegative")
+    if not 0 < model.max_previous_run_fraction < 1:
+        raise ValueError("max_previous_run_fraction must be between 0 and 1")
 
 
 @dataclass(frozen=True)

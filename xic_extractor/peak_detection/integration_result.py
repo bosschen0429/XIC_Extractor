@@ -56,30 +56,26 @@ class IntegrationResult:
     signal_quality: SignalQuality | None = None
 
     def __post_init__(self) -> None:
-        for field_name in _FLOAT_FIELDS:
+        for field_name in (*_FLOAT_FIELDS, *_OPTIONAL_FLOAT_FIELDS):
             value = getattr(self, field_name)
             if value is not None:
-                object.__setattr__(
-                    self,
-                    field_name,
-                    _canonical_float(value, field=field_name),
-                )
-        for field_name in _OPTIONAL_FLOAT_FIELDS:
-            value = getattr(self, field_name)
-            if value is not None:
-                object.__setattr__(
-                    self,
-                    field_name,
-                    _canonical_float(value, field=field_name),
-                )
+                number = float(value)
+                object.__setattr__(self, field_name, 0.0 if number == 0.0 else number)
         for field_name in _OPTIONAL_INT_FIELDS:
             value = getattr(self, field_name)
             if value is not None:
-                object.__setattr__(
-                    self,
-                    field_name,
-                    _canonical_int(value, field=field_name),
-                )
+                object.__setattr__(self, field_name, int(value))
+
+
+def validate_stored_integration_numbers(values: dict[str, Any]) -> None:
+    for field in (*_FLOAT_FIELDS, *_OPTIONAL_FLOAT_FIELDS):
+        value = values.get(field)
+        if value is not None:
+            _canonical_float(value, field=field)
+    for field in _OPTIONAL_INT_FIELDS:
+        value = values.get(field)
+        if value is not None:
+            _canonical_int(value, field=field)
 
 
 def _canonical_float(value: Any, *, field: str) -> float:

@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-from collections import Counter
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample.identity_models import (
-    CrossSampleContractError,
     CrossSampleEdgeDisposition,
     CrossSampleGroupMemberSubject,
     CrossSampleInitialEdgeContext,
@@ -113,22 +111,6 @@ class CrossSamplePartitionTransition:
     lineage: tuple[CrossSampleLineageEdge, ...]
     reason: str
     admitted_members: tuple[CrossSampleGroupMemberSubject, ...] = ()
-
-    def __post_init__(self) -> None:
-        if self.status == "assessable":
-            expected = Counter(
-                member
-                for group in self.predecessors
-                for member in group.member_subjects
-            )
-            expected.update(self.admitted_members)
-            actual = Counter(
-                member for group in self.successors for member in group.member_subjects
-            )
-            if actual != expected:
-                raise CrossSampleContractError(
-                    "partition transition is not a complete partition"
-                )
 
 
 def _expected_cross_sample_lineage(

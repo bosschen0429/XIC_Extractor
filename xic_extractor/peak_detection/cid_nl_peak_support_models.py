@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 
 from xic_extractor.configuration.cid_nl_profile import PrecursorReferenceRequirement
@@ -30,27 +29,11 @@ class DdaCidNlPeakSupportPolicy:
     precursor_reference_requirement: PrecursorReferenceRequirement = "independent_mass"
 
     def __post_init__(self) -> None:
-        precursor_tolerance = _finite_float(
-            self.precursor_tolerance_da,
-            field="precursor_tolerance_da",
-        )
-        neutral_loss_tolerance = _finite_float(
-            self.neutral_loss_tolerance_ppm,
-            field="neutral_loss_tolerance_ppm",
-        )
-        if precursor_tolerance <= 0.0:
-            raise DdaCidNlPeakSupportContractError(
-                "precursor_tolerance_da must be positive"
-            )
-        if neutral_loss_tolerance <= 0.0:
-            raise DdaCidNlPeakSupportContractError(
-                "neutral_loss_tolerance_ppm must be positive"
-            )
-        object.__setattr__(self, "precursor_tolerance_da", precursor_tolerance)
         object.__setattr__(
-            self,
-            "neutral_loss_tolerance_ppm",
-            neutral_loss_tolerance,
+            self, "precursor_tolerance_da", float(self.precursor_tolerance_da)
+        )
+        object.__setattr__(
+            self, "neutral_loss_tolerance_ppm", float(self.neutral_loss_tolerance_ppm)
         )
 
     def accepts_precursor(self, assessment: PrecursorLossAssessment) -> bool:
@@ -79,13 +62,6 @@ class DdaCidNlPeakSupport:
     @property
     def configured_neutral_loss_da(self) -> float:
         return self.evidence.configured_neutral_loss_da
-
-
-def _finite_float(value: float, *, field: str) -> float:
-    normalized = float(value)
-    if not math.isfinite(normalized):
-        raise DdaCidNlPeakSupportContractError(f"{field} must be a finite number")
-    return 0.0 if normalized == 0.0 else normalized
 
 
 __all__ = [

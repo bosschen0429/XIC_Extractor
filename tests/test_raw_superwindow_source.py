@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 
 from xic_extractor.raw_superwindow_source import RawSuperWindowSource
 from xic_extractor.xic_models import XICRequest, XICTrace
@@ -40,6 +41,23 @@ def test_raw_superwindow_source_respects_span_limit() -> None:
     )
 
     assert raw.call_count == 2
+
+
+@pytest.mark.parametrize(
+    ("xic_request", "message"),
+    [
+        (XICRequest(200.0, 4.0, 2.0, 10.0), "rt_min must be <= rt_max"),
+        (XICRequest(200.0, 2.0, 4.0, 0.0), "ppm_tol must be > 0"),
+    ],
+)
+def test_superwindow_rejects_invalid_original_window_before_union(
+    xic_request: XICRequest,
+    message: str,
+) -> None:
+    raw = FakeSuperWindowRawHandle()
+    with pytest.raises(ValueError, match=message):
+        RawSuperWindowSource(raw).extract_xic_many((xic_request,))
+    assert raw.call_count == 0
 
 
 class FakeSuperWindowRawHandle:

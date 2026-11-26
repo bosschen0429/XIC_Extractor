@@ -63,18 +63,14 @@ class InitialGroupingScope:
     peak_trajectories: PeakTrajectories = PeakTrajectories()
 
     def __post_init__(self) -> None:
-        mz_interval = _validated_interval(self.mz_interval, field="mz_interval")
-        rt_interval = _validated_interval(self.rt_interval, field="rt_interval")
-        groups = _canonical_groups(self.groups)
-        _validate_group_owners(groups)
-        _validate_group_bounds(
-            groups,
-            mz_interval=mz_interval,
-            rt_interval=rt_interval,
+        for name in ("mz_interval", "rt_interval"):
+            lower, upper = getattr(self, name)
+            object.__setattr__(self, name, (float(lower) or 0.0, float(upper) or 0.0))
+        object.__setattr__(
+            self,
+            "groups",
+            tuple(sorted(self.groups, key=lambda group: group.group_hypothesis_id)),
         )
-        object.__setattr__(self, "mz_interval", mz_interval)
-        object.__setattr__(self, "rt_interval", rt_interval)
-        object.__setattr__(self, "groups", groups)
 
 
 @final
@@ -270,13 +266,15 @@ def bootstrap_cid_nl_initial_population(
     method_subject_intervals = tuple(
         cid_nl_method_subject_resolver_interval(subject) for subject in method_subjects
     )
-    grouping_scope = InitialGroupingScope(
-        peak_trajectories=correspondence,
-        mz_interval=(
+    mz_interval = _validated_interval(
+        (
             min(interval[0] for interval in method_subject_intervals),
             max(interval[1] for interval in method_subject_intervals),
         ),
-        rt_interval=(
+        field="mz_interval",
+    )
+    rt_interval = _validated_interval(
+        (
             min(hypothesis.peak.rt_left_min for hypothesis in hypotheses)
             if hypotheses
             else min(
@@ -290,7 +288,15 @@ def bootstrap_cid_nl_initial_population(
                 for _, assessment in sample_assessments
             ),
         ),
-        groups=provisional_groups,
+        field="rt_interval",
+    )
+    _validate_group_ids(provisional_groups)
+    grouping_scope = InitialGroupingScope(
+        mz_interval, rt_interval, provisional_groups, correspondence
+    )
+    _validate_group_owners(grouping_scope.groups)
+    _validate_group_bounds(
+        grouping_scope.groups, mz_interval=mz_interval, rt_interval=rt_interval
     )
     retained_candidates = tuple(
         RetainedGroupingCandidate(
@@ -304,13 +310,12 @@ def bootstrap_cid_nl_initial_population(
     return grouping_scope, retained_candidates, rt_frame
 
 
-def _canonical_groups(
+def _validate_group_ids(
     groups: tuple[CrossSamplePeakGroupHypothesis, ...],
-) -> tuple[CrossSamplePeakGroupHypothesis, ...]:
+) -> None:
     group_ids = tuple(group.group_hypothesis_id for group in groups)
     if len(group_ids) != len(set(group_ids)):
         raise ValueError("groups contain duplicate group_hypothesis_id")
-    return tuple(sorted(groups, key=lambda group: group.group_hypothesis_id))
 
 
 def _validate_group_owners(

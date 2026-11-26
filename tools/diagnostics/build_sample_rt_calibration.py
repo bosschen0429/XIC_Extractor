@@ -37,6 +37,7 @@ from xic_extractor.alignment.sample_rt_calibration import (
     PriorInjection,
     RtCalibrationPolicy,
     build_batch_rt_calibration,
+    validate_rt_calibration_policy,
 )
 
 DEFAULT_BAND_EDGES = (6.0, 10.0, 15.0, 20.0, 30.0)
@@ -289,6 +290,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         perturbation_mad_multiplier=args.perturbation_mad_multiplier,
         perturbation_min_shift_min=args.perturbation_min_shift_min,
     )
+    validate_rt_calibration_policy(policy)
     band_edges = tuple(sorted(args.band_edges))
     detected, samples = read_detected_rts(args.alignment_cells)
     timeline = (

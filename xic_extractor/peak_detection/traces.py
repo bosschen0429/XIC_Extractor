@@ -6,7 +6,7 @@ from typing import Literal
 import numpy as np
 from numpy.typing import NDArray
 
-from xic_extractor.xic_models import XICRequest, XICTrace
+from xic_extractor.xic_models import XICRequest, XICTrace, validate_xic_window
 
 AnalysisMode = Literal["targeted", "untargeted"]
 
@@ -23,22 +23,6 @@ class Trace:
     source: str = ""
     acquisition_source_id: str = ""
 
-    def __post_init__(self) -> None:
-        rt_array = np.asarray(self.rt, dtype=float)
-        intensity_array = np.asarray(self.intensity, dtype=float)
-        if (
-            rt_array.ndim != 1
-            or intensity_array.ndim != 1
-            or rt_array.shape != intensity_array.shape
-        ):
-            raise ValueError("Trace arrays must be matching 1D arrays")
-        if self.rt_min > self.rt_max:
-            raise ValueError("rt_min must be <= rt_max")
-        if self.ppm_tol <= 0:
-            raise ValueError("ppm_tol must be > 0")
-        object.__setattr__(self, "rt", rt_array)
-        object.__setattr__(self, "intensity", intensity_array)
-
     @classmethod
     def from_arrays(
         cls,
@@ -53,11 +37,20 @@ class Trace:
         source: str = "",
         acquisition_source_id: str = "",
     ) -> Trace:
+        rt_array = np.asarray(rt, dtype=float)
+        intensity_array = np.asarray(intensity, dtype=float)
+        if (
+            rt_array.ndim != 1
+            or intensity_array.ndim != 1
+            or rt_array.shape != intensity_array.shape
+        ):
+            raise ValueError("Trace arrays must be matching 1D arrays")
+        validate_xic_window(rt_min, rt_max, ppm_tol)
         return cls(
             sample_name=sample_name,
             mz=mz,
-            rt=np.asarray(rt, dtype=float),
-            intensity=np.asarray(intensity, dtype=float),
+            rt=rt_array,
+            intensity=intensity_array,
             rt_min=rt_min,
             rt_max=rt_max,
             ppm_tol=ppm_tol,
@@ -84,10 +77,6 @@ class TraceGroup:
     observed_neutral_loss_da: float | None = None
     role: str = ""
     istd_pair: str = ""
-
-    def __post_init__(self) -> None:
-        if not self.traces:
-            raise ValueError("TraceGroup requires at least one trace")
 
     @property
     def primary_trace(self) -> Trace:

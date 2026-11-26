@@ -15,7 +15,10 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from xic_extractor.configuration.models import ConfigError
-from xic_extractor.diagnostics.reference_consistency import ReferencePolicy
+from xic_extractor.diagnostics.reference_consistency import (
+    ReferencePolicy,
+    validate_reference_policy,
+)
 from xic_extractor.diagnostics.reference_consistency_io import (
     read_reference_manifest,
     reference_preflight,
@@ -88,6 +91,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.peak_separation_min,
             args.peak_min_width_points,
         )
+        validate_reference_policy(policy)
         groups = read_reference_manifest(args.manifest)
         if args.preflight_only:
             print(

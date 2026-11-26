@@ -27,22 +27,6 @@ _PROFILE_KEYS = (
     "segment_selection_behavior",
     "area_basis",
 )
-_FIXED_PROFILE_VALUES: dict[str, object] = {
-    "gaussian_sigma_rule": "window_points_div_6",
-    "gaussian_kernel_normalization": "unit_sum",
-    "gaussian_edge_policy": "zero_pad_same",
-    "baseline_method": "asls_rt",
-    "baseline_lam": 1.0,
-    "baseline_lam_unit": "minutes^4",
-    "baseline_p": 0.01,
-    "baseline_n_iter": 10,
-    "physical_signal_formula": "gaussian_raw_minus_nonnegative_asls_rt_raw_positive",
-    "boundary_basis": "chrom_peak_clear_valleys_tenth_height_return",
-    "boundary_min_sigma_rt": 0.08,
-    "segment_universe_limit": 64,
-    "segment_selection_behavior": "apex_supported_local_valley_contains_query",
-    "area_basis": "trapezoid_counts_seconds_on_canonical_signal",
-}
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,20 +51,6 @@ class SignalProcessingProfile:
     segment_selection_behavior: str = "apex_supported_local_valley_contains_query"
     area_basis: str = "trapezoid_counts_seconds_on_canonical_signal"
 
-    def __post_init__(self) -> None:
-        if self.schema_version != SIGNAL_PROCESSING_PROFILE_SCHEMA_VERSION:
-            raise ValueError("unsupported signal-processing profile schema_version")
-        if self.method != "gaussian":
-            raise ValueError("signal-processing method must be 'gaussian'")
-        _validate_window_points(self.window_points)
-        for field_name, expected_value in _FIXED_PROFILE_VALUES.items():
-            actual_value = getattr(self, field_name)
-            if (
-                type(actual_value) is not type(expected_value)
-                or actual_value != expected_value
-            ):
-                raise ValueError(f"unsupported signal-processing field: {field_name}")
-
 
 def resolve_signal_processing_profile(
     *,
@@ -89,6 +59,8 @@ def resolve_signal_processing_profile(
 ) -> SignalProcessingProfile:
     if not isinstance(signal_processing_method, str):
         raise TypeError("signal_processing_method must be a string")
+    if signal_processing_method != "gaussian":
+        raise ValueError("signal-processing method must be 'gaussian'")
     return SignalProcessingProfile(
         method=signal_processing_method,
         window_points=_validate_window_points(signal_processing_window_points),
@@ -133,10 +105,23 @@ def deserialize_signal_processing_profile(
     missing = tuple(key for key in _PROFILE_KEYS if key not in content)
     if missing:
         raise ValueError(f"profile payload is missing fields: {missing}")
+    if content["schema_version"] != SIGNAL_PROCESSING_PROFILE_SCHEMA_VERSION:
+        raise ValueError("unsupported signal-processing profile schema_version")
+    if content["method"] != "gaussian":
+        raise ValueError("signal-processing method must be 'gaussian'")
     try:
+        _validate_window_points(content["window_points"])
         profile = SignalProcessingProfile(**content)
     except TypeError as exc:
         raise ValueError("profile payload has invalid field types") from exc
+    for field_name in _PROFILE_KEYS[3:]:
+        expected_value = getattr(DEFAULT_SIGNAL_PROCESSING_PROFILE, field_name)
+        actual_value = content[field_name]
+        if (
+            type(actual_value) is not type(expected_value)
+            or actual_value != expected_value
+        ):
+            raise ValueError(f"unsupported signal-processing field: {field_name}")
     if canonical_signal_processing_profile_bytes(profile) != raw:
         raise ValueError("profile payload is not the canonical representation")
     return profile

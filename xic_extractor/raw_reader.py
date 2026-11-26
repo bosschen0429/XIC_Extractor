@@ -30,7 +30,10 @@ from xic_extractor.ms2_scan_models import (
     Ms2Scan,
     Ms2ScanEvent,
 )
-from xic_extractor.precursor_evidence import Ms1PrecursorObservation
+from xic_extractor.precursor_evidence import (
+    Ms1PrecursorObservation,
+    validate_ms1_precursor_coordinates,
+)
 from xic_extractor.processing_identity import (
     AcquisitionSourceIdentity,
 )
@@ -53,7 +56,7 @@ from xic_extractor.raw_source_binding import (
     bind_expected_path_identity,
 )
 from xic_extractor.raw_superwindow_source import RawSuperWindowSource
-from xic_extractor.xic_models import XICRequest, XICTrace
+from xic_extractor.xic_models import XICRequest, XICTrace, validate_xic_window
 
 EXPECTED_THERMO_DLLS = (
     "OpenMcdf.dll",
@@ -301,6 +304,8 @@ class RawFileHandle:
     ) -> tuple[XICTrace, ...]:
         if not requests:
             return ()
+        for request in requests:
+            validate_xic_window(request.rt_min, request.rt_max, request.ppm_tol)
         if self.mass_recalibration_result.outcome == "applied":
             return self._recalibrated_xics(requests)
         grouped: dict[tuple[int, int], list[tuple[int, Any]]] = defaultdict(list)
@@ -410,6 +415,7 @@ class RawFileHandle:
                 if recalibrated is None:
                     continue
                 rt, masses, _ = recalibrated
+                validate_ms1_precursor_coordinates(scan_number, rt)
                 for index, low, high in windows:
                     inside = (masses >= low) & (masses <= high)
                     results[index] = Ms1PrecursorObservation(
@@ -434,6 +440,7 @@ class RawFileHandle:
                 & (intensities > 0)
             )
             rt = float(raw.RetentionTimeFromScanNumber(scan_number))
+            validate_ms1_precursor_coordinates(scan_number, rt)
             for index, low, high in windows:
                 inside = valid & (masses >= low) & (masses <= high)
                 results[index] = Ms1PrecursorObservation(
@@ -851,9 +858,18 @@ def _injection_header(handle: RawFileHandle, path: Path) -> InjectionHeader:
         end_time = float(run_header.EndTime)
     except handle._thermo.header_errors as exc:
         raise RawReaderError(f"RAW has no selected MS device: {path}: {exc}") from exc
+    acquisition_source = str(info.RawFileName or "").strip()
+    if not acquisition_source:
+        raise ValueError("RAW acquisition source is missing")
+    if (
+        not math.isfinite(start_time)
+        or not math.isfinite(end_time)
+        or not 0 <= start_time < end_time
+    ):
+        raise ValueError("RAW run times must be finite and 0 <= start < end")
     return InjectionHeader(
         raw_path=str(path.resolve()),
-        acquisition_source=str(info.RawFileName or "").strip(),
+        acquisition_source=acquisition_source,
         creation_date=creation,
         start_time_min=start_time,
         end_time_min=end_time,

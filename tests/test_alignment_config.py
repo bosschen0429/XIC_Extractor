@@ -47,10 +47,10 @@ def test_alignment_config_owner_gate_defaults_are_explicit():
     ],
 )
 def test_alignment_config_owner_gate_validation(field, value):
-    from xic_extractor.alignment import AlignmentConfig
+    from xic_extractor.diagnostics.stage_snapshot import parse_grouping_alignment_config
 
     with pytest.raises(ValueError, match=field):
-        AlignmentConfig(**{field: value})
+        parse_grouping_alignment_config({field: value})
 
 
 @pytest.mark.parametrize(
@@ -67,10 +67,10 @@ def test_alignment_config_owner_gate_validation(field, value):
     ],
 )
 def test_invalid_tolerance_windows_are_rejected(kwargs):
-    from xic_extractor.alignment import AlignmentConfig
+    from xic_extractor.diagnostics.stage_snapshot import parse_grouping_alignment_config
 
     with pytest.raises(ValueError):
-        AlignmentConfig(**kwargs)
+        parse_grouping_alignment_config(kwargs)
 
 
 @pytest.mark.parametrize(
@@ -83,10 +83,10 @@ def test_invalid_tolerance_windows_are_rejected(kwargs):
 )
 @pytest.mark.parametrize("value", [math.nan, math.inf, -math.inf])
 def test_non_finite_tolerance_windows_are_rejected(field, value):
-    from xic_extractor.alignment import AlignmentConfig
+    from xic_extractor.diagnostics.stage_snapshot import parse_grouping_alignment_config
 
     with pytest.raises(ValueError):
-        AlignmentConfig(**{field: value})
+        parse_grouping_alignment_config({field: value})
 
 
 @pytest.mark.parametrize(
@@ -98,10 +98,10 @@ def test_non_finite_tolerance_windows_are_rejected(field, value):
     ],
 )
 def test_bool_tolerance_windows_are_rejected(field):
-    from xic_extractor.alignment import AlignmentConfig
+    from xic_extractor.diagnostics.stage_snapshot import parse_grouping_alignment_config
 
     with pytest.raises(ValueError):
-        AlignmentConfig(**{field: True})
+        parse_grouping_alignment_config({field: True})
 
 
 @pytest.mark.parametrize(
@@ -117,7 +117,7 @@ def test_bool_tolerance_windows_are_rejected(field):
     ],
 )
 def test_invalid_anchor_and_fixed_fields_are_rejected(kwargs):
-    from xic_extractor.alignment import AlignmentConfig
+    from xic_extractor.diagnostics.stage_snapshot import parse_grouping_alignment_config
 
     with pytest.raises(ValueError):
-        AlignmentConfig(**kwargs)
+        parse_grouping_alignment_config(kwargs)

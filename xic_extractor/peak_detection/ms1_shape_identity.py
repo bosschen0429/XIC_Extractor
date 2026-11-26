@@ -36,39 +36,6 @@ class LocalPeakShape:
     half_height_point_count: int | None = None
     edge_intensity_ratio: tuple[float, float] | None = None
 
-    def __post_init__(self) -> None:
-        if (
-            isinstance(self.half_window_min, bool)
-            or not math.isfinite(self.half_window_min)
-            or self.half_window_min <= 0
-            or len(self.intensity) < 5
-            or isinstance(self.source_point_count, bool)
-            or self.source_point_count < 0
-            or (
-                self.half_height_point_count is not None
-                and (
-                    type(self.half_height_point_count) is not int
-                    or not 0 <= self.half_height_point_count <= self.source_point_count
-                )
-            )
-            or (
-                self.edge_intensity_ratio is not None
-                and (
-                    len(self.edge_intensity_ratio) != 2
-                    or any(
-                        isinstance(value, bool) or not math.isfinite(value) or value > 1
-                        for value in self.edge_intensity_ratio
-                    )
-                )
-            )
-            or any(
-                value is not None
-                and (isinstance(value, bool) or not math.isfinite(value) or value > 1.0)
-                for value in self.intensity
-            )
-        ):
-            raise ValueError("local peak shape requires a finite normalized RT grid")
-
 
 def prepare_local_peak_shape(
     rt: Sequence[float | int | None],
@@ -86,6 +53,8 @@ def prepare_local_peak_shape(
     apex reselection or shift search is performed. Resolution counts measured
     half-height samples, never the zeros or interpolated/smoothed grid points.
     """
+    if isinstance(half_window_min, bool):
+        raise ValueError("local peak shape requires a finite normalized RT grid")
     if grid_size < 5 or not math.isfinite(half_window_min) or half_window_min <= 0:
         raise ValueError("local peak shape requires a positive window and >=5 points")
     grid = np.linspace(-half_window_min, half_window_min, grid_size)

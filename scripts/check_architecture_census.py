@@ -58,6 +58,7 @@ def validate_repository(repo_root: Path) -> list[str]:
     problems.extend(validate_documented_code_names(repo_root))
     problems.extend(validate_ppm_arithmetic(repo_root))
     problems.extend(validate_typed_input_guards(repo_root))
+    problems.extend(validate_post_init_raises(repo_root))
     problems.extend(validate_test_source_boundaries(repo_root))
     problems.extend(validate_frozen_entrypoints(repo_root))
     return problems
@@ -694,7 +695,73 @@ def _git_subprocess_environment() -> dict[str, str]:
     return environment
 
 
-CONSTRUCTION_HOOKS = frozenset({"__post_init__", "__init_subclass__"})
+def validate_post_init_raises(
+    repo_root: Path, paths: Sequence[Path] | None = None
+) -> list[str]:
+    """Reject a direct raise or a raising local callee one call away."""
+    if paths is None:
+        paths = repository_python_paths(repo_root)
+    problems = []
+    for path in paths:
+        if path.parts[0] != "xic_extractor":
+            continue
+        tree = ast.parse((repo_root / path).read_text(encoding="utf-8-sig"))
+        for line, reason in _post_init_raises(tree):
+            problems.append(f"{path.as_posix()}:{line}: {reason}")
+    return problems
+
+
+def _post_init_raises(tree: ast.Module) -> Iterator[tuple[int, str]]:
+    functions = (ast.FunctionDef, ast.AsyncFunctionDef)
+    module_helpers = {
+        node.name
+        for node in tree.body
+        if isinstance(node, functions)
+        and any(isinstance(n, ast.Raise) for n in ast.walk(node))
+    }
+    classes = [node for node in ast.walk(tree) if isinstance(node, ast.ClassDef)]
+    raising_methods = {
+        cls: {
+            node.name
+            for node in cls.body
+            if isinstance(node, functions)
+            and any(isinstance(n, ast.Raise) for n in ast.walk(node))
+        }
+        for cls in classes
+    }
+    by_name = {cls.name: methods for cls, methods in raising_methods.items()}
+    for cls in classes:
+        for hook in cls.body:
+            if not isinstance(hook, functions) or hook.name != "__post_init__":
+                continue
+            positional = hook.args.posonlyargs + hook.args.args
+            receiver = positional[0].arg if positional else ""
+            for node in ast.walk(hook):
+                if isinstance(node, ast.Raise):
+                    yield (
+                        node.lineno,
+                        "__post_init__ must not raise; "
+                        "validate at the input or decision owner",
+                    )
+                if not isinstance(node, ast.Call):
+                    continue
+                target = node.func
+                if isinstance(target, ast.Name) and target.id in module_helpers:
+                    yield node.lineno, f"__post_init__ calls raising helper {target.id}"
+                if isinstance(target, ast.Attribute) and isinstance(
+                    target.value, ast.Name
+                ):
+                    owner = target.value.id
+                    methods = (
+                        raising_methods[cls]
+                        if owner == receiver
+                        else by_name.get(owner, set())
+                    )
+                    if target.attr in methods:
+                        yield (
+                            node.lineno,
+                            f"__post_init__ calls raising helper {owner}.{target.attr}",
+                        )
 
 
 @dataclass
@@ -707,7 +774,7 @@ class _DefenseScope:
 
 
 def _internal_defense_profile(source: str, path: str) -> list[_DefenseScope]:
-    """Count statements in construction hooks; not a semantic trust analysis."""
+    """Count statements in subclass hooks; not a semantic trust analysis."""
     result: list[_DefenseScope] = []
 
     def scan(scope: Any, name: str) -> None:
@@ -732,7 +799,7 @@ def _internal_defense_profile(source: str, path: str) -> list[_DefenseScope]:
                 continue
             body.append(statement)
             collect(statement)
-        if getattr(scope, "name", None) in CONSTRUCTION_HOOKS:
+        if getattr(scope, "name", None) == "__init_subclass__":
             result.append(
                 _DefenseScope(
                     path=path,
@@ -874,11 +941,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             problems = [str(exc)]
         problems.extend(validate_ppm_arithmetic(ROOT))
         problems.extend(validate_typed_input_guards(ROOT))
+        problems.extend(validate_post_init_raises(ROOT))
         problems.extend(validate_test_source_boundaries(ROOT))
         for problem in problems:
             print(problem, file=sys.stderr)
         if not problems:
-            print("Internal-defense, typed-input, ppm and test-source gates passed.")
+            print(
+                "Post-init, subclass growth, typed-input, ppm "
+                "and test-source gates passed."
+            )
         return int(bool(problems))
     problems = validate_repository(ROOT)
     if problems:

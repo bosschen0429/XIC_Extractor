@@ -7,7 +7,6 @@ describe a pattern without becoming separate quantitation results.
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 
 import numpy as np
@@ -34,22 +33,6 @@ class ElutionLandmark:
     width: float
     physical_segment: PhysicalSegment | None = None
 
-    def __post_init__(self) -> None:
-        if (
-            any(
-                isinstance(value, bool)
-                or not isinstance(value, (int, float))
-                or not math.isfinite(value)
-                for value in (self.apex_rt, self.height, self.width)
-            )
-            or self.apex_rt < 0.0
-            or self.height <= 0.0
-            or self.width <= 0.0
-        ):
-            raise ValueError(
-                "elution landmark requires finite RT, positive height and width"
-            )
-
 
 @dataclass(frozen=True, slots=True)
 class SampleElutionContext:
@@ -60,30 +43,6 @@ class SampleElutionContext:
     landmarks: tuple[ElutionLandmark, ...]
     rt: tuple[float, ...] = ()
     raw: tuple[float, ...] = ()
-
-    def __post_init__(self) -> None:
-        if (
-            not self.sample_stem.strip()
-            or any(
-                isinstance(value, bool)
-                or not isinstance(value, (int, float))
-                or not math.isfinite(value)
-                for value in (self.mz, self.rt_start, self.rt_end)
-            )
-            or self.mz <= 0.0
-            or self.rt_start < 0.0
-            or self.rt_end <= self.rt_start
-        ):
-            raise ValueError(
-                "elution context requires a sample, mass, bounds and landmarks"
-            )
-        apices = tuple(peak.apex_rt for peak in self.landmarks)
-        if tuple(sorted(set(apices))) != apices or any(
-            not self.rt_start <= apex <= self.rt_end for apex in apices
-        ):
-            raise ValueError(
-                "elution landmarks must be ordered within acquired context"
-            )
 
 
 def project_elution_context(

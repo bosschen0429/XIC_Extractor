@@ -37,10 +37,6 @@ class ExecutionProfile:
     backend: str = DEFAULT_WORKER_BACKEND
     overlap_partitions: bool = True
 
-    def __post_init__(self) -> None:
-        _validate_workers(self.parallel_workers, field="parallel_workers")
-        _validate_workers(self.alignment_workers, field="alignment_workers")
-
 
 def in_process_execution() -> ExecutionProfile:
     """Run everything in the calling process, for injected readers and tests."""
@@ -58,12 +54,14 @@ def load_execution_profile(
         raise ValueError(f"backend must be one of {', '.join(WORKER_BACKENDS)}")
     return ExecutionProfile(
         parallel_workers=(
-            default_parallel_workers() if parallel_workers is None else parallel_workers
+            default_parallel_workers()
+            if parallel_workers is None
+            else _validate_workers(parallel_workers, field="parallel_workers")
         ),
         alignment_workers=(
             DEFAULT_ALIGNMENT_WORKERS
             if alignment_workers is None
-            else alignment_workers
+            else _validate_workers(alignment_workers, field="alignment_workers")
         ),
         backend=backend,
     )

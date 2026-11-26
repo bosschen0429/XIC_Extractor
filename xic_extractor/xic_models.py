@@ -13,11 +13,12 @@ class XICRequest:
     rt_max: float
     ppm_tol: float
 
-    def __post_init__(self) -> None:
-        if self.rt_min > self.rt_max:
-            raise ValueError("rt_min must be <= rt_max")
-        if self.ppm_tol <= 0:
-            raise ValueError("ppm_tol must be > 0")
+
+def validate_xic_window(rt_min: float, rt_max: float, ppm_tol: float) -> None:
+    if rt_min > rt_max:
+        raise ValueError("rt_min must be <= rt_max")
+    if ppm_tol <= 0:
+        raise ValueError("ppm_tol must be > 0")
 
 
 @dataclass(frozen=True)

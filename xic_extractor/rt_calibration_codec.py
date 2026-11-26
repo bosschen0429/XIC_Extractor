@@ -17,6 +17,7 @@ from xic_extractor.alignment.sample_rt_calibration import (
     RtCalibrationPolicy,
     RtEstimateSupport,
     SampleRtCalibration,
+    validate_rt_calibration_policy,
 )
 
 
@@ -58,9 +59,10 @@ def rt_calibration_from_payload(value: dict[str, Any]) -> BatchRtCalibration:
         if sample.sample_stem in samples:
             raise ValueError("RT calibration has duplicate samples")
         samples[sample.sample_stem] = sample
-    policy = dict(value["policy"])
+    policy = RtCalibrationPolicy(**value["policy"])
+    validate_rt_calibration_policy(policy)
     return BatchRtCalibration(
-        policy=RtCalibrationPolicy(**policy),
+        policy=policy,
         knots=tuple(
             CalibrationKnot(
                 **{

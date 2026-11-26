@@ -117,7 +117,7 @@ class UntargetedCidNlBackfillTarget:
         """Adapt the complete scientific question to the acquisition contract."""
         group = question.group
         localized = question.localization
-        return cls(
+        target = cls(
             group_hypothesis_id=group.group_hypothesis_id,
             method_subject=question.method_subject,
             physical_mz=group.group_center_mz,
@@ -131,30 +131,33 @@ class UntargetedCidNlBackfillTarget:
             ),
             query_rt_reliable=True if localized is None else localized.reliable,
         )
+        _validate_backfill_target(target)
+        return target
 
     @property
     def sample_query_rt(self) -> float:
         return self.center_rt if self.query_rt is None else self.query_rt
 
-    def __post_init__(self) -> None:
-        if (
-            not math.isfinite(self.physical_mz)
-            or self.physical_mz <= 0.0
-            or not math.isfinite(self.center_rt)
-            or self.center_rt < 0.0
-            or not math.isfinite(self.sample_query_rt)
-            or self.sample_query_rt < 0.0
-            or (
-                self.query_rt_tolerance_sec is not None
-                and (
-                    not math.isfinite(self.query_rt_tolerance_sec)
-                    or self.query_rt_tolerance_sec <= 0.0
-                )
+
+def _validate_backfill_target(model: UntargetedCidNlBackfillTarget) -> None:
+    if (
+        not math.isfinite(model.physical_mz)
+        or model.physical_mz <= 0.0
+        or not math.isfinite(model.center_rt)
+        or model.center_rt < 0.0
+        or not math.isfinite(model.sample_query_rt)
+        or model.sample_query_rt < 0.0
+        or (
+            model.query_rt_tolerance_sec is not None
+            and (
+                not math.isfinite(model.query_rt_tolerance_sec)
+                or model.query_rt_tolerance_sec <= 0.0
             )
-        ):
-            raise CidNlAcquisitionError(
-                "backfill target requires a group, physical mass, and RT"
-            )
+        )
+    ):
+        raise CidNlAcquisitionError(
+            "backfill target requires a group, physical mass, and RT"
+        )
 
 
 @dataclass(frozen=True, slots=True)

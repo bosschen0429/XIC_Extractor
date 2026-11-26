@@ -4,7 +4,7 @@ repos:
   - repo: local
     hooks:
       - id: internal-defense-growth
-        name: Check internal-defense, typed-input, ppm and test-source boundaries
+        name: Check post-init, subclass growth, typed-input, ppm and test-source boundaries
         entry: uv run --cache-dir .uv-cache python scripts/check_architecture_census.py --internal-defense-base HEAD --staged
         language: system
         files: ^((xic_extractor|scripts|tools|xic_inspector|xic_workbench|tests)/.*\.py|\.pre-commit-config\.yaml)$

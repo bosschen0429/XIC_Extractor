@@ -36,13 +36,6 @@ class TraceAcquisitionCapability:
     acquisition_source: AcquisitionSourceIdentity
     adapter_namespace: str
 
-    def __post_init__(self) -> None:
-        require_owner_normalized_text(
-            self.adapter_namespace,
-            field="adapter_namespace",
-            error_factory=AcquisitionContractError,
-        )
-
 
 @dataclass(frozen=True, slots=True)
 class TraceCoordinate:
@@ -88,6 +81,11 @@ def mint_trace_acquisition_capability(
     *,
     adapter_namespace: str,
 ) -> TraceAcquisitionCapability:
+    require_owner_normalized_text(
+        adapter_namespace,
+        field="adapter_namespace",
+        error_factory=AcquisitionContractError,
+    )
     return TraceAcquisitionCapability(
         acquisition_source=acquisition_source,
         adapter_namespace=adapter_namespace,

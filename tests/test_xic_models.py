@@ -1,17 +1,7 @@
 import numpy as np
 import pytest
 
-from xic_extractor.xic_models import XICRequest, XICTrace, crop_xic_trace_by_rt
-
-
-def test_xic_request_rejects_invalid_bounds() -> None:
-    with pytest.raises(ValueError, match="rt_min must be <= rt_max"):
-        XICRequest(mz=258.0, rt_min=10.0, rt_max=8.0, ppm_tol=20.0)
-
-
-def test_xic_request_rejects_non_positive_ppm() -> None:
-    with pytest.raises(ValueError, match="ppm_tol must be > 0"):
-        XICRequest(mz=258.0, rt_min=8.0, rt_max=10.0, ppm_tol=0.0)
+from xic_extractor.xic_models import XICTrace, crop_xic_trace_by_rt
 
 
 def test_xic_trace_normalizes_arrays_to_float() -> None:

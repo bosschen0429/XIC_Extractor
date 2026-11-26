@@ -15,6 +15,7 @@ from typing import Literal
 from xic_extractor.configuration.delta_mass import (
     DeltaMassPatternSettings,
     DeltaMassPosition,
+    validate_delta_mass_pattern,
 )
 from xic_extractor.validation_primitives import require_finite_real
 
@@ -48,13 +49,14 @@ class QuantRelativeIon:
     ratio_max: float = 10.0
     compare_shape: bool = True
 
-    def __post_init__(self):
-        if not self.label.strip():
-            raise ValueError("position requires a non-empty label")
-        for key in ("offset_mz", "ratio_min", "ratio_max"):
-            require_finite_real(getattr(self, key), name=key)
-        if not 0 < self.ratio_min <= self.ratio_max:
-            raise ValueError("reference ratios must be positive and ordered")
+
+def _validate_quant_relative_ion(model: QuantRelativeIon) -> None:
+    if not model.label.strip():
+        raise ValueError("position requires a non-empty label")
+    for key in ("offset_mz", "ratio_min", "ratio_max"):
+        require_finite_real(getattr(model, key), name=key)
+    if not 0 < model.ratio_min <= model.ratio_max:
+        raise ValueError("reference ratios must be positive and ordered")
 
 
 @dataclass(frozen=True)
@@ -87,7 +89,7 @@ class DeltaMassCondition:
         ]
         lowest = min(offset for _, offset, _, _ in positions)
         settings = self.settings
-        return DeltaMassPatternSettings(
+        pattern = DeltaMassPatternSettings(
             pattern_id=pattern_id,
             method_label=DELTA_MASS_LABEL,
             positions=tuple(
@@ -106,6 +108,8 @@ class DeltaMassCondition:
             shape_reference_position=BASE_POSITION,
             ratio_reference_position=BASE_POSITION,
         )
+        validate_delta_mass_pattern(pattern)
+        return pattern
 
 
 IdentificationCondition = CidNlCondition | DeltaMassCondition
@@ -216,9 +220,9 @@ def parse_delta_mass_payload(
                 raise ValueError("position requires a non-empty label")
             if not isinstance(values.get("compare_shape", True), bool):
                 raise ValueError("compare_shape must be true or false")
-            parsed.append(
-                QuantRelativeIon(**{**values, **_numbers(values, skip={"label"})})
-            )
+            ion = QuantRelativeIon(**{**values, **_numbers(values, skip={"label"})})
+            _validate_quant_relative_ion(ion)
+            parsed.append(ion)
         ions[label] = tuple(parsed)
     return settings, ions
 
