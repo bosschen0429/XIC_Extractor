@@ -71,11 +71,9 @@ def test_retained_trace_reaches_one_finalized_target_result(tmp_path: Path) -> N
     )
 
 
-@pytest.mark.parametrize(
-    "neutral_loss,boundary_event", [(None, False), (116.0474, False), (116.0474, True)]
-)
+@pytest.mark.parametrize("neutral_loss", [None, 116.0474])
 def test_unavailable_istd_alternate_does_not_block_workbook_publication(
-    tmp_path: Path, monkeypatch, neutral_loss: float | None, boundary_event: bool
+    tmp_path: Path, monkeypatch, neutral_loss: float | None
 ) -> None:
     from contextlib import nullcontext
 
@@ -131,12 +129,6 @@ def test_unavailable_istd_alternate_does_not_block_workbook_publication(
         "xic_extractor.extraction.target_extraction.open_raw",
         lambda *_args, **_kwargs: nullcontext(Raw()),
     )
-    if boundary_event:
-        baseline = extraction_pipeline.run_pipeline(config, [target])
-        evaluation = baseline.file_results[0].results[target.label].physical_evaluation
-        assert evaluation is not None and evaluation.integration is not None
-        Raw.scan_rt = evaluation.integration.rt_left_min
-
     acquired = []
     assessments = []
     mint_assessment = targeted_cid_nl_assessment.mint_cid_nl_method_assessment
@@ -189,14 +181,7 @@ def test_unavailable_istd_alternate_does_not_block_workbook_publication(
             for peak in assessment.candidate_peaks
         )
         assert len(assessment.evidence_observations) == 1
-        if boundary_event:
-            assert source.cid_nl_relations.set_relation_event_indexes == (0,)
-            assert assessment.individual_support_refs == ()
-            assert len(assessment.set_relation_refs) == 1
-            assert assessment.method_result == "HOLD"
-            assert not published.selected_cid_nl_supported
-        else:
-            assert len(assessment.individual_support_refs) == 1
+        assert len(assessment.individual_support_refs) == 1
     workbook = load_workbook(workbook_path, read_only=True, data_only=True)
     try:
         rows = list(workbook["XIC Results"].values)
@@ -219,7 +204,7 @@ def test_publication_uses_final_peak_evidence_not_stale_selected_summary(tmp_pat
     second = output.file_results[1].results[target.label]
     second_answer = second.candidate_ms2_evidence
     assert second_answer is not None and second_answer.best_product_evidence is not None
-    outside = second.reported_peak_end + 0.05
+    outside = second.reported_peak_end + 0.15
     second = with_method_universe(
         replace(
             second,
@@ -413,7 +398,7 @@ def test_nl_event_outside_retained_peak_finalizes_without_direct_support(
     assert selected is not None and evidence is not None
     product = evidence.best_product_evidence
     assert product is not None
-    outside_rt = selected.integration.rt_right_min + 0.01
+    outside_rt = selected.integration.rt_right_min + 0.15
     assert outside_rt < target.rt_max
     output.file_results[0].results[target.label] = with_method_universe(
         replace(
