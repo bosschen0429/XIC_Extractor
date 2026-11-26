@@ -115,6 +115,8 @@ class DeltaMassReview:
 
 def write_delta_mass_review(review: DeltaMassReview, path: Path) -> None:
     payload = {"schema_version": REVIEW_SCHEMA, **asdict(review)}
+    for candidate in payload["candidates"]:
+        candidate["sample_stem"] = candidate.pop("raw_stem")
     text = json.dumps(payload, ensure_ascii=False, allow_nan=False) + "\n"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
@@ -247,6 +249,7 @@ def decode_delta_mass_review(payload: object) -> DeltaMassReview:
             _record(
                 ReviewCandidate,
                 row,
+                raw_stem=row["sample_stem"],
                 positions=tuple(positions),
                 spectra=tuple(spectra),
                 neutral_losses=losses,

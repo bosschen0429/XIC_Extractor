@@ -41,7 +41,7 @@ def mount_review_html(source: Path, output: Path, *, limit=30, strategy="sample"
         source, (json.loads(source.read_text(encoding="utf-8")), "browser-fixture")
     )
     samples = adapter.summary["samples"]
-    items = adapter.load_items({s["sample_key"] for s in samples})
+    items = adapter.load_items({s["raw_stem"] for s in samples})
     rendered = adapter.load_render_items(
         items[:limit], capability="retained_curves", check_cancel=lambda: None
     )
@@ -54,9 +54,7 @@ def mount_review_html(source: Path, output: Path, *, limit=30, strategy="sample"
             "review_scope": "all",
             "case_counts": {},
         },
-        "samples": [
-            {"id": s["sample_key"], "label": s["sample_stem"]} for s in samples
-        ],
+        "samples": [{"id": s["raw_stem"], "label": s["sample_label"]} for s in samples],
         "items": rendered,
     }
     output.write_text(

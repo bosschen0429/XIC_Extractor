@@ -10,14 +10,12 @@ from dataclasses import asdict
 import pytest
 
 from tests.delta_mass_review_fixtures import (
-    review_fixture,
     write_discovery,
     write_review,
 )
 from tools.diagnostics.delta_mass_review import main
 from xic_extractor.diagnostics import delta_mass_review_acquisition as acquisition
 from xic_extractor.diagnostics.delta_mass_review_data import (
-    REVIEW_SCHEMA,
     decode_delta_mass_review,
 )
 from xic_extractor.xic_models import XICTrace
@@ -324,8 +322,7 @@ def test_real_inspector_cli_accepts_review_without_importing_raw(tmp_path):
 
 
 def test_mismatched_spectrum_arrays_are_an_explicit_source_error(tmp_path):
-    payload = {"schema_version": REVIEW_SCHEMA, **asdict(review_fixture())}
-    payload = json.loads(json.dumps(payload))
+    payload = json.loads(write_review(tmp_path).read_bytes())
     payload["candidates"][0]["spectra"][0]["intensity"].pop()
     path = tmp_path / "incomplete.json"
     path.write_text(json.dumps(payload), encoding="utf-8")
@@ -334,7 +331,8 @@ def test_mismatched_spectrum_arrays_are_an_explicit_source_error(tmp_path):
 
 
 def test_raw_only_review_needs_no_nl_feature_metadata(tmp_path):
-    payload = {"schema_version": REVIEW_SCHEMA, **asdict(review_fixture())}
+    payload = json.loads(write_review(tmp_path).read_bytes())
+    assert payload["candidates"][0]["sample_stem"] == "sample-a"
     for candidate in payload["candidates"]:
         for position in candidate["positions"]:
             position.pop("feature_id")
