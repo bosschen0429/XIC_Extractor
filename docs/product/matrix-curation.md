@@ -98,7 +98,7 @@ the current table layout (compact review or full audit) and is unavailable
 without its published cell values.
 
 Evidence uses each published cell's recorded apex. Directly detected cells
-(`discovery_support`) come first; backfilled cells only complete evidence that
+(`detected`) come first; backfilled cells only complete evidence that
 direct detections leave insufficient:
 
 - **Co-elution:** a supporting sample has both cells' apices at most 5.5 s

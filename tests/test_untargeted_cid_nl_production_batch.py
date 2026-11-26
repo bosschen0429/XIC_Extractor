@@ -649,11 +649,11 @@ def test_atomic_publication_preserves_ms1_peak_and_no_peak(
     assert cells["NoPeak"]["source_candidate_id"] == ""
 
     published = read_published_cells(output)
-    assert {(cell.sample, cell.direct, cell.apex_rt_min) for cell in published} == {
-        ("Support1", True, 7.97),
-        ("Support2", True, 7.99),
-        ("Support3", True, 8.01),
-        ("MS1Only", False, 8.03),
+    assert {(cell.sample, cell.origin, cell.apex_rt_min) for cell in published} == {
+        ("Support1", "detected", 7.97),
+        ("Support2", "detected", 7.99),
+        ("Support3", "detected", 8.01),
+        ("MS1Only", "backfilled", 8.03),
     }
     assert {cell.sample: cell.value for cell in published} == pytest.approx(
         dict(zip(stems, areas, strict=False)), rel=5e-6

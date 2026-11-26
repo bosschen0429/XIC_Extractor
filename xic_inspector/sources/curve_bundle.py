@@ -226,7 +226,7 @@ def _quantifications(
             fields.add("support_origin")
         obj = _mapping(entry, loc, fields)
         origin = obj.get("support_origin", "unavailable")
-        if origin not in ("discovery_support", "backfill_support", "unavailable"):
+        if origin not in ("detected", "backfilled", "unavailable"):
             raise _fail(loc, "unknown support origin")
         sid = _text(obj.get("sample_id"), f"{loc}.sample_id")
         if sid not in sample_ids or sid in seen:

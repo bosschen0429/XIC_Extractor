@@ -174,7 +174,7 @@
 
 
 
-.xic-inspector .origin-backfill_support::before { background:var(--purple); }
+.xic-inspector .origin-backfilled::before { background:var(--purple); }
 .xic-inspector .origin-unavailable::before { background:#b4bcbf; }
 .xic-inspector .alignment-partial { color:var(--warn); }
 

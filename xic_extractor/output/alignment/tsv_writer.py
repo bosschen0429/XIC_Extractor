@@ -542,11 +542,7 @@ def _selected_cell_source(
 ) -> str | None:
     """The Discovery candidate of a numeric cell read from a direct observation."""
 
-    if (
-        decision.value is None
-        or evidence.ms1_only_backfill_observations
-        or evidence.ms1_only_group_observations
-    ):
+    if decision.value is None or not evidence.own_cid_nl_support:
         return None
     direct = tuple(evidence.direct_observations)
     if len(direct) != 1:

@@ -90,6 +90,19 @@ class FinalGroupCellObservation:
         return "mixed"
 
     @property
+    def own_cid_nl_support(self) -> bool:
+        """Whether this injection's own CID-NL evidence supports the cell's peak.
+
+        A lane minted ``direct_observation`` carries that support; an MS1-only
+        lane in the same cell means the peak has none of its own.
+        """
+        states = set(self.evidence_states)
+        return "direct_observation" in states and not states & {
+            "ms1_only_group_observation",
+            "ms1_only_backfill_observation",
+        }
+
+    @property
     def method_assessments(self) -> tuple[CidNlMethodAssessment, ...]:
         return tuple(cell.method_assessment for cell in self.effective_cells)
 

@@ -12,15 +12,13 @@ from .reader import (
 )
 from .storage import EXPLANATION_ARTIFACT_NAME
 
-_DIRECT_ORIGINS = frozenset({"discovery_support"})
-
 
 @dataclass(frozen=True)
 class PublishedCell:
     row: int
     row_mz: float
     sample: str
-    direct: bool
+    origin: str
     apex_rt_min: float | None
     feature_id: str = ""
     value: float | None = None
@@ -59,7 +57,7 @@ def read_published_cells(alignment_dir: Path) -> tuple[PublishedCell, ...]:
                 row=row,
                 row_mz=row_mz,
                 sample=sample,
-                direct=origin in _DIRECT_ORIGINS,
+                origin=origin,
                 apex_rt_min=apex,
                 feature_id=group,
                 value=float(value),

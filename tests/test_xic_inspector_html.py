@@ -57,7 +57,7 @@ def test_support_origin_styles_fixture_curves_in_both_views(
     assert plotted["curve-2"].attrib["stroke-width"] == "1"
     for i, (origin, dash) in enumerate(
         zip(
-            ("discovery_support", "backfill_support", "unavailable"),
+            ("detected", "backfilled", "unavailable"),
             ("", "6 4", ""),
             strict=True,
         )

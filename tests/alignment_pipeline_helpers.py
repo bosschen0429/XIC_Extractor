@@ -203,6 +203,7 @@ class WriterEvidence:
     """The ``FinalGroupCellObservation`` facts the Alignment writers read."""
 
     direct_observations: tuple[object, ...] = ()
+    own_cid_nl_support: bool = False
     ms1_only_group_observations: tuple[object, ...] = ()
     ms1_only_backfill_observations: tuple[object, ...] = ()
     method_assessments: tuple[object, ...] = ()
@@ -258,6 +259,7 @@ def owner_cell(
         subject=None,
         evidence=WriterEvidence(
             direct_observations=peak,
+            own_cid_nl_support=origin == "detected",
             ms1_only_backfill_observations=peak if origin == "backfilled" else (),
             method_assessments=assessments,
         ),

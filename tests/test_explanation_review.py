@@ -3,6 +3,7 @@
 import hashlib
 import json
 import sqlite3
+from typing import get_args
 
 import pytest
 
@@ -16,6 +17,7 @@ from tests.explanation_review_fixtures import (
     _quality_review_report,
 )
 from tests.untargeted_partition_fixtures import children_of
+from xic_extractor.alignment.cell_decision.owner import CellOrigin
 from xic_extractor.alignment_explanation.errors import ExplanationError
 from xic_extractor.alignment_explanation.reader import (
     read_alignment_curves,
@@ -23,6 +25,7 @@ from xic_extractor.alignment_explanation.reader import (
     read_explanation_metadata,
     read_review_evidence,
 )
+from xic_extractor.alignment_explanation.review import SUPPORT_ORIGINS
 from xic_extractor.alignment_explanation.writer import (
     ExplanationReportWriter,
 )
@@ -72,13 +75,19 @@ def test_summary_from_an_older_format_is_rejected_without_conversion(
     assert source.read_bytes() == before
 
 
+def test_written_cell_origin_has_exactly_two_classes() -> None:
+    """A third origin must change this test, the TSV status and the review DB."""
+    assert get_args(CellOrigin) == ("detected", "backfilled")
+    assert SUPPORT_ORIGINS == {"detected", "backfilled", "unavailable"}
+
+
 @pytest.mark.parametrize(
     "stale_content",
     [
-        "UPDATE cells SET support_origin='reacquired_support' "
+        "UPDATE cells SET support_origin='discovery_support' "
         "WHERE group_id=(SELECT MIN(group_id) FROM cells)",
     ],
-    ids=["retired-support-origin"],
+    ids=["previous-support-origin-vocabulary"],
 )
 def test_explanation_from_an_older_alignment_is_rejected_on_open(
     tmp_path, monkeypatch, stale_content

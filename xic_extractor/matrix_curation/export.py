@@ -150,7 +150,9 @@ def load_cell_evidence(
         if row is None or cell.value is None:
             continue
         row[cell.sample] = CellEvidence(
-            direct=cell.direct, value=cell.value, apex_rt_min=cell.apex_rt_min
+            direct=cell.origin == "detected",
+            value=cell.value,
+            apex_rt_min=cell.apex_rt_min,
         )
     return tuple(by_feature[feature.feature_id] for feature in features)
 

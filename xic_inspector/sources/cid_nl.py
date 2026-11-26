@@ -334,13 +334,9 @@ def _support_origin(sample_id, observation_refs, cell, curves, assessments):
     if cell is not None:
         kind = cell["support_origin"]
         return {
-            "kind": kind
-            if kind in ("backfill_support", "discovery_support")
-            else "unavailable",
+            "kind": kind if kind in ("backfilled", "detected") else "unavailable",
             "label": presentation.support_origin_label(
-                kind
-                if kind in ("backfill_support", "discovery_support")
-                else "unavailable"
+                kind if kind in ("backfilled", "detected") else "unavailable"
             ),
             "method_refs": [],
             "capture_refs": [],

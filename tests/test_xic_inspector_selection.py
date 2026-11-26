@@ -45,11 +45,11 @@ def test_default_sample_keeps_cross_sample_cases_among_many_singletons() -> None
     """A large candidate population must not hide broad or recovery families."""
     groups = []
     for name, observed, origin, count in (
-        ("broad_direct", 8, "discovery_support", 60),
-        ("broad_recovery", 7, "backfill_support", 2),
-        ("partial_direct", 4, "discovery_support", 60),
+        ("broad_direct", 8, "detected", 60),
+        ("broad_recovery", 7, "backfilled", 2),
+        ("partial_direct", 4, "detected", 60),
         ("partial_unavailable", 3, "unavailable", 15),
-        ("limited", 1, "discovery_support", 200),
+        ("limited", 1, "detected", 200),
     ):
         for index in range(count):
             groups.append(
