@@ -544,9 +544,7 @@ def test_backfill_recovers_every_authorized_rt_group(
             assert cell["area"] == ""
     if shared_support == "below-quorum":
         assert missing[12.0]["area"] == ""
-        assert missing[12.0]["status"] == (
-            "unresolved" if 12.0 in recovery_peaks else "not_searched"
-        )
+        assert missing[12.0]["status"] == "not_searched"
 
 
 def _shared_peak_raws(mz_separation_ppm, observed=("S1", "S2")):

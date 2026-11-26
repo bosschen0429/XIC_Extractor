@@ -437,7 +437,7 @@ def test_istd_experiment_and_saved_replay_use_formal_batch_coordinates(
     )
     assert formal_frame.common_rt_min("S1", 8) == pytest.approx(6)
     expected = replay_grouping(prepared.inputs, rt_coordinates=formal_frame)
-    assert len(expected) == 2
+    assert [len(group.owners) for group in expected] == [1, 1, 1, 1]
     assert group_signature(prepared.groups) == group_signature(expected)
     snapshot = tmp_path / "istd.json.gz"
     write_grouping_inputs(snapshot, prepared.inputs, provenance={})

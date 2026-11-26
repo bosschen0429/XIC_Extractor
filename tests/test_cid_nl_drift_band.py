@@ -55,7 +55,16 @@ def replay(owners, drift=None):
     return {s.sample: s for s in slots}, groups
 
 
+def competing(group):
+    return {
+        d.owner_id
+        for d in group.inference_decisions
+        if d.accepted_risk and "accepted_competition" in d.accepted_risk.risk_flags
+    }
+
+
 def test_corrected_band_releases_direct_without_erasing_it_or_confirming_the_fill():
+    """Far direct peaks keep their evidence; the shared localization fills slots."""
     residuals = [(i - 30) / 5000 for i in range(61)]
     ref = tuple(
         _owner(f"p{i}", "ref", apex_rt=10 + i / 10 + r) for i, r in enumerate(residuals)
@@ -63,7 +72,6 @@ def test_corrected_band_releases_direct_without_erasing_it_or_confirming_the_fil
     early = _owner("fill", "direct", apex_rt=4)
     envelope, distractor = ms1("fill", 11.96), ms1("fill", 13)
     vacant = _owner("vacant", "direct", apex_rt=6)
-    unknown = _owner("unknown", "direct", apex_rt=4)
     tie = (ms1("ambiguous", 11.96), ms1("ambiguous", 12.04))
     owners = (
         *ref,
@@ -72,8 +80,6 @@ def test_corrected_band_releases_direct_without_erasing_it_or_confirming_the_fil
         distractor,
         vacant,
         ms1("vacant", 15),
-        unknown,
-        ms1("unknown", 12),
         *tie,
     )
     shape = {o.sample_stem: 1.0 for o in owners}
@@ -90,13 +96,18 @@ def test_corrected_band_releases_direct_without_erasing_it_or_confirming_the_fil
         assert slot.radius == pytest.approx(
             np.quantile(peers, 0.95) - np.quantile(peers, 0.05)
         )
-    for sample in ("vacant", "unknown", "ambiguous"):
+    for sample in ("fill", "vacant", "ambiguous"):
         assert slots[sample].selected is None
     (main,) = [g for g in groups if BAND in g.evidence]
-    assert {d.owner_id: d.reason for d in main.inference_decisions} == {
-        envelope.owner_id: "ms1_only_envelope",
-        **{o.owner_id: "direct_apex" for o in ref},
+    reasons = {d.owner_id: d.reason for d in main.inference_decisions}
+    assert {k for k, r in reasons.items() if r == "direct_apex"} == {
+        o.owner_id for o in ref
     }
+    filled = {k for k, r in reasons.items() if r.startswith("localized_fill:")}
+    chosen = filled - {envelope.owner_id}
+    assert envelope.owner_id in filled
+    assert len(chosen) == 1 and chosen <= {o.owner_id for o in tie}
+    assert competing(main) == chosen
     assert sorted(k for g in groups for k in g.owner_ids) == sorted(
         o.owner_id for o in owners
     )
@@ -111,6 +122,7 @@ def test_ms1_fill_needs_a_recurring_direct_row_and_does_not_train_it():
     slots, groups = replay((*ref, fill))
     (main,) = [g for g in groups if BAND in g.evidence]
     assert set(main.owner_ids) == {fill.owner_id, *(o.owner_id for o in ref)}
+    assert slots["fill"].selected is None
     assert (slots["r1"].peers, slots["fill"].peers) == (20, 21)
 
 
@@ -120,13 +132,18 @@ def test_peak_envelope_still_supports_the_row_when_nl_is_observed(direct):
     peak = _owner("query", "peak", apex_rt=9.96)
     if not direct:
         peak = replace(peak, primary_identity_event=None)
-    slots, _ = replay((*peers, peak))
+    slots, groups = replay((*peers, peak))
     slot = slots["query"]
-    assert (slot.center, slot.radius, slot.selected) == (10, 0, peak.owner_id)
-    assert slot.reason == ("direct_envelope" if direct else "ms1_only_envelope")
+    (main,) = [g for g in groups if BAND in g.evidence]
+    assert peak.owner_id in main.owner_ids
+    assert (slot.center, slot.radius) == (10, 0)
+    if direct:
+        assert (slot.selected, slot.reason) == (peak.owner_id, "direct_envelope")
+    else:
+        assert slot.selected is None
 
 
-def test_competing_envelopes_use_nl_only_after_the_apex_options():
+def test_band_slot_takes_only_direct_peaks():
     peers = tuple(_owner(f"r{i}", "ref", apex_rt=10) for i in range(21))
     direct = _owner("query", "supported", apex_rt=9.96)
     other = _owner("query", "alternative", apex_rt=10.04)
@@ -138,11 +155,12 @@ def test_competing_envelopes_use_nl_only_after_the_apex_options():
         "direct_envelope",
     )
     apex = ms1("query", 10)
-    slots, _ = replay((*peers, direct, apex))
+    slots, groups = replay((*peers, direct, apex))
     assert (slots["query"].selected, slots["query"].reason) == (
-        apex.owner_id,
-        "ms1_only_apex",
+        direct.owner_id,
+        "direct_envelope",
     )
+    assert (apex.owner_id,) in [g.owner_ids for g in groups]
 
 
 def test_band_row_keeps_the_full_precursor_tolerance():

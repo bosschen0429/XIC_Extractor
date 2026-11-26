@@ -7,6 +7,9 @@ from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from typing import cast
 
+from xic_extractor.alignment.backfill.measured_fill import (
+    fill_rows_from_measured_peaks,
+)
 from xic_extractor.alignment.backfill.membership_selection import (
     select_backfill_memberships,
 )
@@ -29,6 +32,7 @@ from xic_extractor.alignment.cross_sample.peak_groups import (
 )
 from xic_extractor.alignment.feature_membership_inference import (
     FeatureInferenceOperationCounts,
+    FeatureMembershipGroup,
 )
 from xic_extractor.alignment.grouping_bootstrap import (
     InitialGroupingScope,
@@ -275,48 +279,79 @@ def group_cid_nl_workset(
 ) -> tuple[CrossSamplePeakGroupHypothesis, ...]:
     """Final workset grouping under the frozen drift model.
 
-    A recurring scalar CID-NL channel first fixes its drift-band row; ordinary
-    membership then groups the other owners. Without such a row every owner is
-    grouped ordinarily.
+    Only peaks with their own method evidence, or a known identity, are scored:
+    a recurring scalar CID-NL channel first fixes its drift-band row and
+    ordinary membership groups the rest. MS1-only peaks then only fill settled
+    rows, localized as a Backfill revisit localizes them; the others stay single.
     """
+    bound = {
+        owner_id
+        for owner_id, _ in (*known_identity_bindings, *rt_frame.known_identity_bindings)
+    }
+    scored = tuple(
+        owner
+        for owner in owners
+        if owner.owner_id in bound or not CID_NL_GROUPING_RULES.method_unobserved(owner)
+    )
+    scored_ids = {owner.owner_id for owner in scored}
     band = drift_band_membership(
-        owners,
+        scored,
         channel=channel,
         samples=tuple(sorted(sample_universe)),
         rt_frame=rt_frame,
         config=config,
         known_identity_bindings=known_identity_bindings,
     )
-    if band is None:
-        return group_cid_nl_owners(
-            owners,
-            config=config,
-            sample_universe=sample_universe,
-            rt_frame=rt_frame,
-            known_identity_bindings=known_identity_bindings,
-            operation_counts_sink=operation_counts_sink,
-            peak_trajectories=peak_trajectories,
+    rows: tuple[CrossSamplePeakGroupHypothesis, ...] = ()
+    if band is not None:
+        basis, decisions = band
+        by_id = {owner.owner_id: owner for owner in scored}
+        rows = (
+            hypothesis_from_membership(
+                tuple(by_id[owner_id] for owner_id in basis.owner_ids),
+                basis,
+                decisions,
+                CID_NL_GROUPING_RULES,
+            ),
         )
-    basis, decisions = band
-    by_id = {owner.owner_id: owner for owner in owners}
-    row = hypothesis_from_membership(
-        tuple(by_id[owner_id] for owner_id in basis.owner_ids),
-        basis,
-        decisions,
-        CID_NL_GROUPING_RULES,
-    )
-    members = frozenset(basis.owner_ids)
-    rest = construct_cross_sample_peak_group_hypotheses(
-        tuple(owner for owner in owners if owner.owner_id not in members),
+        members = frozenset(basis.owner_ids)
+        scored = tuple(owner for owner in scored if owner.owner_id not in members)
+    rows += construct_cross_sample_peak_group_hypotheses(
+        scored,
         accept_competition=True,
         config=config,
         sample_universe=sample_universe,
         rt_frame=rt_frame,
+        known_identity_bindings=known_identity_bindings,
         operation_counts_sink=operation_counts_sink,
         peak_trajectories=peak_trajectories,
         rules=CID_NL_GROUPING_RULES,
     )
-    return (row, *rest)
+    filled, single = fill_rows_from_measured_peaks(
+        rows,
+        tuple(owner for owner in owners if owner.owner_id not in scored_ids),
+        trajectories=peak_trajectories,
+        rt_frame=rt_frame,
+        sample_universe=sample_universe,
+        config=config,
+    )
+    return (
+        *filled,
+        *(
+            hypothesis_from_membership(
+                (owner,),
+                FeatureMembershipGroup(
+                    (owner.owner_id,),
+                    "undecided",
+                    "window_level_rt_band",
+                    "ms1_only_unplaced",
+                ),
+                (),
+                CID_NL_GROUPING_RULES,
+            )
+            for owner in single
+        ),
+    )
 
 
 def direct_evidence_rt_rows(

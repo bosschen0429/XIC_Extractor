@@ -14,6 +14,9 @@ if TYPE_CHECKING:
     from xic_extractor.raw_mass_recalibration import PreparedRawMassRecalibration
 
 from xic_extractor.acquisition_contract import AcquiredTrace, TraceAcquisitionBatch
+from xic_extractor.alignment.backfill.cid_nl_planning import (
+    BACKFILL_HALF_WINDOW_MIN,
+)
 from xic_extractor.alignment.backfill.completion_evidence import (
     BackfillCompletionProjection,
 )
@@ -66,7 +69,6 @@ copyreg.pickle(MappingProxyType, _reduce_mapping_proxy)
 
 
 SCHEMA_VERSION = "untargeted_cid_nl_real_data_runtime_result"
-BACKFILL_HALF_WINDOW_MIN = 1.0
 
 
 class UntargetedPartitionError(ValueError):

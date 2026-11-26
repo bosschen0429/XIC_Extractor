@@ -75,10 +75,17 @@ def replay_grouping(
     config: AlignmentConfig | None = None,
     rt_coordinates: RtFrame | None = None,
 ) -> tuple[CrossSamplePeakGroupHypothesis, ...]:
-    """Reuse membership and post-grouping rules without acquisition or Backfill."""
+    """Replay final grouping and its localized MS1-only fills from frozen inputs.
+
+    Acquisition, Backfill and the row checks that read retained signals stay
+    with the full workflow. A workset holds one batch's owners, so one
+    localization cohort reproduces how its batch localized them.
+    """
     sample_universe = frozenset(inputs.sample_stems)
     base_frame = SampleRtFrame(
-        injection_order=inputs.injection_order, sample_universe=sample_universe
+        injection_order=inputs.injection_order,
+        sample_cohorts=dict.fromkeys(inputs.sample_stems, "snapshot"),
+        sample_universe=sample_universe,
     )
     if isinstance(rt_coordinates, SampleRtFrame):
         override = base_frame.with_calibration(rt_coordinates)

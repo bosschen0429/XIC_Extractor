@@ -300,7 +300,8 @@ membership, not bootstrap or Targeted selection. Backfill admission applies the
 same membership cost to fixed groups within its own search eligibility; see
 [Backfill](backfill.md).
 
-A recurring CID-NL row is fixed first
+Only peaks with their own method evidence, and peaks bound to a known
+identity, are scored. A recurring CID-NL row is fixed first
 ([`cid_nl_drift_band.py`](../../xic_extractor/alignment/cid_nl_drift_band.py))
 when the workset is one calibrated scalar channel: one neutral-loss tag,
 precursor and product masses within tolerance of their medians, and no
@@ -310,17 +311,29 @@ channel anchor's frozen B and M drift; a channel without an anchor keeps the
 calibrated RT. With at least 21 references, each sample's band centre is the
 median of the other references, and the band admits apices no farther from it
 than the width of their 5–95% quantile range. A sample's member is the nearest
-direct apex in the band, else the nearest quantifiable MS1-only apex in it,
-else a quantifiable envelope covering the centre, direct first. An equally
-near pair leaves the slot empty, and a direct peak without a coordinate blocks
-the MS1-only choices. A direct peak outside the band keeps its CID-NL evidence
-but does not occupy the row. The row is not fixed when its precursor masses
-span more than the full-group tolerance. Its members leave the search below,
-which groups the other owners; band consolidation, shape consistency and
-contrast then see every group. Without a fixed row, every owner enters the
-search. Snapshot replay (`scripts.run_alignment regroup`) runs the same step;
-the curve-dependent steps after it need retained signals and stay with the
-full workflow.
+direct apex in the band, else a quantifiable direct envelope covering the
+centre; an equally near pair leaves the slot empty. A direct peak outside the
+band keeps its CID-NL evidence but does not occupy the row. The row is not
+fixed when its precursor masses span more than the full-group tolerance. The
+search below groups the other scored peaks.
+
+MS1-only peaks never form groups among themselves; they only fill established
+rows ([`measured_fill.py`](../../xic_extractor/alignment/backfill/measured_fill.py)).
+Each such row is localized in every sample it lacks exactly as a Backfill
+revisit localizes it: its trajectory forecast with the row's frozen drift,
+bounded by held-out direct-reference residuals (see
+[Backfill](backfill.md#query-rt-versus-group-rt)). A quantifiable MS1-only peak
+within the row's precursor tolerance qualifies when its apex lies within that
+bound, nearest first, or else when its integration bounds contain the query. A
+peak that several rows localize goes to the row it lies nearest relative to
+that row's bound. Ties are broken by measured peak facts, and choosing among
+qualified alternatives records `accepted_competition` pointing at the
+alternative. MS1-only peaks that no row takes stay single (`unresolved`), and
+samples left empty remain for the Backfill revisit. Band consolidation, shape
+consistency and contrast then see every group. Snapshot replay
+(`scripts.run_alignment regroup`) runs the same steps, treating the snapshot's
+samples as one localization cohort; the curve-dependent steps after them need
+retained signals and stay with the full workflow.
 
 - A connected precursor-mass neighborhood is the comparison universe. Every
   cost comparison in it uses common apices only when all members have estimated

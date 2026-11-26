@@ -42,6 +42,10 @@ if TYPE_CHECKING:
     from xic_extractor.alignment.cid_nl_completion import CidNlWorksetGrouping
 
 
+BACKFILL_HALF_WINDOW_MIN = 1.0
+"""Half-width of a Backfill revisit's RT window; it also caps localization."""
+
+
 @dataclass(frozen=True, slots=True)
 class CidNlBackfillQuestion:
     """One eligible sample/group question, already localized by its science owner.
@@ -133,7 +137,7 @@ def plan_grouped_cid_nl_backfills(
                 ),
                 rt_frame=rt_frame,
                 backfill_half_window_min=backfill_half_window_min,
-                drift_offsets=_group_drift_offsets(group, rt_frame),
+                drift_offsets=group_drift_offsets(group, rt_frame),
             )
             questions.extend(
                 CidNlBackfillQuestion(
@@ -188,7 +192,7 @@ def plan_subject_cid_nl_backfills(
     )
 
 
-def _group_drift_offsets(
+def group_drift_offsets(
     group: CrossSamplePeakGroupHypothesis, rt_frame: SampleRtFrame
 ) -> Mapping[str, float] | None:
     """The settled group's modeled drift; Backfill never refits it."""

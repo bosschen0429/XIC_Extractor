@@ -183,7 +183,7 @@ def test_identity_membership_is_geometry_not_group_center_reclassification(
     )
     assert len(direct_ids) == len(observation_ids) == 2
     channel = sample_assessments[0][1].method_subject.method_subject_id
-    final_scope, final = regroup_cid_nl_cross_sample_groups(
+    _, final = regroup_cid_nl_cross_sample_groups(
         samples=samples,
         channel=channel,
         grouping_scope=grouping_scope,
@@ -193,7 +193,10 @@ def test_identity_membership_is_geometry_not_group_center_reclassification(
     )
     expected = {
         direct_ids: ("established", "matrix"),
-        observation_ids: ("provisional", "archive"),
+        **{
+            frozenset({owner_id}): ("unresolved", "archive")
+            for owner_id in observation_ids
+        },
     }
     assert {
         frozenset(group.owner_ids): (group.disposition, group.destination)
@@ -205,12 +208,6 @@ def test_identity_membership_is_geometry_not_group_center_reclassification(
         for owner in group.owners
         if owner.primary_identity_event is not None
     } == direct_ids
-    assert any(
-        d.owner_id in observation_ids
-        and observation_ids.intersection(d.witness_owner_ids)
-        for group in final_scope.groups
-        for d in group.inference_decisions
-    )
 
     reversed_scope, reversed_initial, _ = build_initial_cid_nl_cross_sample_groups(
         samples=samples[::-1],

@@ -1,12 +1,12 @@
-"""Fix a recurring CID-NL row from its peer-supported, drift-corrected RT band.
+"""Fix a recurring CID-NL row's direct members from their drift-corrected RT band.
 
 After the batch drift model is frozen, a scalar CID-NL channel whose direct peaks
-recur in many samples has one expected corrected RT. Each sample's row member is
-chosen against the band estimated from the other samples' sole direct peaks:
-a direct apex inside the band first, then an MS1-only apex, then a measured
-envelope that covers the band centre. A direct peak far outside the band keeps
-its CID-NL evidence but does not occupy the row. Ordinary membership groups the
-remaining owners.
+recur in many samples has one expected corrected RT. Each sample's direct member
+is chosen against the band estimated from the other samples' sole direct peaks:
+the nearest direct apex inside the band, else a direct envelope covering the
+band centre. A direct peak far outside the band keeps its CID-NL evidence but
+does not occupy the row. Samples the row lacks are filled afterwards by the
+Backfill localization shared by every settled row.
 """
 
 from __future__ import annotations
@@ -36,7 +36,6 @@ class BandCandidate:
     """One measured peak; apex and integration limits are in corrected minutes."""
 
     owner_id: str
-    direct: bool
     quantifiable: bool
     method: str | None
     apex: float | None
@@ -65,49 +64,29 @@ def _decide(
     chosen = None
     reason = "insufficient_peers"
     if center is not None and radius is not None:
-        direct = [c for c in candidates if c.direct]
-        unseen = any(c.apex is None for c in direct)
-        inside = [
-            c
+        ranked = sorted(
+            (abs(c.apex - center), c.owner_id)
             for c in candidates
             if c.apex is not None and abs(c.apex - center) <= radius
-        ]
-        ranked = [
-            (abs(c.apex - center), c.owner_id)
-            for c in inside
-            if c.direct and c.apex is not None
-        ]
+        )
         reason = "direct_apex"
-        if not ranked and not unseen:
+        if not ranked:
             ranked = [
-                (abs(c.apex - center), c.owner_id)
-                for c in inside
-                if not c.direct
-                and c.quantifiable
-                and c.apex is not None
-                and c.method in _REFERENCE_METHODS
+                (0.0, c.owner_id)
+                for c in candidates
+                if c.quantifiable
+                and c.left is not None
+                and c.right is not None
+                and c.left <= center <= c.right
             ]
-            reason = "ms1_only_apex"
-            if not ranked:
-                envelopes = [
-                    c
-                    for c in candidates
-                    if c.quantifiable
-                    and c.left is not None
-                    and c.right is not None
-                    and c.left <= center <= c.right
-                ]
-                supported = [c for c in envelopes if c.direct]
-                ranked = [(0.0, c.owner_id) for c in (supported or envelopes)]
-                reason = "direct_envelope" if supported else "ms1_only_envelope"
+            reason = "direct_envelope"
         if ranked:
-            ranked.sort()
             if len(ranked) == 1 or ranked[0][0] < ranked[1][0]:
                 chosen = ranked[0][1]
             else:
                 reason = "competing_candidates"
         else:
-            reason = "unknown_direct_coordinate" if unseen else "no_compatible_peak"
+            reason = "no_compatible_peak"
     return BandSlot(sample, peers, center, radius, chosen, reason, candidates)
 
 
@@ -117,10 +96,15 @@ def assign_drift_band(
     rt_frame: SampleRtFrame,
     anchor: DriftAnchor | None,
 ) -> tuple[BandSlot, ...]:
-    """Estimate the band from in-range direct peers, excluding the query sample."""
+    """Estimate the band from in-range direct peers, excluding the query sample.
+
+    Only direct peaks are candidates; MS1-only peaks never occupy a band slot.
+    """
     drift = rt_frame.drift_model
     by_sample: dict[str, list[BandCandidate]] = defaultdict(list)
     for o in owners:
+        if o.primary_identity_event is None:
+            continue
         s, p = o.sample_stem, o.peak
         offset = (
             anchor.coefficients.offset_min(
@@ -135,7 +119,6 @@ def assign_drift_band(
         by_sample[s].append(
             BandCandidate(
                 o.owner_id,
-                o.primary_identity_event is not None,
                 o.quantification_eligible,
                 est.method if est else None,
                 est.rt_min - offset if est and offset is not None else None,
@@ -145,13 +128,12 @@ def assign_drift_band(
         )
     references = []
     for s, cs in by_sample.items():
-        ds = [c for c in cs if c.direct]
         if (
-            len(ds) == 1
-            and ds[0].method in _REFERENCE_METHODS
-            and ds[0].apex is not None
+            len(cs) == 1
+            and cs[0].method in _REFERENCE_METHODS
+            and cs[0].apex is not None
         ):
-            references.append((ds[0].apex, s))
+            references.append((cs[0].apex, s))
     references.sort()
     rank = {s: i for i, (_, s) in enumerate(references)}
 
