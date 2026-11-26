@@ -6,7 +6,9 @@ follows from those facts:
 - a member relates the candidates whose terminal hypothesis it is, and the
   candidates bound to one of its peaks;
 - a peak binds the candidate whose terminal peak it is, and the candidates of a
-  Backfill SUPPORT assessment that lists the peak (Backfill has no terminal);
+  Backfill SUPPORT assessment that lists the peak (Backfill has no terminal).
+  A Backfill assessment is the one whose stored ``detector_invocation_id`` is
+  ``GROUP_BACKFILL_DETECTOR``;
 - an initial group keeps only candidates of the method subjects its
   hypothesis members belong to;
 - a curve relates only its own candidate. A Backfill observation has none: it

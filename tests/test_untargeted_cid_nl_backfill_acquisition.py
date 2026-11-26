@@ -259,9 +259,7 @@ def test_recovery_revisits_one_hold_cell_without_minting_support(
     assert result.assessment.technical_state == "evaluated"
     assert result.group_hypothesis_id == "group-physical"
     assert result.assessment.method_subject is fixture.method_subject
-    assert result.assessment.evaluation_receipt.physical_query_mz == (
-        fixture.method_subject.precursor_mz + physical_mz_offset
-    )
+    assert result.assessment.group_backfill
     assert result.acquisition.traces[0].coordinate.request.mz == pytest.approx(
         fixture.method_subject.precursor_mz + physical_mz_offset
     )

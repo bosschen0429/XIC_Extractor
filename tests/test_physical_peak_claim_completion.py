@@ -127,7 +127,6 @@ def _view(
             acquisition_supported=True,
             search_completed=True,
             reason_code=None,
-            physical_query_mz=peak.mz,
         ),
         candidate_peaks=(peak,),
         evidence_refs=(evidence,) if support else (),

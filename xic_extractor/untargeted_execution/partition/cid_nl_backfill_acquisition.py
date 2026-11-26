@@ -32,6 +32,7 @@ from xic_extractor.peak_detection.cid_nl_evidence import (
     cid_nl_evidence_observation,
 )
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
+    GROUP_BACKFILL_DETECTOR,
     CidNlEvaluationReceipt,
     CidNlMethodAssessment,
     CidNlMethodAssessmentContractError,
@@ -540,7 +541,7 @@ def _close_backfill_attempt(
             sample=sample,
             acquisition_source=source,
             method_subject=method_subject,
-            detector_invocation_id="untargeted-cid-nl-backfill",
+            detector_invocation_id=GROUP_BACKFILL_DETECTOR,
             evaluation_receipt=CidNlEvaluationReceipt(
                 query_rt_min=min(
                     (
@@ -563,7 +564,6 @@ def _close_backfill_attempt(
                     if initial_receipt is not None and backfill_evidence
                     else "subject_window"
                 ),
-                physical_query_mz=physical_mz,
             ),
             candidate_peaks=observations,
             evidence_refs=backfill_evidence,

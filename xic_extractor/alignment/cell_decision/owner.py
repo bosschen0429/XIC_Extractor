@@ -155,9 +155,12 @@ class ProductionCellDecision:
         """RT window of the cell's single group-bounded search, if retained."""
         evidence = cast(FinalGroupCellObservation, self.evidence)
         bounds = {
-            (receipt.query_rt_min, receipt.query_rt_max)
+            (
+                assessment.evaluation_receipt.query_rt_min,
+                assessment.evaluation_receipt.query_rt_max,
+            )
             for assessment in evidence.method_assessments
-            if (receipt := assessment.evaluation_receipt).physical_query_mz is not None
+            if assessment.group_backfill
         }
         return bounds.pop() if len(bounds) == 1 else (None, None)
 

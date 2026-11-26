@@ -239,11 +239,11 @@ def owner_cell(
         if backfill_query is None
         else (
             SimpleNamespace(
+                group_backfill=True,
                 evaluation_receipt=SimpleNamespace(
-                    physical_query_mz=500.0,
                     query_rt_min=backfill_query[0],
                     query_rt_max=backfill_query[1],
-                )
+                ),
             ),
         )
     )

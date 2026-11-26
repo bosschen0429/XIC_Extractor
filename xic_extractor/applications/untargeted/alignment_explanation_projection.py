@@ -675,10 +675,7 @@ def prepare_batch_alignment_explanation(
             content = assessment
             if content in emitted_assessments:
                 return
-            if (
-                content.evaluation_receipt.physical_query_mz is not None
-                and content.method_result == "SUPPORT"
-            ):
+            if content.group_backfill and content.method_result == "SUPPORT":
                 if not capture_evidence:
                     for peak in assessment.candidate_peaks:
                         _emit_curve_payload(
