@@ -31,6 +31,12 @@ from xic_extractor.alignment.result import (
     SearchedNoObservationSubject,
 )
 from xic_extractor.peak_detection.integration_result import IntegrationResult
+from xic_extractor.peak_detection.observations import PeakObservation
+from xic_extractor.peak_detection.physical_peak_evaluation import (
+    measure_peak_envelope,
+    peak_envelope,
+)
+from xic_extractor.peak_detection.physical_peak_models import PhysicalPeakEvaluation
 
 
 class CellDecisionContractError(ValueError):
@@ -111,26 +117,18 @@ class ProductionCellDecision:
         return None
 
     @property
+    def value_peak(self) -> PeakObservation | None:
+        """The observation whose measurement gave the value."""
+        if self.value is None or type(self.evidence) is not FinalGroupCellObservation:
+            return None
+        (peak,) = self.evidence.value_peaks
+        return peak
+
+    @property
     def source(self) -> str:
         if type(self.payload) is NumericCellDecision:
             return self.payload.source
         return ""
-
-    @property
-    def review_reasons(self) -> tuple[str, ...]:
-        """Peak-shape review of the valued peak; the value is kept either way."""
-        evidence = self.evidence
-        if self.value is None or not isinstance(evidence, FinalGroupCellObservation):
-            return ()
-        for cell in evidence.effective_cells:
-            observation = cell.peak_observation
-            if (
-                observation is not None
-                and observation.integration is self.selected_integration
-                and observation.requires_overlap_review
-            ):
-                return ("physical_shoulder_overlap",)
-        return ()
 
 
 def decide_target_cell_population(
@@ -282,7 +280,7 @@ def _decide_group(
                 raise CellDecisionContractError(
                     "Group numeric decision requires exactly one integration"
                 )
-            integration = peaks[0].integration
+            integration = _selected_integration(observation.group, peaks[0])
             if integration is None:
                 return NoWriteCellDecision("not_quantifiable"), None
             if "ms1_only_group_observation" in states and (
@@ -312,7 +310,8 @@ def _decide_group(
         if (
             state == "ms1_only_backfill_observation"
             and len(peaks) == 1
-            and (integration := peaks[0].integration) is not None
+            and (integration := _selected_integration(observation.group, peaks[0]))
+            is not None
         ):
             return _payload_from_integration(integration), integration
         return NoWriteCellDecision("unresolved"), None
@@ -325,6 +324,31 @@ def _decide_group(
             "Group closure uses an unsupported or partial evidence state"
         )
     return NoWriteCellDecision(cast(NoWriteState, state)), None
+
+
+def _measures_envelope(
+    group: CrossSamplePeakGroupHypothesis, peak: PeakObservation
+) -> bool:
+    """A one-band member that is only part of its envelope: a cut half."""
+    evaluation = peak.physical_evaluation
+    if not group.one_band or evaluation is None:
+        return False
+    selected = evaluation.answer.selected_segment
+    return (
+        selected is not None
+        and len(peak_envelope(evaluation.segment_universe, selected)) > 1
+    )
+
+
+def _selected_integration(
+    group: CrossSamplePeakGroupHypothesis, peak: PeakObservation
+) -> IntegrationResult | None:
+    """A one-band group measures the whole envelope holding its member."""
+    if _measures_envelope(group, peak):
+        return measure_peak_envelope(
+            cast(PhysicalPeakEvaluation, peak.physical_evaluation)
+        )
+    return peak.integration
 
 
 def _payload_from_integration(integration: IntegrationResult) -> CellDecisionPayload:

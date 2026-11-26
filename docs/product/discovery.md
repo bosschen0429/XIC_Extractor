@@ -125,21 +125,12 @@ MS1-only observation in another sample through [Backfill](backfill.md); that
 observation cannot resurrect a rejected peak or create a new group. A batch with
 no admitted peak completes with no subjects and an empty Matrix.
 
-A shoulder or overlapping envelope alone does not hold a peak. Top ripples also
-flag a slice of a continuous plateau cut out by missing scans, so such a peak
-must [rise above its surroundings](signal-processing.md#overlap-surroundings);
-otherwise it is held as `overlap_not_above_surroundings`. A qualified peak's
-area is measured on the unresolved envelope, and its cell carries the review
-reason `physical_shoulder_overlap`. The Workbench curve view shows the reason after that
-sample's published area when the sample is hovered or focused; it is not a
-sample risk, and the Matrix holds only the value. A group made only of such
-peaks stays [provisional](alignment.md#group-identity-and-disposition) and does
-not reach the Matrix.
-Discovery records its own physical assessment in
-`requires_overlap_review` independently of admission. Alignment needs this
-column to form the reference population of its RT calibration and drift model;
-regenerate an older peak table
-without it rather than treating missing review information as a clean peak.
+A shoulder or overlapping envelope alone does not hold a peak. Background
+plateaus, noise texture and tail extensions are rejected per row by
+[shape consistency](alignment.md#reject-rows-without-one-elution-shape), not per
+peak. A qualified peak's area is measured on its segment; a split band is
+measured on its whole envelope (see
+[Alignment](alignment.md#join-groups-and-consolidate-split-bands)).
 
 ### Physical qualification
 
@@ -292,11 +283,13 @@ lab has no mature DIA method.
   inside another measured peak of the same trace never attaches through the
   margin. A peak with no attached event is `no_nl_event`.
 
-- **Strict support.** A scan strictly inside exactly one candidate peak, with no
-  positive-width overlap with another m/z-compatible peak, supports that peak
-  individually. Adjacent peaks can share a valley endpoint without blocking it.
-- **Set relation.** A scan on a peak boundary, or a peak with positive-width
-  overlap, relates to the connected candidate set. A set relation grants no
+- **Strict support.** Method assessment uses the same attachment rule. An event
+  that attaches to exactly one m/z-compatible candidate peak, with no
+  positive-width overlap with another compatible peak, supports that peak
+  individually; this includes a scan at an isolated peak's boundary or within
+  its 0.1 min margin.
+- **Set relation.** A scan on an endpoint shared by adjacent peaks, or a peak
+  with positive-width overlap, relates to the connected candidate set. A set relation grants no
   individual vote and no hypothesis.
 - **One event per peak.** Repeated strict scans inside one MS1 peak are one
   chromatographic support event with several scans, not independent votes. The

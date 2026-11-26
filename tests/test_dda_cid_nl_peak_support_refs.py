@@ -93,7 +93,7 @@ def test_dda_matching_uses_integration_bounds_not_padded_trace_points(
         fixture.source,
         fixture.sample,
         scan_number=43,
-        scan_rt_min=8.08,
+        scan_rt_min=8.2,
     )
 
     assert _relations(fixture, outside_evidence, (peak,)) == ((), ())

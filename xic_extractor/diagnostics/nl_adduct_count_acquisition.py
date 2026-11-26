@@ -98,7 +98,6 @@ def count_run(
                     p.ms1_apex_rt,
                     p.attached_event_count,
                     ratio,
-                    p.requires_overlap_review,
                     sugar,
                 )
             )

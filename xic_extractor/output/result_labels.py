@@ -24,7 +24,6 @@ BASIS_NEEDS_LOOK: dict[str, bool | None] = {
     "僅 MS1 峰": False,
     "無可用 MS1 峰": None,
     "偏離 ISTD 位置": False,
-    "肩峰／重疊": True,
     "峰形不完整": True,
     "ISTD 未計入": True,
     "未見 NL": True,
@@ -39,7 +38,6 @@ DOUBT_LABELS: tuple[str, ...] = (
     "未見 NL",
     "無 MS2",
     "NL 偏差大",
-    "肩峰／重疊",
     "峰形不完整",
     "訊號缺口",
     "多個候選峰",
@@ -56,8 +54,6 @@ REVIEW_LABELS: dict[str, str | None] = {
     "plausible_nl_dropout_review": _NL_FAMILY,
     "missing_nl_support_review": _NL_FAMILY,
     "missing_ms2_not_observed": _NL_FAMILY,
-    "physical_shoulder_overlap": "肩峰／重疊",
-    "targeted_unresolved_substructure": "肩峰／重疊",
     "trace_morphology_review": "峰形不完整",
     "targeted_acquired_signal_gaps": "訊號缺口",
     "targeted_competing_regions": "多個候選峰",
@@ -105,7 +101,6 @@ HIDDEN_SUPPORT_CODES = frozenset(
         "chrom_peak_segment_context",
     }
 )
-_SHAPE_REVIEW = frozenset({"physical_shoulder_overlap", "trace_morphology_review"})
 _MISSING_MS2_CODES = frozenset(
     {"missing_ms2_not_observed", "missing_ms2_policy_not_counted"}
 )
@@ -148,8 +143,12 @@ def basis_label(row: Mapping[str, object]) -> str:
         return "偏離 ISTD 位置"
     qualified = _COHERENT_MS1_PEAK <= support or _BACKFILL_LOCALIZATION in support
     review = _codes(row, "Projection Review Reasons")
-    if "ms1_peak_present" in support and not qualified and review & _SHAPE_REVIEW:
-        return "肩峰／重疊" if "physical_shoulder_overlap" in review else "峰形不完整"
+    if (
+        "ms1_peak_present" in support
+        and not qualified
+        and "trace_morphology_review" in review
+    ):
+        return "峰形不完整"
     if not_counted and not_counted <= MISSING_NL_NOT_COUNTED:
         if str(row.get("Role", "")).upper() == "ISTD" or not row.get("ISTD Pair"):
             return _missing_nl_label(nl, not_counted)

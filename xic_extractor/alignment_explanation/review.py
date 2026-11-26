@@ -146,13 +146,8 @@ def review_cell(decision: ProductionCellDecision) -> dict[str, Any]:
     """Project the decision owner and its effective observations without hashing."""
     evidence = cast("FinalGroupCellObservation", decision.evidence)
     cells = evidence.effective_cells
-    stages = {
-        cell.peak_observation.capture_stage
-        for cell in cells
-        if decision.value is not None
-        and cell.peak_observation is not None
-        and cell.peak_observation.integration is decision.selected_integration
-    }
+    value_peak = decision.value_peak
+    stages = {value_peak.capture_stage} if value_peak is not None else set()
     origin = (
         "backfill_support"
         if "backfill_observation" in stages or "method_backfill" in stages
@@ -188,7 +183,6 @@ def review_cell(decision: ProductionCellDecision) -> dict[str, Any]:
         ),
         "support_origin": origin,
         "signal_quality": [qualities[key] for key in sorted(qualities)],
-        "review_reasons": list(decision.review_reasons),
         "observation_ids": sorted(
             {
                 cell.physical_peak_key

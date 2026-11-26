@@ -46,6 +46,9 @@ from xic_extractor.mass_accuracy import (
     mz_tolerance_da,
     within_ppm,
 )
+from xic_extractor.peak_detection.cid_nl_method_assessment import (
+    nl_event_rt_attaches,
+)
 from xic_extractor.peak_detection.physical_peak_models import (
     PhysicalPeakEvaluation,
     PhysicalSegment,
@@ -58,7 +61,6 @@ DISCOVERY_TRACE_ADAPTER_NAMESPACE = "xic_extractor.discovery.ms1_capture"
 _DISCOVERY_MS1_PREDICTION_MAX_REQUESTS = 256
 _DOUBLY_CHARGED_ISOTOPE_SPACING_MZ = CARBON_ISOTOPE_SPACING_DA / 2
 _DOUBLY_CHARGED_ISOTOPE_MIN_RATIO = 0.10
-_NL_PEAK_ATTACHMENT_TOLERANCE_MIN = 0.1
 
 
 class DiscoveryMs1Source(BatchXICAdapter, MS1MassWindowSource, Protocol):
@@ -409,7 +411,6 @@ def _measured_peak(
             doubly_charged=doubly_charged, attached_event_count=len(attached)
         ),
         ms1_apex_mz=apex_mz,
-        requires_overlap_review=evaluation.requires_overlap_review,
         evidence_score=score_discovery_evidence(
             attached_event_count=len(attached),
             ms1_event_delta_min=selected.apex_rt_min - representative.rt,
@@ -490,12 +491,11 @@ def _no_peak_reason(evaluation: PhysicalPeakEvaluation) -> str:
 def _event_rt_attaches_to_peak(
     rt: float, peak: PhysicalSegment, neighbors: Sequence[PhysicalSegment]
 ) -> bool:
-    if peak.left_rt_min <= rt <= peak.right_rt_min:
-        return True
-    return peak.left_rt_min - _NL_PEAK_ATTACHMENT_TOLERANCE_MIN <= rt <= (
-        peak.right_rt_min + _NL_PEAK_ATTACHMENT_TOLERANCE_MIN
-    ) and not any(
-        segment.left_rt_min <= rt <= segment.right_rt_min for segment in neighbors
+    return nl_event_rt_attaches(
+        rt,
+        peak.left_rt_min,
+        peak.right_rt_min,
+        ((segment.left_rt_min, segment.right_rt_min) for segment in neighbors),
     )
 
 

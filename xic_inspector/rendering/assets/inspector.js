@@ -832,7 +832,7 @@
     tip.replaceChildren(name,note);
     if(row.available){
       const evidence=document.createElement('span'),published=itemRows(curveUi.model.item).find(r=>r.sample_id===id)||{};
-      setHTML(evidence,[...new Set(row.curves.map(c=>`原始 RT ${finite(c.apex_rt)?timeValue(c.apex_rt,'raw'):'未記錄'} · 校正 RT ${finite(c.aligned_apex_rt)?timeValue(c.aligned_apex_rt,'aligned'):'未記錄'}`)),`正式面積：${areaText(published)}`,...(published.area_notes||[]).map(esc)].join(' · '));
+      setHTML(evidence,[...new Set(row.curves.map(c=>`原始 RT ${finite(c.apex_rt)?timeValue(c.apex_rt,'raw'):'未記錄'} · 校正 RT ${finite(c.aligned_apex_rt)?timeValue(c.aligned_apex_rt,'aligned'):'未記錄'}`)),`正式面積：${areaText(published)}`].join(' · '));
       tip.append(evidence);
       if(curveWorkspaceAxis()==='centered'&&row.curves.some(c=>!finite(curveTime(c,curveTimeBasis(c,'centered'),'apex_rt'))&&finite(curveCenter(c,curveTimeBasis(c,'centered'))))){
         const basis=document.createElement('span');basis.textContent='峰界中點置中';tip.append(basis);

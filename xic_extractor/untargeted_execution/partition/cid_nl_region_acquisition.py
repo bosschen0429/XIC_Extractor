@@ -34,6 +34,7 @@ from xic_extractor.discovery.same_ion_peaks import group_same_ion_peaks
 from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.discovery.strict_event_receipts import resolve_discovery_scan_events
 from xic_extractor.mass_accuracy import mz_tolerance_da, mz_window, signed_ppm_error
+from xic_extractor.peak_detection.background_contrast import background_contrast
 from xic_extractor.peak_detection.cid_nl_candidate_set_relation import (
     DdaCidNlCandidateSetRelation,
 )
@@ -51,11 +52,7 @@ from xic_extractor.peak_detection.elution_context import (
 )
 from xic_extractor.peak_detection.observations import (
     PeakObservation,
-    mint_localized_peak_observation,
     mint_physical_peak_observations,
-)
-from xic_extractor.peak_detection.physical_peak_evaluation import (
-    localize_overlap_peak_lobes,
 )
 from xic_extractor.peak_detection.physical_peak_models import (
     PhysicalPeakEvaluation,
@@ -74,7 +71,7 @@ from xic_extractor.sample_metadata import SampleMetadata
 from xic_extractor.untargeted_execution.partition.cid_nl_discovery_evidence import (
     discovery_scan_evidence,
 )
-from xic_extractor.xic_models import XICRequest
+from xic_extractor.xic_models import XICRequest, XICTrace
 
 EVENT_NEIGHBORHOOD_MIN = 3.0
 """A peak apex this far from every batch event of its region is not minted."""
@@ -272,7 +269,9 @@ def acquire_cid_nl_sample_regions(
     capability = mint_trace_acquisition_capability(
         acquisition_source, adapter_namespace=__name__
     )
-    captures = _acquire_regions(raw, capability, requests)
+    acquired = tuple(_acquire_regions(raw, capability, requests))
+    captures = iter(acquired)
+    channels = _whole_run_channels(raw, acquired, rt_start=rt_start, rt_end=rt_end)
     results = []
     for region, region_requests in zip(regions, per_region, strict=True):
         results.append(
@@ -285,9 +284,48 @@ def acquire_cid_nl_sample_regions(
                 events=region_events(region),
                 settings=settings,
                 profile=profile,
+                channels=channels,
             )
         )
     return tuple(results)
+
+
+def _whole_run_channels(
+    raw: RegionRawSource,
+    acquired: tuple[_Capture, ...],
+    *,
+    rt_start: float,
+    rt_end: float,
+) -> dict[tuple[float, float], XICTrace]:
+    """Each requested mass channel over the whole run, read in shared passes.
+
+    Only channels that were acquired are read; one whose region trace already
+    spans the run reuses it. Requests
+    sharing one scan range are one vendor pass, so the rest cost about one
+    narrow read per channel batch.
+    """
+    traces: dict[tuple[float, float], XICTrace] = {
+        (request.mz, request.ppm_tol): trace.trace
+        for request, trace, _ in acquired
+        if trace is not None and request.rt_min <= rt_start and request.rt_max >= rt_end
+    }
+    channels = tuple(
+        key
+        for key in dict.fromkeys(
+            (r.mz, r.ppm_tol) for r, trace, _ in acquired if trace is not None
+        )
+        if key not in traces
+    )
+    for start in range(0, len(channels), PHYSICAL_CAPTURE_BATCH_MAX_REQUESTS):
+        chunk = channels[start : start + PHYSICAL_CAPTURE_BATCH_MAX_REQUESTS]
+        read = raw.extract_xic_many(
+            tuple(
+                XICRequest(mz=mz, rt_min=rt_start, rt_max=rt_end, ppm_tol=ppm)
+                for mz, ppm in chunk
+            )
+        )
+        traces.update(zip(chunk, read, strict=True))
+    return traces
 
 
 def relate_region_events(
@@ -379,6 +417,7 @@ def _measure_region(
     events: tuple[DiscoveryEvent, ...],
     settings: DiscoverySettings,
     profile: SignalProcessingProfile,
+    channels: dict[tuple[float, float], XICTrace],
 ) -> CidNlSampleRegion:
     """Resolve signal aliases before attaching any CID-NL events.
 
@@ -438,49 +477,44 @@ def _measure_region(
         kept = same_ion[0]
         trace = kept.acquired_trace
         request = trace.coordinate.request
-        lobes = localize_overlap_peak_lobes(kept.evaluation)
-        sites = (
-            tuple((float(trace.trace.rt[lobe.apex_index]), lobe) for lobe in lobes)
-            if lobes
-            else ((kept.evaluation.apex_rt_min, None),)
+        apex = kept.evaluation.apex_rt_min
+        if apex is None or not region.near_event(apex):
+            continue
+        mz, _ = read_peak_apex_ion(trace, apex, ms1_centroid=ms1_centroid)
+        if mz is None:
+            continue
+        if request not in traces:
+            traces[request] = trace_from_xic_request(
+                sample_name=sample.sample_name,
+                request=request,
+                xic_trace=trace.trace,
+                source=__name__,
+                acquisition_source_id=acquisition_source.acquisition_source_id,
+            )
+        (peak,) = mint_physical_peak_observations(
+            sample=sample,
+            trace=traces[request],
+            evaluations=(kept.evaluation,),
+            measured_mz=(mz,),
+            signal_processing_profile=profile,
+            resolver_mode=settings.resolver_mode,
         )
-        for apex, lobe in sites:
-            if apex is None or not region.near_event(apex):
-                continue
-            mz, _ = read_peak_apex_ion(trace, apex, ms1_centroid=ms1_centroid)
-            if mz is None:
-                continue
-            if request not in traces:
-                traces[request] = trace_from_xic_request(
-                    sample_name=sample.sample_name,
-                    request=request,
-                    xic_trace=trace.trace,
-                    source=__name__,
-                    acquisition_source_id=acquisition_source.acquisition_source_id,
-                )
-            if lobe is not None:
-                peak = mint_localized_peak_observation(
-                    sample=sample,
-                    trace=traces[request],
-                    component=lobe,
-                    measured_mz=mz,
-                    signal_processing_profile=profile,
-                    resolver_mode=settings.resolver_mode,
-                )
-            else:
-                (peak,) = mint_physical_peak_observations(
-                    sample=sample,
-                    trace=traces[request],
-                    evaluations=(kept.evaluation,),
-                    measured_mz=(mz,),
-                    signal_processing_profile=profile,
-                    resolver_mode=settings.resolver_mode,
-                )
-            held = peaks.get(peak.physical_peak_key)
-            if held is None or np.count_nonzero(peak.intensity) > np.count_nonzero(
-                held.intensity
-            ):
-                peaks[peak.physical_peak_key] = peak
+        channel = channels[request.mz, request.ppm_tol]
+        peak = replace(
+            peak,
+            background_contrast=background_contrast(
+                np.asarray(channel.rt, dtype=float),
+                np.asarray(channel.intensity, dtype=float),
+                left_rt_min=peak.rt_left_min,
+                right_rt_min=peak.rt_right_min,
+                profile=profile,
+            ),
+        )
+        held = peaks.get(peak.physical_peak_key)
+        if held is None or np.count_nonzero(peak.intensity) > np.count_nonzero(
+            held.intensity
+        ):
+            peaks[peak.physical_peak_key] = peak
     observations = tuple(
         sorted(peaks.values(), key=lambda peak: peak.measured_order_key)
     )

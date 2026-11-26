@@ -38,7 +38,7 @@ def test_data_sheet_preserves_measurements_and_marks_labels_to_look_at() -> None
             "Tumor_3", "Analyte", "ND", "ND", "", **_MISSED, basis="無可用 MS1 峰"
         ),
         _long_row(
-            "Tumor_4", "Analyte", "9.3", "100", "", **_MISSED, basis="肩峰／重疊"
+            "Tumor_4", "Analyte", "9.3", "100", "", **_MISSED, basis="峰形不完整"
         ),
     ]
     wb = Workbook()
@@ -55,7 +55,7 @@ def test_data_sheet_preserves_measurements_and_marks_labels_to_look_at() -> None
         ("NL 確認", ""),
         ("ISTD 位置", "無 MS2、訊號缺口"),
         ("無可用 MS1 峰", ""),
-        ("肩峰／重疊", ""),
+        ("峰形不完整", ""),
     ]
     accent = [
         (ws[f"G{row}"].font.color.rgb[-6:], ws[f"H{row}"].font.color.rgb[-6:])

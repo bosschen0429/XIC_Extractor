@@ -102,19 +102,8 @@ class PhysicalSegment:
     height: float
     scan_support_count: int
     area_counts_seconds: float
-    segment_class: str
-    boundary_stop_reason: str
     evidence_sources: tuple[str, ...]
     raw_component: RawPeakComponent | None = field(default=None, compare=False)
-
-    @property
-    def requires_overlap_review(self) -> bool:
-        """A shoulder or overlapping envelope whose area needs review."""
-        return (
-            self.segment_class == "shoulder_candidate"
-            or self.boundary_stop_reason == "shoulder_overlap_review"
-            or "shoulder_overlap" in self.evidence_sources
-        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -182,11 +171,6 @@ class PhysicalPeakEvaluation:
 
     def __deepcopy__(self, memo: dict[int, object]) -> PhysicalPeakEvaluation:
         return self
-
-    @property
-    def requires_overlap_review(self) -> bool:
-        segment = self.answer.selected_segment
-        return segment is not None and segment.requires_overlap_review
 
     @property
     def apex_rt_min(self) -> float | None:

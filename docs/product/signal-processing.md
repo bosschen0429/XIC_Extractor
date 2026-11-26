@@ -108,10 +108,8 @@ topographic prominence over the RT envelope, before adjacent
 maxima truncate its interval. It compares that prominence with four times the raw
 three-point noise MAD between the prominence bases. A subordinate lobe also
 uses the contour toward its adjacent higher lobe, so distant zero background
-cannot dilute its noise estimate. Within a group connected
-by shoulder valleys, maxima must also reach 4% of the group's maximum to remain
-independent seeds. There is no seed-height fraction relative to the maximum
-of the entire acquired context: a remote strong peak cannot erase a local
+cannot dilute its noise estimate. There is no seed-height fraction relative to
+the maximum of the envelope or of the entire acquired context: a remote strong peak cannot erase a local
 weak component before grouping. Subordinate maxima are removed before boundaries are built. A clear valley
 separates groups; an entirely unsupported group remains for the ordinary
 qualification gates, so weak neighboring peaks cannot be dropped merely to
@@ -120,22 +118,13 @@ context-completeness rule. The interior-maxima rule removes measurement-noise
 ripple, not every periodic fluctuation or unresolved chemical shoulder.
 
 Shoulder-connected lobes form one quantitative envelope unless a clear envelope
-valley or a separable acquired valley separates their area. Canonical contour
-maxima reaching the same 4% prominence floor remain review evidence even when
-they do not qualify as independent seeds. The complete envelope does not
-establish one chemical component or individual component areas.
-
-Untargeted can also localize separate acquired crests inside an unresolved
-envelope. Each crest needs continuous original top support, and observed
-(nonzero) scans between the crests must confirm a clear valley, using the same
-relative depth criterion as the physical owner. These are separate
-positions for correspondence and local event attachment, not separate
-integrations. See [Quant Matrix](quant-matrix.md#matrix-publication).
-
-An unresolved shoulder remains a review condition (`physical_shoulder_overlap`).
-Targeted carries it into the product review reasons; Untargeted quantifies the
-envelope when the peak otherwise qualifies and carries the same reason on that
-cell.
+valley or a separable acquired valley separates their area. The trace shape does
+not decide whether an envelope holds one chemical component or two: a single
+trace cannot tell imperfect chromatography of one component from two unresolved
+components, so no shoulder or overlap flag is emitted. Untargeted decides one
+band or two from cross-sample evidence
+([Alignment](alignment.md#join-groups-and-consolidate-split-bands)); Targeted
+has no such check, so its area may include an unresolved neighbour.
 NL evidence does not change this physical definition. Targeted uses the same
 owner for NL and no-NL inputs; its acquisition context includes one configured
 window width on each side, while only apexes inside the original selection
@@ -170,6 +159,14 @@ not on peak IDs or input order.
 The accepted cuts also delimit Discovery's raw peak basins. Picking the first
 raw minimum between distant peaks instead could cut an earlier lobe at an
 unrelated dropout.
+
+A cut leaves its valley scan as the last scan of one segment and the first of
+the next. Segments joined that way form one envelope (`peak_envelope`): one
+continuous signal above background. The envelope is a measurement fact; how
+many compounds it holds is decided across injections by
+[band consolidation](alignment.md#join-groups-and-consolidate-split-bands).
+`measure_peak_envelope` integrates it on the same canonical signal; its area is
+the sum of the segment areas.
 
 Measured-valley calibration (#1056) used the 102 reviewed regions of #1049 on 8RAW and the
 enzyme control: separable doublets (B) 13/24 split; noise ripple or zero
@@ -215,21 +212,6 @@ The robust MAD aggregation and qualification factor here are product policy;
 that paper does not validate this chromatographic gate or its threshold.
 These checks address missing acquired support and insufficient local contrast,
 not every form of noise or chemical identity.
-
-### Overlap surroundings
-
-Top ripples flag a peak with a shoulder and a slice of a continuous plateau
-alike. Missing scans can cut such a plateau, and a slice whose boundaries sit
-on them passes local relief. Discovery and Backfill therefore qualify an
-overlap-review peak only when it rises above the acquired signal just outside
-it. Each side's level is the median of the nonzero raw scans within 0.5 min
-outside the selected segment; zero scans are missing observations, and a
-shorter acquired context supplies what it has. When the higher side's level is
-at least half the segment's raw apex, the peak fails with
-`overlap_not_above_surroundings`. A neighboring peak inside that flank raises
-the level as background does. Peaks without overlap review keep local relief
-only. The flank and the one-half limit are product policy chosen on a reviewed
-sample of overlap peaks, not a calibrated error rate.
 
 Known-reference ISTD localization answers a narrower question than discovering
 local maxima: small surface ripples should not erase a supported broad contour
@@ -403,7 +385,6 @@ different profiles leave an otherwise overlapping comparison unresolved.
 | `signal_processing_window_points` | 9 (odd integer, 3–999) | sigma = window / 6.0 | Canonical signal, area, shape |
 | `baseline_lam` | 1.0 minute^4 (fixed) | RT-aware AsLS penalty | Canonical baseline |
 | `boundary_min_sigma_rt` | 0.08 minutes (fixed) | Additional Gaussian smoothing only if needed | Lobe and valley evidence |
-| `segment_min_prominence_fraction` | 0.04 (fixed) | Fraction of shoulder-connected envelope maximum | Independent seed evidence |
 | `DEFAULT_OWN_MAX_SMOOTH_POINTS` | 15 | sigma = window / 6.0 | Shape-identity comparisons |
 
 Sigma is not independently configurable; it is derived from window size. The
@@ -441,7 +422,7 @@ subtraction and area with it:
   it. Raw area is never a fallback: a peak without a morphology area publishes
   none (Alignment `missing_ms1_morphology_area`; Targeted
   `missing_positive_ms1_peak`).
-- `area_raw_counts_seconds` stays internal grouping evidence (shoulder test and
+- `area_raw_counts_seconds` stays internal grouping evidence (edge scoring and
   owner order) and is not shown.
 
 Segmentation, selection, grouping and blank qualification keep their own

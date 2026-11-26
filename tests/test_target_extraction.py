@@ -256,8 +256,6 @@ def physical_candidate_input() -> tuple[PreparedSignalResult, PhysicalSegmentUni
             height=65.0,
             scan_support_count=5,
             area_counts_seconds=1200.0,
-            segment_class="isolated_peak",
-            boundary_stop_reason="baseline_return",
             evidence_sources=("owner_segment",),
         ),
         PhysicalSegment(
@@ -270,8 +268,6 @@ def physical_candidate_input() -> tuple[PreparedSignalResult, PhysicalSegmentUni
             height=35.0,
             scan_support_count=5,
             area_counts_seconds=600.0,
-            segment_class="low_scan_segment",
-            boundary_stop_reason="baseline_return",
             evidence_sources=("owner_segment",),
         ),
     )

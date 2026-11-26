@@ -343,32 +343,52 @@ def test_set_relation_is_order_neutral_and_never_votes_twice(tmp_path: Path) -> 
     assert not hasattr(forward, "individual_support_votes")
 
 
-def test_zero_buffer_boundary_is_set_level_hold(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("offset_min", "supported"),
+    (
+        pytest.param(0.0, True, id="on-boundary"),
+        pytest.param(-0.02, True, id="dda-rising-foot-within-margin"),
+        pytest.param(-0.15, False, id="beyond-margin"),
+    ),
+)
+def test_isolated_peak_supports_an_event_at_its_foot(
+    tmp_path: Path, offset_min: float, supported: bool
+) -> None:
     fixture = build_processing_identity_no_raw_fixture(tmp_path, sample_stems=("edge",))
     peak = cid_nl_peak(fixture, "edge")
     evidence = cid_nl_evidence(
         fixture,
         "edge",
         scan_number=45,
-        scan_rt_min=peak.integration.rt_left_min,
+        scan_rt_min=peak.integration.rt_left_min + offset_min,
     )
-    relation = cid_nl_set_relation(
-        fixture, "edge", evidence=evidence, candidate_peaks=(peak,)
-    )
-    assessment = mint_cid_nl_method_assessment(
+    individual, sets = assessment_module.resolve_cid_nl_method_relations(
         sample=fixture.sample("edge"),
-        acquisition_source=fixture.source(fixture.sample("edge")),
-        target=fixture.target,
-        detector_invocation_id="gaussian15:edge",
-        evaluation_receipt=_completed_receipt(),
-        candidate_peaks=(peak,),
         evidence_refs=(evidence,),
-        set_relation_refs=(relation,),
+        candidate_peaks=(peak,),
+        policy=cid_nl_support_policy(),
     )
 
-    assert relation.matched_candidates == (peak,)
-    assert assessment.method_result == "HOLD"
-    assert assessment.individual_support_refs == ()
+    assert sets == ()
+    assert [ref.peak_observation for ref in individual] == ([peak] if supported else [])
+
+
+def test_margin_never_takes_an_event_inside_a_neighbouring_peak(
+    tmp_path: Path,
+) -> None:
+    fixture = build_processing_identity_no_raw_fixture(tmp_path, sample_stems=("pair",))
+    early = cid_nl_peak(fixture, "pair", apex_rt=7.7, rt_left_min=7.6, rt_right_min=7.8)
+    late = cid_nl_peak(fixture, "pair", apex_rt=8.0, rt_left_min=7.85, rt_right_min=8.1)
+    evidence = cid_nl_evidence(fixture, "pair", scan_number=46, scan_rt_min=7.75)
+    for peaks in ((early, late), (late, early)):
+        individual, sets = assessment_module.resolve_cid_nl_method_relations(
+            sample=fixture.sample("pair"),
+            evidence_refs=(evidence,),
+            candidate_peaks=peaks,
+            policy=cid_nl_support_policy(),
+        )
+        assert sets == ()
+        assert [ref.peak_observation for ref in individual] == [early]
 
 
 def test_set_relation_reaches_touching_candidates_beyond_the_containing_pair(

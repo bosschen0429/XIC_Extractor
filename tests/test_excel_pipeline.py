@@ -460,7 +460,6 @@ def _run_output(*, with_diagnostics: bool) -> RunOutput:
     "review_reason, expected",
     [
         ("trace_morphology_review", "峰形不完整"),
-        ("physical_shoulder_overlap", "肩峰／重疊"),
         ("targeted_competing_regions", "多個候選峰"),
     ],
 )

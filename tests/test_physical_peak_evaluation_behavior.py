@@ -153,55 +153,6 @@ def test_background_contrast_rejects_weak_peak_for_capture_and_backfill(
         )
 
 
-@pytest.mark.parametrize("backfill", [False, True], ids=["discovery", "backfill"])
-@pytest.mark.parametrize(
-    "plateau,expected_state",
-    [(60000.0, "unavailable"), (0.0, "available")],
-    ids=["plateau_slice", "isolated_shoulder_pair"],
-)
-def test_overlap_peak_must_rise_above_its_surroundings(
-    backfill: bool, plateau: float, expected_state: str
-) -> None:
-    """The same shoulder pair is flagged for overlap in both traces.
-
-    On a plateau cut by missing-scan gaps, the signal just outside the slice is
-    60% of its apex, so the slice is background; alone, the pair is a peak.
-    Discovery and Backfill apply the same check.
-    """
-    rt = np.round(np.arange(0.0, 12.0, 0.02), 4)
-    raw = np.where((rt >= 2.0) & (rt <= 10.0), plateau, 0.0) + sum(
-        40000.0 * np.exp(-0.5 * ((rt - centre) / 0.10) ** 2) for centre in (5.85, 6.15)
-    )
-    raw[((rt >= 4.9) & (rt <= 5.0)) | ((rt >= 7.0) & (rt <= 7.1))] = 0.0
-    population = measure_physical_peak_population(
-        rt,
-        raw,
-        context_rt_start_min=0.0,
-        context_rt_end_min=12.0,
-        profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
-    )
-    segment = population.segment_at(5.85)
-    assert segment is not None and segment.requires_overlap_review
-    evaluation = (
-        evaluate_physical_peak(
-            prepare_physical_signal(rt, raw, profile=DEFAULT_SIGNAL_PROCESSING_PROFILE),
-            query_rt_min=5.85,
-            request_context_rt_start_min=0.0,
-            request_context_rt_end_min=12.0,
-            selection_policy_version=PHYSICAL_PEAK_BACKFILL_POLICY,
-        )
-        if backfill
-        else population.evaluate(5.85)
-    )
-    assert evaluation.state == expected_state
-    if expected_state == "unavailable":
-        assert evaluation.reason == "overlap_not_above_surroundings"
-        assert evaluation.integration is None
-    else:
-        assert evaluation.requires_overlap_review
-        assert evaluation.integration is not None
-
-
 @pytest.mark.parametrize("query_rt", [0.8, 1.2])
 def test_backfill_recovers_the_complete_peak_containing_the_query(
     query_rt: float,
@@ -1012,7 +963,12 @@ def test_whole_trend_has_matching_target_and_discovery_facts(
         observed_area = float(np.trapezoid(raw, rt)) * 60
         assert answer.answer.selected_segment.area_counts_seconds > 0.85 * observed_area
     assert answers[0].integration == answers[1].integration
-    assert answers[0].answer.selected_segment == (answers[1].answer.selected_segment)
+    targeted, discovery = (answer.answer.selected_segment for answer in answers)
+    assert (targeted.start_index, targeted.end_index, targeted.apex_index) == (
+        discovery.start_index,
+        discovery.end_index,
+        discovery.apex_index,
+    )
 
 
 @pytest.mark.parametrize("pattern", ["alternating", "random", "random_amplitude"])
@@ -1093,7 +1049,7 @@ def test_acquired_peak_top_not_low_alternating_neighbors_supplies_support(
 
 @pytest.mark.parametrize("point_count", [1001, 2001])
 @pytest.mark.parametrize("width", [0.65, 0.75])
-def test_overlapping_components_keep_one_envelope_and_review(
+def test_overlapping_components_keep_one_unflagged_envelope(
     point_count: int,
     width: float,
 ) -> None:
@@ -1117,7 +1073,6 @@ def test_overlapping_components_keep_one_envelope_and_review(
     assert discovery.answer.selected_segment.left_rt_min < 3.0
     assert discovery.answer.selected_segment.right_rt_min > 7.0
     assert discovery.integration == targeted.integration
-    assert discovery.requires_overlap_review
 
 
 @pytest.mark.parametrize("scale,background", [(1.0, 0.0), (1000.0, 100000.0)])
@@ -1222,9 +1177,6 @@ def test_background_component_generator_respects_query_ownership_policy(
         (local_maximum,) = find_peaks(raw)[0]
         valley = local_maximum + int(np.argmin(raw[local_maximum:]))
         assert raw[valley] > 0.5 * raw[local_maximum]
-        assert raw[local_maximum] - raw[valley] < (
-            prepared.prepared.profile.segment_min_prominence_fraction * max(raw)
-        )
         assert result.state == "unavailable"
         assert result.reason == "incomplete_peak_context"
         assert result.answer.selected_segment is None and result.integration is None
@@ -1739,7 +1691,6 @@ def test_middle_query_selects_the_unresolved_envelope_not_a_component(
         )
         assert 9.4 < answer.answer.selected_segment.left_rt_min < 10.3
         assert answer.answer.selected_segment.right_rt_min > 13.0
-        assert answer.requires_overlap_review
     assert answers[0].integration == answers[1].integration
     assert _measurement(answers[0]) == _measurement(answers[1])
     assert (

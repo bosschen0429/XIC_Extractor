@@ -235,7 +235,7 @@ def _quality_review_report(
             value=value,
             source="raw_trapezoid",
             selected_integration=observation.integration,
-            review_reasons=(),
+            value_peak=observation if value is not None else None,
         )
         cells.append(review_cell(decision))
         cells[-1]["membership_risks"] = [

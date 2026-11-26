@@ -32,7 +32,6 @@ from xic_extractor.precursor_evidence import Ms1PrecursorObservation
 def test_peak_table_writes_each_peak_fact_once() -> None:
     assert DISCOVERY_PEAK_COLUMNS == (
         "status",
-        "requires_overlap_review",
         "evidence_score",
         "attached_event_count",
         "peak_id",
@@ -62,14 +61,12 @@ def test_peak_csv_round_trips_through_the_reader(tmp_path: Path) -> None:
     peak = _peak(
         matched_tag_names=("DNA_dR", "R"),
         status="no_nl_event",
-        requires_overlap_review=True,
         ms1_apex_mz=258.1083,
     )
     path = write_discovery_peaks_csv(tmp_path / "nested" / "peaks.csv", [peak])
 
     (row,) = _read_csv(path)
     assert row["status"] == "no_nl_event"
-    assert row["requires_overlap_review"] == "TRUE"
     assert row["matched_tag_names"] == "DNA_dR;R"
     (restored,) = read_discovery_peaks_csv(path)
     assert restored == peak
@@ -103,7 +100,6 @@ def test_peak_rows_follow_the_review_queue() -> None:
         score: int = 50,
         intensity: float = 1000.0,
         event_rt: float = 7.84,
-        shoulder: bool = False,
     ) -> _OrderedBinding:
         event = _seed(scan_number=6095, rt=event_rt, product_intensity=intensity)
         return _OrderedBinding(
@@ -116,7 +112,6 @@ def test_peak_rows_follow_the_review_queue() -> None:
             ),
             physical_evaluation=SimpleNamespace(
                 state="available",
-                requires_overlap_review=shoulder,
                 answer=SimpleNamespace(
                     selected_segment=SimpleNamespace(area_counts_seconds=1000.0)
                 ),
@@ -129,7 +124,6 @@ def test_peak_rows_follow_the_review_queue() -> None:
             binding("blank", status="blank", score=99),
             binding("single", attached=1, score=90),
             binding("far", event_rt=7.0, score=95),
-            binding("shoulder", shoulder=True, score=95),
             binding("lead-weak", score=40),
             binding("lead-strong", score=80),
             binding("lead-strong-intense", score=80, intensity=5000.0),
@@ -142,11 +136,10 @@ def test_peak_rows_follow_the_review_queue() -> None:
         "lead-strong",
         "lead-weak",
         "far",
-        "shoulder",
         "single",
         "blank",
     ]
-    assert [item.final_ordinal for item in ordered] == list(range(7))
+    assert [item.final_ordinal for item in ordered] == list(range(6))
 
 
 @dataclass(frozen=True)

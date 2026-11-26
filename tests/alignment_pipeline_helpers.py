@@ -152,7 +152,6 @@ def candidate_row(sample_stem: str) -> dict[str, str]:
         "status": "admitted",
         "evidence_score": "80",
         "attached_event_count": "2",
-        "requires_overlap_review": "FALSE",
         "peak_id": candidate_id(sample_stem),
         "sample_stem": sample_stem,
         "peak_mz": "500.0",
