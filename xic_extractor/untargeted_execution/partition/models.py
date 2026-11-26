@@ -205,26 +205,13 @@ class UntargetedSampleResult:
         )
 
     def backfill_for_group(
-        self, center: float, *, group_hypothesis_id: str | None = None
+        self, group_hypothesis_id: str
     ) -> UntargetedCidNlBackfillAttemptResult | None:
-        bound = any(a.group_hypothesis_id is not None for a in self.backfill_attempts)
-        if bound:
-            matches = tuple(
-                attempt
-                for attempt in self.backfill_attempts
-                if group_hypothesis_id is not None
-                and attempt.group_hypothesis_id == group_hypothesis_id
-            )
-        else:
-            half_window = BACKFILL_HALF_WINDOW_MIN
-            matches = tuple(
-                attempt
-                for attempt in self.backfill_attempts
-                if attempt.assessment.evaluation_receipt.query_rt_min
-                == max(0.0, center - half_window)
-                and attempt.assessment.evaluation_receipt.query_rt_max
-                == center + half_window
-            )
+        matches = tuple(
+            attempt
+            for attempt in self.backfill_attempts
+            if attempt.group_hypothesis_id == group_hypothesis_id
+        )
         if len(matches) > 1:
             raise UntargetedPartitionError("group has duplicate backfill attempts")
         return matches[0] if matches else None
@@ -238,10 +225,7 @@ def project_completed_backfill(
     """Project an existing completed empty backfill without executing it again."""
     job = result.job
     group = group_context.group
-    center = group.group_center_rt
-    backfill = result.backfill_for_group(
-        center, group_hypothesis_id=group_context.group.group_hypothesis_id
-    )
+    backfill = result.backfill_for_group(group.group_hypothesis_id)
     if backfill is None:
         raise UntargetedPartitionError("initial assessment is not a backfill")
     assessment = backfill.assessment

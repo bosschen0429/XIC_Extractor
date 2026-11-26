@@ -88,7 +88,7 @@ class UntargetedCidNlBackfillAttemptResult:
     assessment: CidNlMethodAssessment
     backfill_input: UntargetedCidNlBackfillInput | None
     acquisition: TraceAcquisitionBatch | None
-    group_hypothesis_id: str | None = None
+    group_hypothesis_id: str
     query_rt: float | None = None
     query_rt_basis: str = "group_center"
     capture_evidence: tuple[RetainedCaptureEvidence, ...] = dataclass_field(
@@ -342,7 +342,7 @@ def backfill_untargeted_cid_nl_sample_subject(
     query_rt_basis: str = "group_center",
     query_rt_tolerance_sec: float | None = None,
     query_rt_reliable: bool = True,
-    group_hypothesis_id: str | None = None,
+    group_hypothesis_id: str,
     support_policy: DdaCidNlPeakSupportPolicy,
     half_window_min: float,
     raw: CidNlRawSource | None,
@@ -407,10 +407,6 @@ def backfill_untargeted_cid_nl_sample_subject(
         acquired = acquisition.traces[0]
         context_acquired = acquisition.traces[1]
     else:
-        if group_hypothesis_id is None:
-            raise CidNlAcquisitionError(
-                "preacquired backfill requires exact group identity"
-            )
         acquisition = _preacquired_traces.acquisition
         acquired = _preacquired_traces.acquired_trace(
             group_hypothesis_id=group_hypothesis_id,
@@ -524,7 +520,7 @@ def _close_backfill_attempt(
     sample: SampleMetadata,
     source: AcquisitionSourceIdentity,
     method_subject: CidNlMethodSubject,
-    group_hypothesis_id: str | None,
+    group_hypothesis_id: str,
     query_rt: float,
     query_rt_basis: str,
     physical_mz: float,

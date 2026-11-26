@@ -296,6 +296,7 @@ def test_physical_backfill_does_not_choose_among_clipped_tail_candidates(
     )
     raw, _vendor = _open_bound_raw(fixture, "S1", source_raw, tmp_path=tmp_path)
     result = backfill_untargeted_cid_nl_sample_subject(
+        group_hypothesis_id="group-1",
         half_window_min=0.5,
         processing_attempt_id=fixture.processing_attempt_id,
         sample=fixture.sample("S1"),
@@ -539,6 +540,7 @@ def test_composite_backfill_resolves_one_event_per_scan_loss_across_references(
     )
     try:
         result = backfill_untargeted_cid_nl_sample_subject(
+            group_hypothesis_id="group-1",
             half_window_min=BACKFILL_HALF_WINDOW_MIN,
             processing_attempt_id=fixture.processing_attempt_id,
             sample=fixture.sample("S1"),

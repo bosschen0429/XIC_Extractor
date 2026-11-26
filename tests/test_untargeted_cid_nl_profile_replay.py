@@ -454,6 +454,7 @@ def test_profile_replay_retains_positive_and_empty_backfill_evidence(
         acquisition_source=job.acquisition_source_expectation.source,
         method_subject=job.method_subject,
         group_center_rt=inputs.center_rt,
+        group_hypothesis_id="group-1",
         group_center_mz=job.method_subject.precursor_mz,
         support_policy=DdaCidNlPeakSupportPolicy(
             precursor_tolerance_da=0.01, neutral_loss_tolerance_ppm=10.0
