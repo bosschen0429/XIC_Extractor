@@ -13,6 +13,7 @@ from xic_extractor.alignment.grouping_rules import GroupingRules
 from xic_extractor.alignment.membership_selection import (
     MembershipComparison,
     Partition,
+    ScoredAlternatives,
     canonical_partition,
     measured_owner_key,
 )
@@ -37,7 +38,7 @@ def _select_window(
     directional_partitions: tuple[Partition, ...],
     kept_together: tuple[tuple[str, ...], ...] = (),
 ) -> tuple[
-    MembershipComparison, Partition, dict[str, tuple[Partition, ...]], list[Partition]
+    MembershipComparison, Partition, dict[str, ScoredAlternatives], list[Partition]
 ]:
     """One precursor-mass window: the selected partition and its alternatives."""
     comparison = MembershipComparison(

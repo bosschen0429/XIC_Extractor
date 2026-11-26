@@ -10,6 +10,7 @@ import heapq
 import math
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from functools import cache
 from itertools import combinations
 from statistics import median
 from typing import NamedTuple
@@ -32,6 +33,7 @@ from xic_extractor.mass_accuracy import absolute_ppm_error, within_ppm
 from xic_extractor.peak_detection.ms1_shape_identity import compare_local_peak_shapes
 
 Partition = tuple[tuple[str, ...], ...]
+ScoredAlternatives = tuple[tuple[Partition, float], ...]
 OwnerFacts = tuple[str, float, float]
 OwnerPartition = tuple[tuple[OwnerFacts, ...], ...]
 _RT_POPULATION_MIN_MEMBERS = 4
@@ -150,9 +152,10 @@ class _GroupInputs:
     group's evaluation. ``witness`` is the zero model's costliest pair.
     """
 
-    __slots__ = ("_comparison", "_key", "_pairs", "_neighbors", "witness")
+    __slots__ = ("_comparison", "_key", "_pairs", "_neighbors", "witness", "opening")
 
     def __init__(self, comparison: MembershipComparison, key: tuple[str, ...]) -> None:
+        self.opening = comparison._opening_cost(key)
         self._comparison, self._key = comparison, key
         self._pairs: _PairArrays | None = None
         self._neighbors: tuple[np.ndarray, np.ndarray] | None | bool = False
@@ -160,7 +163,7 @@ class _GroupInputs:
 
     def drift_floor(self) -> float:
         """Perfect RT agreement still pays the fixed evidence and one coefficient."""
-        floor = 1.0
+        floor = self.opening
         if self.witness is not None:
             terms = self._comparison._terms(*self.witness)
             assert terms is not None
@@ -474,7 +477,6 @@ class MembershipComparison:
         method = self.rules.pair_evidence(left, right, cfg)
         if (
             left.sample_stem == right.sample_stem
-            or not self.trajectories.permits_membership(key)
             or not within_ppm(
                 max(left.peak.mz, right.peak.mz),
                 min(left.peak.mz, right.peak.mz),
@@ -816,6 +818,9 @@ class MembershipComparison:
         unknown = frozenset(witness).difference(offsets)
         return self._compose(*witness, offsets, unknown)[0]
 
+    def _opening_cost(self, key: tuple[str, ...]) -> float:
+        return 1.0 + 0.5 * self.trajectories.corroborated_separation(key)
+
     def _evaluate(
         self,
         key: tuple[str, ...],
@@ -831,13 +836,14 @@ class MembershipComparison:
         """
         if len({self.owners[p].sample_stem for p in key}) != len(key):
             return _GroupModel(coefficients, math.inf, False)
+        opening = inputs.opening if inputs is not None else self._opening_cost(key)
         model_cost = self._coefficient_cost * coefficients.nonzero_count
         if (
             inputs is not None
             and inputs.witness is not None
             and math.isfinite(bound)
             and coefficients.nonzero_count
-            and 1.0
+            and opening
             + self._witness_cost(inputs.witness, coefficients, basis or key)
             + model_cost
             >= bound
@@ -849,10 +855,15 @@ class MembershipComparison:
         pair_cost: float | None
         if inputs is not None and (offsets or unknown):
             pair_cost = inputs.pairs().max_cost(self, key, offsets, unknown)
-            if not math.isfinite(pair_cost) or 1.0 + pair_cost + model_cost >= bound:
+            if (
+                not math.isfinite(pair_cost)
+                or opening + pair_cost + model_cost >= bound
+            ):
                 return _GroupModel(coefficients, math.inf, False)
             evidence = (
-                1.0 + pair_cost + self._group_trend_cost(key, offsets, unknown, inputs)
+                opening
+                + pair_cost
+                + self._group_trend_cost(key, offsets, unknown, inputs)
             )
             if coefficients.nonzero_count:
                 evidence += model_cost
@@ -890,13 +901,13 @@ class MembershipComparison:
                 pair_cost = max(pair_cost, value)
                 if (
                     not math.isfinite(pair_cost)
-                    or 1.0 + pair_cost + model_cost >= bound
+                    or opening + pair_cost + model_cost >= bound
                 ):
                     return _GroupModel(coefficients, math.inf, False)
-        elif not math.isfinite(pair_cost) or 1.0 + pair_cost + model_cost >= bound:
+        elif not math.isfinite(pair_cost) or opening + pair_cost + model_cost >= bound:
             return _GroupModel(coefficients, math.inf, False)
         evidence = (
-            1.0 + pair_cost + self._group_trend_cost(key, offsets, unknown, inputs)
+            opening + pair_cost + self._group_trend_cost(key, offsets, unknown, inputs)
         )
         if coefficients.nonzero_count:
             evidence += model_cost
@@ -953,7 +964,11 @@ class MembershipComparison:
             if not math.isfinite(value) and first in fixed and second in fixed:
                 continue
             pair_cost = max(pair_cost, value)
-        cost = 1.0 + pair_cost + self._group_trend_cost(key, offsets, unknown)
+        cost = (
+            self._opening_cost(key)
+            + pair_cost
+            + self._group_trend_cost(key, offsets, unknown)
+        )
         if coefficients.nonzero_count:
             cost += self._coefficient_cost * coefficients.nonzero_count
         return cost
@@ -1125,7 +1140,7 @@ class MembershipComparison:
 
     def refine_choices(
         self, partition: Partition
-    ) -> tuple[Partition, dict[str, tuple[Partition, ...]]]:
+    ) -> tuple[Partition, dict[str, ScoredAlternatives]]:
         """Act on better retained alternatives, rather than merely flag them.
 
         Primary cost never increases. On a primary tie, a strict improvement
@@ -1133,28 +1148,40 @@ class MembershipComparison:
         for risk publication instead of evaluating every alternative twice.
         """
         while True:
+            source = {p: group for group in partition for p in group}
+            pinned = {
+                p
+                for row in self._kept_together
+                if all(source[q] == source[row[0]] for q in row)
+                for p in row
+            }
             alternatives_by_owner = {
-                owner_id: self.alternatives(owner_id, partition)
+                p: ()
+                if p in pinned
+                else self._alternatives(p, group, partition, pinned)
                 for group in partition
-                for owner_id in group
+                for p in group
             }
             selected_cost, selected_fit = self.cost(partition), self.peer_fit(partition)
-            improvements = {
-                candidate
-                for alternatives in alternatives_by_owner.values()
-                for candidate in alternatives
-                if self.cost(candidate) < selected_cost - 1e-12
-                or (
-                    self.cost(candidate) <= selected_cost
-                    and self.peer_fit(candidate) < selected_fit - 1e-12
-                )
-            }
-            if not improvements:
+            scores: dict[Partition, float] = {}
+            for alternatives in alternatives_by_owner.values():
+                better = [
+                    (p, score)
+                    for p, score in alternatives
+                    if score < selected_cost - 1e-12
+                    or (
+                        score <= selected_cost
+                        and self.peer_fit(p) < selected_fit - 1e-12
+                    )
+                ]
+                scores.update(self._rank_retained(alternatives, better))
+            if not scores:
                 return partition, alternatives_by_owner
-            best_cost = min(self.cost(p) for p in improvements)
+            improvements = {p for p in scores}
+            best_cost = min(scores.values())
             partition = self.merge(
                 min(
-                    (p for p in improvements if self.cost(p) == best_cost),
+                    (p for p in improvements if scores[p] == best_cost),
                     key=lambda p: (self.peer_fit(p), self.partition_key(p)),
                 )
             )
@@ -1195,7 +1222,14 @@ class MembershipComparison:
             tuple[float, tuple[object, ...], tuple[str, ...], tuple[str, ...]]
         ] = []
 
+        samples = {
+            group: frozenset(self.owners[k].sample_stem for k in group)
+            for group in partition
+        }
+
         def propose(left: tuple[str, ...], right: tuple[str, ...]) -> None:
+            if not samples[left].isdisjoint(samples[right]):
+                return
             union = tuple(sorted((*left, *right)))
             delta = group_cost(union) - group_cost(left) - group_cost(right)
             if delta < -1e-12:
@@ -1214,6 +1248,7 @@ class MembershipComparison:
             active.remove(left)
             active.remove(right)
             union = tuple(sorted((*left, *right)))
+            samples[union] = samples.pop(left) | samples.pop(right)
             if propose_whole_bands and math.isfinite(self.group_cost(union)):
                 members = set(union)
                 feasible_bands = {
@@ -1227,43 +1262,65 @@ class MembershipComparison:
             tuple(feasible_bands if propose_whole_bands else active)
         )
 
-    def alternatives(
-        self, owner_id: str, partition: Partition
-    ) -> tuple[Partition, ...]:
-        """Final owner alternatives, including separation and occupancy swaps."""
-        current = next(group for group in partition if owner_id in group)
+    def _alternatives(
+        self,
+        owner_id: str,
+        current: tuple[str, ...],
+        partition: Partition,
+        pinned: set[str],
+    ) -> ScoredAlternatives:
+        """Score feasible moves without displacing a member of an intact locked row."""
         remainder = tuple(p for p in current if p != owner_id)
         others = [g for g in partition if g != current]
+        cost = cache(self.cost)
         variants = set()
-        if remainder:
+        remainder_ok = not remainder or math.isfinite(self.group_cost(remainder))
+        if remainder and remainder_ok:
             separated = canonical_partition([*others, remainder, (owner_id,)])
-            if math.isfinite(self.cost(separated)):
+            if math.isfinite(cost(separated)):
                 variants.add(separated)
         sample = self.owners[owner_id].sample_stem
         for target in others:
             occupied = tuple(p for p in target if self.owners[p].sample_stem == sample)
-            new_target = tuple(p for p in target if p not in occupied) + (owner_id,)
-            new_current = (*remainder, *occupied)
+            if not pinned.isdisjoint(occupied) or (not occupied and not remainder_ok):
+                continue
+            new_target = tuple(
+                sorted([p for p in target if p not in occupied] + [owner_id])
+            )
+            if not math.isfinite(self.group_cost(new_target)):
+                continue
+            new_current = (
+                tuple(sorted((*remainder, *occupied))) if occupied else remainder
+            )
+            if occupied and not math.isfinite(self.group_cost(new_current)):
+                continue
             candidate = canonical_partition(
                 [g for g in others if g != target] + [new_current, new_target]
             )
-            if candidate != partition and math.isfinite(self.cost(candidate)):
+            if candidate != partition and math.isfinite(cost(candidate)):
                 variants.add(candidate)
-        ordered = sorted(variants, key=lambda p: (self.cost(p), self.partition_key(p)))
-        if not ordered:
-            return ()
-        best_cost = self.cost(ordered[0])
-        best = [p for p in ordered if self.cost(p) == best_cost]
-        rest = [p for p in ordered if self.cost(p) != best_cost]
-        return tuple(
-            sorted(best, key=lambda p: (self.peer_fit(p), self.partition_key(p)))
-        ) + tuple(rest)
+        return tuple((p, cost(p)) for p in variants)
+
+    def _rank_retained(
+        self, alternatives: ScoredAlternatives, retained: list[tuple[Partition, float]]
+    ) -> list[tuple[Partition, float]]:
+        """Use peer fit before the measured key only at the owner's overall minimum."""
+        if len(retained) > 1:
+            lowest = min(score for _, score in alternatives)
+            retained.sort(
+                key=lambda item: (
+                    item[1],
+                    self.peer_fit(item[0]) if item[1] == lowest else 0.0,
+                    self.partition_key(item[0]),
+                )
+            )
+        return retained
 
     def risks(
         self,
         partition: Partition,
         *,
-        alternatives_by_owner: dict[str, tuple[Partition, ...]] | None = None,
+        alternatives_by_owner: dict[str, ScoredAlternatives],
     ) -> dict[str, AcceptedMembershipRisk]:
         result = {}
         selected_cost = self.cost(partition)
@@ -1272,14 +1329,18 @@ class MembershipComparison:
             key = tuple(sorted(group))
             pair = self._model_pairs(key, self.coefficients(key), key)
             for owner_id in group:
-                alternatives = (
-                    alternatives_by_owner[owner_id]
-                    if alternatives_by_owner is not None
-                    else self.alternatives(owner_id, partition)
+                scored = alternatives_by_owner[owner_id]
+                lowest = min((score for _, score in scored), default=math.inf)
+                alternatives = self._rank_retained(
+                    scored,
+                    [
+                        (p, score)
+                        for p, score in scored
+                        if score == lowest or abs(score - selected_cost) <= 1e-9
+                    ],
                 )
-                alternative = alternatives[0] if alternatives else None
-                alternative_cost = (
-                    self.cost(alternative) if alternative is not None else None
+                alternative, alternative_cost = (
+                    alternatives[0] if alternatives else (None, None)
                 )
                 gap = (
                     alternative_cost - selected_cost
@@ -1291,8 +1352,8 @@ class MembershipComparison:
                 )
                 equivalents = tuple(
                     p
-                    for p in alternatives
-                    if abs(self.cost(p) - selected_cost) <= 1e-9
+                    for p, score in alternatives
+                    if abs(score - selected_cost) <= 1e-9
                     and abs(self.peer_fit(p) - selected_fit) <= 1e-9
                 )
                 contradictions = tuple(

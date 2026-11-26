@@ -401,7 +401,7 @@ class PeakTrajectories:
     never have been compared. Co-observation distinguishes tracks only when
     the physical owner places both landmarks in different unique segments of
     the same acquired context. Their directed order can then distinguish tracks
-    through an intermediate track: A < B < C forbids A/C membership, whereas
+    through an intermediate track: A < B < C distinguishes A from C, whereas
     A < B > C does not. Two shoulders of one segment supply no exclusion.
     """
 
@@ -543,7 +543,7 @@ class PeakTrajectories:
         )
 
     def permits_membership(self, owner_ids: Iterable[str]) -> bool:
-        """Unobserved correspondence may extend a track; distinct peaks cannot merge.
+        """Conservative seed/bridge eligibility, not a final membership veto.
 
         Two owners' tracks stay distinct only where an independent sample
         shows the order: neither owner's sample, and each of its two ordered
@@ -560,19 +560,76 @@ class PeakTrajectories:
                 key = (min(tracks), max(tracks))
                 if key not in self._distinct:
                     continue
-                seen = self._witnesses[key]
-                decided = {
-                    self._owner_samples.get(first),
-                    self._owner_samples.get(second),
-                }
-                if seen is None or any(
-                    sample not in decided
-                    and set(earlier) - decided
-                    and set(later) - decided
-                    for sample, earlier, later in seen
-                ):
+                if self._independently_ordered(self._witnesses[key], first, second):
                     return False
         return True
+
+    def _independently_ordered(
+        self, witnesses: frozenset[_Witness] | None, first: str, second: str
+    ) -> bool:
+        if witnesses is None:
+            return True
+        decided = {self._owner_samples.get(first), self._owner_samples.get(second)}
+        return any(
+            sample not in decided and set(earlier) - decided and set(later) - decided
+            for sample, earlier, later in witnesses
+        )
+
+    def corroborated_separation(self, owners: tuple[str, ...]) -> int:
+        """Number of disjoint contradictory peak pairs in the strongest contrast.
+
+        A row has one owner per sample. One owner against eight peers counts
+        once, not eight times. Use only the strongest track contrast so that
+        multiple (including transitive) track labels cannot multiply its cost.
+        """
+        if not self._distinct or len(owners) < 2:
+            return 0
+        by_track: dict[int, list[str]] = defaultdict(list)
+        for owner in owners:
+            index = self._track_by_owner.get(owner)
+            if index is not None:
+                by_track[index].append(owner)
+        if len(by_track) < 2:
+            return 0
+        strongest = 0
+        for left, right in self._distinct:
+            first, second = by_track.get(left, ()), by_track.get(right, ())
+            bound = min(len(first), len(second))
+            if bound <= strongest:
+                continue
+            witnesses = self._witnesses[left, right]
+            if witnesses is None:
+                strongest = bound
+                continue
+            if bound == 1:
+                strongest = int(
+                    any(
+                        self._independently_ordered(witnesses, a, b)
+                        for a in first
+                        for b in second
+                    )
+                )
+                continue
+            mask = np.array(
+                [
+                    [self._independently_ordered(witnesses, a, b) for b in second]
+                    for a in first
+                ]
+            )
+            if not mask.any():
+                continue
+            if mask.all():
+                size = bound
+            else:
+                from scipy.sparse import csr_matrix
+                from scipy.sparse.csgraph import maximum_bipartite_matching
+
+                matches = maximum_bipartite_matching(
+                    csr_matrix(mask), perm_type="column"
+                )
+                size = int(np.count_nonzero(matches >= 0))
+            strongest = max(strongest, size)
+        return strongest
 
     def _indices(self, owner_ids: Iterable[str]) -> set[int]:
         return {

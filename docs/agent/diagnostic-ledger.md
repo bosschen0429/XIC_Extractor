@@ -428,6 +428,139 @@ population changes.
 
 ### Grouping time concentrates in dense windows
 
+**85-injection fallback windows (132e04e6b, diagnostic_only).** In the
+62,532-owner frozen replay, the two slowest windows had different routing
+reasons: 245.10 was a mixed mass window; all 22 sole-direct samples in
+293.17 had only boundary-shift coordinates. In both, the common hot path
+was membership search: peak move/swap refinement accounted for 56% / 66%
+of profiled wall time, with 1.75M / 1.87M whole-partition cost calls across
+each replay. Sample assignment took less than one second in either profile.
+Both full membership/disposition fingerprints matched the uninstrumented
+runs. Profile timings are attribution, not a speed comparison. Reopen if
+candidate search, cost reuse or routing changes; see
+`output/two-slow-windows/report.md` in the 1284-nl-track worktree.
+
+On those same windows, reusing a partition's cost within one owner's
+alternative ranking cut unprofiled wall time from 344–354 to 284–298 s
+(245.10) and 268–280 to 224–229 s (293.17). ABBA against 821c94195,
+one resident process per window, both run concurrently. Ordered memberships,
+dispositions, coefficients and every sparse decision matched on all four
+runs; Matrix destinations remained one and six rows. This is a two-window
+result, not a whole-batch timing. See `output/alternative-cost-reuse/`.
+
+Against that cumulative baseline (63d80c7fd), the two windows together
+requested 704,154 repeat scores after ranking. Another 391,038 candidate
+evaluations split an intact direct row, and 377,923 whole-row merge
+proposals repeated a sample. Reusing the scores and skipping those infeasible
+moves preserved all ordered memberships, sparse decisions and Matrix
+destinations (one and six rows). Same-input simultaneous old/new runs,
+then exchanged logical CPUs: 293.17 took 215 → 192 and 191 → 173 s
+(9–11% less elapsed time; CPU also fell both times). For 245.10 the two
+pairs were 598 → 516 and 406 → 420 s: no repeatable speedup. The original
+sequential ABBA had a much slower first baseline; do not extrapolate its
+average or either window to the cohort. See `output/search-waste/`.
+
+**Decision value, 96b35803d (diagnostic only).** In single-peak refinement
+and whole-sample reassignment, vacant/occupied proposals that returned
+infinite cost accounted for 101.0 of 140.1 attributed seconds at 245.10
+and 51.3 of 129.6 at 293.17 (excluding direct-incumbent challenges).
+Challenges to a direct incumbent supported by its row's corrected direct
+peers took 0.11 s and never qualified at 245.10; none met the support
+definition at 293.17 (unknown support is not a contradiction). Both
+instrumented replays reproduced the full ordered decision fingerprints.
+Suppressing only vacant proposals or only other occupied proposals each
+left the 37-member Matrix row at 245.10 unchanged, not the full decision
+fingerprint. At 293.17 the former changed six Matrix rows to five; the
+latter retained six but changed membership in every row. Do not disable a
+whole move class on this evidence. These are instrumented proposal intervals
+and Matrix destinations, not a batch speedup or chemical ground truth.
+See `output/proposal-value/report.md` in the 1284-nl-track worktree.
+
+Checking the actual changed rows before constructing a single-owner candidate
+partition reduced elapsed time at 245.10 by 17.1% and 18.1% (439 → 364,
+254 → 208 s), compared with ff67a58f7 on the same input. At 293.17 the
+reductions were smaller and more variable: 9.2% and 2.2% (192 → 175,
+183 → 179 s). Each window ran two simultaneous old/new pairs, exchanging
+logical CPUs; process CPU also fell in all four pairs. The ordered Matrix
+rows/members (1/37 and 6/331), complete decisions and routes matched.
+These timings exclude RAW, Backfill and publication. See
+`output/changed-row-cost/report.md` in the same worktree.
+
+**Is rearranging peaks outside the Matrix unnecessary?** At 6f6905b94,
+label both endpoints of each explicit proposed peak move using the *baseline
+final* Matrix membership (hindsight, not a production predictor). At 245.10,
+proposals with neither endpoint row containing a Matrix member took 99.5 of
+100.4 attributed seconds. Suppressing them in refinement and sample offers
+preserved the 37-member row and every member's competition flag and local
+alternative peer set, but changed full-window scores. At 293.17 these proposals
+took only 2.3 of 121.5 s; suppression preserved six rows by count but only
+one by membership (four peaks left, one entered). Of 327 shared Matrix
+members, four changed competition flag. Endpoint disjointness at one step
+does not prove independence later. These intervals exclude shared ranking,
+merges, RAW and writer time. See `output/matrix-reach/report.md`; do not use
+final output to select a live search path.
+
+**Rank only decision-relevant alternatives.** Against 2b23d1a72, retaining
+scores for all feasible proposals but ordering only improvements during
+refinement, and potential best/equivalent witnesses for publication,
+preserved the full ordered decisions and Matrix memberships (1 row/37
+owners; 6 rows/331 owners). In same-input simultaneous old/new pairs with
+logical CPUs exchanged, 245.10 took 202 → 173 and 195 → 171 s; 293.17
+took 192 → 154 and 178 → 160 s. CPU time also fell in all four pairs.
+No RAW, Backfill, publication, or full-batch timing. Details and the tie
+ordering probe: `output/rank-on-demand/report.md` in the same worktree.
+
+**Multi-track initial proposals, f77451c1e (diagnostic only; rejected).**
+Using the existing whole-group cost to compare simultaneous sample
+assignments to direct tracks against ordinary initialization did not
+reduce refinement visits at 245.10 or 293.17. All three tested windows
+were connected under potential pair compatibility; no isolated component
+could be parked. The one and six Matrix rows at 245/293 kept all members,
+but the ordinary initialization won. At 348.21 the previously selected
+232 band was proposed and rejected even with only its 81 direct owners:
+eight pairwise trajectory incompatibilities all involved the same
+peak at 10.2247 min. The anchored drift coefficients do not remove that
+veto. Matrix rows went from three to two, early-side labels in the main
+row from 40/40 to 36/40, and the 6.46 min direct peak in another injection returned
+to the main row. This falsifies this architecture-only change, not the
+chemical identity of either peak. Do not widen to the cohort or infer
+speed from this trial. Proposals, pair witnesses and conditional
+assignment diagnostics: `output/joint-tracks/report.md` (1284-nl-track).
+
+**Order as finite separation evidence (6e59f5d56 baseline, diagnostic_only).**
+The eight order contradictions within the proposed 348→232 row all reuse
+one owner, so the strongest disjoint comparison count is one. The row alone
+now costs 2.2124 (81 direct owners) or 2.6001 (84 owners), rather than infinity.
+The accepted drift-band-first route preserved all 13 Matrix rows and all
+members across 245.10, 258.1090, 293.17, 302.1766 and 348.21. This is not a
+published Matrix or a speed comparison. The separate joint initializer still
+selects the old 78-member main row: the direct-only band partition is finite
+but costs 5.3405 vs 4.9211; the all-owner proposal breaks two locked direct
+groups and contains an infeasible three-owner residual. Do not rerun the batch
+to diagnose this veto. Worktree artifacts: `output/order-confirm/report.md`.
+
+**Whole-cohort order-authority acceptance (6e59f5d56 → 49a5a9952,
+diagnostic_only).** Same frozen 85-injection grouping snapshot (SHA-256
+`6319e8375cd732953471fa061d1afbd5e4e5c54ba272ab97d51c143a2ed33d9f`),
+62,532 owners, 1,487 full windows, drift-band-first path. Matrix destination
+rows 1,104 → 1,101: 1,073 unchanged, 27 matched with different members, four
+absorbed or removed and one added across 24 changed windows. Matched rows
+had 30 swaps, 162 fills and 32 blanks. Thirteen direct and 130 MS1-only
+owners entered; 97 MS1-only owners exited. No old direct owner left the
+Matrix, which does not establish correct row identity. At 827.1631 the
+separate 15.13 and 15.51 min direct peaks from one injection both reach the
+Matrix; at 278.1607 and 283.1543 two rows became one despite 11 and 14
+injections, respectively, previously representing disjoint same-injection
+peaks (not both direct). At 278.1607 all 11 agree in order. These are
+competing observations, not chemical truth. Six-worker loaded replay wall
+674.72 → 693.42 s (+2.8%, one pair); this is not a speed optimization.
+Adopt finite order evidence for its CID-NL support, not for speed: all
+22,664 previously included direct peaks stayed in the Matrix and 13 entered.
+The whole-cohort comparison validates the drift-band-first replay, not the writer.
+Inspect those two windows if adjudication is needed; do not repeat the
+batch on unchanged inputs. Full before/after mapping, changed cells and
+timing: `output/order-accept85/report.md`. No RAW, Backfill or writer rerun.
+
 `diagnostic_only` (2026-11-21). Replaying the 83-injection `output/nl_gate/fix`
 snapshot one workset at a time took 526 s after a 5 s load. The 50 slowest of
 1,828 worksets took 72%, and time grew with about owners^2.3. The three slowest

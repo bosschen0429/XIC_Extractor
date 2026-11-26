@@ -141,34 +141,39 @@ def construct_cross_sample_peak_group_hypotheses(
     hypotheses = []
     for basis in inference.groups:
         group = tuple(by_id[owner_id] for owner_id in basis.owner_ids)
-        if basis.disposition == "unresolved_conflict":
-            raise CrossSampleContractError(
-                "known identity has conflicting sample observations; "
-                "selection is unresolved and identity cannot be split"
-            )
-        activation_support = tuple(
-            owner for owner in group if rules.establishes_group(owner)
+        decisions = tuple(
+            d for key in basis.owner_ids for d in decisions_by_owner.get(key, ())
         )
-        hypotheses.append(
-            _hypothesis_from_owner_group(
-                group,
-                disposition=(
-                    "unresolved"
-                    if basis.disposition == "undecided"
-                    else "provisional"
-                    if not _settled_members(activation_support)
-                    else None
-                ),
-                evidence=f"owner_feature_inference;{basis.disposition};{basis.reason}",
-                inference_basis=basis,
-                inference_decisions=tuple(
-                    decision
-                    for owner_id in basis.owner_ids
-                    for decision in decisions_by_owner.get(owner_id, ())
-                ),
-            )
-        )
+        hypotheses.append(hypothesis_from_membership(group, basis, decisions, rules))
     return tuple(hypotheses)
+
+
+def hypothesis_from_membership(
+    group: tuple[SampleLocalMS1Owner, ...],
+    basis: FeatureMembershipGroup,
+    decisions: tuple[SparseFeatureDecision, ...],
+    rules: GroupingRules,
+) -> CrossSamplePeakGroupHypothesis:
+    """Apply the common activation and disposition rules to a decided membership."""
+    if basis.disposition == "unresolved_conflict":
+        raise CrossSampleContractError(
+            "known identity has conflicting sample observations; "
+            "selection is unresolved and identity cannot be split"
+        )
+    support = tuple(owner for owner in group if rules.establishes_group(owner))
+    return _hypothesis_from_owner_group(
+        group,
+        disposition=(
+            "unresolved"
+            if basis.disposition == "undecided"
+            else "provisional"
+            if not _settled_members(support)
+            else None
+        ),
+        evidence=f"owner_feature_inference;{basis.disposition};{basis.reason}",
+        inference_basis=basis,
+        inference_decisions=decisions,
+    )
 
 
 def ungrouped_peak_group_hypotheses(

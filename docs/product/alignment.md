@@ -244,10 +244,11 @@ considered distinct merely because they are unconnected. The current
 implementation establishes incompatibility between two tracks when distinct
 landmarks from both tracks are observed in the same sample, or their measured
 elution order connects them through other retained tracks. For example,
-`A < B < C` prevents merging A with C even without a sample containing both.
+`A < B < C` distinguishes A from C even without a sample containing both.
 Sharing a reference on the same side (`A < B > C`) does not establish that
-A and C differ. Membership and separated-band bridges consume this prepared
-compatibility decision; RT proximity or shape agreement cannot override it.
+A and C differ. Conservative pattern seeds and separated-band bridges may
+exclude a correspondence on this basis. Final group selection instead scores
+support for separating the tracks; an inferred order is not a hard constraint.
 
 Trajectories are then used as seeds for ordinary membership, for compatibility
 decisions, and for Backfill localization. These uses share the same source and
@@ -306,9 +307,9 @@ same membership cost to fixed groups within its own search eligibility; see
   Explicit diagnostic overrides keep their own basis label and grant no
   calibration support. Missing support does not mean zero drift, and the
   algorithm does not choose whichever coordinate system gives the cheaper result.
-- Physical peak ownership, one peak per sample per Feature, full-group precursor
-  mass tolerance, and retained physical trajectory separation constrain feasible
-  groups. Method-specific hard constraints remain with the method interpreter;
+- Physical peak ownership, one peak per sample per Feature, and full-group
+  precursor mass tolerance constrain feasible groups. Method-specific hard
+  constraints remain with the method interpreter;
   product scatter admitted by that interpreter contributes cost rather than
   silently acquiring a new hard veto.
 - A proposed group with at least four members and common coordinates for every
@@ -336,7 +337,15 @@ same membership cost to fixed groups within its own search eligibility; see
   is not a final-membership veto. Existing peak signal-quality facts reduce the
   weight of RT/shape/region evidence; no noise or SNR is recalculated.
 - A singleton costs 1. A group costs 1 plus its maximum pair cost and local trend
-  penalty; configuration cost is the sum of group costs. A group may instead
+  penalty, plus finite support for splitting ordered tracks. For two tracks in
+  the row, count the largest set of witnessed cross-track comparisons that
+  reuse no owner. Each contributes half the price of one row; use only the
+  strongest track contrast, not the sum across transitive comparisons. Thus
+  one owner against eight peers counts once; two disjoint comparisons can
+  offset the price of opening a separate row. This is a scoring convention,
+  not an identity probability. Without such evidence the cost is unchanged.
+  The same term applies to fixed Backfill groups. Configuration cost sums row costs.
+  A group may instead
   fit drift coefficients against the frozen B and M; it is then evaluated,
   population gap included, in its drift-adjusted coordinate, and each nonzero
   coefficient adds the cost of a 10-second pair RT difference. Zero

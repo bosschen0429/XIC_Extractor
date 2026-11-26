@@ -118,22 +118,19 @@ def test_complete_backfill_configuration_can_rescue_rejected_prefix(seconds, rev
 def test_fixed_original_conflict_does_not_poison_a_compatible_extension(
     candidate_conflicts,
 ):
-    from xic_extractor.alignment.peak_trajectories import PeakTrajectory
-
-    owners = tuple(cid_nl_owner(str(i), str(i), apex_rt=10 + i / 100) for i in range(3))
+    owners = tuple(
+        cid_nl_owner(str(i), str(i), precursor_mz=mz, apex_rt=10 + i / 100)
+        for i, mz in enumerate(
+            (500.0, 500.008, 500.008 if candidate_conflicts else 500.004)
+        )
+    )
     a, b, candidate = (owner.owner_id for owner in owners)
     comparison = MembershipComparison(
         owners,
         rules=CID_NL_GROUPING_RULES,
         config=AlignmentConfig(),
         rt_frame=SampleRtFrame(),
-        trajectories=PeakTrajectories(
-            tracks=(
-                PeakTrajectory((a,), ()),
-                PeakTrajectory((b, candidate) if candidate_conflicts else (b,), ()),
-            ),
-            physical_order=((a, b),),
-        ),
+        trajectories=PeakTrajectories(),
     )
     assert comparison.group_cost((a, b)) == float("inf")
     assert (comparison.pair(a, candidate)[0] < 1) is not candidate_conflicts
@@ -174,3 +171,37 @@ def test_complete_extension_still_rejects_two_rt_populations():
         conflicts=frozenset(),
     )
     assert not selected
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+def test_order_support_can_choose_a_backfill_peak_but_cannot_exclude_one(reverse):
+    from xic_extractor.alignment.peak_trajectories import PeakTrajectory
+
+    a, b = (cid_nl_owner(s, s) for s in ("A", "B"))
+    first, second = ("later", "earlier") if reverse else ("earlier", "later")
+    match = cid_nl_owner("S", first, apex_rt=9.93)
+    other = cid_nl_owner("S", second, apex_rt=10.07)
+    owners = (a, b, match, other)
+    ids = tuple(o.owner_id for o in owners)
+    original = {"fixed": ids[:2]}
+    comparison = MembershipComparison(
+        owners[::-1] if reverse else owners,
+        rules=CID_NL_GROUPING_RULES,
+        config=AlignmentConfig(),
+        rt_frame=SampleRtFrame(injection_order={"A": 1, "B": 2, "S": 12}),
+        trajectories=PeakTrajectories(
+            tracks=(PeakTrajectory(ids[:3], ()), PeakTrajectory(ids[3:], ())),
+            physical_order=((ids[2], ids[3]),),
+        ),
+    )
+    for candidates in ((other,), (other, match) if reverse else (match, other)):
+        proposals = [("fixed", o.owner_id) for o in candidates]
+        selected, _ = select_backfill_memberships(
+            comparison=comparison,
+            original_groups=original,
+            proposals=proposals,
+            conflicts=frozenset({(0, 1)}) if len(proposals) > 1 else frozenset(),
+        )
+        assert {proposals[i][1] for i in selected} == {
+            (match if len(candidates) > 1 else other).owner_id
+        }
