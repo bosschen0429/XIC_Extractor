@@ -36,7 +36,6 @@ def _select_window(
     trajectories: PeakTrajectories,
     counts: Counter[str],
     directional_partitions: tuple[Partition, ...],
-    kept_together: tuple[tuple[str, ...], ...] = (),
 ) -> tuple[
     MembershipComparison, Partition, dict[str, ScoredAlternatives], list[Partition]
 ]:
@@ -47,7 +46,6 @@ def _select_window(
         config=config,
         rt_frame=rt_frame,
         trajectories=trajectories,
-        kept_together=kept_together,
     )
     partition = comparison.initial_partition()
     direction_candidates = [
@@ -139,12 +137,7 @@ def _accepted_final_memberships(
     counts: Counter[str],
     directional_partitions: tuple[Partition, ...] = (),
 ) -> tuple[tuple[FeatureMembershipGroup, ...], tuple[SparseFeatureDecision, ...]]:
-    """Select whole bands, then reassess samples with the assignment solver.
-
-    Peaks with their own method evidence define rows first. Peaks without it
-    are then placed among those rows or grouped with each other, and cannot
-    separate members the direct evidence put together.
-    """
+    """Select whole bands, then reassess samples with the assignment solver."""
     windows: list[list[SampleLocalMS1Owner]] = []
     for owner in sorted(owners, key=lambda o: (o.peak.mz, measured_owner_key(o))):
         if not windows or not within_ppm(
@@ -163,12 +156,8 @@ def _accepted_final_memberships(
     )
     groups, decisions = [], []
     for window in windows:
-        direct = [owner for owner in window if not rules.method_unobserved(owner)]
-        kept_together: tuple[tuple[str, ...], ...] = ()
-        if direct and len(direct) < len(window):
-            kept_together = tuple(row for row in select(direct)[1] if len(row) > 1)
         comparison, partition, alternatives_by_owner, direction_candidates = select(
-            window, kept_together=kept_together
+            window
         )
         risks = comparison.risks(partition, alternatives_by_owner=alternatives_by_owner)
         if len(direction_candidates) == 2:

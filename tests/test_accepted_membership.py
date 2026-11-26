@@ -507,30 +507,3 @@ def test_mixed_trajectory_retains_only_independent_raw_pairs(direct):
     projected = geometry.common_frame_membership(("c",), preserve_independent=True)
     assert any(set(t.owner_ids) == {"a", "b"} for t in projected.tracks) is direct
     assert all("c" not in t.owner_ids for t in projected.tracks)
-
-
-def test_peaks_without_method_evidence_cannot_split_a_method_supported_row():
-    """Two direct peaks 60 s apart share a row on their own. A same-RT peak
-    without its own method evidence in each other's sample makes two RT bands
-    cheaper, but must not pull the direct peaks apart."""
-    direct = (
-        cid_nl_owner("s1", "direct", apex_rt=10.0),
-        cid_nl_owner("s2", "direct", apex_rt=11.0),
-    )
-    unobserved = tuple(
-        replace(cid_nl_owner(sample, "ms1", apex_rt=rt), primary_identity_event=None)
-        for sample, rt in (("s1", 11.0), ("s2", 10.0))
-    )
-    direct_row = frozenset(owner.owner_id for owner in direct)
-
-    def rows(owners):
-        return {frozenset(group.owner_ids) for group in infer(owners).groups}
-
-    assert rows(direct) == {direct_row}
-    population = (*direct, *unobserved)
-    for owners in (population, population[::-1]):
-        selected = rows(owners)
-        assert direct_row in selected
-        assert {owner_id for row in selected for owner_id in row} == {
-            owner.owner_id for owner in owners
-        }

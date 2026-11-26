@@ -27,7 +27,7 @@ def ms1(s, rt):
     return replace(_owner(s, str(rt), apex_rt=rt), primary_identity_event=None)
 
 
-def replay(owners, drift=None):
+def replay(owners, drift=None, bindings=()):
     """Each sample's band slot, and the formal grouping of the same workset."""
     samples = tuple(dict.fromkeys(o.sample_stem for o in owners))
     order = dict(zip(samples, range(len(samples)), strict=True))
@@ -46,7 +46,12 @@ def replay(owners, drift=None):
             AlignmentConfig(),
             (
                 GroupingWorkset(
-                    "ch", owners, (), None, rt_calibration=calibration, rt_drift=drift
+                    "ch",
+                    owners,
+                    bindings,
+                    None,
+                    rt_calibration=calibration,
+                    rt_drift=drift,
                 ),
             ),
             {},
@@ -126,6 +131,17 @@ def test_ms1_fill_needs_a_recurring_direct_row_and_does_not_train_it():
     assert (slots["r1"].peers, slots["fill"].peers) == (20, 21)
 
 
+def test_known_identity_row_takes_no_ms1_fill():
+    """A known identity is exact; a peak it never bound cannot join it."""
+    ref = tuple(_owner(f"r{i}", "ref", apex_rt=10) for i in range(21))
+    fill = ms1("fill", 10)
+    _, groups = replay((*ref, fill), bindings=tuple((o.owner_id, "ISTD") for o in ref))
+    assert {frozenset(g.owner_ids) for g in groups} == {
+        frozenset(o.owner_id for o in ref),
+        frozenset({fill.owner_id}),
+    }
+
+
 @pytest.mark.parametrize("direct", [False, True])
 def test_peak_envelope_still_supports_the_row_when_nl_is_observed(direct):
     peers = tuple(_owner(f"r{i}", "ref", apex_rt=10) for i in range(21))
@@ -161,6 +177,26 @@ def test_band_slot_takes_only_direct_peaks():
         "direct_envelope",
     )
     assert (apex.owner_id,) in [g.owner_ids for g in groups]
+
+
+def test_peaks_without_method_evidence_cannot_split_a_direct_row():
+    """Two direct peaks 60 s apart share a row on their own. Same-RT MS1-only
+    peaks in each other's sample would make two RT bands cheaper, but final
+    grouping never scores them."""
+    direct = (_owner("s1", "direct", apex_rt=10), _owner("s2", "direct", apex_rt=11))
+    unobserved = (ms1("s1", 11), ms1("s2", 10))
+    direct_row = frozenset(o.owner_id for o in direct)
+
+    def rows(owners):
+        return {frozenset(g.owner_ids) for g in replay(owners)[1]}
+
+    assert rows(direct) == {direct_row}
+    population = (*direct, *unobserved)
+    for owners in (population, population[::-1]):
+        assert rows(owners) == {
+            direct_row,
+            *(frozenset({o.owner_id}) for o in unobserved),
+        }
 
 
 def test_band_row_keeps_the_full_precursor_tolerance():

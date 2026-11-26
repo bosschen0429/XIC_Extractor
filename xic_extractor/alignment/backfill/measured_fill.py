@@ -164,7 +164,10 @@ def fill_rows_from_measured_peaks(
             by_sample[peak.sample_stem].append(peak)
     claims: dict[str, list[_Claim]] = defaultdict(list)
     for index, row in enumerate(rows):
-        if row.disposition != "established":
+        basis = row.inference_basis
+        if row.disposition != "established" or (
+            basis is not None and basis.known_identity_label is not None
+        ):
             continue
         reference = frozenset(
             owner.sample_stem

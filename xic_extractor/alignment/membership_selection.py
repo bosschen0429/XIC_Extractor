@@ -274,17 +274,8 @@ class MembershipComparison:
         rt_frame: RtFrame,
         trajectories: PeakTrajectories,
         fixed_coefficients: Mapping[tuple[str, ...], DriftCoefficients] | None = None,
-        kept_together: Sequence[Sequence[str]] = (),
     ) -> None:
-        """``fixed_coefficients`` keeps settled groups' drift fits unchanged.
-
-        ``kept_together`` lists rows already established by stronger evidence:
-        a partition that separates their members is infeasible, and selection
-        starts from them. They may still gain members or join other groups.
-        """
-        self._kept_together = tuple(
-            tuple(sorted(row)) for row in kept_together if len(row) > 1
-        )
+        """``fixed_coefficients`` keeps settled groups' drift fits unchanged."""
         self.owners = {o.owner_id: o for o in owners}
         self.measured_keys = {o.owner_id: measured_owner_key(o) for o in owners}
         ranked = sorted(set(self.measured_keys.values()))
@@ -1105,17 +1096,6 @@ class MembershipComparison:
         return not (max(earlier) < min(later) or max(later) < min(earlier))
 
     def cost(self, partition: Partition) -> float:
-        if self._kept_together:
-            placed = {
-                owner_id: index
-                for index, group in enumerate(partition)
-                for owner_id in group
-            }
-            if any(
-                len({placed[owner_id] for owner_id in row}) > 1
-                for row in self._kept_together
-            ):
-                return math.inf
         return math.fsum(self.group_cost(group) for group in partition)
 
     def peer_fit(self, partition: Partition) -> float:
@@ -1148,17 +1128,8 @@ class MembershipComparison:
         for risk publication instead of evaluating every alternative twice.
         """
         while True:
-            source = {p: group for group in partition for p in group}
-            pinned = {
-                p
-                for row in self._kept_together
-                if all(source[q] == source[row[0]] for q in row)
-                for p in row
-            }
             alternatives_by_owner = {
-                p: ()
-                if p in pinned
-                else self._alternatives(p, group, partition, pinned)
+                p: self._alternatives(p, group, partition)
                 for group in partition
                 for p in group
             }
@@ -1189,10 +1160,7 @@ class MembershipComparison:
         enter selection. Infeasible proposals retain their feasible sub-bands;
         no selected group is split after configuration selection.
         """
-        kept = {owner_id for row in self._kept_together for owner_id in row}
-        seeds = canonical_partition(
-            [*self._kept_together, *((key,) for key in self.owners if key not in kept)]
-        )
+        seeds = canonical_partition([(key,) for key in self.owners])
         partition = self.merge(seeds)
         if not any(self.population_gaps.values()):
             return partition
@@ -1261,9 +1229,8 @@ class MembershipComparison:
         owner_id: str,
         current: tuple[str, ...],
         partition: Partition,
-        pinned: set[str],
     ) -> ScoredAlternatives:
-        """Score feasible moves without displacing a member of an intact locked row."""
+        """Score feasible moves and swaps of one owner; infeasible rows are skipped."""
         remainder = tuple(p for p in current if p != owner_id)
         others = [g for g in partition if g != current]
         cost = cache(self.cost)
@@ -1276,7 +1243,7 @@ class MembershipComparison:
         sample = self.owners[owner_id].sample_stem
         for target in others:
             occupied = tuple(p for p in target if self.owners[p].sample_stem == sample)
-            if not pinned.isdisjoint(occupied) or (not occupied and not remainder_ok):
+            if not occupied and not remainder_ok:
                 continue
             new_target = tuple(
                 sorted([p for p in target if p not in occupied] + [owner_id])
