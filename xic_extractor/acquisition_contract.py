@@ -40,7 +40,11 @@ class TraceAcquisitionCapability:
     adapter_namespace: str
 
     def __post_init__(self) -> None:
-        _required_text(self.adapter_namespace, "adapter_namespace")
+        require_owner_normalized_text(
+            self.adapter_namespace,
+            field="adapter_namespace",
+            error_factory=AcquisitionContractError,
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -124,10 +128,9 @@ def mint_trace_acquisition_capability(
     *,
     adapter_namespace: str,
 ) -> TraceAcquisitionCapability:
-    namespace = _required_text(adapter_namespace, "adapter_namespace")
     return TraceAcquisitionCapability(
         acquisition_source=acquisition_source,
-        adapter_namespace=namespace,
+        adapter_namespace=adapter_namespace,
     )
 
 
@@ -166,12 +169,6 @@ def acquire_trace_batch(
         capability=capability,
         traces=tuple(acquired),
         adapter_chromatogram_call_count=call_count_after - call_count_before,
-    )
-
-
-def _required_text(value: object, field: str) -> str:
-    return require_owner_normalized_text(
-        value, field=field, error_factory=AcquisitionContractError
     )
 
 

@@ -150,7 +150,7 @@ def build_acquisition_source_identity(
     """Hash one regular file and bind its acquisition observation namespace."""
 
     fingerprint = fingerprint_file_content(path, should_cancel=should_cancel)
-    return _build_acquisition_source_identity(
+    return AcquisitionSourceIdentity(
         content_sha256=fingerprint.content_sha256,
         byte_size=fingerprint.byte_size,
         acquisition_format=acquisition_format,
@@ -269,31 +269,6 @@ def _notify_fingerprint_observation(
         )
     except Exception:
         return
-
-
-def _build_acquisition_source_identity(
-    *,
-    content_sha256: str,
-    byte_size: int,
-    acquisition_format: str,
-    observation_namespace: str,
-) -> AcquisitionSourceIdentity:
-    content_sha256 = _validate_digest(content_sha256, field="content_sha256")
-    if isinstance(byte_size, bool) or byte_size < 0:
-        raise IdentityContractError("byte_size must be a non-negative integer")
-    acquisition_format = _require_nonempty_text(
-        acquisition_format, field="acquisition_format"
-    )
-    observation_namespace = _require_nonempty_text(
-        observation_namespace,
-        field="observation_namespace",
-    )
-    return AcquisitionSourceIdentity(
-        content_sha256=content_sha256,
-        byte_size=byte_size,
-        acquisition_format=acquisition_format,
-        observation_namespace=observation_namespace,
-    )
 
 
 __all__ = [
