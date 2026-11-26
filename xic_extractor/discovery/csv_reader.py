@@ -298,14 +298,14 @@ def parse_discovery_event_row(
             precursor_metadata=metadata,
             ms1_precursor_observation=observation,
         )
+        xic_mz = number("xic_mz")
+        precursor_verified = _parse_bool(path, row_number, values, "precursor_verified")
+        peak_id = _machine_field(values, "peak_id")
+        unattached_reason = values.get("unattached_reason", "")
+        if not peak_id and not unattached_reason:
+            raise ValueError("a Discovery event without a located peak needs a reason")
         return EventAttachment(
-            event=event,
-            xic_mz=number("xic_mz"),
-            precursor_verified=_parse_bool(
-                path, row_number, values, "precursor_verified"
-            ),
-            peak_id=_machine_field(values, "peak_id"),
-            unattached_reason=values.get("unattached_reason", ""),
+            event, xic_mz, precursor_verified, peak_id, unattached_reason
         )
     except (TypeError, ValueError) as exc:
         if str(exc).startswith(f"{path}:"):
