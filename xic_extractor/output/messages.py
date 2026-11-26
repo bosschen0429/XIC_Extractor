@@ -63,16 +63,15 @@ def build_diagnostic_records(
     result: ExtractionResultLike,
     config: ExtractionConfig,
 ) -> list[DiagnosticRecord]:
+    """Diagnostics of one Targeted result.
+
+    Targeted selection answers every non-OK peak with an unavailable physical
+    evaluation, which owns the reason.
+    """
     records: list[DiagnosticRecord] = []
     if result.peak_result.status != "OK":
-        physical_evaluation = result.physical_evaluation
-        peak_reason = (
-            f"Physical peak {physical_evaluation.state}: {physical_evaluation.reason}"
-            if physical_evaluation is not None
-            and physical_evaluation.state != "available"
-            else result.peak_result.reason
-            or _peak_reason(target, result.peak_result, config)
-        )
+        evaluation = cast(PhysicalPeakEvaluation, result.physical_evaluation)
+        peak_reason = f"Physical peak {evaluation.state}: {evaluation.reason}"
         records.append(
             DiagnosticRecord(
                 sample_name=sample_name,
@@ -129,27 +128,6 @@ def build_ms2_diagnostic_records(
             )
         )
     return records
-
-
-def _peak_reason(
-    target: Target, peak_result: PeakDetectionResult, config: ExtractionConfig
-) -> str:
-    if peak_result.status == "NO_SIGNAL":
-        return (
-            f"XIC empty in window [{target.rt_min}, {target.rt_max}] for "
-            f"m/z {target.mz} +/- {target.ppm_tol:g} ppm"
-        )
-    if peak_result.status == "WINDOW_TOO_SHORT":
-        return (
-            f"Only {peak_result.n_points} scans in window; "
-            f"savgol requires >= {config.smooth_window}"
-        )
-    max_value = _format_optional_number(peak_result.max_smoothed)
-    prominence_pct = config.peak_min_prominence_ratio * 100
-    return (
-        "No peak met prominence >= "
-        f"{prominence_pct:g}% of max smoothed (max={max_value})"
-    )
 
 
 def _selected_or_window_nl_issue(result: ExtractionResultLike) -> str | None:
@@ -290,9 +268,3 @@ def _tailing_reason(peak: PeakResult) -> str:
         f"USP limit 2.0); apex RT {peak.rt:.4f} min, "
         f"peak [{peak.peak_start:.4f}, {peak.peak_end:.4f}]"
     )
-
-
-def _format_optional_number(value: float | None) -> str:
-    if value is None:
-        return "NA"
-    return f"{value:g}"

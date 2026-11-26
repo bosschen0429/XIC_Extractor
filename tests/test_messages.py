@@ -87,34 +87,6 @@ def test_physical_unavailability_keeps_owner_reason_in_diagnostics(
     assert "prominence" not in records[0].reason
 
 
-def test_build_diagnostic_records_reports_peak_and_nl_failures() -> None:
-    result = ExtractionResult(
-        peak_result=PeakDetectionResult(
-            status="PEAK_NOT_FOUND",
-            peak=None,
-            n_points=8,
-            max_smoothed=1234.0,
-            n_prominent_peaks=0,
-        ),
-        nl=NLResult(
-            status="NL_FAIL",
-            best_ppm=80.0,
-            best_scan_rt=9.12,
-            valid_ms2_scan_count=2,
-            parse_error_count=0,
-            matched_scan_count=2,
-        ),
-        target_label="WithNL",
-    )
-
-    records = build_diagnostic_records("SampleA", _target("WithNL"), result, _config())
-
-    assert [record.issue for record in records] == ["PEAK_NOT_FOUND", "NL_FAIL"]
-    assert "max=1234" in records[0].reason
-    assert "best observed-loss error 80.0 ppm" in records[1].reason
-    assert "quadrature window at 50 ppm per ion" in records[1].reason
-
-
 def test_ms1_diagnostics_retain_competition_without_replacing_selected_body() -> None:
     target = replace(
         _target("NoNL"), neutral_loss_da=None, nl_ppm_warn=None, nl_ppm_max=None
@@ -254,10 +226,6 @@ def _config() -> ExtractionConfig:
         dll_dir=Path("."),
         output_csv=Path("out.csv"),
         diagnostics_csv=Path("diag.csv"),
-        smooth_window=7,
-        smooth_polyorder=3,
-        peak_rel_height=0.95,
-        peak_min_prominence_ratio=0.1,
         ms2_precursor_tol_da=1.6,
         nl_min_intensity_ratio=0.01,
         execution=in_process_execution(),

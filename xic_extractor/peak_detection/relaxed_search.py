@@ -1,85 +1,8 @@
-from collections.abc import Callable
-from dataclasses import replace
-
-import numpy as np
-
-from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.peak_detection.models import PeakCandidate, PeakCandidatesResult
 from xic_extractor.peak_detection.selection import select_candidate
 
-PREFERRED_RT_RELAXED_PROMINENCE_FRACTION: float = 0.2
-PREFERRED_RT_RELAXED_MIN_PROMINENCE_RATIO: float = 0.01
 PREFERRED_RT_RELAXED_MAX_DELTA_MIN: float = 0.35
 RELAXED_CANDIDATE_MIN_INTENSITY_RATIO: float = 0.03
-LOCAL_RELAXED_RELATIVE_HEIGHT_FRACTION: float = 0.25
-LOCAL_RELAXED_MIN_RELATIVE_HEIGHT: float = 0.01
-LOCAL_RELAXED_ABSOLUTE_HEIGHT_FRACTION: float = 0.5
-LOCAL_RELAXED_MIN_ABSOLUTE_HEIGHT: float = 5.0
-LOCAL_RELAXED_TOP_EDGE_RATIO: float = 1.05
-LOCAL_RELAXED_DURATION_MAX_MULTIPLIER: float = 1.5
-
-
-def preferred_rt_relaxed_search(
-    rt: np.ndarray,
-    intensity: np.ndarray,
-    config: ExtractionConfig,
-    *,
-    preferred_rt: float | None,
-    strict_preferred_rt: bool,
-    current_candidate: PeakCandidate | None,
-    candidate_finder: Callable[..., PeakCandidatesResult],
-) -> tuple[PeakCandidate | None, PeakCandidatesResult | None]:
-    parameters = _relaxed_search_parameters(
-        config,
-        preferred_rt=preferred_rt,
-        strict_preferred_rt=strict_preferred_rt,
-        current_candidate=current_candidate,
-    )
-    if parameters is None or preferred_rt is None:
-        return None, None
-    relaxed_config, relaxed_ratio = parameters
-    relaxed_result = candidate_finder(
-        rt,
-        intensity,
-        relaxed_config,
-        peak_min_prominence_ratio=relaxed_ratio,
-    )
-    if relaxed_result.status != "OK":
-        return None, None
-
-    candidate = select_preferred_relaxed_candidate(
-        relaxed_result.candidates,
-        preferred_rt=preferred_rt,
-    )
-    if candidate is None:
-        return None, None
-    return candidate, relaxed_result
-
-
-def relaxed_local_minimum_config(
-    config: ExtractionConfig,
-) -> ExtractionConfig:
-    return replace(
-        config,
-        resolver_min_relative_height=max(
-            LOCAL_RELAXED_MIN_RELATIVE_HEIGHT,
-            config.resolver_min_relative_height
-            * LOCAL_RELAXED_RELATIVE_HEIGHT_FRACTION,
-        ),
-        resolver_min_absolute_height=max(
-            LOCAL_RELAXED_MIN_ABSOLUTE_HEIGHT,
-            config.resolver_min_absolute_height
-            * LOCAL_RELAXED_ABSOLUTE_HEIGHT_FRACTION,
-        ),
-        resolver_min_ratio_top_edge=min(
-            config.resolver_min_ratio_top_edge,
-            LOCAL_RELAXED_TOP_EDGE_RATIO,
-        ),
-        resolver_peak_duration_max=max(
-            config.resolver_peak_duration_max,
-            config.resolver_peak_duration_max * LOCAL_RELAXED_DURATION_MAX_MULTIPLIER,
-        ),
-    )
 
 
 def select_preferred_relaxed_candidate(
@@ -107,47 +30,28 @@ def select_preferred_relaxed_candidate(
     return nearest_candidate
 
 
-def _relaxed_search_parameters(
-    config: ExtractionConfig,
+def _recovery_eligible(
     *,
     preferred_rt: float | None,
     strict_preferred_rt: bool,
     current_candidate: PeakCandidate | None,
-) -> tuple[ExtractionConfig, float | None] | None:
+) -> bool:
     if preferred_rt is None or strict_preferred_rt:
-        return None
-    if (
-        current_candidate is not None
-        and abs(current_candidate.selection_apex_rt - preferred_rt)
-        <= PREFERRED_RT_RELAXED_MAX_DELTA_MIN
-    ):
-        return None
-
-    resolver_mode = config.resolver_mode
-    if resolver_mode == "local_minimum":
-        relaxed_config = relaxed_local_minimum_config(config)
-        if relaxed_config == config:
-            return None
-        relaxed_ratio = None
-    else:
-        relaxed_ratio = max(
-            PREFERRED_RT_RELAXED_MIN_PROMINENCE_RATIO,
-            config.peak_min_prominence_ratio * PREFERRED_RT_RELAXED_PROMINENCE_FRACTION,
-        )
-        if relaxed_ratio >= config.peak_min_prominence_ratio:
-            return None
-        relaxed_config = config
-    return relaxed_config, relaxed_ratio
+        return False
+    return (
+        current_candidate is None
+        or abs(current_candidate.selection_apex_rt - preferred_rt)
+        > PREFERRED_RT_RELAXED_MAX_DELTA_MIN
+    )
 
 
 def preferred_rt_recovery_from_candidates(
     candidates_result: PeakCandidatesResult,
-    config: ExtractionConfig,
     *,
     preferred_rt: float | None,
     strict_preferred_rt: bool,
 ) -> tuple[PeakCandidate | None, PeakCandidatesResult | None]:
-    """Recover within supplied candidates, with the same eligibility as search."""
+    """Recover the candidate nearest a non-strict preferred RT within this set."""
     current_candidate = (
         select_candidate(
             candidates_result.candidates,
@@ -157,13 +61,15 @@ def preferred_rt_recovery_from_candidates(
         if candidates_result.status == "OK"
         else None
     )
-    parameters = _relaxed_search_parameters(
-        config,
-        preferred_rt=preferred_rt,
-        strict_preferred_rt=strict_preferred_rt,
-        current_candidate=current_candidate,
-    )
-    if parameters is None or preferred_rt is None or candidates_result.status != "OK":
+    if (
+        not _recovery_eligible(
+            preferred_rt=preferred_rt,
+            strict_preferred_rt=strict_preferred_rt,
+            current_candidate=current_candidate,
+        )
+        or preferred_rt is None
+        or candidates_result.status != "OK"
+    ):
         return None, None
     candidate = select_preferred_relaxed_candidate(
         candidates_result.candidates,

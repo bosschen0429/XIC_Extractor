@@ -19,8 +19,8 @@ _STAGE_LABELS = {
     "backfill_observation": "backfill 曲線",
 }
 _SUPPORT_ORIGIN_LABELS = {
-    "backfill_support": "backfill",
-    "discovery_support": "detect",
+    "backfilled": "backfill",
+    "detected": "detect",
     "unavailable": "來源未記錄",
 }
 _REASON_LABELS = {
@@ -189,7 +189,7 @@ def _item_labels(view: ItemEvidence, samples, route):
 def _group_counts(samples: list[dict[str, Any]]) -> dict[str, int]:
     """Count samples by the extraction stage of their value, or why there is none."""
     counts = dict.fromkeys(("detect", "backfill", "unrecorded", "empty", "missing"), 0)
-    stage = {"discovery_support": "detect", "backfill_support": "backfill"}
+    stage = {"detected": "detect", "backfilled": "backfill"}
     for sample in samples:
         if "quantitative_value" not in sample:
             counts["missing"] += 1

@@ -371,7 +371,6 @@ name = "NL116"
 value = 116.0474
 
 [discovery]
-resolver_mode = "savgol"
 nl_min_intensity_ratio = 0.37
 """.strip(),
         encoding="utf-8",
@@ -407,7 +406,6 @@ nl_min_intensity_ratio = 0.37
 
     assert code == 0
     settings = captured["request"].discovery_settings
-    assert settings.resolver_mode == "savgol"
     assert settings.nl_min_intensity_ratio == pytest.approx(0.37)
 
 

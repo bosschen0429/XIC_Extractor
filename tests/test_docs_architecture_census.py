@@ -513,7 +513,6 @@ def test_import_linter_config_owns_the_static_dependency_contracts() -> None:
         "discovery-pipeline-independent-of-targeted-entry",
         "discovery-does-not-load-presets",
         "processing-identity-stays-inner",
-        "sample-metadata-no-instrument-qc",
         "grouping-and-cell-consume-method-answers",
         "mass-restoration-stays-pure",
         "only-execution-opens-pools",

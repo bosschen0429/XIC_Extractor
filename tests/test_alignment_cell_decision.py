@@ -471,7 +471,6 @@ def _censored_peak(
         sample=sample,
         trace=trace,
         integration=physical_peak_observation_integration(evaluation),
-        resolver_mode="canonical_physical_signal",
         proposal_sources=("canonical_physical_segment",),
         physical_evaluation=evaluation,
         signal_processing_profile=profile,

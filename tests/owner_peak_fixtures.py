@@ -115,7 +115,6 @@ def trace_peak(
     sample: SampleMetadata,
     trace: Trace,
     integration: IntegrationResult,
-    resolver_mode: str = "local_minimum",
     proposal_sources: tuple[str, ...] = ("local_minimum",),
     physical_evaluation: PhysicalPeakEvaluation | None = None,
     signal_processing_profile: SignalProcessingProfile | None = None,
@@ -132,7 +131,6 @@ def trace_peak(
         generation_provenance=prepare_peak_observation_provenance(
             trace=trace,
             selected_indices=indices,
-            resolver_mode=resolver_mode,
             proposal_sources=proposal_sources,
         ),
         source_trace=trace,

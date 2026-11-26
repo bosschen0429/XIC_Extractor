@@ -1,18 +1,5 @@
 from xic_extractor.thermo_reader_install import default_thermo_reader_dir
 
-RESOLVER_MODES: tuple[str, ...] = (
-    "savgol",
-    "local_minimum",
-)
-CANONICAL_RESOLVER_MODE = "local_minimum"
-
-
-ARBITRATED_RESOLVER_RETIRED_MESSAGE = (
-    "arbitrated resolver mode is retired; legacy diagnostics use local_minimum. "
-    "Targeted uses the canonical signal-processing profile."
-)
-
-
 TARGETED_STRATEGY = "cid-nl"
 
 CANONICAL_SETTINGS_DEFAULTS: dict[str, str] = {

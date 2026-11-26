@@ -5,6 +5,7 @@ from pathlib import Path
 
 import numpy as np
 
+from tests.targeted_fixtures import physical_peak_result
 from xic_extractor.configuration.execution_profile import in_process_execution
 from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.configuration.signal_processing_profile import (
@@ -39,7 +40,6 @@ from xic_extractor.peak_detection.hypotheses import build_peak_hypotheses
 from xic_extractor.peak_detection.observations import (
     physical_peak_observation_integration,
 )
-from xic_extractor.peak_detection.peak_integration import find_peak_and_area
 from xic_extractor.peak_detection.physical_peak_evaluation import (
     evaluate_physical_peak,
     prepare_physical_signal,
@@ -84,19 +84,17 @@ def production_case(
             rt_max=target.rt_max,
             ppm_tol=target.ppm_tol,
         )
-        peak_result = find_peak_and_area(rt, intensity, config, preferred_rt=1.5)
+        peak_result = physical_peak_result(rt, intensity, config, preferred_rt=1.5)
         hypotheses = build_peak_hypotheses(
             analysis_mode="targeted",
             sample_name=sample_name,
             target_label=target.label,
             role="Analyte",
             istd_pair="",
-            resolver_mode=config.resolver_mode,
             peak_result=peak_result,
             trace_group=targeted_trace_group(
                 trace,
                 target_label=target.label,
-                resolver_mode=config.resolver_mode,
             ),
             count_no_ms2_as_detected=True,
         )
@@ -276,10 +274,6 @@ def _config(tmp_path: Path) -> ExtractionConfig:
         dll_dir=tmp_path / "dll",
         output_csv=tmp_path / "output" / "xic_results.csv",
         diagnostics_csv=tmp_path / "output" / "xic_diagnostics.csv",
-        smooth_window=9,
-        smooth_polyorder=2,
-        peak_rel_height=0.02,
-        peak_min_prominence_ratio=0.01,
         ms2_precursor_tol_da=0.5,
         nl_min_intensity_ratio=0.01,
         execution=in_process_execution(),

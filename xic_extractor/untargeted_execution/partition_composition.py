@@ -519,11 +519,7 @@ def _build_production_composition_inputs(
             for sample_result in results_by_subject.get(subject.method_subject_id, ())
             if sample_result.backfill_attempts
             for group in workset.grouping_scope.groups
-            if (
-                backfill := sample_result.backfill_for_group(
-                    group.group_center_rt, group_hypothesis_id=group.group_hypothesis_id
-                )
-            )
+            if (backfill := sample_result.backfill_for_group(group.group_hypothesis_id))
             is not None
         }
         physical_peak_views = comparison_views_from_acquisitions(

@@ -56,15 +56,6 @@ class PeakCandidate:
 
 
 @dataclass(frozen=True)
-class LocalMinimumRegionQuality:
-    flags: tuple[LocalMinimumQualityFlag, ...]
-    scan_count: int
-    duration_min: float
-    edge_ratio: float | None
-    trace_continuity: float | None
-
-
-@dataclass(frozen=True)
 class PeakCandidatesResult:
     status: PeakStatus
     candidates: tuple[PeakCandidate, ...]

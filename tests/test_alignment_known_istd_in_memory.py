@@ -344,7 +344,6 @@ def test_istd_extraction_config_follows_recipe(tmp_path, policy):
         DEFAULT_SIGNAL_PROCESSING_PROFILE.window_points
     )
     assert config.mass_recalibration is settings.mass_recalibration
-    assert config.resolver_mode == settings.resolver_mode
     assert config.nl_min_intensity_ratio == settings.nl_min_intensity_ratio
 
 
@@ -469,12 +468,7 @@ def _config(tmp_path):
         dll_dir=tmp_path,
         output_csv=tmp_path / "unused.csv",
         diagnostics_csv=tmp_path / "unused-diagnostics.csv",
-        smooth_window=15,
-        smooth_polyorder=3,
-        peak_rel_height=0.95,
-        peak_min_prominence_ratio=0.1,
         ms2_precursor_tol_da=1.1,
         nl_min_intensity_ratio=0.01,
-        resolver_mode="local_minimum",
         execution=in_process_execution(),
     )

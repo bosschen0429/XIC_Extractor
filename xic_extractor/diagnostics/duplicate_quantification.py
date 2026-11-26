@@ -60,7 +60,12 @@ def summarize_duplicate_quantification(
         "rows_involved": len({row for pair in row_pairs for row in pair}),
         "cell_pair_kinds": dict(
             Counter(
-                "".join(sorted(("D" if a.direct else "B") + ("D" if b.direct else "B")))
+                "".join(
+                    sorted(
+                        ("D" if a.origin == "detected" else "B")
+                        + ("D" if b.origin == "detected" else "B")
+                    )
+                )
                 for a, b in pairs
             )
         ),
@@ -99,7 +104,7 @@ def _row_pair_category(
     both_direct = [
         sample
         for sample in left.keys() & right.keys()
-        if left[sample].direct and right[sample].direct
+        if left[sample].origin == right[sample].origin == "detected"
     ]
     separated = [
         sample

@@ -46,6 +46,7 @@ from xic_extractor.peak_detection.cid_nl_peak_support import (
     DdaCidNlPeakSupport,
     DdaCidNlPeakSupportPolicy,
 )
+from xic_extractor.peak_detection.detector_invocations import GROUP_BACKFILL_DETECTOR
 from xic_extractor.peak_detection.observations import (
     PeakObservation,
     RetainedCaptureEvidence,
@@ -88,7 +89,7 @@ class UntargetedCidNlBackfillAttemptResult:
     assessment: CidNlMethodAssessment
     backfill_input: UntargetedCidNlBackfillInput | None
     acquisition: TraceAcquisitionBatch | None
-    group_hypothesis_id: str | None = None
+    group_hypothesis_id: str
     query_rt: float | None = None
     query_rt_basis: str = "group_center"
     capture_evidence: tuple[RetainedCaptureEvidence, ...] = dataclass_field(
@@ -234,7 +235,6 @@ def physical_backfill_observation(
     trace: Trace,
     query_rt_min: float,
     profile: SignalProcessingProfile,
-    resolver_mode: str,
     search_rt_window: tuple[float, float] | None = None,
     location_reliable: bool = True,
     evaluation_sink: Callable[[PhysicalPeakEvaluation], None] | None = None,
@@ -259,7 +259,6 @@ def physical_backfill_observation(
         sample=sample,
         trace=trace,
         evaluations=(evaluation,),
-        resolver_mode=resolver_mode,
         signal_processing_profile=profile,
         capture_stage="method_backfill",
     )[0]
@@ -344,10 +343,9 @@ def backfill_untargeted_cid_nl_sample_subject(
     query_rt_basis: str = "group_center",
     query_rt_tolerance_sec: float | None = None,
     query_rt_reliable: bool = True,
-    group_hypothesis_id: str | None = None,
+    group_hypothesis_id: str,
     support_policy: DdaCidNlPeakSupportPolicy,
     half_window_min: float,
-    resolver_mode: str,
     raw: CidNlRawSource | None,
     initial_assessment: CidNlMethodAssessment | None = None,
     settings: DiscoverySettings | None = None,
@@ -410,10 +408,6 @@ def backfill_untargeted_cid_nl_sample_subject(
         acquired = acquisition.traces[0]
         context_acquired = acquisition.traces[1]
     else:
-        if group_hypothesis_id is None:
-            raise CidNlAcquisitionError(
-                "preacquired backfill requires exact group identity"
-            )
         acquisition = _preacquired_traces.acquisition
         acquired = _preacquired_traces.acquired_trace(
             group_hypothesis_id=group_hypothesis_id,
@@ -449,7 +443,6 @@ def backfill_untargeted_cid_nl_sample_subject(
                 else None
             ),
             profile=signal_processing_profile,
-            resolver_mode=resolver_mode,
             evaluation_sink=physical_evaluations.append,
         )
         if physical_evaluations[0].reason != "incomplete_peak_context":
@@ -528,7 +521,7 @@ def _close_backfill_attempt(
     sample: SampleMetadata,
     source: AcquisitionSourceIdentity,
     method_subject: CidNlMethodSubject,
-    group_hypothesis_id: str | None,
+    group_hypothesis_id: str,
     query_rt: float,
     query_rt_basis: str,
     physical_mz: float,
@@ -548,7 +541,7 @@ def _close_backfill_attempt(
             sample=sample,
             acquisition_source=source,
             method_subject=method_subject,
-            detector_invocation_id="untargeted-cid-nl-backfill",
+            detector_invocation_id=GROUP_BACKFILL_DETECTOR,
             evaluation_receipt=CidNlEvaluationReceipt(
                 query_rt_min=min(
                     (
@@ -571,7 +564,6 @@ def _close_backfill_attempt(
                     if initial_receipt is not None and backfill_evidence
                     else "subject_window"
                 ),
-                physical_query_mz=physical_mz,
             ),
             candidate_peaks=observations,
             evidence_refs=backfill_evidence,
@@ -605,7 +597,6 @@ def reuse_cid_nl_backfill_peak(
     capture: CidNlAcquisitionResult,
     source: AcquisitionSourceIdentity,
     half_window_min: float,
-    resolver_mode: str,
 ) -> UntargetedCidNlBackfillAttemptResult | None:
     """Ask the group's physical question of measured segments, without new RAW reads.
 
@@ -661,7 +652,6 @@ def reuse_cid_nl_backfill_peak(
         sample=sample,
         trace=record.trace,
         evaluations=(answer,),
-        resolver_mode=resolver_mode,
         signal_processing_profile=answer.prepared.profile,
         measured_mz=(initial_peak.mz,),
         capture_stage="method_backfill",

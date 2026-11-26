@@ -119,7 +119,6 @@ def targeted_trace_group(
     trace: Trace,
     *,
     target_label: str,
-    resolver_mode: str,
     expected_rt_min: float | None = None,
     neutral_loss_tag: str = "",
     precursor_mz: float | None = None,
@@ -129,7 +128,7 @@ def targeted_trace_group(
     istd_pair: str = "",
 ) -> TraceGroup:
     return TraceGroup(
-        trace_group_id="|".join((trace.sample_name, target_label, resolver_mode)),
+        trace_group_id="|".join((trace.sample_name, target_label)),
         sample_name=trace.sample_name,
         analysis_mode="targeted",
         context_id=target_label,

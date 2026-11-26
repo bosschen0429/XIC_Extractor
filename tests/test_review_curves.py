@@ -294,8 +294,8 @@ def test_empty_cell_reads_the_group_position_and_leaves_results_unchanged(
     } == {
         sid: value
         for sid, value in {
-            "S1": (100, "discovery_support"),
-            "S2": (200, "backfill_support"),
+            "S1": (100, "detected"),
+            "S2": (200, "backfilled"),
             "S3": (None, "unavailable"),
         }.items()
         if sid in sample_ids

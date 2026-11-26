@@ -164,7 +164,7 @@ def test_actual_cli_entry_rejects_invalid_method_before_fingerprint_or_raw(
                 str(raw_path),
                 "--dll-dir",
                 str(dll_dir),
-                "--resolver-mode",
-                "arbitrated",
+                "--rt-min",
+                "-1",
             ]
         )

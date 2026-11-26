@@ -1,10 +1,23 @@
 """Synthetic Targeted inputs shared by method and Workbench tests."""
 
+from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.peak_detection.hypotheses import (
     AuditTrail,
     EvidenceVector,
     IntegrationResult,
     PeakHypothesis,
+)
+from xic_extractor.peak_detection.models import PeakDetectionResult
+from xic_extractor.peak_detection.peak_selection import select_peak_and_area
+from xic_extractor.peak_detection.physical_peak_candidate_adapter import (
+    physical_candidates_result,
+)
+from xic_extractor.peak_detection.physical_peak_evaluation import (
+    enumerate_physical_segment_universe,
+    prepare_physical_signal,
+)
+from xic_extractor.peak_detection.physical_peak_models import (
+    PHYSICAL_PEAK_ENVELOPE_POLICY,
 )
 
 
@@ -24,7 +37,6 @@ def selected_targeted_hypothesis(
         role=role,
         istd_pair=istd_pair,
         analysis_mode="targeted",
-        resolver_mode="local_minimum",
         integration=integration,
         evidence=EvidenceVector(reason="selected spine"),
         audit=AuditTrail(selected=True),
@@ -68,3 +80,19 @@ class ScopedMs2WindowReader:
             if event.scan is None
             or precursor_scope(event.scan.precursor_mz, event.scan.precursor_metadata)
         )
+
+
+def physical_peak_result(
+    rt, intensity, config: ExtractionConfig, *, preferred_rt: float
+) -> PeakDetectionResult:
+    """Select from the Targeted physical-segment population of one trace."""
+    prepared = prepare_physical_signal(rt, intensity)
+    universe = enumerate_physical_segment_universe(
+        prepared, selection_policy_version=PHYSICAL_PEAK_ENVELOPE_POLICY
+    )
+    return select_peak_and_area(
+        physical_candidates_result(
+            prepared, universe, selection_policy_version=PHYSICAL_PEAK_ENVELOPE_POLICY
+        ),
+        preferred_rt=preferred_rt,
+    )

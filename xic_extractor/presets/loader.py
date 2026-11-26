@@ -48,7 +48,6 @@ DISCOVERY_TUNING_OVERRIDE_KEYS = frozenset(
         "ms1_search_padding_min",
         "rt_min",
         "rt_max",
-        "resolver_mode",
         "mass_recalibration",
     }
 )
@@ -343,6 +342,7 @@ def _parse_discovery_overrides(
         raise PresetError("[discovery] must be a table")
 
     table = cast(Mapping[str, Any], value)
+    reject_retired_discovery_options(table)
     allowed_keys = (
         DELTA_MASS_DISCOVERY_OVERRIDE_KEYS
         if has_delta_mass_tag
@@ -370,6 +370,19 @@ def _parse_alignment_overrides(value: Any) -> dict[str, object]:
         label="[alignment]",
     )
     return dict(table)
+
+
+RETIRED_DISCOVERY_KEYS = frozenset({"resolver_mode"})
+
+
+def reject_retired_discovery_options(options: Mapping[str, object]) -> None:
+    """Name a removed [discovery] key instead of calling it unknown."""
+    retired = sorted(set(options) & RETIRED_DISCOVERY_KEYS)
+    if retired:
+        raise PresetError(
+            f"{retired[0]} has been removed: peak detection has one path, "
+            "so this option no longer exists. Delete it from the preset."
+        )
 
 
 def reject_retired_alignment_runtime_options(

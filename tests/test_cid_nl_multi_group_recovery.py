@@ -174,7 +174,6 @@ def test_backfill_batch_retains_shape_contradictions_as_soft_risk(
                 boundary_sources=("candidate_interval", "gaussian15"),
                 raw_scan_indices=tuple(range(len(offsets))),
             ),
-            resolver_mode="local_minimum",
             proposal_sources=("local_minimum", "gaussian15"),
         )
         evidence = cid_nl_evidence(fixture, name, scan_number=101, scan_rt_min=8.0)
@@ -464,7 +463,7 @@ def test_rejected_discovery_input_cannot_supply_backfill_support(
     assert rejected["source_candidate_id"] == ""
     (matrix_row,) = read_tsv(output / "alignment_matrix.tsv")
     if outcome == "support":
-        assert rejected["status"] == "ms1_only"
+        assert rejected["status"] == "backfilled"
         assert float(rejected["area"]) > 0
         assert float(matrix_row["Rejected"]) == pytest.approx(
             float(rejected["area"]), rel=1e-5
@@ -535,7 +534,7 @@ def test_backfill_recovers_every_authorized_rt_group(
     for center in authorized:
         cell = missing[center]
         if center in recovery_peaks:
-            assert cell["status"] == "ms1_only"
+            assert cell["status"] == "backfilled"
             assert float(cell["area"]) > 0
             assert float(cell["apex_rt"]) == pytest.approx(center, abs=0.01)
         else:
@@ -610,7 +609,7 @@ def test_shared_physical_recovery_claim_is_not_assigned_to_two_groups(
 
     assert len(read_tsv(output / "alignment_matrix.tsv")) == 2
     missing = [cell for cell, _review in _cells_of(output, "Missing").values()]
-    assert sorted(cell["status"] for cell in missing) == ["ms1_only", "unresolved"]
+    assert sorted(cell["status"] for cell in missing) == ["backfilled", "unresolved"]
     assert sum(bool(cell["area"]) for cell in missing) == 1
 
 
@@ -681,7 +680,7 @@ def test_shared_ms1_only_backfill_peak_is_not_written_to_two_rows(
             "detected",
         ]
     missing = [cells[(feature, "Missing")] for feature in features]
-    assert sorted(cell["status"] for cell in missing) == ["ms1_only", "unresolved"]
+    assert sorted(cell["status"] for cell in missing) == ["backfilled", "unresolved"]
     assert sum(bool(cell["area"]) for cell in missing) == 1
 
     evidence = read_review_evidence(output / "alignment_explanation.sqlite")
@@ -761,7 +760,7 @@ def test_batch_ms1_only_publishes_only_one_selected_peak_in_the_established_row(
     missing = tuple(_cells_of(output, "Missing").values())
     ((cell, review),) = (item for item in missing if item[1]["matrix_row_index"])
     assert len(missing) == len(missing_peaks)
-    assert cell["status"] == "ms1_only"
+    assert cell["status"] == "backfilled"
     assert cell["source_candidate_id"] == ""
     support_area = float(published_cells(output)[(review["feature_id"], "S1")]["area"])
     assert float(cell["area"]) == pytest.approx(support_area, rel=0.05)
@@ -817,7 +816,7 @@ def test_backfill_reaches_a_sample_whose_support_belongs_to_another_group(
         round(float(review["group_center_rt"]), 1): cell
         for cell, review in _cells_of(output, "Missing").values()
     }
-    assert missing[8.0]["status"] == "ms1_only"
+    assert missing[8.0]["status"] == "backfilled"
     assert float(missing[8.0]["area"]) > 0
     assert missing[8.0]["source_candidate_id"] == ""
     assert missing[9.6]["status"] == "detected"
@@ -1068,7 +1067,7 @@ def test_full_alignment_captures_competing_rows_and_single_batch_matrix(
         [item[2] for item in expected], abs=0.006
     )
     missing = [(status, area) for stem, status, area in actual if stem == "Missing"]
-    assert sorted(status for status, _area in missing) == ["ms1_only", "unresolved"]
+    assert sorted(status for status, _area in missing) == ["backfilled", "unresolved"]
     assert sum(area > 0 for _status, area in missing) == 1
 
     (directory / "0.pickle.gz").write_bytes(b"not the captured partition")

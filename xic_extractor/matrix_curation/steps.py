@@ -42,9 +42,9 @@ class FeatureIdentity:
 
 @dataclass(frozen=True)
 class CellEvidence:
-    """One published cell: whether it was detected directly, its value and apex."""
+    """One published cell: its recorded origin, value and apex."""
 
-    direct: bool
+    origin: str
     value: float
     apex_rt_min: float | None
 

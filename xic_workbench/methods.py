@@ -24,7 +24,6 @@ from xic_extractor.presets.models import (
 )
 from xic_extractor.presets.serialization import save_preset, serialize_preset
 from xic_extractor.processing_run_spec import validate_cid_nl_discovery_settings
-from xic_extractor.settings_schema import RESOLVER_MODES
 
 _DISPLAY_NAMES = {
     "dna_dr": "dR · DNA · 116.0474 Da",
@@ -43,7 +42,7 @@ _NUMERIC_CONTROLS = (
     ("rt_min", "RT 下界 (min)", 0.0, None, "any"),
     ("rt_max", "RT 上界 (min)", 0.0, None, "any"),
 )
-_OVERRIDE_KEYS = frozenset(key for key, *_ in _NUMERIC_CONTROLS) | {"resolver_mode"}
+_OVERRIDE_KEYS = frozenset(key for key, *_ in _NUMERIC_CONTROLS)
 
 
 def list_methods() -> list[dict[str, Any]]:
@@ -125,14 +124,6 @@ def tuning_controls() -> list[dict[str, Any]]:
         }
         for key, label, minimum, maximum, step in _NUMERIC_CONTROLS
     ]
-    controls.append(
-        {
-            "key": "resolver_mode",
-            "label": "Resolver 模式",
-            "kind": "choice",
-            "choices": list(RESOLVER_MODES),
-        }
-    )
     return controls
 
 

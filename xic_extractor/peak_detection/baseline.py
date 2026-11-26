@@ -56,12 +56,6 @@ def asls_baseline(
         raise ValueError("asls_baseline expects a 1-D trace")
     if not np.all(np.isfinite(values)):
         raise ValueError("asls_baseline input must contain only finite values")
-    if lam <= 0:
-        raise ValueError("lam must be > 0")
-    if not 0 < p < 1:
-        raise ValueError("p must be > 0 and < 1")
-    if n_iter < 1:
-        raise ValueError("n_iter must be >= 1")
     n = len(values)
     if n < 3:
         return values.copy()
@@ -103,22 +97,6 @@ def asls_baseline_on_rt(
     """
     rt = np.asarray(rt_values, dtype=float)
     values = np.asarray(intensity_values, dtype=float)
-    if rt.ndim != 1 or values.ndim != 1:
-        raise ValueError("rt_values and intensity_values must be one-dimensional")
-    if len(rt) != len(values):
-        raise ValueError("rt_values and intensity_values must have the same length")
-    if not np.all(np.isfinite(rt)) or not np.all(np.isfinite(values)):
-        raise ValueError(
-            "rt_values and intensity_values must contain only finite values"
-        )
-    if len(rt) > 1 and np.any(np.diff(rt) <= 0):
-        raise ValueError("rt_values must be strictly increasing")
-    if not np.isfinite(lam) or lam <= 0:
-        raise ValueError("lam must be finite and > 0")
-    if not np.isfinite(p) or not 0 < p < 1:
-        raise ValueError("p must be finite, > 0, and < 1")
-    if n_iter < 1:
-        raise ValueError("n_iter must be >= 1")
     n = len(values)
     if n < 3:
         return values.copy()

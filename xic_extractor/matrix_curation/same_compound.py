@@ -247,7 +247,7 @@ def pair_evidence(
     coeluting: list[tuple[str, float, float | None, bool]] = []
     for sample in sorted(light.keys() & heavy.keys()):
         a, b = light[sample], heavy[sample]
-        direct = a.direct and b.direct
+        direct = a.origin == b.origin == "detected"
         both_direct += direct
         if a.apex_rt_min is None or b.apex_rt_min is None:
             backfill_unavailable += not direct
@@ -968,7 +968,7 @@ def _recurring_clusters(
         if index in removed:
             continue
         for sample, cell in row.items():
-            if not cell.direct:
+            if cell.origin != "detected":
                 continue
             direct_mask[index] |= 1 << ordinal.setdefault(sample, len(ordinal))
             if cell.apex_rt_min is not None:

@@ -161,7 +161,6 @@ def _hypothesis(integration: IntegrationResult) -> PeakHypothesis:
         role="Analyte",
         istd_pair="",
         analysis_mode="targeted",
-        resolver_mode="local_minimum",
         integration=integration,
         evidence=EvidenceVector(),
         audit=AuditTrail(selected=True),

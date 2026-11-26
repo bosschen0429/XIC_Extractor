@@ -11,9 +11,6 @@ from xic_extractor.configuration.signal_processing_profile import (
     resolve_signal_processing_profile,
 )
 from xic_extractor.configuration.targeted_identification import TargetIdentification
-from xic_extractor.settings_schema import (
-    CANONICAL_RESOLVER_MODE,
-)
 
 
 @dataclass(frozen=True)
@@ -22,23 +19,10 @@ class ExtractionConfig:
     dll_dir: Path
     output_csv: Path
     diagnostics_csv: Path
-    smooth_window: int
-    smooth_polyorder: int
-    peak_rel_height: float
-    peak_min_prominence_ratio: float
     ms2_precursor_tol_da: float
     nl_min_intensity_ratio: float
     execution: ExecutionProfile
     ms1_morphology_smoothing_window_points: int = 15
-    resolver_mode: str = CANONICAL_RESOLVER_MODE
-    resolver_chrom_threshold: float = 0.05
-    resolver_min_search_range_min: float = 0.08
-    resolver_min_relative_height: float = 0.02
-    resolver_min_absolute_height: float = 25.0
-    resolver_min_ratio_top_edge: float = 1.7
-    resolver_peak_duration_min: float = 0.0
-    resolver_peak_duration_max: float = 2.0
-    resolver_min_scans: int = 5
     count_no_ms2_as_detected: bool = False
     injection_order_source: Path | None = None
     baseline_integration_method: str = "asls"

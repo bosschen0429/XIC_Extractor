@@ -39,10 +39,11 @@ delivery seam as if they were already final.
   Matrix projection then assigns output identities and wraps the unchanged
   value/no-write payload and selected integration in `ProductionCellDecision`.
   The Alignment TSV writers render those decisions directly; a cell `status`
-  is `detected`, `backfilled`, `ms1_only`, or the cell's no-write reason.
-  `ms1_only` identifies an initial physical group member without local CID-NL.
-  It can supply an area in an established row; it does not establish the row
-  or count as direct CID-NL support.
+  is `detected`, `backfilled`, or the cell's no-write reason. `detected`
+  means this injection has its own CID-NL support for the peak; `backfilled`
+  means the peak is MS1-only, whether the first capture or a later Backfill
+  search found it. A `backfilled` peak can supply an area in an established
+  row; it does not establish the row or count as direct CID-NL support.
 - Inclusion and counting consume those completed answers, not raw cells.
 
 Owners without an integration or with an apex on an integration boundary do

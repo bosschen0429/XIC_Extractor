@@ -224,7 +224,6 @@ class TargetedCandidateAssessment:
 
         return select_peak_and_area(
             candidate_population,
-            self.config,
             preferred_rt=(
                 selected.selection_apex_rt
                 if scoring_context_builder is None
@@ -471,7 +470,6 @@ def build_production_peak_hypotheses(
         target_label=target.label,
         role="ISTD" if target.is_istd else "Analyte",
         istd_pair=target.istd_pair,
-        resolver_mode=config.resolver_mode,
         peak_result=peak_result,
         candidate_ms2_evidence=candidate_ms2_evidence,
         rt=rt,

@@ -13,7 +13,7 @@ def test_three_cell_questions_keep_origins_values_and_real_risks(tmp_path):
             "sample_key": "S1",
             "value": 123.0,
             "variant": "numeric",
-            "support_origin": "discovery_support",
+            "support_origin": "detected",
             "signal_quality": [
                 {
                     "observation_id": "obs-01",
@@ -26,7 +26,7 @@ def test_three_cell_questions_keep_origins_values_and_real_risks(tmp_path):
             "sample_key": "S2",
             "value": 456.0,
             "variant": "numeric",
-            "support_origin": "backfill_support",
+            "support_origin": "backfilled",
             "evidence_states": ["ms1_only_backfill_observation"],
             "reason_codes": ["no_unique_qualifying_relation"],
         },

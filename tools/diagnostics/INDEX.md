@@ -26,8 +26,6 @@ workflow owner rather than chaining similarly named commands.
 | Regroup from a saved `grouping-inputs.json.gz` snapshot | `scripts.run_alignment regroup` — no RAW or Backfill; [details](grouping_experiment.py) |
 | Produce initial groups from a Discovery batch index and matching RAW files | `scripts.run_alignment --stop-after grouping`; add `--save-grouping-inputs` only to retain a replay snapshot; [details](grouping_experiment.py) |
 | Query measured candidates in a saved Discovery batch | `tools.diagnostics.grouping_experiment query` — no RAW or grouping; [details](grouping_experiment.py) |
-| Build the QC sample metadata table from a method DOCX and RAW filenames | `tools.diagnostics.instrument_qc_sequence_manifest` — no RAW reader or trend extraction; [details](instrument_qc_sequence_manifest.py) |
-| Extract instrument QC trends from RAW | `scripts.run_instrument_qc`; [Instrument QC](../../docs/product/instrument-qc-calibration.md) owns its inputs and claims |
 | Extract, discover, or align samples | [GUI and CLI user guides](../../docs/user/README.md) |
 | Inspect chromatograms | GUI **開啟 Inspector** or `xic-inspector`; [Workbench and review](../../docs/product/workbench.md) owns what review may mean |
 | Select Matrix features for downstream analysis | GUI **矩陣整理** or `xic-matrix-curation`; [Matrix Curation](../../docs/product/matrix-curation.md) owns the steps and output |

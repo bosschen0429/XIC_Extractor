@@ -73,17 +73,13 @@ def run_pipeline(
 
     output = complete_targeted_candidate_batch(output, config)
     if acquisition_sources_by_sample is not None:
-        output = _bind_acquisition_sources(
-            output, acquisition_sources_by_sample, resolver_mode=config.resolver_mode
-        )
+        output = _bind_acquisition_sources(output, acquisition_sources_by_sample)
     return output
 
 
 def _bind_acquisition_sources(
     output: RunOutput,
     sources_by_sample: Mapping[str, AcquisitionSourceExpectation],
-    *,
-    resolver_mode: str,
 ) -> RunOutput:
     file_results = []
     seen_samples: set[str] = set()
@@ -160,7 +156,6 @@ def _bind_acquisition_sources(
             results[target_label] = prepare_acquired_observation(
                 result,
                 acquisition_source_id=source.acquisition_source_id,
-                resolver_mode=resolver_mode,
             )
         file_results.append(replace(file_result, results=results))
     return replace(output, file_results=file_results)

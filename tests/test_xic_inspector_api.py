@@ -760,7 +760,7 @@ def test_recovery_origin_survives_zero_terminal_final_cell_binding(tmp_path):
             ]
         },
         base_cell={
-            "support_origin": "backfill_support",
+            "support_origin": "backfilled",
             "observation_ids": ["obs-01"],
         },
         curve=False,
@@ -773,10 +773,10 @@ def test_recovery_origin_survives_zero_terminal_final_cell_binding(tmp_path):
 
     assert item["witnesses"][0]["observation_id"] is None
     assert item["review_summary"]["observed_sample_count"] == 1
-    assert item["review_summary"]["origin_kinds"] == ["backfill_support"]
+    assert item["review_summary"]["origin_kinds"] == ["backfilled"]
     origin = item["samples"][0]["support_origin"]
     assert (origin["kind"], origin["label"], origin["observation_refs"]) == (
-        "backfill_support",
+        "backfilled",
         "backfill",
         ["obs-01"],
     )
@@ -805,7 +805,7 @@ def test_backfill_curve_is_not_shown_on_rows_sharing_its_method_subject(tmp_path
                     "sample_key": "S1",
                     "variant": "numeric",
                     "value": 500.0,
-                    "support_origin": "backfill_support",
+                    "support_origin": "backfilled",
                     "observation_ids": ["obs-bf"],
                 },
                 {"sample_key": "S2", "variant": "numeric", "value": 900.0},
@@ -842,7 +842,7 @@ def test_backfill_curve_is_not_shown_on_rows_sharing_its_method_subject(tmp_path
     assert shown("G1") == [("S1", "initial_capture")]
     assert shown("G2") == [("S2", "initial_capture")]
     backfilled = next(s for s in items["G2"]["samples"] if s["sample_id"] == "S1")
-    assert backfilled["support_origin"]["kind"] == "backfill_support"
+    assert backfilled["support_origin"]["kind"] == "backfilled"
     assert backfilled["support_origin"]["observation_refs"] == ["obs-bf"]
 
 

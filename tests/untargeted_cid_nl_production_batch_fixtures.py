@@ -135,7 +135,6 @@ def _expected_retained_curve(
         generation = observation.generation_provenance
         for name in (
             "selected_trace_indices",
-            "resolver_mode",
             "proposal_sources",
         ):
             provenance[name] = getattr(generation, name)
@@ -171,7 +170,6 @@ def _expected_retained_curve(
                     "acquisition_source_id",
                     "processing_attempt_id",
                     "selected_trace_indices",
-                    "resolver_mode",
                     "proposal_sources",
                     "method_subject_id",
                     "profile",

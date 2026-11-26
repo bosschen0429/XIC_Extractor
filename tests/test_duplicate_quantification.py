@@ -14,7 +14,11 @@ from xic_extractor.diagnostics.duplicate_quantification import (
 
 def _cell(row, sample, apex, *, direct=True, mz=300.0):
     return PublishedCell(
-        row=row, row_mz=mz, sample=sample, direct=direct, apex_rt_min=apex
+        row=row,
+        row_mz=mz,
+        sample=sample,
+        origin="detected" if direct else "backfilled",
+        apex_rt_min=apex,
     )
 
 
@@ -59,8 +63,8 @@ def test_duplicate_quantification_reads_published_output_levels(
     )
     cells = read_published_cells(directory)
 
-    assert {(cell.sample, cell.direct, cell.apex_rt_min) for cell in cells} == {
-        ("S1", True, 8.0),
-        ("S2", True, 8.0),
+    assert {(cell.sample, cell.origin, cell.apex_rt_min) for cell in cells} == {
+        ("S1", "detected", 8.0),
+        ("S2", "detected", 8.0),
     }
     assert all(cell.value is not None and cell.value > 0 for cell in cells)

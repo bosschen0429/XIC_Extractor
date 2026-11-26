@@ -1517,40 +1517,6 @@ def test_run_writes_file_error_row_and_continues(
 
 
 @pytest.mark.parametrize(
-    ("peak_status", "n_points", "max_smoothed", "issue", "reason_part"),
-    [
-        ("NO_SIGNAL", 0, None, "NO_SIGNAL", "XIC empty"),
-        ("WINDOW_TOO_SHORT", 7, None, "WINDOW_TOO_SHORT", "Only 7 scans"),
-        ("PEAK_NOT_FOUND", 15, 25.0, "PEAK_NOT_FOUND", "prominence"),
-    ],
-)
-def test_peak_diagnostic_owner_preserves_status_and_reason(
-    tmp_path: Path,
-    peak_status: str,
-    n_points: int,
-    max_smoothed: float | None,
-    issue: str,
-    reason_part: str,
-) -> None:
-    from xic_extractor.output.messages import build_diagnostic_records
-
-    config = _config(tmp_path)
-    target = _target("NoNL", neutral_loss_da=None)
-    result = ExtractionResult(
-        peak_result=_failed_peak(
-            peak_status,
-            n_points=n_points,
-            max_smoothed=max_smoothed,
-        ),
-        nl=None,
-    )
-    diagnostics = build_diagnostic_records("SampleA", target, result, config)
-    assert diagnostics[0].issue == issue
-    assert diagnostics[0].target_label == "NoNL"
-    assert reason_part in diagnostics[0].reason
-
-
-@pytest.mark.parametrize(
     ("nl_result", "issue", "reason_part"),
     [
         (
@@ -1749,7 +1715,6 @@ def test_istd_far_peak_uses_expected_rt_as_identity_prior(
 
     def _fake_select_peak_and_area(
         candidates_result: PeakCandidatesResult,
-        config: ExtractionConfig,
         *,
         preferred_rt: float | None = None,
         strict_preferred_rt: bool = False,
@@ -1797,7 +1762,6 @@ def test_istd_near_peak_uses_expected_rt_as_identity_prior(
 
     def _fake_select_peak_and_area(
         candidates_result: PeakCandidatesResult,
-        config: ExtractionConfig,
         *,
         preferred_rt: float | None = None,
         strict_preferred_rt: bool = False,
@@ -2080,7 +2044,6 @@ def test_paired_analyte_keeps_target_nl_anchor_far_from_istd_anchor(
 
     def _fake_select_peak_and_area(
         candidates_result: PeakCandidatesResult,
-        config: ExtractionConfig,
         *,
         preferred_rt: float | None = None,
         strict_preferred_rt: bool = False,
@@ -2264,10 +2227,6 @@ def _config(tmp_path: Path) -> ExtractionConfig:
         dll_dir=dll_dir,
         output_csv=output_dir / "xic_results.csv",
         diagnostics_csv=output_dir / "xic_diagnostics.csv",
-        smooth_window=15,
-        smooth_polyorder=3,
-        peak_rel_height=0.95,
-        peak_min_prominence_ratio=0.10,
         ms2_precursor_tol_da=0.5,
         nl_min_intensity_ratio=0.01,
         execution=in_process_execution(),
@@ -2370,7 +2329,6 @@ def _peak_sequence(results: list[PeakDetectionResult]):
 
     def _fake_select_peak_and_area(
         candidates_result: PeakCandidatesResult,
-        config: ExtractionConfig,
         *,
         preferred_rt: float | None = None,
         strict_preferred_rt: bool = False,
@@ -2406,7 +2364,6 @@ def _capturing_peak_sequence(
 
     def _fake_select_peak_and_area(
         candidates_result: PeakCandidatesResult,
-        config: ExtractionConfig,
         *,
         preferred_rt: float | None = None,
         strict_preferred_rt: bool = False,

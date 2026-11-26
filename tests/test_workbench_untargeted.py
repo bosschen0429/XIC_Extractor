@@ -243,7 +243,7 @@ def test_method_adapter_exposes_effective_controls_and_saves_owner_toml(
     controls = {item["key"]: item for item in details["tuning_controls"]}
     assert "maximum" not in controls["rt_max"]
     assert "maximum" not in controls["rt_min"]
-    assert controls["resolver_mode"]["choices"]
+    assert "resolver_mode" not in controls
     assert details["effective_values"]["rt_min"] is None
     assert details["effective_values"]["rt_max"] is None
     assert details["preview"]["rt_range_mode"] == "acquisition"

@@ -31,6 +31,7 @@ from xic_extractor.peak_detection.cid_nl_peak_support import (
     DdaCidNlPeakSupportPolicy,
     bind_dda_cid_nl_peak_support,
 )
+from xic_extractor.peak_detection.detector_invocations import GROUP_BACKFILL_DETECTOR
 from xic_extractor.peak_detection.observations import (
     PeakObservation,
 )
@@ -213,11 +214,10 @@ class CidNlEvaluationReceipt:
     search_completed: bool
     reason_code: str | None
     evidence_scope: Literal["subject_window", "declared_scans"] = "subject_window"
-    physical_query_mz: float | None = None
     supplemental_scan_keys: tuple[tuple[int, float], ...] = ()
 
     def __post_init__(self) -> None:
-        for name in ("query_rt_min", "query_rt_max", "physical_query_mz"):
+        for name in ("query_rt_min", "query_rt_max"):
             value = getattr(self, name)
             if value is not None:
                 object.__setattr__(self, name, float(value) or 0.0)
@@ -246,6 +246,11 @@ class CidNlMethodAssessment:
     reason_codes: tuple[str, ...]
     individual_support_refs: tuple[DdaCidNlPeakSupport, ...] = field(compare=False)
     set_relation_refs: tuple[DdaCidNlCandidateSetRelation, ...] = field(compare=False)
+
+    @property
+    def group_backfill(self) -> bool:
+        """Whether a group-bounded Backfill search produced this attempt."""
+        return self.detector_invocation_id == GROUP_BACKFILL_DETECTOR
 
 
 def resolve_cid_nl_method_relations(
@@ -433,7 +438,7 @@ def is_ms1_only_cid_nl_backfill_assessment(
     The group owner authorized the revisit; the result grants no detection.
     """
     return (
-        assessment.evaluation_receipt.physical_query_mz is not None
+        assessment.group_backfill
         and assessment.technical_state == "evaluated"
         and assessment.method_result == "HOLD"
         and assessment.reason_codes == ("no_unique_qualifying_relation",)

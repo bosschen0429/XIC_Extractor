@@ -119,8 +119,8 @@ def _group_with_missing_apex_review(
                     else None,
                     "observation_ids": observations,
                     "support_origin": {
-                        "S1": "discovery_support",
-                        "S2": "backfill_support",
+                        "S1": "detected",
+                        "S2": "backfilled",
                     }.get(sid, "unavailable"),
                 }
                 for sid, value, observations in (
@@ -172,9 +172,7 @@ def _group_with_missing_apex_review(
                         "value": 50 if sid == owner else None,
                         "apex_rt_min": apex if sid == owner else None,
                         "observation_ids": [peak] if sid == owner else [],
-                        "support_origin": "discovery_support"
-                        if sid == owner
-                        else "unavailable",
+                        "support_origin": "detected" if sid == owner else "unavailable",
                     }
                     for sid in ("S1", "S2", "S3")
                 ],

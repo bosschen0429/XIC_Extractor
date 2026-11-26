@@ -12,12 +12,8 @@ if TYPE_CHECKING:
         FinalGroupCellObservation,
     )
 
-RECORDED_ORIGINS = ("backfill_support", "discovery_support")
+RECORDED_ORIGINS = ("backfilled", "detected")
 SUPPORT_ORIGINS = frozenset((*RECORDED_ORIGINS, "unavailable"))
-_RECORDED_ORIGIN_BY_CELL_ORIGIN = {
-    "backfilled": "backfill_support",
-    "detected": "discovery_support",
-}
 
 
 def validate_membership_risks(risks: object) -> None:
@@ -176,8 +172,8 @@ def review_cell(decision: ProductionCellDecision) -> dict[str, Any]:
             {reason for cell in cells for reason in cell.reason_codes}
         ),
         "support_origin": (
-            _RECORDED_ORIGIN_BY_CELL_ORIGIN.get(decision.origin or "", "unavailable")
-            if decision.value is not None
+            decision.origin
+            if decision.value is not None and decision.origin is not None
             else "unavailable"
         ),
         "signal_quality": [qualities[key] for key in sorted(qualities)],

@@ -347,12 +347,14 @@ membership.
 
 ## Surfaces
 
-- `alignment_backfill_cell_evidence.tsv` is a compact validation output for
-  accepted Backfill cells. It adds `backfill_query_rt_min` and
-  `backfill_query_rt_max` from the executed assessment; Review's
-  `group_center_rt` remains a distinct group-level display value. Unavailable
-  query bounds are empty, never copied from that display value. Readers require
-  the query-bound columns; old compact TSV exports must be regenerated.
+- `alignment_backfill_cell_evidence.tsv` is a compact validation output of
+  the Backfill searches: one row per cell with a peak whose group-bounded
+  search retained one query window. Cells never searched that way are absent,
+  whether `detected` or `backfilled`, and other cells of the same row are not
+  copied in. It adds `backfill_query_rt_min` and `backfill_query_rt_max` from
+  the executed assessment; Review's `group_center_rt` remains a distinct
+  group-level display value. Readers require the query-bound columns; old
+  compact TSV exports must be regenerated.
 - Validation-minimal output selection emits that TSV. The ordinary production
   level writes the Matrix.
 - The TSV can be empty when the run has no eligible accepted Backfill cell. A

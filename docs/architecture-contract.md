@@ -303,12 +303,10 @@ selection and `AuditTrail` before any Matrix change; activation rules are in
   paths. Targeted role policy is in `extraction.targeted_product_projection`;
   writers consume `output.targeted_product_model`. Resolution order is in
   [`decision-policy.md`](product/decision-policy.md).
-- `peak_detection/peak_integration.py` searches and scores resolver candidates;
-  `peak_detection/peak_selection.py` scores a supplied candidate set. Formal
-  Targeted passes its physical candidates straight to selection; Discovery,
-  capture, QC, Backfill, CID-NL acquisition and ISTD reference use integration.
-  `xic_extractor.signal_processing.find_peak_and_area` remains the public
-  integration entry.
+- Peak detection has one path: physical segments from
+  `peak_detection.physical_peak_evaluation`.
+  `peak_detection/peak_selection.py` scores a supplied candidate set; Targeted
+  passes its physical candidates straight to selection.
 - Targeted selection consumes the selected physical answer from
   `physical_peak_candidate_adapter.answer_selected_physical_candidate`, which owns
   candidate-to-segment binding and reuse of prepared evaluations.
@@ -405,7 +403,6 @@ Treat these as public unless an approved change says otherwise:
 
 - declared console scripts and contract-bearing commands
 - `xic_extractor.extractor.run`
-- `xic_extractor.signal_processing.find_peak_and_area`
 - `scripts.csv_to_excel.run`
 - config keys and example/default settings
 - TSV/CSV schemas

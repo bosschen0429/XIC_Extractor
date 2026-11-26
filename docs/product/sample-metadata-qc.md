@@ -43,8 +43,6 @@ interpretation, and future activation gates.
   normalization are not implemented. Metadata alone cannot authorize these
   value transformations; they require an explicit product contract and
   expected-diff review.
-- Instrument-QC sidecars are evidence and observability surfaces, not
-  authorization to change selected values.
 - Sample metadata is part of run provenance. Sample metadata does not replace
   method manifests or output schemas.
 
@@ -67,7 +65,6 @@ identities merely because its files were measured on different dates.
 | --- | --- |
 | `sample_metadata` CSV/TSV | Shared sample identity, order, role, batch, `matrix_type`, group, exclusion schema |
 | `injection_order_source` | Optional sequence annotations; RAW chronology owns resolved injection order |
-| Instrument-QC sidecars | QC context and trend evidence |
 | Run metadata / method manifest | Provenance links to sample metadata inputs |
 
 ## Boundaries

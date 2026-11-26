@@ -490,11 +490,11 @@
     return ids.map((id,index)=>({id,index,witness:rows.find(w=>candidateId(w)===id)}));
   }
   function originLabel(origin){
-    return origin?.label||({discovery_support:'detect',backfill_support:'backfill',unavailable:'來源未記錄'}[origin?.kind]||'來源未記錄');
+    return origin?.label||({detected:'detect',backfilled:'backfill',unavailable:'來源未記錄'}[origin?.kind]||'來源未記錄');
   }
-  function originClass(origin){return ['discovery_support','backfill_support'].includes(origin?.kind)?origin.kind:'unavailable';}
+  function originClass(origin){return ['detected','backfilled'].includes(origin?.kind)?origin.kind:'unavailable';}
   function curveOrigin(item,sampleId){return itemRows(item).find(row=>row.sample_id===sampleId)?.support_origin||{kind:'unavailable'};}
-  function originDash(origin){return {discovery_support:'',backfill_support:'6 4',unavailable:'1 5'}[originClass(origin)];}
+  function originDash(origin){return {detected:'',backfilled:'6 4',unavailable:'1 5'}[originClass(origin)];}
   const originsRecorded=item=>itemRows(item).some(r=>originClass(r.support_origin)!=='unavailable');
   function curveDash(item,origin){return originsRecorded(item)||itemRows(item).some(r=>has(r,'quantitative_value'))?originDash(origin):'';}
   function channelRoles(item,sid){const ws=witnesses(item).filter(w=>witnessSample(w)===sid),roles=ws.map(w=>w.role);return ws.length>1&&roles.every(Boolean)&&new Set(roles).size===roles.length?roles:null;}

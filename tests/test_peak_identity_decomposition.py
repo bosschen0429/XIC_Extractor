@@ -51,7 +51,6 @@ def test_one_ms1_observation_can_have_distinct_workflow_hypotheses() -> None:
     targeted_group = targeted_trace_group(
         trace,
         target_label="KnownAnalyte",
-        resolver_mode="local_minimum",
         neutral_loss_tag="DNA_dR",
     )
     untargeted_group = untargeted_trace_group(
@@ -66,7 +65,6 @@ def test_one_ms1_observation_can_have_distinct_workflow_hypotheses() -> None:
         target_label="KnownAnalyte",
         role="Analyte",
         istd_pair="",
-        resolver_mode="local_minimum",
         peak_result=peak_result,
         trace_group=targeted_group,
     )[0]
@@ -76,7 +74,6 @@ def test_one_ms1_observation_can_have_distinct_workflow_hypotheses() -> None:
         target_label="UnknownFeature",
         role="",
         istd_pair="",
-        resolver_mode="local_minimum",
         peak_result=peak_result,
         trace_group=untargeted_group,
     )[0]
@@ -98,7 +95,6 @@ def test_ms2_evidence_changes_without_changing_ms1_integration_or_id() -> None:
     trace_group = targeted_trace_group(
         trace,
         target_label="KnownAnalyte",
-        resolver_mode="local_minimum",
     )
 
     supported = build_peak_hypotheses(
@@ -107,7 +103,6 @@ def test_ms2_evidence_changes_without_changing_ms1_integration_or_id() -> None:
         target_label="KnownAnalyte",
         role="Analyte",
         istd_pair="",
-        resolver_mode="local_minimum",
         peak_result=peak_result,
         candidate_ms2_evidence={candidate: _ms2_evidence(nl_match=True)},
         trace_group=trace_group,
@@ -118,7 +113,6 @@ def test_ms2_evidence_changes_without_changing_ms1_integration_or_id() -> None:
         target_label="KnownAnalyte",
         role="Analyte",
         istd_pair="",
-        resolver_mode="local_minimum",
         peak_result=peak_result,
         candidate_ms2_evidence={candidate: _ms2_evidence(nl_match=False)},
         trace_group=trace_group,

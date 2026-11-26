@@ -321,7 +321,6 @@ def build_targeted_capture_population(
                 trace=trace,
                 evaluations=alternate_evaluations,
                 signal_processing_profile=profile,
-                resolver_mode=config.resolver_mode,
                 trace_observation=selected_observation,
                 acquired_trace_provenance=result.acquisition_observation_provenance,
             )
@@ -412,7 +411,6 @@ def mint_candidate_peak_observation(
         sample=sample,
         trace=trace,
         evaluations=(evaluation,),
-        resolver_mode=config.resolver_mode,
         signal_processing_profile=targeted_signal_processing_profile(config),
         acquired_trace_provenance=acquired_trace_provenance,
     )[0]

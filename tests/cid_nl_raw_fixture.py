@@ -94,7 +94,6 @@ def _settings() -> DiscoverySettings:
         rt_min=7.5,
         rt_max=8.6,
         ms1_search_padding_min=0.20,
-        resolver_mode="local_minimum",
     )
 
 
@@ -109,7 +108,6 @@ def _multi_tag_settings() -> DiscoverySettings:
         rt_min=7.5,
         rt_max=8.6,
         ms1_search_padding_min=0.20,
-        resolver_mode="local_minimum",
     )
 
 

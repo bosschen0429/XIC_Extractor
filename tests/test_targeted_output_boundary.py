@@ -13,7 +13,7 @@ import pytest
 from openpyxl import load_workbook
 
 from tests.raw_header_fakes import install_fake_raw_headers
-from tests.targeted_fixtures import ScopedMs2WindowReader
+from tests.targeted_fixtures import ScopedMs2WindowReader, physical_peak_result
 from tests.targeted_production_workflow_fixtures import (
     production_case,
     with_method_universe,
@@ -43,7 +43,6 @@ from xic_extractor.extraction.targeted_inputs import (
 )
 from xic_extractor.output.excel_pipeline import _run_output_to_long_rows
 from xic_extractor.output.messages import DiagnosticRecord
-from xic_extractor.peak_detection.peak_integration import find_peak_and_area
 from xic_extractor.peak_detection.physical_peak_evaluation import (
     evaluate_physical_peak,
     prepare_physical_signal,
@@ -109,10 +108,6 @@ def test_formal_entry_retains_the_method_universe_and_publishes_its_decision(
         dll_dir=tmp_path,
         output_csv=tmp_path / "xic_results.csv",
         diagnostics_csv=tmp_path / "diagnostics.csv",
-        smooth_window=9,
-        smooth_polyorder=2,
-        peak_rel_height=0.02,
-        peak_min_prominence_ratio=0.01,
         ms2_precursor_tol_da=0.5,
         nl_min_intensity_ratio=0.01,
         count_no_ms2_as_detected=True,
@@ -384,7 +379,6 @@ def test_publication_returns_concrete_public_result_models(
             file_result.results[target.label] = prepare_acquired_observation(
                 file_result.results[target.label],
                 acquisition_source_id=source.acquisition_source_id,
-                resolver_mode=config.resolver_mode,
             )
 
     request = build_targeted_application_request(
@@ -682,7 +676,7 @@ def test_service_publishes_no_numeric_for_finalized_no_observation(
     output.file_results[0].results[target.label] = with_method_universe(
         replace(
             extraction,
-            peak_result=find_peak_and_area(
+            peak_result=physical_peak_result(
                 rt, trace.intensity, config, preferred_rt=1.5
             ),
             selected_hypothesis=None,
@@ -1505,10 +1499,6 @@ def test_formal_targeted_backfill_uses_confirmed_peers_and_paired_istd(
         dll_dir=tmp_path,
         output_csv=tmp_path / "result.csv",
         diagnostics_csv=tmp_path / "diag.csv",
-        smooth_window=9,
-        smooth_polyorder=2,
-        peak_rel_height=0.02,
-        peak_min_prominence_ratio=0.01,
         ms2_precursor_tol_da=0.5,
         nl_min_intensity_ratio=0.01,
         execution=in_process_execution(),
@@ -1755,10 +1745,6 @@ def test_paired_position_rejects_remote_nl_peak_in_workbook_and_inspector(
         dll_dir=tmp_path,
         output_csv=tmp_path / "result.csv",
         diagnostics_csv=tmp_path / "diag.csv",
-        smooth_window=9,
-        smooth_polyorder=2,
-        peak_rel_height=0.02,
-        peak_min_prominence_ratio=0.01,
         ms2_precursor_tol_da=0.5,
         nl_min_intensity_ratio=0.01,
         execution=in_process_execution(),
@@ -1950,10 +1936,6 @@ def test_istd_backfill_keeps_a_drifting_target_as_one_group(
         dll_dir=tmp_path,
         output_csv=tmp_path / "result.csv",
         diagnostics_csv=tmp_path / "diag.csv",
-        smooth_window=9,
-        smooth_polyorder=2,
-        peak_rel_height=0.02,
-        peak_min_prominence_ratio=0.01,
         ms2_precursor_tol_da=0.5,
         nl_min_intensity_ratio=0.01,
         execution=in_process_execution(),

@@ -336,9 +336,7 @@ selected physical component supplies the integration bounds.
 
 ## Consumer Boundary
 
-`smooth_window`, `smooth_polyorder`, and `resolver_mode` belong to legacy
-resolver behavior. They are not aliases for the canonical signal profile and
-cannot change profile-covered physical facts. The only canonical public method
+The only canonical public method
 is `gaussian`; its public point count is
 `signal_processing_window_points` (default 9, odd integer 3–999).
 
@@ -390,8 +388,7 @@ different profiles leave an otherwise overlapping comparison unresolved.
 Sigma is not independently configurable; it is derived from window size. The
 legacy settings key `ms1_morphology_smoothing_window_points` is accepted only
 as a one-way load-time alias to `signal_processing_window_points`. Canonical
-and legacy values may coexist only when equal. Savitzky–Golay and resolver
-settings are not aliases. The 9-point default is scan-rate sensitive, so other
+and legacy values may coexist only when equal. The 9-point default is scan-rate sensitive, so other
 windows are method parameters (see [Area changes](#area-changes)).
 
 ## Boundary And Area Owners

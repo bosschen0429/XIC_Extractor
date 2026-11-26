@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 
 from tests.raw_header_fakes import install_fake_raw_headers
-from tests.targeted_fixtures import ScopedMs2WindowReader
+from tests.targeted_fixtures import ScopedMs2WindowReader, physical_peak_result
 from tests.targeted_production_workflow_fixtures import (
     _config,
     _physical_evaluation,
@@ -32,7 +32,6 @@ from xic_extractor.extraction.targeted_inputs import (
     THERMO_RAW_OBSERVATION_NAMESPACE,
 )
 from xic_extractor.ms2_scan_models import Ms2Scan, Ms2ScanEvent
-from xic_extractor.peak_detection.peak_integration import find_peak_and_area
 from xic_extractor.peak_detection.physical_peak_evaluation import (
     evaluate_physical_peak,
     prepare_physical_signal,
@@ -628,7 +627,7 @@ def test_missing_selected_peak_finalizes_as_searched_no_observation(
     output.file_results[0].results[target.label] = with_method_universe(
         replace(
             original,
-            peak_result=find_peak_and_area(
+            peak_result=physical_peak_result(
                 rt,
                 flat_intensity,
                 config,
@@ -753,7 +752,7 @@ def test_neutral_loss_disabled_target_without_selected_ms1_is_no_write(
         file_result.results[target.label] = with_method_universe(
             replace(
                 original,
-                peak_result=find_peak_and_area(
+                peak_result=physical_peak_result(
                     rt,
                     trace.intensity,
                     config,
@@ -904,7 +903,6 @@ def test_acquisition_boundary_stamps_ms2_source_identity(tmp_path: Path) -> None
     bound = extraction_pipeline._bind_acquisition_sources(
         output,
         {"SampleA": expectation},
-        resolver_mode=config.resolver_mode,
     )
 
     bound_candidate = bound.file_results[0].results[target.label].candidate_ms2_evidence

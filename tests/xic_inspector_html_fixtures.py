@@ -112,7 +112,7 @@ def _evaluate_report_functions(report, payload, expression):
 
 
 def build_origin_curve_payload() -> dict:
-    kinds = ["discovery_support", "backfill_support", "unavailable"]
+    kinds = ["detected", "backfilled", "unavailable"]
     labels = ["detect", "backfill", "來源未提供"]
     samples = [{"id": f"S{i}", "label": f"Sample {i}"} for i in range(3)]
     rows = [

@@ -24,7 +24,6 @@ def test_alignment_metadata_records_inputs_and_settings() -> None:
         raw_dir=Path("raw"),
         dll_dir=Path("dll"),
         output_level="debug",
-        resolver_mode="local_minimum",
     )
 
     assert set(metadata) == {
@@ -32,12 +31,10 @@ def test_alignment_metadata_records_inputs_and_settings() -> None:
         "raw_dir",
         "dll_dir",
         "output_level",
-        "resolver_mode",
         "baseline_integration_method",
         "signal_processing_profile_json",
     }
     assert metadata["baseline_integration_method"] == "asls"
-    assert metadata["resolver_mode"] == "local_minimum"
     profile = json.loads(metadata["signal_processing_profile_json"])
     assert profile["schema_version"] == "signal_processing_profile"
     assert profile["method"] == "gaussian"
@@ -361,7 +358,7 @@ def test_one_pass_writes_every_requested_file(tmp_path: Path) -> None:
         for path in directory.glob("*.tsv")
     }
     assert line_counts == {
-        "alignment_backfill_cell_evidence.tsv": 3,
+        "alignment_backfill_cell_evidence.tsv": 2,
         "alignment_cells.tsv": 10,
         "alignment_matrix.tsv": 3,
         "alignment_matrix_status.tsv": 4,
