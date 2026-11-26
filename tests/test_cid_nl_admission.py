@@ -202,7 +202,6 @@ def test_held_rows_never_become_alignment_roots(tmp_path, monkeypatch, with_supp
             ),
             query_rt_min=8.0,
             profile=TEST_PROFILE,
-            resolver_mode="local_minimum",
             evaluation_sink=evaluations.append,
         )
         assert evaluations[0].state == "available"

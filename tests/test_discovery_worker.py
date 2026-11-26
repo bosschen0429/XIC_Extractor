@@ -82,7 +82,6 @@ def test_full_analysis_applies_default_runtime(
         tuning_overrides={
             "nl_tolerance_ppm": 15.0,
             "nl_min_intensity_ratio": 0.02,
-            "resolver_mode": "savgol",
         },
     )
     captured_alignment: dict[str, Any] = {}
@@ -99,7 +98,6 @@ def test_full_analysis_applies_default_runtime(
     settings = captured_alignment["request"].discovery_settings
     assert settings.nl_tolerance_ppm == 15.0
     assert settings.nl_min_intensity_ratio == 0.02
-    assert settings.resolver_mode == "savgol"
     assert captured_alignment["request"].alignment_config == AlignmentConfig()
     assert captured_alignment["request"].execution.profile == request.execution_profile
     assert captured_alignment["request"].publication.output_level == "machine"

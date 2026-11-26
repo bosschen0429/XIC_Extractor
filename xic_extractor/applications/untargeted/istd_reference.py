@@ -46,7 +46,6 @@ def istd_extraction_config(
         signal_processing_window_points=profile.window_points,
         ms1_morphology_smoothing_window_points=profile.window_points,
         nl_min_intensity_ratio=discovery_settings.nl_min_intensity_ratio,
-        resolver_mode=discovery_settings.resolver_mode,
         mass_recalibration=discovery_settings.mass_recalibration,
     )
 

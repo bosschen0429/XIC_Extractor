@@ -44,8 +44,6 @@ class ProcessingRunSpec:
 def validate_cid_nl_discovery_settings(settings: DiscoverySettings) -> None:
     """Reject settings a preset file, CLI or Workbench form can produce."""
 
-    from xic_extractor.settings_schema import RESOLVER_MODES
-
     profiles = settings.neutral_loss_profiles
     if not profiles:
         raise ValueError("neutral_loss_profiles must be non-empty")
@@ -116,9 +114,6 @@ def validate_cid_nl_discovery_settings(settings: DiscoverySettings) -> None:
         and settings.rt_min > settings.rt_max
     ):
         raise ValueError("rt_min must not exceed rt_max")
-    require_text(settings.resolver_mode, field="resolver_mode")
-    if settings.resolver_mode not in RESOLVER_MODES:
-        raise ValueError("unsupported resolver_mode")
 
 
 __all__ = [

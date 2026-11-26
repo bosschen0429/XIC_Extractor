@@ -106,7 +106,6 @@ class PeakHypothesis:
     role: str
     istd_pair: str
     analysis_mode: str
-    resolver_mode: str
     integration: IntegrationResult
     evidence: EvidenceVector
     audit: AuditTrail
@@ -116,14 +115,12 @@ def hypothesis_audit_id(
     *,
     sample_name: str,
     target_label: str,
-    resolver_mode: str,
     candidate: PeakCandidate,
 ) -> str:
     return "|".join(
         (
             sample_name,
             target_label,
-            resolver_mode,
             _join(candidate.proposal_sources),
             _format_float(candidate.selection_apex_rt, digits=5),
             _format_float(candidate.peak.peak_start, digits=5),
@@ -139,7 +136,6 @@ def build_peak_hypotheses(
     target_label: str,
     role: str,
     istd_pair: str,
-    resolver_mode: str,
     peak_result: PeakDetectionResult,
     candidate_ms2_evidence: CandidateMS2EvidenceMap | None = None,
     rt: object | None = None,
@@ -175,7 +171,6 @@ def build_peak_hypotheses(
                 hypothesis_id=hypothesis_audit_id(
                     sample_name=sample_name,
                     target_label=target_label,
-                    resolver_mode=resolver_mode,
                     candidate=candidate,
                 ),
                 trace_group_id=trace_group.trace_group_id
@@ -183,13 +178,11 @@ def build_peak_hypotheses(
                 else _trace_group_id(
                     sample_name=sample_name,
                     target_label=target_label,
-                    resolver_mode=resolver_mode,
                 ),
                 target_label=target_label,
                 role=role,
                 istd_pair=istd_pair,
                 analysis_mode=analysis_mode,
-                resolver_mode=resolver_mode,
                 integration=_integration_from_candidate(
                     candidate,
                     rt=trace_rt,
@@ -231,9 +224,8 @@ def _trace_group_id(
     *,
     sample_name: str,
     target_label: str,
-    resolver_mode: str,
 ) -> str:
-    return "|".join((sample_name, target_label, resolver_mode))
+    return "|".join((sample_name, target_label))
 
 
 def _integration_from_candidate(

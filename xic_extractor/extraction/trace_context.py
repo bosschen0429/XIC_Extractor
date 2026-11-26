@@ -28,7 +28,6 @@ def targeted_extraction_trace_group(
     return targeted_trace_group(
         trace,
         target_label=target.label,
-        resolver_mode=config.resolver_mode,
         expected_rt_min=expected_rt_min,
         neutral_loss_tag=_neutral_loss_tag(target),
         precursor_mz=target.mz,

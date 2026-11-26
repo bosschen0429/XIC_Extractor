@@ -234,7 +234,6 @@ def physical_backfill_observation(
     trace: Trace,
     query_rt_min: float,
     profile: SignalProcessingProfile,
-    resolver_mode: str,
     search_rt_window: tuple[float, float] | None = None,
     location_reliable: bool = True,
     evaluation_sink: Callable[[PhysicalPeakEvaluation], None] | None = None,
@@ -259,7 +258,6 @@ def physical_backfill_observation(
         sample=sample,
         trace=trace,
         evaluations=(evaluation,),
-        resolver_mode=resolver_mode,
         signal_processing_profile=profile,
         capture_stage="method_backfill",
     )[0]
@@ -347,7 +345,6 @@ def backfill_untargeted_cid_nl_sample_subject(
     group_hypothesis_id: str | None = None,
     support_policy: DdaCidNlPeakSupportPolicy,
     half_window_min: float,
-    resolver_mode: str,
     raw: CidNlRawSource | None,
     initial_assessment: CidNlMethodAssessment | None = None,
     settings: DiscoverySettings | None = None,
@@ -449,7 +446,6 @@ def backfill_untargeted_cid_nl_sample_subject(
                 else None
             ),
             profile=signal_processing_profile,
-            resolver_mode=resolver_mode,
             evaluation_sink=physical_evaluations.append,
         )
         if physical_evaluations[0].reason != "incomplete_peak_context":
@@ -605,7 +601,6 @@ def reuse_cid_nl_backfill_peak(
     capture: CidNlAcquisitionResult,
     source: AcquisitionSourceIdentity,
     half_window_min: float,
-    resolver_mode: str,
 ) -> UntargetedCidNlBackfillAttemptResult | None:
     """Ask the group's physical question of measured segments, without new RAW reads.
 
@@ -661,7 +656,6 @@ def reuse_cid_nl_backfill_peak(
         sample=sample,
         trace=record.trace,
         evaluations=(answer,),
-        resolver_mode=resolver_mode,
         signal_processing_profile=answer.prepared.profile,
         measured_mz=(initial_peak.mz,),
         capture_stage="method_backfill",

@@ -70,8 +70,7 @@ def build_diagnostic_records(
             f"Physical peak {physical_evaluation.state}: {physical_evaluation.reason}"
             if physical_evaluation is not None
             and physical_evaluation.state != "available"
-            else result.peak_result.reason
-            or _peak_reason(target, result.peak_result, config)
+            else result.peak_result.reason or _peak_reason(target, result.peak_result)
         )
         records.append(
             DiagnosticRecord(
@@ -131,20 +130,14 @@ def build_ms2_diagnostic_records(
     return records
 
 
-def _peak_reason(
-    target: Target, peak_result: PeakDetectionResult, config: ExtractionConfig
-) -> str:
+def _peak_reason(target: Target, peak_result: PeakDetectionResult) -> str:
     if peak_result.status == "NO_SIGNAL":
         return (
             f"XIC empty in window [{target.rt_min}, {target.rt_max}] for "
             f"m/z {target.mz} +/- {target.ppm_tol:g} ppm"
         )
     max_value = _format_optional_number(peak_result.max_smoothed)
-    prominence_pct = config.peak_min_prominence_ratio * 100
-    return (
-        "No peak met prominence >= "
-        f"{prominence_pct:g}% of max smoothed (max={max_value})"
-    )
+    return f"No measurable peak in the trace (max smoothed signal={max_value})"
 
 
 def _selected_or_window_nl_issue(result: ExtractionResultLike) -> str | None:

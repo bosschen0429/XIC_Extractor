@@ -158,7 +158,6 @@ def run_untargeted_application(
         raw_dir=request.raw_dir,
         dll_dir=request.dll_dir,
         output_level=request.publication.output_level,
-        resolver_mode=request.discovery_settings.resolver_mode,
         signal_processing_profile=signal_processing_profile,
     )
     metadata["mass_recalibration_by_sample"] = json.dumps(

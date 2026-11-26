@@ -426,7 +426,6 @@ def _peak(
         sample=sample,
         trace=trace,
         integration=integration,
-        resolver_mode="local_minimum",
         proposal_sources=("local_minimum",),
     )
 

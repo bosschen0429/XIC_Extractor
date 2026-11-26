@@ -1520,7 +1520,7 @@ def test_run_writes_file_error_row_and_continues(
     ("peak_status", "n_points", "max_smoothed", "issue", "reason_part"),
     [
         ("NO_SIGNAL", 0, None, "NO_SIGNAL", "XIC empty"),
-        ("PEAK_NOT_FOUND", 15, 25.0, "PEAK_NOT_FOUND", "prominence"),
+        ("PEAK_NOT_FOUND", 15, 25.0, "PEAK_NOT_FOUND", "No measurable peak"),
     ],
 )
 def test_peak_diagnostic_owner_preserves_status_and_reason(
@@ -2260,7 +2260,6 @@ def _config(tmp_path: Path) -> ExtractionConfig:
         dll_dir=dll_dir,
         output_csv=output_dir / "xic_results.csv",
         diagnostics_csv=output_dir / "xic_diagnostics.csv",
-        peak_min_prominence_ratio=0.10,
         ms2_precursor_tol_da=0.5,
         nl_min_intensity_ratio=0.01,
         execution=in_process_execution(),

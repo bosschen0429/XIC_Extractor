@@ -113,7 +113,6 @@ def _emit_curve_payload(
         "acquisition_source_id": None,
         "processing_attempt_id": None,
         "selected_trace_indices": None,
-        "resolver_mode": None,
         "proposal_sources": None,
         "method_subject_id": None,
         "profile": None,
@@ -138,7 +137,6 @@ def _emit_curve_payload(
                 generation,
                 "acquisition_source_id",
                 "selected_trace_indices",
-                "resolver_mode",
                 "proposal_sources",
             )
         )

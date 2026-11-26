@@ -78,7 +78,6 @@ def _numeric_peak(
         target_label="cell-decision-no-raw",
         role="",
         istd_pair="",
-        resolver_mode="local_minimum",
         peak_result=result,
         rt=trace.rt,
         intensity=trace.intensity,
@@ -88,6 +87,5 @@ def _numeric_peak(
         sample=sample,
         trace=trace,
         integration=integration,
-        resolver_mode="local_minimum",
         proposal_sources=("local_minimum",),
     )

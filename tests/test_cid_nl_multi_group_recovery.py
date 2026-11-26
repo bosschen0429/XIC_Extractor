@@ -174,7 +174,6 @@ def test_backfill_batch_retains_shape_contradictions_as_soft_risk(
                 boundary_sources=("candidate_interval", "gaussian15"),
                 raw_scan_indices=tuple(range(len(offsets))),
             ),
-            resolver_mode="local_minimum",
             proposal_sources=("local_minimum", "gaussian15"),
         )
         evidence = cid_nl_evidence(fixture, name, scan_number=101, scan_rt_min=8.0)

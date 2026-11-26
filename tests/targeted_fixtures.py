@@ -37,7 +37,6 @@ def selected_targeted_hypothesis(
         role=role,
         istd_pair=istd_pair,
         analysis_mode="targeted",
-        resolver_mode="local_minimum",
         integration=integration,
         evidence=EvidenceVector(reason="selected spine"),
         audit=AuditTrail(selected=True),

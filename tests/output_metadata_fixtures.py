@@ -14,10 +14,8 @@ def _config(output_dir: Path) -> ExtractionConfig:
         diagnostics_csv=output_dir / "xic_diagnostics.csv",
         ms1_morphology_smoothing_window_points=21,
         signal_processing_window_points=21,
-        peak_min_prominence_ratio=0.12,
         ms2_precursor_tol_da=0.4,
         nl_min_intensity_ratio=0.02,
-        resolver_mode="local_minimum",
         target_config_hash="abc12345",
         execution=in_process_execution(),
     )

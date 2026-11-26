@@ -76,7 +76,6 @@ class _RuntimeJobState:
                 capture=self.adapter_result,
                 source=self.job.acquisition_source_expectation.source,
                 half_window_min=BACKFILL_HALF_WINDOW_MIN,
-                resolver_mode=self.job.settings.resolver_mode,
             )
             if attempt is not None:
                 self.backfill_attempts += (attempt,)
@@ -357,7 +356,6 @@ def _execute_backfill_batch(phase: _BatchSamplePhaseState) -> None:
                     initial_assessment=ctx.initial_assessment,
                     support_policy=ctx.support_policy,
                     half_window_min=BACKFILL_HALF_WINDOW_MIN,
-                    resolver_mode=state.job.settings.resolver_mode,
                     raw=raw if state.job.method_subject.composition else None,
                     settings=state.job.settings,
                     signal_processing_profile=state.job.signal_processing_profile,

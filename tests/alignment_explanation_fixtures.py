@@ -36,7 +36,6 @@ def curve_provenance():
         "acquisition_source_id": None,
         "processing_attempt_id": None,
         "selected_trace_indices": None,
-        "resolver_mode": None,
         "proposal_sources": None,
         "method_subject_id": None,
         "profile": None,
@@ -74,7 +73,7 @@ def run_alignment_fixture(tmp_path, monkeypatch, scenario):
         '[[tag]]\nstrategy = "neutral_loss"\nname = "A"\nvalue = 116.0474\n'
         '[[tag]]\nstrategy = "neutral_loss"\nname = "B"\nvalue = 132.0423\n'
         "[discovery]\nrt_min = 7.5\nrt_max = 8.6\n"
-        'ms1_search_padding_min = 0.2\nresolver_mode = "local_minimum"\n',
+        "ms1_search_padding_min = 0.2\n",
         encoding="utf-8",
     )
     settings = apply_to_discovery(load_preset(str(preset)))

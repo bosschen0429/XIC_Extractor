@@ -26,6 +26,7 @@ from xic_extractor.presets.loader import (
     _parse_toml,
     load_preset,
     reject_retired_alignment_runtime_options,
+    reject_retired_discovery_options,
 )
 from xic_extractor.presets.models import Preset, PresetError
 from xic_extractor.processing_run_spec import validate_cid_nl_discovery_settings
@@ -40,7 +41,6 @@ _NL_DISCOVERY_FIELDS = (
     "ms1_search_padding_min",
     "rt_min",
     "rt_max",
-    "resolver_mode",
     "mass_recalibration",
 )
 
@@ -170,6 +170,7 @@ def _validated_alignment_overrides(preset: Preset) -> dict[str, object]:
 
 
 def _validate_discovery_keys(preset: Preset) -> None:
+    reject_retired_discovery_options(preset.discovery_overrides)
     allowed = (
         DELTA_MASS_DISCOVERY_OVERRIDE_KEYS
         if any(tag.strategy == "delta_mass" for tag in preset.tags)

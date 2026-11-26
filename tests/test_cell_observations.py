@@ -294,7 +294,7 @@ def test_backfill_attempt_with_same_values_reuses_the_initial_assessment(
             replace(
                 peak,
                 generation_provenance=replace(
-                    peak.generation_provenance, resolver_mode="backfill_relinked"
+                    peak.generation_provenance, proposal_sources=("backfill_relinked",)
                 ),
                 capture_stage="backfill",
             )

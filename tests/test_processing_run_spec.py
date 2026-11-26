@@ -261,27 +261,17 @@ def test_neutral_loss_mass_is_rejected_before_fingerprint(
         )
 
 
-@pytest.mark.parametrize(
-    "settings",
-    [
-        DiscoverySettings(
-            neutral_loss_profile=NeutralLossProfile("DNA_dR", 116.0474),
-            resolver_mode="arbitrated",
-        ),
-        DiscoverySettings(
-            neutral_loss_profiles=(
-                NeutralLossProfile("tag-a", 116.0474),
-                NeutralLossProfile("tag-b", 116.0474),
-            ),
-            tag_combine_mode="union",
-        ),
-    ],
-)
 def test_invalid_method_population_is_rejected_before_fingerprint(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    settings: DiscoverySettings,
 ) -> None:
+    settings = DiscoverySettings(
+        neutral_loss_profiles=(
+            NeutralLossProfile("tag-a", 116.0474),
+            NeutralLossProfile("tag-b", 116.0474),
+        ),
+        tag_combine_mode="union",
+    )
     raw_path = tmp_path / "sample.raw"
     raw_path.write_bytes(b"not fingerprinted")
     monkeypatch.setattr(

@@ -134,7 +134,6 @@ def _config(tmp_path: Path) -> ExtractionConfig:
         dll_dir=tmp_path / "dll",
         output_csv=tmp_path / "output" / "xic_results.csv",
         diagnostics_csv=tmp_path / "output" / "xic_diagnostics.csv",
-        peak_min_prominence_ratio=0.10,
         ms2_precursor_tol_da=0.5,
         nl_min_intensity_ratio=0.01,
         execution=in_process_execution(),

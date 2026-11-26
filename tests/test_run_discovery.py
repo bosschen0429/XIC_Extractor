@@ -68,8 +68,6 @@ def test_run_discovery_cli_passes_single_raw_settings(
             "DNA_dR",
             "--ms2-precursor-tol-da",
             "0.75",
-            "--resolver-mode",
-            "local_minimum",
         ]
         + (
             [
@@ -89,7 +87,6 @@ def test_run_discovery_cli_passes_single_raw_settings(
     assert settings.neutral_loss_profile.neutral_loss_da == 116.0474
     assert len(settings.neutral_loss_profiles) == 1
     assert settings.ms2_precursor_tol_da == pytest.approx(0.75)
-    assert settings.resolver_mode == "local_minimum"
     assert settings.rt_min is None and settings.rt_max is None
     assert captured["dll_dir"] == dll_dir.resolve()
     assert captured["run_spec"].signal_processing_profile.window_points == 9
@@ -101,31 +98,6 @@ def test_run_discovery_cli_passes_single_raw_settings(
     assert "Discovery events CSV: " in stdout
     assert "discovery_peaks.csv" in stdout
     assert "discovery_events.csv" in stdout
-
-
-def test_run_discovery_rejects_retired_arbitrated_resolver_mode(
-    tmp_path: Path,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    raw_path = tmp_path / "TumorBC2312_DNA.raw"
-    raw_path.write_text("", encoding="utf-8")
-    dll_dir = tmp_path / "dll"
-    dll_dir.mkdir()
-
-    with pytest.raises(SystemExit) as exc_info:
-        run_discovery.main(
-            [
-                "--raw",
-                str(raw_path),
-                "--dll-dir",
-                str(dll_dir),
-                "--resolver-mode",
-                "arbitrated",
-            ],
-        )
-
-    assert exc_info.value.code == 2
-    assert "arbitrated resolver mode is retired" in capsys.readouterr().err
 
 
 def test_run_discovery_cli_passes_raw_dir_batch_settings(
@@ -194,7 +166,6 @@ def test_run_discovery_cli_passes_raw_dir_batch_settings(
     )
     assert captured["output_dir"] == output_dir.resolve()
     assert captured["dll_dir"] == dll_dir.resolve()
-    assert captured["run_spec"].settings.resolver_mode == "local_minimum"
     stdout = capsys.readouterr().out
     assert "Discovery batch index: " in stdout
     assert "discovery_batch_index.csv" in stdout

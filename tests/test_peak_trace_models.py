@@ -69,7 +69,6 @@ def test_targeted_and_untargeted_trace_group_adapters_set_context() -> None:
     targeted = targeted_trace_group(
         trace,
         target_label="15N5-8-oxodG",
-        resolver_mode="local_minimum",
         expected_rt_min=25.0,
         neutral_loss_tag="DNA_dR",
         product_mz=153.048,
@@ -83,7 +82,7 @@ def test_targeted_and_untargeted_trace_group_adapters_set_context() -> None:
         product_mz=153.048,
     )
 
-    assert targeted.trace_group_id == "s1|15N5-8-oxodG|local_minimum"
+    assert targeted.trace_group_id == "s1|15N5-8-oxodG"
     assert targeted.analysis_mode == "targeted"
     assert targeted.role == "ISTD"
     assert untargeted.trace_group_id == "s1|FAM000123|untargeted"

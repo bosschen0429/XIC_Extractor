@@ -12,8 +12,8 @@ in [`xic_extractor/presets/data/`](../../xic_extractor/presets/data/).
   behavior. It needs
   [expected-diff framing](../agent/product-validation-contract.md#expected-diff-contract),
   focused tests and relevant evidence.
-- Targeted and Untargeted processing use the shared physical signal owner.
-  `resolver_mode` does not choose a detector.
+- Targeted and Untargeted processing use the shared physical signal owner;
+  peak detection has no selectable mode.
 - A preset run is reproducible from documented CLI/config surfaces and run
   metadata. A command diary is not a reproducibility source.
 - The TOML format carries method intent only: no RAW/output paths, worker
@@ -106,10 +106,8 @@ Discovery path owns the Pt and Pt + CID-NL composite presets, and CID-NL
 binders reject them. Normal recipes reject the retired Standard Peak and
 Backfill-expansion keys; no replacement publication choice is exposed.
 
-## Resolver Mode
-
-`resolver_mode` accepts `local_minimum` or `savgol`. No detector reads it; the
-value is recorded in run metadata and in hypothesis and trace-group identifiers.
+A `[discovery]` table that still sets the removed `resolver_mode` key is
+rejected with a message naming it.
 
 ## Delta Mass Parameters
 

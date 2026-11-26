@@ -332,5 +332,4 @@ def test_discovery_settings_require_neutral_loss_profile() -> None:
     assert settings.ms1_search_padding_min == 0.35
     assert settings.rt_min is None
     assert settings.rt_max is None
-    assert settings.resolver_mode == "local_minimum"
     assert settings.evidence_profile == DEFAULT_EVIDENCE_PROFILE

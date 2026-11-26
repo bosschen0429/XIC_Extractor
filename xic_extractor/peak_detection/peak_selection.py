@@ -43,7 +43,7 @@ def select_peak_and_area(
     paired_istd_anchor_rt: float | None = None,
     evidence_selector: Callable[..., ScoredCandidate] = select_candidate_by_evidence,
 ) -> PeakDetectionResult:
-    """Select and score supplied candidates without invoking a resolver.
+    """Select and score supplied candidates without detecting peaks.
 
     Preferred-RT recovery is restricted to this candidate set, preserving the
     physical-candidate selection policy.

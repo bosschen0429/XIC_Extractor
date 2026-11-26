@@ -24,7 +24,6 @@ def test_alignment_metadata_records_inputs_and_settings() -> None:
         raw_dir=Path("raw"),
         dll_dir=Path("dll"),
         output_level="debug",
-        resolver_mode="local_minimum",
     )
 
     assert set(metadata) == {
@@ -32,12 +31,10 @@ def test_alignment_metadata_records_inputs_and_settings() -> None:
         "raw_dir",
         "dll_dir",
         "output_level",
-        "resolver_mode",
         "baseline_integration_method",
         "signal_processing_profile_json",
     }
     assert metadata["baseline_integration_method"] == "asls"
-    assert metadata["resolver_mode"] == "local_minimum"
     profile = json.loads(metadata["signal_processing_profile_json"])
     assert profile["schema_version"] == "signal_processing_profile"
     assert profile["method"] == "gaussian"

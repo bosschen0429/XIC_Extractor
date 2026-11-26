@@ -29,10 +29,6 @@ from xic_extractor.presets import PresetError, bind_cid_nl_recipe, load_preset
 from xic_extractor.raw_reader_errors import RawReaderError
 from xic_extractor.raw_sequence import read_analysis_set
 from xic_extractor.sample_metadata import SampleMetadataError
-from xic_extractor.settings_schema import (
-    ARBITRATED_RESOLVER_RETIRED_MESSAGE,
-    RESOLVER_MODES,
-)
 
 _RT_BOUND_ERROR = "RT bounds must be finite values >= 0"
 _RUN_SPEC_ERROR_TEXT_LIMIT = 400
@@ -272,10 +268,6 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         help="Optional acquisition crop end (default: each RAW end).",
     )
     parser.add_argument(
-        "--resolver-mode",
-        type=_resolver_mode,
-    )
-    parser.add_argument(
         "--blank-dir",
         type=Path,
         help=(
@@ -354,7 +346,6 @@ def _discovery_settings(args: argparse.Namespace) -> DiscoverySettings:
         "ms1_search_padding_min": args.ms1_search_padding_min,
         "rt_min": args.rt_min,
         "rt_max": args.rt_max,
-        "resolver_mode": args.resolver_mode,
     }
     common = {key: value for key, value in common.items() if value is not None}
     if args.preset is not None:
@@ -450,16 +441,6 @@ def _positive_float(value: str) -> float:
         raise argparse.ArgumentTypeError("value must be a float") from exc
     if not math.isfinite(parsed) or parsed <= 0.0:
         raise argparse.ArgumentTypeError("value must be > 0")
-    return parsed
-
-
-def _resolver_mode(value: str) -> str:
-    parsed = value.strip()
-    if parsed == "arbitrated":
-        raise argparse.ArgumentTypeError(ARBITRATED_RESOLVER_RETIRED_MESSAGE)
-    if parsed not in RESOLVER_MODES:
-        allowed = ", ".join(RESOLVER_MODES[:-1]) + f", or {RESOLVER_MODES[-1]}"
-        raise argparse.ArgumentTypeError(f"resolver-mode must be {allowed}")
     return parsed
 
 

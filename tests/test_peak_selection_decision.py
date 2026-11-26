@@ -148,7 +148,6 @@ def _hypothesis(
         role="Analyte",
         istd_pair="ISTD",
         analysis_mode="targeted",
-        resolver_mode="local_minimum",
         integration=IntegrationResult(
             rt_left_min=8.4,
             rt_apex_min=8.5,

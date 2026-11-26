@@ -86,7 +86,6 @@ def extract_raw_file_result(
                     acquisition_source_id=(
                         expected_acquisition_source.source.acquisition_source_id
                     ),
-                    resolver_mode=config.resolver_mode,
                 )
                 for label, result in file_result.results.items()
             },
@@ -249,7 +248,6 @@ def extract_one_target(
 ) -> float | None:
     selection_config = replace(
         config,
-        resolver_mode="local_minimum",
         baseline_integration_method="asls",
     )
     target_reference_rt = current_target_reference_rt(

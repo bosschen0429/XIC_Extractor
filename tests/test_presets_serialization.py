@@ -62,7 +62,6 @@ def test_neutral_loss_export_materializes_full_effective_tuning_and_overrides(
         destination,
         discovery_overrides={
             "rt_max": 42.5,
-            "resolver_mode": "savgol",
         },
     )
 
@@ -70,7 +69,6 @@ def test_neutral_loss_export_materializes_full_effective_tuning_and_overrides(
         original,
         explicit_tuning_overrides={
             "rt_max": 42.5,
-            "resolver_mode": "savgol",
         },
     )
     assert apply_to_discovery(reloaded) == expected
@@ -228,19 +226,26 @@ def test_invalid_export_preserves_existing_destination(
     assert destination.read_bytes() == previous
 
 
-def test_resolver_alias_is_rejected_without_overwriting_preset(tmp_path: Path) -> None:
+def test_removed_resolver_mode_is_rejected_without_overwriting_preset(
+    tmp_path: Path,
+) -> None:
     original = load_preset("dna_dr")
     destination = tmp_path / "method.toml"
     save_preset(original, destination)
     previous = destination.read_bytes()
-    with pytest.raises(PresetError, match="resolver_mode"):
+    with pytest.raises(PresetError, match="resolver_mode has been removed"):
         save_preset(
             original,
             destination,
-            discovery_overrides={"resolver_mode": "legacy_savgol"},
+            discovery_overrides={"resolver_mode": "local_minimum"},
         )
     assert destination.read_bytes() == previous
-    with pytest.raises(PresetError, match="resolver_mode"):
-        apply_to_discovery(
-            original, explicit_tuning_overrides={"resolver_mode": "legacy_savgol"}
-        )
+    old_preset = tmp_path / "old.toml"
+    old_preset.write_text(
+        previous.decode("utf-8").replace(
+            "[discovery]\n", '[discovery]\nresolver_mode = "local_minimum"\n'
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(PresetError, match="resolver_mode has been removed"):
+        load_preset(str(old_preset))

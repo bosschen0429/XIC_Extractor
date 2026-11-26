@@ -46,7 +46,6 @@ def prepare_acquired_observation(
     result: ExtractionResult,
     *,
     acquisition_source_id: str,
-    resolver_mode: str,
 ) -> ExtractionResult:
     """Finish sample-local trace provenance in the acquisition worker."""
     trace = result.acquisition_trace
@@ -65,7 +64,6 @@ def prepare_acquired_observation(
         selected_indices=physical_peak_observation_integration(
             evaluation
         ).raw_scan_indices,
-        resolver_mode=resolver_mode,
         proposal_sources=("canonical_physical_segment",),
     )
     return replace(

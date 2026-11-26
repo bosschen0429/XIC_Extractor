@@ -308,7 +308,6 @@ def _config(**overrides: object) -> ExtractionConfig:
         dll_dir=Path("."),
         output_csv=Path("out.csv"),
         diagnostics_csv=Path("diag.csv"),
-        peak_min_prominence_ratio=0.1,
         ms2_precursor_tol_da=1.6,
         nl_min_intensity_ratio=0.01,
         injection_order_source=None,

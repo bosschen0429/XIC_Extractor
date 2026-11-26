@@ -58,14 +58,12 @@ def test_query_provenance_does_not_change_selected_physical_content(
         sample=identity.sample,
         trace=narrow_trace,
         integration=_integration(raw_scan_indices=(1, 2, 3)),
-        resolver_mode="local_minimum",
         proposal_sources=("local_minimum",),
     )
     wide = trace_peak(
         sample=identity.sample,
         trace=wide_trace,
         integration=_integration(raw_scan_indices=(2, 3, 4)),
-        resolver_mode="local_minimum",
         proposal_sources=("local_minimum",),
     )
 
@@ -99,7 +97,6 @@ def test_selected_signal_mutation_changes_content(
             apex_intensity=501.0,
             area_raw_counts_seconds=3306.0,
         ),
-        resolver_mode="local_minimum",
         proposal_sources=("local_minimum",),
     )
 
@@ -118,7 +115,6 @@ def test_integration_fact_mutation_changes_content_identity(tmp_path: Path) -> N
         sample=identity.sample,
         trace=_standard_trace(identity.source),
         integration=changed_integration,
-        resolver_mode="local_minimum",
         proposal_sources=("local_minimum",),
     )
 
@@ -143,14 +139,12 @@ def test_equivalent_numeric_integration_inputs_have_one_content_identity(
         sample=identity.sample,
         trace=_standard_trace(identity.source),
         integration=float_integration,
-        resolver_mode="local_minimum",
         proposal_sources=("local_minimum",),
     )
     integer_ref = trace_peak(
         sample=identity.sample,
         trace=_standard_trace(identity.source),
         integration=integer_integration,
-        resolver_mode="local_minimum",
         proposal_sources=("local_minimum",),
     )
 
@@ -194,14 +188,12 @@ def test_signed_zero_trace_values_have_one_observation_identity(
         sample=identity.sample,
         trace=positive_trace,
         integration=integration,
-        resolver_mode="local_minimum",
         proposal_sources=("local_minimum",),
     )
     negative = trace_peak(
         sample=identity.sample,
         trace=signed_zero_trace,
         integration=integration,
-        resolver_mode="local_minimum",
         proposal_sources=("local_minimum",),
     )
 
@@ -245,7 +237,6 @@ def test_owner_boundary_between_scan_points_maps_to_selected_trace(
         target_label="test-only-target",
         role="",
         istd_pair="",
-        resolver_mode="local_minimum",
         peak_result=result,
         rt=trace.rt,
         intensity=trace.intensity,
@@ -255,7 +246,6 @@ def test_owner_boundary_between_scan_points_maps_to_selected_trace(
         sample=identity.sample,
         trace=trace,
         integration=integration,
-        resolver_mode="local_minimum",
         proposal_sources=("local_minimum",),
     )
 
@@ -272,36 +262,16 @@ def test_proposal_source_reorder_is_canonicalized(tmp_path: Path) -> None:
         sample=identity.sample,
         trace=_standard_trace(identity.source),
         integration=_integration(raw_scan_indices=(1, 2, 3)),
-        resolver_mode="consensus",
         proposal_sources=("boundary_resolver", "local_minimum"),
     )
     reversed_order = trace_peak(
         sample=identity.sample,
         trace=_standard_trace(identity.source),
         integration=_integration(raw_scan_indices=(1, 2, 3)),
-        resolver_mode="consensus",
         proposal_sources=("local_minimum", "boundary_resolver"),
     )
 
     assert forward == reversed_order
-
-
-def test_resolver_change_preserves_content_but_changes_generation_provenance(
-    tmp_path: Path,
-) -> None:
-    identity = _identity_fixture(tmp_path)
-
-    local_minimum = _mint_standard_reference(identity.source, identity.sample)
-    arbitrated = trace_peak(
-        sample=identity.sample,
-        trace=_standard_trace(identity.source),
-        integration=_integration(raw_scan_indices=(1, 2, 3)),
-        resolver_mode="arbitrated",
-        proposal_sources=("local_minimum",),
-    )
-
-    assert local_minimum == arbitrated
-    assert local_minimum.generation_provenance != arbitrated.generation_provenance
 
 
 def _identity_fixture(
@@ -341,7 +311,6 @@ def _mint_standard_reference(
         sample=sample,
         trace=_standard_trace(source),
         integration=_integration(raw_scan_indices=(1, 2, 3)),
-        resolver_mode="local_minimum",
         proposal_sources=("local_minimum",),
     )
 
@@ -457,7 +426,6 @@ def test_retained_candidate_batch_preserves_observation_values(
             integration=observation_owner.physical_peak_observation_integration(
                 evaluation
             ),
-            resolver_mode="local_minimum",
             proposal_sources=("canonical_physical_segment",),
             physical_evaluation=evaluation,
             signal_processing_profile=profile,
@@ -468,7 +436,6 @@ def test_retained_candidate_batch_preserves_observation_values(
         observation_owner.prepare_peak_observation_provenance(
             trace=trace,
             selected_indices=expected[0].generation_provenance.selected_trace_indices,
-            resolver_mode="local_minimum",
             proposal_sources=("canonical_physical_segment",),
         )
         if reuse_trace_provenance == "acquisition"
@@ -479,7 +446,6 @@ def test_retained_candidate_batch_preserves_observation_values(
         trace=trace,
         evaluations=evaluations,
         signal_processing_profile=profile,
-        resolver_mode="local_minimum",
         trace_observation=(
             expected[0] if reuse_trace_provenance == "observation" else None
         ),

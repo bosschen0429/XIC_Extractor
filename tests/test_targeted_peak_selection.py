@@ -35,7 +35,6 @@ def test_build_production_peak_hypotheses_maps_selected_ms2_only(tmp_path) -> No
             source="unit_test",
         ),
         target_label=target.label,
-        resolver_mode="local_minimum",
         role="Analyte",
         istd_pair=target.istd_pair,
     )

@@ -20,7 +20,6 @@ from xic_extractor.presets.recipe_models import (
     BoundCidNlRecipe,
     CidNlRecipeRoute,
 )
-from xic_extractor.settings_schema import RESOLVER_MODES
 
 if TYPE_CHECKING:
     from xic_extractor.configuration.delta_mass import DeltaMassPatternSettings
@@ -167,7 +166,6 @@ def apply_to_discovery(
         ),
         rt_min=_optional_float_setting(tuning, "rt_min", baseline.rt_min),
         rt_max=_optional_float_setting(tuning, "rt_max", baseline.rt_max),
-        resolver_mode=_str_setting(tuning, "resolver_mode", baseline.resolver_mode),
         mass_recalibration=resolve_mass_recalibration(
             _str_setting(
                 tuning, "mass_recalibration", baseline.mass_recalibration.value
@@ -334,12 +332,6 @@ def _validate_discovery_tuning(
             and not _is_rt_bound(tuning[field])
         ):
             raise PresetError(f"{field} must be finite and >= 0 or None")
-
-    if "resolver_mode" in tuning:
-        resolver_mode = tuning["resolver_mode"]
-        if not isinstance(resolver_mode, str) or resolver_mode not in RESOLVER_MODES:
-            modes = ", ".join(RESOLVER_MODES)
-            raise PresetError(f"resolver_mode must be one of: {modes}")
 
     if "mass_recalibration" in tuning:
         try:

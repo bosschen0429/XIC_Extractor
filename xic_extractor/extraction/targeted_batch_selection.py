@@ -211,7 +211,6 @@ def complete_targeted_candidate_batch(
                 result = prepare_acquired_observation(
                     result,
                     acquisition_source_id=source_trace.acquisition_source_id,
-                    resolver_mode=config.resolver_mode,
                 )
             results[label] = result
             diagnostics.extend(

@@ -340,7 +340,6 @@ def _config() -> ExtractionConfig:
         dll_dir=Path("dll"),
         output_csv=Path("output/xic_results.csv"),
         diagnostics_csv=Path("output/xic_diagnostics.csv"),
-        peak_min_prominence_ratio=0.01,
         ms2_precursor_tol_da=0.5,
         nl_min_intensity_ratio=0.01,
         execution=in_process_execution(),

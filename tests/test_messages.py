@@ -110,7 +110,7 @@ def test_build_diagnostic_records_reports_peak_and_nl_failures() -> None:
     records = build_diagnostic_records("SampleA", _target("WithNL"), result, _config())
 
     assert [record.issue for record in records] == ["PEAK_NOT_FOUND", "NL_FAIL"]
-    assert "max=1234" in records[0].reason
+    assert "max smoothed signal=1234" in records[0].reason
     assert "best observed-loss error 80.0 ppm" in records[1].reason
     assert "quadrature window at 50 ppm per ion" in records[1].reason
 
@@ -254,7 +254,6 @@ def _config() -> ExtractionConfig:
         dll_dir=Path("."),
         output_csv=Path("out.csv"),
         diagnostics_csv=Path("diag.csv"),
-        peak_min_prominence_ratio=0.1,
         ms2_precursor_tol_da=1.6,
         nl_min_intensity_ratio=0.01,
         execution=in_process_execution(),

@@ -37,7 +37,6 @@ class PeakObservationGenerationProvenance:
     query_ppm_tol: float
     trace_source: str
     selected_trace_indices: tuple[int, ...]
-    resolver_mode: str
     proposal_sources: tuple[str, ...]
 
 
@@ -181,7 +180,6 @@ def mint_physical_peak_observations(
     trace: Trace,
     evaluations: tuple[PhysicalPeakEvaluation, ...],
     signal_processing_profile: SignalProcessingProfile,
-    resolver_mode: str,
     capture_stage: str = "initial_capture",
     trace_observation: PeakObservation | None = None,
     acquired_trace_provenance: PeakObservationGenerationProvenance | None = None,
@@ -198,7 +196,6 @@ def mint_physical_peak_observations(
     if trace_observation is not None:
         provenance = replace(
             trace_observation.generation_provenance,
-            resolver_mode=resolver_mode,
             proposal_sources=("canonical_physical_segment",),
         )
     observations: list[PeakObservation] = []
@@ -211,7 +208,6 @@ def mint_physical_peak_observations(
             mz=mz,
             integration=integration,
             selected_indices=integration.raw_scan_indices,
-            resolver_mode=resolver_mode,
             proposal_sources=("canonical_physical_segment",),
             shared_trace_provenance=provenance,
             physical_evaluation=evaluation,
@@ -230,7 +226,6 @@ def _project_peak_observation(
     mz: float,
     integration: IntegrationResult | None,
     selected_indices: tuple[int, ...],
-    resolver_mode: str,
     proposal_sources: tuple[str, ...],
     shared_trace_provenance: PeakObservationGenerationProvenance | None = None,
     physical_evaluation: PhysicalPeakEvaluation | None = None,
@@ -255,14 +250,12 @@ def _project_peak_observation(
         replace(
             shared_trace_provenance,
             selected_trace_indices=selected_indices,
-            resolver_mode=resolver_mode,
             proposal_sources=proposal_sources,
         )
         if shared_trace_provenance is not None
         else prepare_peak_observation_provenance(
             trace=trace,
             selected_indices=selected_indices,
-            resolver_mode=resolver_mode,
             proposal_sources=proposal_sources,
         )
     )
@@ -284,7 +277,6 @@ def prepare_peak_observation_provenance(
     *,
     trace: Trace,
     selected_indices: tuple[int, ...],
-    resolver_mode: str,
     proposal_sources: tuple[str, ...],
 ) -> PeakObservationGenerationProvenance:
     """Retain query and selection context without hashing signal arrays."""
@@ -295,7 +287,6 @@ def prepare_peak_observation_provenance(
         query_ppm_tol=float(trace.ppm_tol),
         trace_source=trace.source,
         selected_trace_indices=selected_indices,
-        resolver_mode=resolver_mode,
         proposal_sources=tuple(sorted(set(proposal_sources))),
     )
 

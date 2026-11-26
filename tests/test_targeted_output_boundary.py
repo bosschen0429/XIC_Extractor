@@ -108,7 +108,6 @@ def test_formal_entry_retains_the_method_universe_and_publishes_its_decision(
         dll_dir=tmp_path,
         output_csv=tmp_path / "xic_results.csv",
         diagnostics_csv=tmp_path / "diagnostics.csv",
-        peak_min_prominence_ratio=0.01,
         ms2_precursor_tol_da=0.5,
         nl_min_intensity_ratio=0.01,
         count_no_ms2_as_detected=True,
@@ -380,7 +379,6 @@ def test_publication_returns_concrete_public_result_models(
             file_result.results[target.label] = prepare_acquired_observation(
                 file_result.results[target.label],
                 acquisition_source_id=source.acquisition_source_id,
-                resolver_mode=config.resolver_mode,
             )
 
     request = build_targeted_application_request(
@@ -1501,7 +1499,6 @@ def test_formal_targeted_backfill_uses_confirmed_peers_and_paired_istd(
         dll_dir=tmp_path,
         output_csv=tmp_path / "result.csv",
         diagnostics_csv=tmp_path / "diag.csv",
-        peak_min_prominence_ratio=0.01,
         ms2_precursor_tol_da=0.5,
         nl_min_intensity_ratio=0.01,
         execution=in_process_execution(),
@@ -1748,7 +1745,6 @@ def test_paired_position_rejects_remote_nl_peak_in_workbook_and_inspector(
         dll_dir=tmp_path,
         output_csv=tmp_path / "result.csv",
         diagnostics_csv=tmp_path / "diag.csv",
-        peak_min_prominence_ratio=0.01,
         ms2_precursor_tol_da=0.5,
         nl_min_intensity_ratio=0.01,
         execution=in_process_execution(),
@@ -1940,7 +1936,6 @@ def test_istd_backfill_keeps_a_drifting_target_as_one_group(
         dll_dir=tmp_path,
         output_csv=tmp_path / "result.csv",
         diagnostics_csv=tmp_path / "diag.csv",
-        peak_min_prominence_ratio=0.01,
         ms2_precursor_tol_da=0.5,
         nl_min_intensity_ratio=0.01,
         execution=in_process_execution(),

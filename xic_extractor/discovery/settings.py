@@ -36,7 +36,6 @@ class DiscoverySettings:
     ms1_search_padding_min: float = 0.35
     rt_min: float | None = None
     rt_max: float | None = None
-    resolver_mode: str = "local_minimum"
     evidence_profile: DiscoveryEvidenceProfile = DEFAULT_EVIDENCE_PROFILE
     enable_blank_qualification: bool = False
     blank_library_path: str | None = None

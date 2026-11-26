@@ -105,7 +105,6 @@ def alignment_metadata(
     raw_dir: Path,
     dll_dir: Path,
     output_level: AlignmentOutputLevel,
-    resolver_mode: str,
     signal_processing_profile: SignalProcessingProfile = (
         DEFAULT_SIGNAL_PROCESSING_PROFILE
     ),
@@ -115,7 +114,6 @@ def alignment_metadata(
         "raw_dir": str(raw_dir),
         "dll_dir": str(dll_dir),
         "output_level": output_level,
-        "resolver_mode": resolver_mode,
         "baseline_integration_method": "asls",
         "signal_processing_profile_json": serialize_signal_processing_profile(
             signal_processing_profile

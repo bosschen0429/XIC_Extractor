@@ -303,7 +303,6 @@ def test_istd_rt_conflict_inside_target_window_stays_counted() -> None:
         role="ISTD",
         istd_pair="ISTD",
         analysis_mode="targeted",
-        resolver_mode="local_minimum",
         integration=IntegrationResult(
             rt_left_min=8.4,
             rt_apex_min=8.5,
@@ -747,7 +746,6 @@ def test_targeted_configured_targets_ignore_sample_name(
 
 
 class _Config:
-    resolver_mode = "local_minimum"
     baseline_integration_method = "asls"
     count_no_ms2_as_detected = False
     ms1_morphology_smoothing_window_points = 15
@@ -855,7 +853,6 @@ def _result_with_targeted_projection_semantics(
         role="ISTD" if target.is_istd else "Analyte",
         istd_pair=target.istd_pair,
         analysis_mode="targeted",
-        resolver_mode="local_minimum",
         integration=(
             physical_evaluation.integration
             if physical_evaluation is not None
@@ -973,7 +970,6 @@ def _selected_hypothesis_with_integration(
         role="Analyte",
         istd_pair="ISTD",
         analysis_mode="targeted",
-        resolver_mode="local_minimum",
         integration=integration,
         evidence=EvidenceVector(
             reason="selected spine",

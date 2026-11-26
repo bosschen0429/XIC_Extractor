@@ -74,7 +74,6 @@ def cid_nl_peak(
         sample=sample,
         trace=trace,
         integration=integration,
-        resolver_mode="local_minimum",
         proposal_sources=("local_minimum", "gaussian15"),
     )
 

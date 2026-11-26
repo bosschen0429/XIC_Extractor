@@ -459,7 +459,6 @@ def test_profile_replay_retains_positive_and_empty_backfill_evidence(
             precursor_tolerance_da=0.01, neutral_loss_tolerance_ppm=10.0
         ),
         half_window_min=BACKFILL_HALF_WINDOW_MIN,
-        resolver_mode=inputs.settings.resolver_mode,
         raw=recovery_raw,
         settings=inputs.settings,
         signal_processing_profile=inputs.profile,

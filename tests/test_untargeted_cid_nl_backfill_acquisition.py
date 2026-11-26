@@ -90,7 +90,6 @@ def test_backfill_uses_sample_pattern_location_without_claiming_method_support(
     )
     result = backfill_untargeted_cid_nl_sample_subject(
         half_window_min=BACKFILL_HALF_WINDOW_MIN,
-        resolver_mode="local_minimum",
         processing_attempt_id=fixture.processing_attempt_id,
         sample=fixture.sample(sample),
         acquisition_source=fixture.source(fixture.sample(sample)),
@@ -242,7 +241,6 @@ def test_recovery_revisits_one_hold_cell_without_minting_support(
 
     result = backfill_untargeted_cid_nl_sample_subject(
         half_window_min=BACKFILL_HALF_WINDOW_MIN,
-        resolver_mode="local_minimum",
         processing_attempt_id=fixture.processing_attempt_id,
         sample=fixture.sample("S1"),
         acquisition_source=fixture.source(fixture.sample("S1")),
@@ -299,7 +297,6 @@ def test_physical_backfill_does_not_choose_among_clipped_tail_candidates(
     raw, _vendor = _open_bound_raw(fixture, "S1", source_raw, tmp_path=tmp_path)
     result = backfill_untargeted_cid_nl_sample_subject(
         half_window_min=0.5,
-        resolver_mode="local_minimum",
         processing_attempt_id=fixture.processing_attempt_id,
         sample=fixture.sample("S1"),
         acquisition_source=fixture.source(fixture.sample("S1")),
@@ -364,7 +361,6 @@ def test_physical_backfill_context_is_not_search_permission(
     assert batch.context_requests[0].rt_max == 9.0
     kwargs = dict(
         half_window_min=0.5,
-        resolver_mode="local_minimum",
         processing_attempt_id=fixture.processing_attempt_id,
         sample=fixture.sample("S1"),
         acquisition_source=fixture.source("S1"),
@@ -544,7 +540,6 @@ def test_composite_backfill_resolves_one_event_per_scan_loss_across_references(
     try:
         result = backfill_untargeted_cid_nl_sample_subject(
             half_window_min=BACKFILL_HALF_WINDOW_MIN,
-            resolver_mode="local_minimum",
             processing_attempt_id=fixture.processing_attempt_id,
             sample=fixture.sample("S1"),
             acquisition_source=fixture.source(fixture.sample("S1")),
@@ -615,7 +610,6 @@ def test_backfill_containing_peak_closes_assessment_outside_apex_window(
         ),
         query_rt_min=8.0,
         profile=profile,
-        resolver_mode="local_minimum",
         search_rt_window=(7.5, 8.5),
     )
     assert peak is not None
@@ -711,7 +705,6 @@ def test_reused_hold_peak_needs_its_own_group_window(
     assert original.method_result == "HOLD" and original.evidence_observations
     attempt = reuse_cid_nl_backfill_peak(
         half_window_min=BACKFILL_HALF_WINDOW_MIN,
-        resolver_mode="local_minimum",
         target=UntargetedCidNlBackfillTarget(
             "bounded-group",
             original.method_subject,

@@ -497,7 +497,6 @@ def _measure_region(
             evaluations=(kept.evaluation,),
             measured_mz=(mz,),
             signal_processing_profile=profile,
-            resolver_mode=settings.resolver_mode,
         )
         channel = channels[request.mz, request.ppm_tol]
         peak = replace(

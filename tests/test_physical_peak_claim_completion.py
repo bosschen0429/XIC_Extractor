@@ -112,7 +112,6 @@ def _view(
         integration=physical_peak_observation_integration(evaluation),
         physical_evaluation=evaluation,
         signal_processing_profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
-        resolver_mode="local_minimum",
         proposal_sources=("local_minimum", "gaussian15"),
     )
     evidence = cid_nl_evidence(fixture, stem, scan_number=101, scan_rt_min=query_rt)

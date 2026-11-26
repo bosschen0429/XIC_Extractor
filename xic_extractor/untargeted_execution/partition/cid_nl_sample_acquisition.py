@@ -397,9 +397,7 @@ def _mint_assessment(
             sample=sample,
             acquisition_source=acquisition_source,
             method_subject=method_subject,
-            detector_invocation_id=(
-                f"untargeted-cid-nl-real-data:{settings.resolver_mode}"
-            ),
+            detector_invocation_id="untargeted-cid-nl-real-data",
             evaluation_receipt=CidNlEvaluationReceipt(
                 query_rt_min=(
                     min(query_rt_min, *candidate_query_rt_mins)

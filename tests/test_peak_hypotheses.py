@@ -27,18 +27,16 @@ def test_hypothesis_id_is_deterministic() -> None:
     first = hypothesis_audit_id(
         sample_name="SampleA",
         target_label="Analyte",
-        resolver_mode="savgol",
         candidate=candidate,
     )
     second = hypothesis_audit_id(
         sample_name="SampleA",
         target_label="Analyte",
-        resolver_mode="savgol",
         candidate=candidate,
     )
 
     assert first == second
-    assert first == ("SampleA|Analyte|savgol|savgol|8.12346|8.00123|8.65432")
+    assert first == ("SampleA|Analyte|savgol|8.12346|8.00123|8.65432")
 
 
 def test_build_peak_hypotheses_marks_selected_and_rejected_candidates() -> None:
@@ -63,7 +61,6 @@ def test_build_peak_hypotheses_marks_selected_and_rejected_candidates() -> None:
         target_label="Analyte",
         role="Analyte",
         istd_pair="ISTD",
-        resolver_mode="local_minimum",
         peak_result=result,
         candidate_ms2_evidence={
             selected: _ms2_evidence(nl_match=True),
@@ -101,7 +98,6 @@ def test_hypothesis_selection_reference_comes_from_detection_result() -> None:
         target_label="Analyte",
         role="Analyte",
         istd_pair="",
-        resolver_mode="savgol",
         peak_result=result,
     )[0]
 
@@ -175,7 +171,6 @@ def test_build_peak_hypotheses_projects_scorer_facts_to_successor_evidence() -> 
         target_label="Analyte",
         role="Analyte",
         istd_pair="ISTD",
-        resolver_mode="local_minimum",
         peak_result=result,
         candidate_ms2_evidence={selected: ms2_evidence},
     )[0]
@@ -247,7 +242,6 @@ def test_build_peak_hypotheses_scan_indices_match_bounded_baseline_interval() ->
         target_label="Analyte",
         role="Analyte",
         istd_pair="",
-        resolver_mode="savgol",
         peak_result=result,
         rt=np.asarray([8.0, 8.5, 9.0]),
         intensity=np.asarray([10.0, 80.0, 20.0]),
@@ -274,7 +268,6 @@ def test_build_peak_hypotheses_rejects_retired_linear_edge_baseline_override() -
             target_label="Analyte",
             role="Analyte",
             istd_pair="",
-            resolver_mode="savgol",
             peak_result=result,
             rt=np.asarray([8.0, 8.5, 9.0]),
             intensity=np.asarray([10.0, 80.0, 20.0]),
@@ -304,7 +297,6 @@ def test_build_peak_hypotheses_accepts_shared_trace_group() -> None:
     trace_group = targeted_trace_group(
         trace,
         target_label="Analyte",
-        resolver_mode="savgol",
     )
 
     hypothesis = build_peak_hypotheses(
@@ -312,12 +304,11 @@ def test_build_peak_hypotheses_accepts_shared_trace_group() -> None:
         target_label="Analyte",
         role="Analyte",
         istd_pair="",
-        resolver_mode="savgol",
         peak_result=result,
         trace_group=trace_group,
     )[0]
 
-    assert hypothesis.trace_group_id == "SampleA|Analyte|savgol"
+    assert hypothesis.trace_group_id == "SampleA|Analyte"
     assert hypothesis.integration.raw_scan_indices == (1, 2)
     assert hypothesis.integration.baseline_type == "asls"
 
@@ -338,7 +329,6 @@ def test_build_peak_hypotheses_returns_empty_without_candidate_intervals() -> No
             target_label="Analyte",
             role="Analyte",
             istd_pair="",
-            resolver_mode="savgol",
             peak_result=result,
         )
         == ()
@@ -437,7 +427,6 @@ def test_legacy_integration_records_raw_interval_sigma_without_redefining_area()
         target_label="A",
         role="Analyte",
         istd_pair="",
-        resolver_mode="savgol",
         peak_result=result,
         rt=rt,
         intensity=raw,

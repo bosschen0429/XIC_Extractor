@@ -91,12 +91,10 @@ def production_case(
             target_label=target.label,
             role="Analyte",
             istd_pair="",
-            resolver_mode=config.resolver_mode,
             peak_result=peak_result,
             trace_group=targeted_trace_group(
                 trace,
                 target_label=target.label,
-                resolver_mode=config.resolver_mode,
             ),
             count_no_ms2_as_detected=True,
         )
@@ -276,7 +274,6 @@ def _config(tmp_path: Path) -> ExtractionConfig:
         dll_dir=tmp_path / "dll",
         output_csv=tmp_path / "output" / "xic_results.csv",
         diagnostics_csv=tmp_path / "output" / "xic_diagnostics.csv",
-        peak_min_prominence_ratio=0.01,
         ms2_precursor_tol_da=0.5,
         nl_min_intensity_ratio=0.01,
         execution=in_process_execution(),
