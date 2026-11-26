@@ -312,7 +312,9 @@ calibrated RT. With at least 21 references, each sample's band centre is the
 median of the other references, and the band admits apices no farther from it
 than the width of their 5–95% quantile range. A sample's member is the nearest
 direct apex in the band, else a quantifiable direct envelope covering the
-centre; an equally near pair leaves the slot empty. A direct peak outside the
+centre. Equal distances are decided by measured peak facts, and when another
+direct peak of the sample also qualifies, the choice records
+`accepted_competition` pointing at it. A direct peak outside the
 band keeps its CID-NL evidence but does not occupy the row. The row is not
 fixed when its precursor masses span more than the full-group tolerance. The
 search below groups the other scored peaks.

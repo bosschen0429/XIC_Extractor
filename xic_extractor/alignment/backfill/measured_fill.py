@@ -36,6 +36,7 @@ from xic_extractor.alignment.feature_membership_inference import (
 )
 from xic_extractor.alignment.membership_selection import (
     AcceptedMembershipRisk,
+    comparable_distance,
     measured_owner_key,
     owner_facts,
 )
@@ -66,20 +67,15 @@ class _Fill:
     alternative_distance: float | None
 
 
-def _minutes(value: float) -> float:
-    """Compare RT distances without floating-point noise deciding a tie."""
-    return round(value, 9)
-
-
 def _localized_peaks(
     peaks: Sequence[SampleLocalMS1Owner], query_rt: float, tolerance_min: float
 ) -> list[SampleLocalMS1Owner]:
     """Qualified peaks, best first: apex within the bound, else holding the query."""
 
     def gap(peak: SampleLocalMS1Owner) -> float:
-        return _minutes(abs(peak.peak.rt_apex_min - query_rt))
+        return comparable_distance(abs(peak.peak.rt_apex_min - query_rt))
 
-    near = [p for p in peaks if gap(p) <= _minutes(tolerance_min)]
+    near = [p for p in peaks if gap(p) <= comparable_distance(tolerance_min)]
     if near:
         return sorted(near, key=lambda p: (gap(p), measured_owner_key(p)))
     return sorted(
@@ -208,7 +204,8 @@ def fill_rows_from_measured_peaks(
             if not ranked:
                 continue
             distances = [
-                _minutes(abs(p.peak.rt_apex_min - query) / tolerance) for p in ranked
+                comparable_distance(abs(p.peak.rt_apex_min - query) / tolerance)
+                for p in ranked
             ]
             runner_up = ranked[1] if len(ranked) > 1 else None
             claims[ranked[0].owner_id].append(

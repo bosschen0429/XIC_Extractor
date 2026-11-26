@@ -170,17 +170,48 @@ def test_peak_envelope_still_supports_the_row_when_nl_is_observed(direct):
         assert slot.selected is None
 
 
+@pytest.mark.parametrize(
+    ("spread", "apices", "reason"),
+    [(0.0, (9.96, 10.04), "direct_envelope"), (0.001, (10.005, 9.99), "direct_apex")],
+)
+def test_band_chooses_one_direct_peak_and_marks_the_other(spread, apices, reason):
+    """Nearest first; an equal pair is decided by measurements, never by IDs."""
+    peers = tuple(
+        _owner(f"r{i}", "ref", apex_rt=10 + (i - 10) * spread) for i in range(21)
+    )
+    for names in (("a", "b"), ("b", "a")):
+        chosen, other = (
+            _owner("query", name, apex_rt=rt)
+            for name, rt in zip(names, apices, strict=True)
+        )
+        for owners in ((*peers, chosen, other), (other, chosen, *peers)):
+            slots, groups = replay(owners)
+            assert (slots["query"].selected, slots["query"].reason) == (
+                chosen.owner_id,
+                reason,
+            )
+            (main,) = [g for g in groups if BAND in g.evidence]
+            assert other.owner_id not in main.owner_ids
+            (risk,) = [
+                d.accepted_risk for d in main.inference_decisions if d.accepted_risk
+            ]
+            assert "accepted_competition" in risk.risk_flags
+            assert set(risk.selected_owners) ^ set(risk.alternative_partition[0]) == {
+                ("test-sample:query", 500.0, rt) for rt in apices
+            }
+
+
 def test_band_slot_takes_only_direct_peaks():
     peers = tuple(_owner(f"r{i}", "ref", apex_rt=10) for i in range(21))
     direct = _owner("query", "supported", apex_rt=9.96)
-    other = _owner("query", "alternative", apex_rt=10.04)
-    slots, _ = replay((*peers, direct, other))
-    assert slots["query"].selected is None
-    slots, _ = replay((*peers, direct, replace(other, primary_identity_event=None)))
+    other = ms1("query", 10.04)
+    slots, groups = replay((*peers, direct, other))
     assert (slots["query"].selected, slots["query"].reason) == (
         direct.owner_id,
         "direct_envelope",
     )
+    (main,) = [g for g in groups if BAND in g.evidence]
+    assert not competing(main)
     apex = ms1("query", 10)
     slots, groups = replay((*peers, direct, apex))
     assert (slots["query"].selected, slots["query"].reason) == (

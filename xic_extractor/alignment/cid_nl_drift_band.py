@@ -4,9 +4,11 @@ After the batch drift model is frozen, a scalar CID-NL channel whose direct peak
 recur in many samples has one expected corrected RT. Each sample's direct member
 is chosen against the band estimated from the other samples' sole direct peaks:
 the nearest direct apex inside the band, else a direct envelope covering the
-band centre. A direct peak far outside the band keeps its CID-NL evidence but
-does not occupy the row. Samples the row lacks are filled afterwards by the
-Backfill localization shared by every settled row.
+band centre. Equal distances are decided by measured peak facts, and a choice
+between qualified direct peaks records accepted competition pointing at the
+other. A direct peak far outside the band keeps its CID-NL evidence but does
+not occupy the row. Samples the row lacks are filled afterwards by the Backfill
+localization shared by every settled row.
 """
 
 from __future__ import annotations
@@ -22,6 +24,12 @@ from xic_extractor.alignment.feature_membership_inference import (
     FeatureMembershipGroup,
     SparseFeatureDecision,
 )
+from xic_extractor.alignment.membership_selection import (
+    AcceptedMembershipRisk,
+    comparable_distance,
+    measured_owner_key,
+    owner_facts,
+)
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 from xic_extractor.alignment.rt_drift import DriftAnchor, DriftCoefficients
 from xic_extractor.alignment.rt_frame import SampleRtFrame
@@ -36,6 +44,7 @@ class BandCandidate:
     """One measured peak; apex and integration limits are in corrected minutes."""
 
     owner_id: str
+    measured_key: tuple[object, ...]
     quantifiable: bool
     method: str | None
     apex: float | None
@@ -45,13 +54,19 @@ class BandCandidate:
 
 @dataclass(frozen=True, slots=True)
 class BandSlot:
+    """A sample's qualified direct peaks, best first, as (distance, owner ID)."""
+
     sample: str
     peers: int
     center: float | None
     radius: float | None
-    selected: str | None
     reason: str
     candidates: tuple[BandCandidate, ...]
+    ranked: tuple[tuple[float, str], ...]
+
+    @property
+    def selected(self) -> str | None:
+        return self.ranked[0][1] if self.ranked else None
 
 
 def _decide(
@@ -61,33 +76,41 @@ def _decide(
     center: float | None,
     radius: float | None,
 ) -> BandSlot:
-    chosen = None
-    reason = "insufficient_peers"
-    if center is not None and radius is not None:
-        ranked = sorted(
-            (abs(c.apex - center), c.owner_id)
-            for c in candidates
-            if c.apex is not None and abs(c.apex - center) <= radius
+    """Nearest direct apex in the band, else a quantifiable envelope holding it."""
+    if center is None or radius is None:
+        return BandSlot(
+            sample, peers, center, radius, "insufficient_peers", candidates, ()
         )
-        reason = "direct_apex"
-        if not ranked:
-            ranked = [
-                (0.0, c.owner_id)
-                for c in candidates
-                if c.quantifiable
-                and c.left is not None
-                and c.right is not None
-                and c.left <= center <= c.right
-            ]
-            reason = "direct_envelope"
-        if ranked:
-            if len(ranked) == 1 or ranked[0][0] < ranked[1][0]:
-                chosen = ranked[0][1]
-            else:
-                reason = "competing_candidates"
-        else:
-            reason = "no_compatible_peak"
-    return BandSlot(sample, peers, center, radius, chosen, reason, candidates)
+    reason = "direct_apex"
+    bound = comparable_distance(radius)
+    qualified = []
+    for c in candidates:
+        if c.apex is not None:
+            distance = comparable_distance(abs(c.apex - center))
+            if distance <= bound:
+                qualified.append((distance, c))
+    if not qualified:
+        reason = "direct_envelope"
+        qualified = [
+            (0.0, c)
+            for c in candidates
+            if c.quantifiable
+            and c.left is not None
+            and c.right is not None
+            and c.left <= center <= c.right
+        ]
+    if not qualified:
+        reason = "no_compatible_peak"
+    ranked = sorted(qualified, key=lambda item: (item[0], item[1].measured_key))
+    return BandSlot(
+        sample,
+        peers,
+        center,
+        radius,
+        reason,
+        candidates,
+        tuple((distance, c.owner_id) for distance, c in ranked),
+    )
 
 
 def assign_drift_band(
@@ -119,6 +142,7 @@ def assign_drift_band(
         by_sample[s].append(
             BandCandidate(
                 o.owner_id,
+                measured_owner_key(o),
                 o.quantification_eligible,
                 est.method if est else None,
                 est.rt_min - offset if est and offset is not None else None,
@@ -157,7 +181,7 @@ def assign_drift_band(
         slots.append(
             _decide(
                 s,
-                tuple(sorted(by_sample[s], key=lambda c: c.owner_id)),
+                tuple(sorted(by_sample[s], key=lambda c: c.measured_key)),
                 n,
                 center,
                 radius,
@@ -228,6 +252,7 @@ def drift_band_membership(
     if not chosen:
         return None
     ids = tuple(sorted(chosen))
+    by_id = {o.owner_id: o for o in owners}
     precursors = {o.owner_id: o.peak.mz for o in owners if o.owner_id in chosen}
     if not within_ppm(
         max(precursors.values()),
@@ -242,6 +267,28 @@ def drift_band_membership(
         "corrected_cid_nl_reference_band",
         rt_drift=anchor.coefficients if anchor else DriftCoefficients(),
     )
+
+    def risk(slot: BandSlot) -> AcceptedMembershipRisk | None:
+        """The next qualified direct peak of the sample is the competing choice."""
+        if len(slot.ranked) < 2:
+            return None
+        (distance, selected), (other_distance, other) = slot.ranked[:2]
+        alternative = tuple(sorted((set(ids) - {selected}) | {other}))
+        return AcceptedMembershipRisk(
+            "evaluated_alternative",
+            "initial",
+            owner_facts(by_id, ids),
+            (owner_facts(by_id, alternative),),
+            (),
+            distance,
+            other_distance,
+            other_distance - distance,
+            "drift_corrected",
+            f"drift_band;{slot.reason}",
+            (),
+            ("accepted_competition",),
+        )
+
     decisions = tuple(
         SparseFeatureDecision(
             "window",
@@ -251,6 +298,7 @@ def drift_band_membership(
             "assigned",
             chosen[k].reason,
             rt_basis="drift_corrected",
+            accepted_risk=risk(chosen[k]),
         )
         for k in ids
     )

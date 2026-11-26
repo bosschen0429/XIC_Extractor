@@ -237,6 +237,11 @@ def measured_owner_key(owner: SampleLocalMS1Owner) -> tuple[object, ...]:
     )
 
 
+def comparable_distance(value: float) -> float:
+    """A compared distance, rounded so floating-point noise never decides a tie."""
+    return round(value, 9)
+
+
 def canonical_partition(groups: Sequence[Sequence[str]]) -> Partition:
     return tuple(sorted(tuple(sorted(group)) for group in groups if group))
 
