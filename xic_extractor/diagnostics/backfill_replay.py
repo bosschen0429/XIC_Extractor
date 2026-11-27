@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import csv
-from collections.abc import Iterator
 from dataclasses import replace
 from pathlib import Path
+from typing import cast
 
 from xic_extractor.configuration.execution_profile import ExecutionProfile
 from xic_extractor.diagnostics.matrix_replay import CompletedMatrixCells
@@ -16,6 +16,7 @@ from xic_extractor.output.alignment.tsv_writer import cell_status
 from xic_extractor.sample_metadata import SampleMetadata
 from xic_extractor.untargeted_execution.execution import FrozenBackfillPartition
 from xic_extractor.untargeted_execution.partition_composition import (
+    UntargetedPartitionComposition,
     compose_untargeted_partition,
 )
 
@@ -52,9 +53,44 @@ class BackfillCheckpoint:
             save_snapshot(self.directory / _ROSTER, (self._count, self._samples))
 
 
-def _partitions(directory: Path, count: int) -> Iterator[FrozenBackfillPartition]:
-    for index in range(count):
-        yield load_snapshot(_partition(directory, index))
+_CellRow = tuple[str, float, str, float | None, str, str, str]
+_MatrixInput = tuple[UntargetedPartitionComposition, tuple[SampleMetadata, ...]]
+
+
+def _replay_partition(
+    task: tuple[Path, int, bool],
+) -> tuple[tuple[_CellRow, ...], _MatrixInput | None]:
+    """Run one captured partition the way a Backfill worker runs it: its
+    samples in turn on an in-process pool, then its composition."""
+    path, index, keep_composition = task
+    frozen = cast(FrozenBackfillPartition, load_snapshot(path))
+    with WorkerAdmissionPool(max_workers=1, backend="thread") as pool:
+        result = frozen.execute(f"partition-{index:05d}-backfill", pool)
+    if result.failure is not None:
+        raise result.failure
+    composition = compose_untargeted_partition(
+        replace(frozen.batch, prepared_grouping=frozen.grouping),
+        result.sample_results,
+        alignment_config=frozen.grouping.alignment_config,
+        known_istd_reference=frozen.grouping.known_istd_reference,
+    )
+    rows = tuple(
+        (
+            group.group_hypothesis_id,
+            group.group_center_rt,
+            cell.subject.canonical_sample.raw_stem,
+            cell.value,
+            cell.variant,
+            cell.source,
+            cell_status(cell),
+        )
+        for child in composition.children
+        for group, cells in child.group_cells
+        for cell in cells
+    )
+    return rows, (
+        (composition, frozen.batch.context.samples) if keep_composition else None
+    )
 
 
 def replay_backfill(
@@ -88,36 +124,31 @@ def replay_backfill(
                     "status",
                 )
             )
-            for index, frozen in enumerate(_partitions(directory, count)):
-                with WorkerAdmissionPool(
-                    max_workers=execution.alignment_workers,
-                    backend=execution.backend,
-                ) as pool:
-                    result = frozen.execute(f"partition-{index:05d}-backfill", pool)
-                if result.failure is not None:
-                    raise result.failure
-                composition = compose_untargeted_partition(
-                    replace(frozen.batch, prepared_grouping=frozen.grouping),
-                    result.sample_results,
-                    alignment_config=frozen.grouping.alignment_config,
-                    known_istd_reference=frozen.grouping.known_istd_reference,
+            replayed: dict[int, tuple[tuple[_CellRow, ...], _MatrixInput | None]] = {}
+            with WorkerAdmissionPool(
+                max_workers=execution.alignment_workers,
+                backend=execution.backend,
+            ) as pool:
+                pool.run_windowed(
+                    tuple(range(count)),
+                    _replay_partition,
+                    task_arg_fn=lambda index: (
+                        _partition(directory, index),
+                        index,
+                        matrix is not None,
+                    ),
+                    on_completed=lambda _done, _total, index, result: (
+                        replayed.__setitem__(index, result)
+                    ),
                 )
+                if pool.first_error is not None:
+                    raise pool.first_error
+            for index in range(count):
+                cell_rows, matrix_input = replayed[index]
                 if matrix is not None:
-                    matrix.append(composition, frozen.batch.context.samples)
-                for child in composition.children:
-                    for group, cells in child.group_cells:
-                        for cell in cells:
-                            rows.writerow(
-                                (
-                                    group.group_hypothesis_id,
-                                    group.group_center_rt,
-                                    cell.subject.canonical_sample.raw_stem,
-                                    cell.value,
-                                    cell.variant,
-                                    cell.source,
-                                    cell_status(cell),
-                                )
-                            )
+                    assert matrix_input is not None
+                    matrix.append(*matrix_input)
+                rows.writerows(cell_rows)
         if matrix is not None:
             matrix.write(staged[matrix_path])
     return output

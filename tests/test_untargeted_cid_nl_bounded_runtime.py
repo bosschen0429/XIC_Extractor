@@ -809,6 +809,70 @@ def test_cancellation_reaches_a_backfill_partition_before_its_samples(
     assert not any(samples_after_cancel)
 
 
+def test_a_failed_backfill_partition_stops_its_siblings_before_their_next_sample(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """The failure, not the siblings' interruption, ends the batch; a sibling
+    learns of it through the spool marker before its next sample."""
+    import xic_extractor.untargeted_execution.execution as owner
+    import xic_extractor.untargeted_execution.partition.execution as runtime_owner
+
+    plan, _ = _plan(tmp_path, monkeypatch)
+    output_dir = tmp_path / "failed"
+    original_sample = runtime_owner._execute_backfill_sample_phase
+    lock = Lock()
+    failed = Event()
+    marker_missing = Event()
+    sibling_samples_after_marker = []
+
+    def marker_exists():
+        return bool(list(output_dir.glob(".partition_spool-*/cancel-requested")))
+
+    def fail_one_partition(phase):
+        partition = phase.backfill_resource_key.split(":")[1]
+        if partition == "partition-00000-backfill":
+            with lock:
+                first = not failed.is_set()
+                failed.set()
+            if first:
+                raise OSError("injected Backfill sample failure")
+        else:
+            sibling_samples_after_marker.append(marker_exists())
+            deadline = perf_counter() + 10
+            while failed.is_set() and not marker_exists():
+                if perf_counter() > deadline:
+                    marker_missing.set()
+                    break
+                sleep(0.01)
+        return original_sample(phase)
+
+    monkeypatch.setattr(
+        runtime_owner, "_execute_backfill_sample_phase", fail_one_partition
+    )
+    with pytest.raises(RuntimeError, match="failed before batch publication") as error:
+        owner.execute_untargeted_plan(
+            plan,
+            output_dir=output_dir,
+            alignment_config=AlignmentConfig(),
+            max_partition_jobs=len(plan.context.samples),
+            execution=ExecutionProfile(
+                alignment_workers=2, backend="thread", overlap_partitions=False
+            ),
+            project_child=project_composed_child,
+        )
+    causes = []
+    cause = error.value
+    while cause is not None:
+        causes.append(cause)
+        cause = cause.__cause__
+    assert any("injected Backfill sample failure" in str(item) for item in causes)
+    assert not any(isinstance(item, InterruptedError) for item in causes)
+    assert failed.is_set()
+    assert not marker_missing.is_set(), "the failure never reached the spool"
+    assert not any(sibling_samples_after_marker)
+    assert not _spool_dirs(output_dir)
+
+
 def test_failed_attempt_retry_recomposes_the_same_result(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -1462,60 +1526,6 @@ def test_sample_worker_transport_references_global_request_owners(
         assert job.candidates == original.candidates
 
 
-def test_process_recovery_dispatches_only_missing_subjects(tmp_path, monkeypatch):
-    from xic_extractor.execution.workers import WorkerAdmissionPool
-    from xic_extractor.untargeted_execution.partition import execution as runtime
-    from xic_extractor.untargeted_execution.partition import workers as worker
-    from xic_extractor.untargeted_execution.partition_composition import (
-        group_acquired_partition,
-    )
-
-    class LocalProcessMessages(WorkerAdmissionPool):
-        @property
-        def backend(self):
-            return "process"
-
-    plan, _ = _plan(tmp_path, monkeypatch, scenario="partial_recovery")
-    batch = materialize_untargeted_partition(plan, plan.subject_batch)
-    monkeypatch.setattr(worker, "ensure_assemblies_loaded", lambda *_: None)
-    requests = []
-    execute_recovery = runtime._execute_sample_backfill_worker
-
-    def observe_request(request):
-        requests.append(request)
-        keys = {job.work_unit_key for job in request.jobs}
-        assert keys == set(request.backfill_targets_by_key)
-        assert set(request.backfill_support_by_key) == keys
-        assert not hasattr(request, "adapter_results_by_key")
-        assert all(
-            isinstance(ctx, worker._BackfillSupportContext)
-            for ctx in request.backfill_support_by_key.values()
-        )
-        assert len(keys) < len(plan.subject_batch.subjects)
-        return execute_recovery(request)
-
-    monkeypatch.setattr(runtime, "_execute_sample_backfill_worker", observe_request)
-    config = AlignmentConfig()
-    with LocalProcessMessages(max_workers=1, backend="thread") as pool:
-        result = runtime.execute_partition(
-            batch.jobs,
-            partition_key="sparse-recovery",
-            alignment_config=config,
-            pool=pool,
-            prepare_grouping=lambda initial: group_acquired_partition(
-                batch, initial, alignment_config=config
-            ),
-        )
-    assert result.succeeded
-    assert len(requests) == 1
-    assert len(result.sample_results) == len(batch.jobs)
-    selected = {job.work_unit_key for job in requests[0].jobs}
-    for sample_result in result.sample_results:
-        assert bool(sample_result.backfill_attempts) is (
-            sample_result.job.work_unit_key in selected
-        )
-
-
 def test_two_sample_process_messages_match_serial_results_and_attribution(
     tmp_path, monkeypatch
 ):
@@ -1549,8 +1559,11 @@ def test_two_sample_process_messages_match_serial_results_and_attribution(
 
         return execute
 
-    for entry in ("_execute_sample_initial_worker", "_execute_sample_backfill_worker"):
-        monkeypatch.setattr(runtime, entry, reordered_response(getattr(runtime, entry)))
+    monkeypatch.setattr(
+        runtime,
+        "_execute_sample_initial_worker",
+        reordered_response(runtime._execute_sample_initial_worker),
+    )
     with LocalProcessMessages(max_workers=2, backend="thread") as pool:
         process = runtime.execute_partition(
             batch.jobs,

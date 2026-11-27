@@ -739,8 +739,9 @@ class UntargetedPartitionPipelineAdapter:
 
         A worker reads its partition's final grouping and initial assessments
         from the spool once, revisits every sample and composes, so nothing of
-        the partition passes through this process. Cancellation reaches the
-        workers through a marker in the spool, checked between samples.
+        the partition passes through this process. Cancellation, or a failed
+        partition, reaches the other workers through a marker in the spool,
+        checked between samples.
         """
         partitions = tuple(self._partitions[self._bootstrap_count :])
         shared_owners = store.shared_owners_path()
@@ -828,6 +829,7 @@ class UntargetedPartitionPipelineAdapter:
                 _run_backfill_partition,
                 task_arg_fn=task,
                 on_completed=adopt,
+                on_error=lambda _partition, _error: cancel_requested.touch(),
                 should_cancel=should_cancel,
             )
             if pool.first_error is not None:
