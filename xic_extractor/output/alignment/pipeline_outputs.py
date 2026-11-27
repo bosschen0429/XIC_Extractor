@@ -44,7 +44,6 @@ class AlignmentRunOutputs:
     matrix_tsv: Path | None = None
     backfill_cell_evidence_tsv: Path | None = None
     cells_tsv: Path | None = None
-    status_matrix_tsv: Path | None = None
     run_metadata_json: Path | None = None
     rt_anchors_tsv: Path | None = None
     owner_backfill_evaluation_coverage: BackfillEvaluationCoverageBatch | None = None
@@ -56,14 +55,11 @@ def output_paths(
     *,
     output_level: AlignmentOutputLevel,
     emit_alignment_cells: bool,
-    emit_alignment_status_matrix: bool,
     emit_target_snapshot_metadata: bool = False,
 ) -> AlignmentRunOutputs:
     artifacts = set(artifact_names_for_output_level(output_level))
     if emit_alignment_cells:
         artifacts.add("alignment_cells.tsv")
-    if emit_alignment_status_matrix:
-        artifacts.add("alignment_matrix_status.tsv")
     return AlignmentRunOutputs(
         matrix_tsv=(
             output_dir / "alignment_matrix.tsv"
@@ -78,11 +74,6 @@ def output_paths(
         backfill_cell_evidence_tsv=(
             output_dir / "alignment_backfill_cell_evidence.tsv"
             if "alignment_backfill_cell_evidence.tsv" in artifacts
-            else None
-        ),
-        status_matrix_tsv=(
-            output_dir / "alignment_matrix_status.tsv"
-            if "alignment_matrix_status.tsv" in artifacts
             else None
         ),
         run_metadata_json=(
@@ -129,7 +120,6 @@ def row_output_paths(outputs: AlignmentRunOutputs) -> dict[str, Path]:
             ("matrix", outputs.matrix_tsv),
             ("backfill", outputs.backfill_cell_evidence_tsv),
             ("cells", outputs.cells_tsv),
-            ("status", outputs.status_matrix_tsv),
         )
         if path is not None
     }

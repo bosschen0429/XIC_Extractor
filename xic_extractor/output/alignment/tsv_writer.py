@@ -74,13 +74,6 @@ ALIGNMENT_CELLS_COLUMNS = (
     "source_candidate_id",
 )
 
-STATUS_MATRIX_GROUP_COLUMNS = (
-    "feature_id",
-    "neutral_loss_tag",
-    "group_center_mz",
-    "group_center_rt",
-)
-
 
 def untarget_sample_order(
     canonical_samples: Iterable[SampleMetadata],
@@ -164,7 +157,6 @@ def _output_headers(sample_order: tuple[str, ...]) -> dict[str, tuple[str, ...]]
         "matrix": serialize_public_matrix_table((), sample_columns=sample_order).header,
         "backfill": ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS,
         "cells": ALIGNMENT_CELLS_COLUMNS,
-        "status": (*STATUS_MATRIX_GROUP_COLUMNS, *sample_order),
     }
 
 
@@ -186,7 +178,7 @@ def project_untarget_child_rows(
     sample_order: tuple[str, ...],
 ) -> tuple[UntargetGroupRows, ...]:
     """Format one child's groups for the requested TSVs (``matrix``,
-    ``backfill``, ``cells``, ``status``) without batch numbering."""
+    ``backfill``, ``cells``) without batch numbering."""
 
     requested = frozenset(outputs)
     headers = _output_headers(sample_order)
@@ -216,7 +208,6 @@ def project_untarget_child_rows(
         center_rt = _member_mean_rt(peaks)
         if not math.isfinite(center_mz):
             raise ValueError("group centre m/z is not finite")
-        tag = _cell_neutral_loss_tag(evidence)
         candidate_ids = {
             sample_stem: candidate_id
             for sample_stem, cell, observation in zip(
@@ -228,12 +219,6 @@ def project_untarget_child_rows(
                 )
             )
             is not None
-        }
-        group_columns = {
-            "feature_id": "",
-            "neutral_loss_tag": tag,
-            "group_center_mz": format_value(center_mz),
-            "group_center_rt": format_value(center_rt),
         }
         matrix_values = None
         if group.destination == "matrix" and "matrix" in requested:
@@ -258,18 +243,6 @@ def project_untarget_child_rows(
             (
                 _cell_fields(sample_stem, cell, candidate_ids)
                 for sample_stem, cell in zip(sample_order, cells, strict=True)
-            ),
-        )
-        emit(
-            "status",
-            (
-                {
-                    **group_columns,
-                    **{
-                        sample_stem: cell_status(cell)
-                        for sample_stem, cell in zip(sample_order, cells, strict=True)
-                    },
-                },
             ),
         )
         projected.append(
@@ -449,19 +422,6 @@ def _member_mean_rt(peaks: tuple[PeakObservation, ...]) -> float:
         if not math.isfinite(peak.rt_apex_min):
             raise ValueError("Matrix row lacks finite owner-backed RT observations")
     return sum(float(peak.rt_apex_min) for peak in peaks) / len(peaks)
-
-
-def _cell_neutral_loss_tag(observations: tuple[FinalGroupCellObservation, ...]) -> str:
-    return ";".join(
-        sorted(
-            {
-                tag
-                for observation in observations
-                for cell in observation.effective_cells
-                if (tag := cell.group_context.group.neutral_loss_tag)
-            }
-        )
-    )
 
 
 def _selected_cell_source(
@@ -731,15 +691,14 @@ def _merge_batch_rows(
             by_sample.get(stem) or ("", stem, "not_searched", *empty)
             for stem in global_order
         )
-    if name in {"matrix", "status"}:
-        fixed = 2 if name == "matrix" else 4
+    if name == "matrix":
         values: dict[str, str] = {}
         for order, rows in present:
-            values.update(zip(order, rows[0][fixed:], strict=True))
-        first = list(present[0][1][0][:fixed])
-        first[fixed - 1] = reference_rt(first[fixed - 1])
-        missing = "" if name == "matrix" else "not_searched"
-        return ((*first, *(values.get(stem, missing) for stem in global_order)),)
+            values.update(zip(order, rows[0][2:], strict=True))
+        mz, rt = present[0][1][0][:2]
+        return (
+            (mz, reference_rt(rt), *(values.get(stem, "") for stem in global_order)),
+        )
     raise ValueError(f"unknown Untargeted output: {name}")
 
 

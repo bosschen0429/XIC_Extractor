@@ -51,7 +51,6 @@ def test_validation_minimal_outputs_keep_gate_artifacts_without_debug_surfaces(
         tmp_path,
         output_level="validation-minimal",
         emit_alignment_cells=False,
-        emit_alignment_status_matrix=False,
     )
 
     assert outputs.matrix_tsv == tmp_path / "alignment_matrix.tsv"
@@ -60,7 +59,6 @@ def test_validation_minimal_outputs_keep_gate_artifacts_without_debug_surfaces(
         tmp_path / "alignment_backfill_cell_evidence.tsv"
     )
     assert outputs.cells_tsv is None
-    assert outputs.status_matrix_tsv is None
     assert outputs.run_metadata_json == tmp_path / "alignment_run_metadata.json"
 
 
@@ -71,7 +69,6 @@ def test_target_snapshot_binding_requests_existing_run_metadata_sidecar(
         tmp_path,
         output_level="validation-minimal",
         emit_alignment_cells=False,
-        emit_alignment_status_matrix=False,
         emit_target_snapshot_metadata=True,
     )
 
@@ -85,7 +82,6 @@ def test_writer_timing_observations_are_truthful_with_live_output(
         tmp_path / "out",
         output_level="validation-minimal",
         emit_alignment_cells=False,
-        emit_alignment_status_matrix=False,
     )
     live_path = tmp_path / "timing.live.json"
     recorder = TimingRecorder(
@@ -129,13 +125,11 @@ def test_writer_instrumentation_preserves_output_bytes(
         tmp_path / "baseline",
         output_level="validation-minimal",
         emit_alignment_cells=False,
-        emit_alignment_status_matrix=False,
     )
     candidate_outputs = output_paths(
         tmp_path / "candidate",
         output_level="validation-minimal",
         emit_alignment_cells=False,
-        emit_alignment_status_matrix=False,
     )
     matrix = _matrix(("Sample_A", "Sample_B"))
     writer_args = (matrix,)
@@ -184,13 +178,11 @@ def test_production_and_machine_plans_write_identical_matrix_bytes(
         tmp_path / "production",
         output_level="production",
         emit_alignment_cells=False,
-        emit_alignment_status_matrix=False,
     )
     machine_outputs = output_paths(
         tmp_path / "machine",
         output_level="machine",
         emit_alignment_cells=False,
-        emit_alignment_status_matrix=False,
     )
     matrix = writer_batch(
         ("Sample_A", "Sample_B", "Sample_C"),
@@ -222,20 +214,20 @@ def test_outer_transaction_restores_prior_outputs_without_leaking_temp_files(
 ) -> None:
     output_dir = tmp_path / "out"
     matrix_path = output_dir / "alignment_matrix.tsv"
-    status_path = output_dir / "alignment_matrix_status.tsv"
+    cells_path = output_dir / "alignment_cells.tsv"
     outputs = pipeline_outputs_module.AlignmentRunOutputs(
         matrix_tsv=matrix_path,
-        status_matrix_tsv=status_path,
+        cells_tsv=cells_path,
     )
     output_dir.mkdir(parents=True)
     matrix_path.write_bytes(b"prior matrix")
-    status_path.write_bytes(b"prior status")
+    cells_path.write_bytes(b"prior cells")
 
     write_tsvs = pipeline_outputs_module.write_alignment_tsvs
 
     def fail_after_rendering(*args, **kwargs):
         write_tsvs(*args, **kwargs)
-        raise RuntimeError("injected status writer failure")
+        raise RuntimeError("injected TSV writer failure")
 
     monkeypatch.setattr(
         pipeline_outputs_module,
@@ -244,7 +236,7 @@ def test_outer_transaction_restores_prior_outputs_without_leaking_temp_files(
     )
     matrix = _matrix(("Sample_A", "Sample_B"))
 
-    with pytest.raises(RuntimeError, match="injected status writer failure"):
+    with pytest.raises(RuntimeError, match="injected TSV writer failure"):
         _write(
             outputs,
             matrix,
@@ -252,7 +244,7 @@ def test_outer_transaction_restores_prior_outputs_without_leaking_temp_files(
         )
 
     assert matrix_path.read_bytes() == b"prior matrix"
-    assert status_path.read_bytes() == b"prior status"
+    assert cells_path.read_bytes() == b"prior cells"
     leftovers = tuple(
         path
         for path in output_dir.iterdir()
@@ -297,7 +289,6 @@ def test_production_output_plan_writes_the_matrix_and_rt_anchors(
         tmp_path / "out",
         output_level="production",
         emit_alignment_cells=False,
-        emit_alignment_status_matrix=False,
     )
 
     _write(outputs, _matrix(("Sample_A", "Sample_B")), metadata={})
@@ -337,7 +328,6 @@ def test_one_pass_writes_every_requested_file(tmp_path: Path) -> None:
         matrix_tsv=directory / "alignment_matrix.tsv",
         backfill_cell_evidence_tsv=directory / "alignment_backfill_cell_evidence.tsv",
         cells_tsv=directory / "alignment_cells.tsv",
-        status_matrix_tsv=directory / "alignment_matrix_status.tsv",
         run_metadata_json=directory / "alignment_run_metadata.json",
     )
 
@@ -351,7 +341,6 @@ def test_one_pass_writes_every_requested_file(tmp_path: Path) -> None:
         "alignment_backfill_cell_evidence.tsv",
         "alignment_cells.tsv",
         "alignment_matrix.tsv",
-        "alignment_matrix_status.tsv",
         "alignment_run_metadata.json",
     ]
     line_counts = {
@@ -362,7 +351,6 @@ def test_one_pass_writes_every_requested_file(tmp_path: Path) -> None:
         "alignment_backfill_cell_evidence.tsv": 2,
         "alignment_cells.tsv": 10,
         "alignment_matrix.tsv": 3,
-        "alignment_matrix_status.tsv": 4,
     }
 
 

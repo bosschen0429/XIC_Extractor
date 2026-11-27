@@ -72,7 +72,6 @@ class UntargetedPublicationPolicy:
 
     output_level: AlignmentOutputLevel = "production"
     emit_alignment_cells: bool = False
-    emit_alignment_status_matrix: bool = False
     emit_alignment_explanation: bool = False
 
     def output_paths(self, output_dir: Path) -> AlignmentRunOutputs:
@@ -80,7 +79,6 @@ class UntargetedPublicationPolicy:
             output_dir,
             output_level=self.output_level,
             emit_alignment_cells=self.emit_alignment_cells,
-            emit_alignment_status_matrix=self.emit_alignment_status_matrix,
         )
 
 

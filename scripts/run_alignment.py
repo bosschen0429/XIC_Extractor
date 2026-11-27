@@ -227,7 +227,6 @@ def main(argv: Sequence[str] | None = None) -> int:
                 output_level=args.output_level,
                 emit_alignment_cells=args.emit_alignment_cells,
                 emit_alignment_explanation=args.emit_alignment_explanation,
-                emit_alignment_status_matrix=args.emit_alignment_status_matrix,
             ),
             replay=AlignmentReplayOptions(
                 grouping=args.save_grouping_inputs,
@@ -297,8 +296,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"Alignment matrix TSV: {outputs.matrix_tsv}")
     if outputs.cells_tsv is not None:
         print(f"Alignment cells TSV: {outputs.cells_tsv}")
-    if outputs.status_matrix_tsv is not None:
-        print(f"Alignment status matrix TSV: {outputs.status_matrix_tsv}")
     if outputs.run_metadata_json is not None:
         print(f"Alignment run metadata JSON: {outputs.run_metadata_json}")
     if timing_recorder is not None:
@@ -660,7 +657,6 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
             "debug and validation levels include it already"
         ),
     )
-    parser.add_argument("--emit-alignment-status-matrix", action="store_true")
     args = parser.parse_args(argv)
     if args.save_matrix_inputs and args.stop_after == "grouping":
         parser.error("--save-matrix-inputs requires a complete Alignment run")

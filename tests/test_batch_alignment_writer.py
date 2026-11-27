@@ -82,10 +82,7 @@ def _group(batch_id, key, rt, *, destination="matrix", detected=None):
         physical_peaks=tuple((f"{key}:{stem}", "d") for stem in detected),
         source_candidate_ids=tuple(f"{key}:{stem}" for stem in detected),
         matrix=FinalMatrixValues(300.0, rt, tuple(areas.get(s) for s in stems)),
-        rows=(
-            ("cells", cells),
-            ("status", (("", "dR", "300", str(rt), *("detected" for _ in stems)),)),
-        ),
+        rows=(("cells", cells),),
     )
 
 
@@ -109,7 +106,7 @@ def _source(batch_id, groups):
 
 
 def _write(tmp_path, sources, partners):
-    paths = {name: tmp_path / f"{name}.tsv" for name in ("matrix", "cells", "status")}
+    paths = {name: tmp_path / f"{name}.tsv" for name in ("matrix", "cells")}
     identities = []
     count = write_batch_alignment_tsvs(
         paths,
@@ -145,8 +142,6 @@ def test_paired_rows_share_one_row_and_single_batch_rows_keep_their_batch(tmp_pa
         [300, 20, 21, 22, None, None, None],
     ]
 
-    status = tables["status"]
-    assert status[3][4:] == ["detected", "detected"] + ["not_searched"] * 3
     cells = [row for row in tables["cells"][1:] if row[0] == "F000002"]
     assert [(row[1], row[2]) for row in cells] == [
         ("o1", "not_searched"),

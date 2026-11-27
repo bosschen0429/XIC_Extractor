@@ -631,7 +631,6 @@ _RETIRED_ALIGNMENT_ARTIFACT_NAMES = (
 
 _CONDITIONAL_ALIGNMENT_ARTIFACT_NAMES = (
     "alignment_explanation.sqlite",
-    "alignment_matrix_status.tsv",
     "alignment_cell_integration_audit.tsv",
     "alignment_owner_backfill_candidate_audit.tsv",
     "skipped_evidence_ledger.tsv",
