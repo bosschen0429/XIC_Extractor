@@ -293,11 +293,11 @@ allow_indirect_imports = false
 
 [[tool.importlinter.contracts]]
 id = "alignment-domain-models-stay-pure"
-name = "Alignment ownership and edge scoring stay free of I/O"
+name = "Alignment ownership and band linking stay free of I/O"
 type = "forbidden"
 source_modules = [
     "xic_extractor.alignment.ownership_models",
-    "xic_extractor.alignment.edge_scoring",
+    "xic_extractor.alignment.peak_band_linking",
 ]
 forbidden_modules = [
     "xic_extractor.output",
@@ -422,10 +422,6 @@ id = "grouping-and-cell-consume-method-answers"
 name = "Shared grouping and cell closure do not select method interpreters"
 type = "forbidden"
 source_modules = [
-    "xic_extractor.alignment.grouping_rules",
-    "xic_extractor.alignment.grouping_evidence",
-    "xic_extractor.alignment.edge_scoring",
-    "xic_extractor.alignment.feature_membership_inference",
     "xic_extractor.alignment.cross_sample.peak_groups",
     "xic_extractor.alignment.cross_sample.neighborhood_graph",
     "xic_extractor.alignment.cell_observation.observations",

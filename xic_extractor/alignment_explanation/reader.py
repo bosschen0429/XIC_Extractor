@@ -493,30 +493,14 @@ class _Report:
             )
         rows.sort(key=lambda row: row[0])
         members = self.members("initial_group", ids)
-        owner_risks = self._member_risks("initial_group", ids)
         result = {}
-        for group_id, disposition, basis, decisions in rows:
+        for group_id, disposition, basis in rows:
             record: dict[str, Any] = {
                 "disposition": disposition,
                 "member_subjects": members.get(group_id, []),
             }
             if basis is not None:
-                owners = {
-                    subject: risk
-                    for (group, _), risks in owner_risks.items()
-                    if group == group_id
-                    for subject, risk in risks
-                }
                 record["inference_basis"] = decode_json(basis)
-                record["inference_decisions"] = [
-                    decision
-                    if decision.get("accepted_risk") is not None
-                    else {
-                        **decision,
-                        "accepted_risk": owners.get(decision.get("owner_id")),
-                    }
-                    for decision in decode_json(decisions)
-                ]
             result[str(group_id)] = json.loads(encode_object(record))
         return result
 

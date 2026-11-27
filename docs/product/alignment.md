@@ -14,8 +14,7 @@ comparison, but none alone proves identity.
 | --- | --- |
 | owner | An established sample-local peak observation carrying a physical peak and local method evidence. It is the object being aligned, not a guarantee that cross-sample correspondence is correct. |
 | Feature | A set of cross-sample observations accepted on the basis of evidence. A group in the code carries its members and decision results; it does not denote a separate scientific entity. |
-| pattern | Measured local maxima within one sample, together with their order, spacing, widths, and relative heights. Maxima may include shoulders and need not each form an owner. |
-| trajectory | Observation positions linked by cross-sample correspondences. Missing-sample positions may be estimated from them, but an estimate is neither a new observation nor additional evidence of Feature identity. |
+| band | Peak hypotheses linked along injection order, with at most one per injection. Missing RTs can be estimated from its members; an estimate is not another observation. |
 
 A method subject denotes an acquisition or evaluation question, not a Feature
 boundary. A fixed Target output row is not a cross-sample Feature either. Shared
@@ -26,13 +25,12 @@ terminology remains owned by the [Domain Glossary](domain-glossary.md).
 - A group is identified by its members. Each member is one canonical sample
   plus one owner-backed peak hypothesis and the physical observation it binds.
 - A group holds at most one member per canonical sample. Distinguishable peaks
-  in the same sample stay in separate groups; unresolved ambiguity does not
-  choose an arbitrary winner.
+  in the same sample cannot share a band. The fixed link order selects among
+  admissible alternatives and records the measured competitor.
 - Each finalized group has exactly one disposition: `established`,
-  `provisional`, `unresolved` or `rejected`. Established requires accepted
-  members from at least two distinct samples, at least one of them a peak not
-  measured on an unresolved shoulder or overlap; a singleton, or a group made
-  only of such peaks, is provisional. Low support alone is not rejection.
+  `provisional`, `unresolved` or `rejected`. Established requires at least
+  two direct CID-NL activation-supporting members from distinct samples.
+  Observation-only members can bridge a band but cannot establish it. Low support alone is not rejection.
   Disposition and output inclusion are separate decisions.
 - `feature_id` is not identity. Discovery's `feature_id` labels candidates that
   share one MS1 peak within one sample. Alignment's `feature_id` (`F000001`)
@@ -51,23 +49,6 @@ terminology remains owned by the [Domain Glossary](domain-glossary.md).
   belong to different groups of one family.
 
 ## Method principles
-
-### Observations and correspondence
-
-Owners provide actual sample-local observations; patterns provide surrounding
-structure. Alignment uses these data to:
-
-- propose candidates worth comparing;
-- support a cross-sample correspondence;
-- rule out correspondences incompatible with observations or accepted constraints.
-
-Proposing a candidate does not accept a correspondence, and support does not mean
-that other reasonable explanations have been ruled out. An established group
-cannot retroactively create independent evidence that did not exist between its
-members.
-
-Patterns may propose candidates outside ordinary RT/mass searches. Their role
-therefore need not be limited to adjusting scores for existing edges.
 
 ### Unconnected and distinct
 
@@ -107,23 +88,6 @@ Local maxima, partitioned segments, and independently acceptable physical peaks
 are not interchangeable. Using them as evidence of distinctness must respect
 the observational unit above.
 
-### Different uses of the same evidence
-
-The same pattern may participate in candidate generation, membership decisions,
-and position estimation, but its use in multiple steps does not provide multiple
-independent confirmations.
-
-- RT correction changes comparison coordinates, not measured peak positions or
-  integration.
-- Method compatibility supports comparison but does not alone establish the same
-  Feature.
-- Confirmed known-identity bindings are input constraints, not re-derived from
-  ordinary pattern similarity.
-- An unavailable correction or pattern does not mean zero drift was measured or
-  no peak exists.
-- Not every ISTD or unknown Feature is assumed to follow the same batch-wide
-  monotonic RT drift.
-
 ### Backfill versus correspondence
 
 Backfill performs a bounded search in an existing Feature context for samples
@@ -148,323 +112,49 @@ paths.
 
 ### Inputs and comparison scope
 
-Alignment consumes candidates and owner-backed hypotheses from Discovery or
-Targeted; it does not create the first sample-local Discovery hit. RAW owner-build
-accepts only MS1-feature-backed Discovery candidates; review-only rows do not
-thereby receive a second XIC search. A Discovery peak is one ion peak with one
-measurement: Alignment reads its XIC exactly as Discovery measured it and adopts
-that measurement as the sample's cell, so its area and bounds equal the peak
-table. Scheduling partitions pack worksets for execution only; they do not
-restrict scientific comparison or RT calibration.
-
-The first pass searches every sample, with or without its own CID-NL events,
-for each ion planned from the batch's qualifying events. A mass region with
-events in fewer than `K` samples, the direct-support quorum that
-[Backfill](backfill.md) also uses, is read only in the samples that carry an
-event there: peaks from other samples could not complete a row whose direct
-evidence is too sparse to be published, so they are not collected. A region
-stays read in every sample when one of its peaks shows the loss in two or more
-scans, since a repeat under one peak is a reproducible signal that sparse DDA
-sampling alone would hide. Event masses within
-5 ppm of each other are readings of one ion; each sample reads one XIC at
-their median mass with the shared precursor tolerance (10 ppm), over the
-ion's event RTs widened by 3 min, and measures it once. A peak becomes an
-observation only when its apex lies within 3 min of some sample's event in
-that mass region. On 8RAW, every Matrix peak lay within 2.72 min of such an
-event. Backfill is not bounded by this distance: a cell without a
-first-pass peak is searched again.
-
-Each declared batch is aligned alone and its finished Matrix groups are then
-paired with the reference batch's; see
-[Declared batches](rt-calibration.md#declared-batches). Grouping, Backfill and
-calibration never compare samples of different batches.
-
-Non-composite method subjects with the same scalar neutral loss form connected
-worksets through resolver intervals and known-reference comparison envelopes.
-Different losses, disconnected scopes, and composite subjects retain separate
-worksets. A workset defines only the comparison scope: it does not establish
-membership or pool the subjects' MS2 evidence.
-
-Confirmed known-ISTD owners are first grouped by exact identity label. Bindings
-with the same label remain intact; proximity alone cannot admit unbound owners.
-Multiple owners bound within the same sample, or the same owner bound to
-different labels, remain unresolved input conflicts rather than being
-arbitrarily selected or split.
-
-### Build owners and local patterns
-
-Initial processing retains owners and separately acquires wider MS1 context.
-Measured maxima in that context may participate in a pattern even when they
-are not independent owners or quantitative results; apices without sufficient
-smoothing-kernel acquired support are excluded. The original capture, physical
-evaluation, and integration remain unchanged.
-
-Current [pattern matching](../../xic_extractor/alignment/peak_trajectories.py)
-preserves peak order, permits missing and extra maxima, and pairs them using a
-shared RT shift and peak-width constraints. Relative heights distinguish equally
-complete matches; patterns without a unique resolution do not directly provide
-correspondences. A single-pair match cannot connect tracks, bind owners, or
-supply positions; it lacks a second landmark to establish an ordered pattern.
-
-When both complete compared patterns lie inside their sample calibration spans,
-matching uses common-RT apices and transforms peak widths into that same frame. The calibration
-already supplies the displacement: matching permits width-bounded residuals, not
-a free shift onto neighboring peaks. Compounds that drift beyond the map are the
-exception, so each frozen drift anchor within 2 minutes of the pattern adds one
-discrete displacement hypothesis, its own predicted drift between the two
-samples ([Drift beyond the map](rt-calibration.md#drift-beyond-the-map)). The
-best complete pairing over zero and those hypotheses wins with the usual
-ranking; a tie between different pairings still yields no correspondence, and
-same-sample physical order keeps its veto. Cross-sample context selection and
-neighbor ranking use the same supported common coordinates before the
-match, without a distance bound; local owner-to-landmark binding remains in
-measured coordinates.
-Initial grouping retains supplied contexts so calibrated regroup can reconsider
-candidates excluded by raw-RT pruning.
-Diagnostic replay retains full calibration support and arbitrary-landmark RT
-mapping, including bounded sample calibration loaded from a file or fitted by
-the replay command. An owner-only coordinate callback does not supply those
-facts. If any required apex or width endpoint lacks support, the entire
-pair retains raw-RT pattern matching with a shared shift of at most 3 minutes:
-without a measured common coordinate, an unbounded shift would let any
-similarly spaced peaks in the channel correspond. Missing support is not
-measured zero drift.
-These comparison coordinates do not replace measured landmarks or owner values.
-
-Different seed windows may produce slightly different apices for the same peak.
-Current doublet detection uses the narrower peak's width and the
-owner_apex_close_sec lower bound, rather than absolute apex or seed RT distance
-alone. Differences smaller than approximately half a peak width are therefore
-not treated as two peaks that cause the entire component to be discarded.
-
-### Build trajectories
-
-Accepted pattern matches form tracks and bind eligible owners. Tracks are not
-considered distinct merely because they are unconnected. The current
-implementation establishes incompatibility between two tracks when distinct
-landmarks from both tracks are observed in the same sample, or their measured
-elution order connects them through other retained tracks. For example,
-`A < B < C` prevents merging A with C even without a sample containing both.
-Sharing a reference on the same side (`A < B > C`) does not establish that
-A and C differ. Membership and separated-band bridges consume this prepared
-compatibility decision; RT proximity or shape agreement cannot override it.
-
-Trajectories are then used as seeds for ordinary membership, for compatibility
-decisions, and for Backfill localization. These uses share the same source and
-do not independently validate one another.
-
-Membership inference withdraws a track's membership authority when co-observed
-direct peaks contradict its common-Feature claim. The witness requires two
-nonprovisional scalar CID-NL owners from one sample, with usable method evidence,
-matching chemistry, and precursors within the configured comparison tolerance.
-Their selected integration segments must be disjoint; owner bounds apply only
-when selected integrations are unavailable. Existing method compatibility must
-place track members exclusively on opposite sides of that pair.
-Product envelope mismatches disambiguate that witness; a mismatch alone
-does not revoke a track's membership authority.
-
-Withdrawal removes the track's seeds, same-track RT benefit, and derived
-distinct-track exclusions together. Other tracks and the original localization
-geometry remain available. Missing, weak, overlapping, or method-ambiguous
-witnesses do not authorize withdrawal. RT distance and shape similarity do not
-disambiguate the witness. Known-identity constraints retain their separate path.
+Alignment retains measured peak hypotheses from the CID-NL assessment of each
+sample. A member holds the hypothesis itself; its ID and physical observation
+are read from it. Compatible, overlapping precursor search bounds in the same
+CID-NL method form a workset, not a feature or chemical identity. Independently
+known ISTD bindings are grouped separately, subject to sample uniqueness
+and the mass span.
 
 ### Prepare RT coordinates
 
-Alignment projects sample observations onto a shared retention-time coordinate
-frame before final membership and localization. The fit, anchor qualification,
-and LOESS model are described in
-[Retention Time Calibration](rt-calibration.md), including the implementation
-owner, anchor rules, support floors, and graded query details. Drift that the
-shared map cannot carry (batch state B, sample shift M) is frozen with it; see
-[Drift beyond the map](rt-calibration.md#drift-beyond-the-map).
-
-Final grouping rebuilds correspondence in the frozen frame and carries those
-trajectories to localization. Weak estimates multiply RT costs by 0.5 in
-addition to signal-quality weighting, while mass and independent shape costs
-remain unchanged. Unsupported coordinates are not measured zero drift: a
-supported apex cannot join an unsupported raw apex through ordinary
-correspondence. When both apices are unsupported, existing raw/shape evidence
-remains available. A Backfill forecast uses common coordinates only when its
-references and target inverse have estimates; otherwise it estimates the entire
-forecast in raw RT, without mixing coordinate systems. Saved frozen
-`BatchRtWarp` payloads remain readable for replay, not as a runtime fitter.
+Raw-RT bands supply ordinary anchors to the existing batch calibration fitter.
+The bootstrap step bound is 0.6 min so it tolerates some whole-injection
+shifts. Batch state (B) and the baseline sample shift (M) read each method
+channel's unique direct peaks, banded or not; direct bands spanning at least
+20 injections can then vote on M.
+See [Retention Time Calibration](rt-calibration.md) for the fit and voting.
 
 ### Decide membership
 
-[Final grouping](../../xic_extractor/alignment/feature_membership_inference/finalization.py)
-selects a feasible complete configuration rather than withdrawing a choice
-because another one is close. This policy applies to Untargeted final/regroup
-membership, not bootstrap or Targeted selection. Backfill admission applies the
-same membership cost to fixed groups within its own search eligibility; see
-[Backfill](backfill.md).
+[Band linking](../../xic_extractor/alignment/peak_band_linking.py) tries links
+within eight injections and 0.4 min in calibrated RT, or in measured RT where
+the calibration supplies no bounded answer. Injections are counted by their
+position in the batch, so an injection outside the batch does not widen a gap.
+A link's distance is its RT step plus 0.005 min per injection apart; shorter
+distances are tried first, then shorter injection gaps, then measured peak
+order. A union may not
+duplicate an injection or exceed the configured full-band precursor span
+(capped at 10 ppm). Missing injection order does not invent links. An
+under-equilibrated injection's peaks before 8.5 min first move to where they
+would elute without its
+[early-segment shift](rt-calibration.md#early-segment-of-an-under-equilibrated-injection).
 
-- A connected precursor-mass neighborhood is the comparison universe. Every
-  cost comparison in it uses common apices only when all members have estimated
-  coordinates; otherwise the whole universe uses raw coordinates. Unsupported
-  peak edges remain unknown, not raw substitutes in a common-frame comparison.
-  Explicit diagnostic overrides keep their own basis label and grant no
-  calibration support. Missing support does not mean zero drift, and the
-  algorithm does not choose whichever coordinate system gives the cheaper result.
-- Physical peak ownership, one peak per sample per Feature, full-group precursor
-  mass tolerance, and retained physical trajectory separation constrain feasible
-  groups. Method-specific hard constraints remain with the method interpreter;
-  product scatter admitted by that interpreter contributes cost rather than
-  silently acquiring a new hard veto.
-- A proposed group with at least four members and common coordinates for every
-  member cannot span two concentrated RT populations. Sort its common apices
-  and inspect the largest
-  adjacent gap: reject the group when the gap is at least 20 seconds and at
-  least twice the larger of the two sides' RT ranges. A singleton side has
-  zero range. The gap is a veto only when the two sides interleave in
-  injection order. When every injection on one side precedes every injection
-  on the other, residual drift between earlier and later injections explains
-  the gap as well as two compounds do, so the gap remains RT cost; a calibrated
-  coordinate's small change then cannot flip the group across the threshold.
-  A member without an injection order keeps the veto. Two- and three-member
-  groups retain the cost-based choice rather than a hard population veto,
-  limiting false splits with sparse observations.
-  Missing member coordinates disable this constraint; raw RT never
-  substitutes for them. The thresholds are internal, not configuration fields.
-  The constraint evaluates whole groups, not arbitrary pairs. Whole-band seed
-  proposals preserve continuous distributions whose smaller subsets would fail
-  the constraint; only feasible complete groups enter configuration selection.
-  Owners remain available for other groups or singleton/archive routing.
-- RT separation, mass deviation, injection gap and density, local trend, shape
-  disagreement, disjoint regions, and weak identity contribute costs. A larger
-  injection gap never makes the same RT error cheaper. Shape/region disagreement
-  is not a final-membership veto. Existing peak signal-quality facts reduce the
-  weight of RT/shape/region evidence; no noise or SNR is recalculated.
-- A singleton costs 1. A group costs 1 plus its maximum pair cost and local trend
-  penalty; configuration cost is the sum of group costs. A group may instead
-  fit drift coefficients against the frozen B and M; it is then evaluated,
-  population gap included, in its drift-adjusted coordinate, and each nonzero
-  coefficient adds the cost of a 10-second pair RT difference. Zero
-  coefficients keep the plain coordinate. There is no fixed RT ceiling on pairs;
-  RT difference is a cost. The cost is not
-  multiplied by sample count. Whole-band merges and per-sample assignment use
-  this same objective and accept strict improvements. Every proposed group is
-  evaluated as a whole, so a favorable connecting pair cannot hide its endpoints.
-- Owners with their own method evidence define rows first. When a neighborhood
-  also holds owners without it, selection first runs on the direct owners
-  alone. Each resulting row of two or more is then kept together: a
-  configuration that separates its members is infeasible, and selection over
-  the whole neighborhood starts from those rows. Owners without method evidence
-  join them or group with each other under the same objective. They may extend
-  a direct row or connect two of them, but cannot rearrange direct owners, so
-  a direct row does not depend on how many unconfirmed peaks surround it. The
-  cost is otherwise the same, and a neighborhood of only one kind of owner is
-  selected in a single pass. A direct row that is itself wrong is not corrected
-  by observations without method evidence.
-- On equal primary cost, compare average owner-to-peer fit across the complete
-  configuration: each grouped owner contributes its mean pair cost to its
-  peers; a singleton retains cost 1. This secondary comparison adds no weight
-  to the primary objective and never increases its cost. Evaluated single-owner
-  assignments, separations and occupied-sample swaps can improve the selection,
-  rather than merely appearing as warnings. Reassess merges/sample assignments
-  after an accepted move until no improving bounded move remains.
-- Near-equivalent choices remain selected and carry competition flags. Fixed
-  measured features choose the representative only when both decision costs
-  are equivalent, never display IDs or input order. Truly equivalent
-  alternatives are retained. This is a bounded merge/assignment search, not a
-  claim of a global optimum over every possible partition.
-- Mixed trajectories retain independently observed raw pairs after calibrated
-  intermediaries are withdrawn. An A–C–B path does not become direct A–B support.
-  A shared raw track does not replace measured RT separation with zero or force
-  membership. Original localization geometry remains unchanged.
-- Final composite forward/reverse proposals are compared with the same complete
-  objective; disagreement is recorded rather than taking only their intersection.
-  Bootstrap still requires its conservative directional agreement.
-
-The membership search may skip work, not alternative evidence. A hard conflict
-with an original member cannot be rescued by adding peers, but a complete
-group can be feasible when a partial extension is not. Keep the last feasible
-frontier. Rank drift against the feasible zero model: one pair over the bound
-already rejects a maximum-pair cost; RT and region terms improve by at most
-0.95 per preferred interval, and a within-group median cannot incur the
-90-second trend penalty when the whole span is shorter. The member floor
-limits fitting a coefficient, not reusing one when an owner leaves. Preserve
-the original closed-radius subtraction and tie order at numerical boundaries.
-
-For an ordered correspondence, two distinct optimal paths suffice to establish
-ambiguity; keeping one by tuple order hides it and enumerating all can be
-exponential. Contracting nodes cannot remove a pre-existing cycle. Close the
-*ordered* separations, not an undirected distinct relation: two peaks on the
-same side of a third are not thereby distinct from one another.
-
-Final decisions record the selected members, nearest evaluated alternative
-configuration, equivalent alternatives, primary and peer-fit costs and gaps,
-coordinate/evidence basis,
-accepted contradictions, and phase. Alternatives are final-state single-owner
-assignment, separation, or occupied-sample swaps, not stale merge proposals.
-No feasible alternative is explicit; a missing legacy fact means `not_recorded`,
-not zero risk. These are engineering decision costs, not identity probabilities.
-
-Risk is associated with owner and canonical sample identity, then projected to
-final rows and samples. Row flags are the union of sample facts, not a flag copied
-into every sample. Initial facts remain phase-qualified when Backfill extends a
-row; they do not claim to explain a Backfill decision. Compact/full explanation,
-review TSV and Inspector preserve these facts. Normal publication automatically
-includes the compact report when flags exist, and CLI prints its path. Risk flags
-do not grant or remove quantitative values, counted detections, or training
-eligibility; Matrix headers and the strict identity TSV remain unchanged.
-
-#### Conservative admission and shape measurement
-
-Membership inference outside final selection — bootstrap, Targeted grouping,
-subject Backfill planning and the evidence spine — admits conservatively. There,
-measured peak shape supplies fallback evidence when neither side has
-calibration support. The owner adapter
-retains an apex-relative, own-max Gaussian-smoothed shape from the selected
-raw MS1 subtrace, without changing its baseline, bounds, apex or area. Comparison
-translates RT but does not stretch width. Only in this private derivative,
-an observed nonpositive gap separates the selected apex's positive signal
-island from neighboring signal; continuous background is not subtracted.
-This does not reselect the peak or change the measured observation.
-A median local Pearson similarity across the two sides' member pairs below
-`min_peak_shape_similarity` (default 0.80) prevents ordinary membership in
-that fallback; a single dissimilar pair does not. Pairs distinguished by
-physical peak order are not shape evidence. The fallback cannot veto
-supported common-coordinate regions.
-At least five acquired points per trace and half of the shared +/-0.35-minute
-grid are required. Fine-shape comparison also requires five measured points
-at or above half height in each retained primary signal; zeros, smoothing and
-interpolation do not supply that resolution. With fewer points, only the
-coarse contrast between a localized signal (both observed edges below half
-height) and a sustained signal (both edges at or above half height) can supply
-a shape veto, still using the same Pearson threshold. Insufficient context,
-unresolved primary shape, missing legacy resolution metadata and flat traces
-remain unassessed, not positive evidence of identity.
-Shape agreement alone does not establish membership. A measured contradiction
-applies to the entire proposed union, including trajectory seeds, singleton
-admission and separated-band bridges; intermediate members cannot hide it.
-Directional and window assignment consume the same region/shape rule. Final
-selection and Backfill admission instead count shape and region disagreement as
-cost and risk. Explicit known-identity constraints remain separate from inferred membership.
-
-Bootstrap seed support consumes Discovery evidence scores and the existing MS2
-seed count. Alignment does not turn peak SNR into identity or Matrix write
-authority. Measurement-quality facts belong to the
-[peak signal-quality owner](signal-processing.md#short-scale-signal-quality).
-The current `anchor_min_seed_events` in `CID_NL_ALIGNMENT_CONFIG` is 1: an MS1-only
-physical observation counts as one event rather than using the generic default
-of 2. Final membership does not inherit this seed-rating gate. MS1-only Target
-owners separately use precursor, physical quality and RT evidence; missing MS2
-alone neither excludes them nor admits them to a CID evidence group.
+A band with at least six members and two direct peaks may seed its own
+[drift fit](rt-calibration.md#drift-beyond-the-map). In final grouping, seeds
+that one joint fit explains merge first: two seeds join when, after removing
+the drift fitted to their union, the union alone links into one band. Peaks in
+the workset are linked again after removing that seed's frozen drift; only the band
+overlapping the seed may be taken on this pass. Peaks with an unknown used
+regressor do not participate in that pass. Unclaimed peaks are linked in the
+general coordinate; groups with fewer than two direct peaks stay out of the
+Matrix. Competitions are member facts and preserve the measured alternate
+peak or band; no displayed ID decides a tie.
 
 ### Join groups and consolidate split bands
-
-Final grouping compares separated bands through the same complete-configuration
-cost and sample-occupancy constraints. An injection gap alone is not evidence of
-distinct Features; reciprocal-best agreement is not required.
-
-Initial membership is decided only by `infer_feature_memberships`, including
-local grouping, singleton assignment, and separated-band comparisons. The workflow
-consumes that result without a second merge. With owners, pattern evidence and
-RT frame fixed, Backfill search windows do not change initial membership;
-widening acquisition may change recovery, not the initial Feature boundary.
-Known-identity and bootstrap/composite
-directional rules remain within inference.
 
 Band consolidation is the one consolidation contract. A separable valley can
 cut one chromatographic band into two segments in some injections only, and
@@ -509,48 +199,17 @@ floor are product policy, not a calibrated error rate.
 
 ### Localization and Backfill
 
-Trajectories use observed positions for localization. Missing positions are
-estimated from up to twelve neighboring observations in the same cohort, using
-available batch coordinates and a robust local RT fit. For a group with drift
-coefficients, the fit uses its drift-adjusted coordinate and adds the target
-sample's modeled drift back; a target with unknown drift keeps the plain fit.
-Backfill admission keeps the group's coefficients and does not refit them. This includes compatible
-MS1-only positions without creating CID-NL support.
+Backfill localizes from the accepted band's measured member apices, including
+MS1-only positions without turning them into CID-NL support. It fits up to
+twelve same-cohort neighbors in the common coordinate when possible, removing
+and restoring the band's frozen drift without refitting it. The bounded
+fallbacks and empirical tolerance are described in
+[Backfill](backfill.md#query-rt-versus-group-rt).
 
-Insufficient temporal support, bounded extrapolation, and localization
-reliability each have explicit handling; detailed conditions are owned by
-[Backfill](backfill.md#query-rt-versus-group-rt). Direct owner positions always
-remain authoritative. A same-sample borrowed position is contradicted only when
-the direct owner is bound to a landmark within its selected peak segment and
-the borrowed landmark lies outside that segment. Before fitting, localization
-withdraws that position and its dependent branch along accepted pattern links.
-Withdrawal stops at direct anchors and preserves positions supported by an
-independent direct anchor that does not itself endorse a contradicted position.
-Unrelated positions remain available; a conflict does not discard the entire
-trajectory. These localization decisions do not change initial membership or
-the owners' selected peaks and integrations.
-
-Backfill returns observations or reasons for no result. Existing members are not
-reassigned by this search; membership and cell decisions still determine
-whether new observations are acceptable. Output consumes the completed results
-without repeating grouping, peak selection, or integration.
-
-## Open questions
-
-The following questions still need clarification between the method description
-and current implementation. They are not settled new algorithms or additional
-execution rules.
-
-| Question | Known behavior | Still to clarify |
-| --- | --- | --- |
-| Pattern acceptance conditions | Eligible seeds connect directly; sharing a track also affects cost and ambiguity handling. | What evidence is sufficient to accept a correspondence? Do later steps consume an accepted result or repeat the decision? |
-| Granularity of landmarks and physical peaks | Distinct landmarks may establish distinct-track constraints; landmarks may also include shoulders. | When is this sufficient to rule out the same Feature, and when is it only structure within one peak or a segmentation difference? |
-| Overgeneralized decision reasons | Assigned window groups are uniformly labeled as supported by RT trend; unions with fewer than 10 owners may pass the trend check directly. | How should explanations distinguish actually measured support, a pattern seed, and merely not being ruled out by a check? |
-
-These questions do not predetermine that pattern or RT/mass always takes
-priority, nor do they require a single graph, solver, or aggregate score. Their
-common concern is whether specific correspondences and their dependencies can
-hold together, not the names or number of mechanisms.
+Backfill never changes an original member or creates a row. It accepts a
+missing-sample observation only inside the fixed band's physical and method
+limits, resolving competing claims against the same physical peak once.
+Output reads the resulting member and cell decisions without regrouping.
 
 ## Evidence and related documents
 

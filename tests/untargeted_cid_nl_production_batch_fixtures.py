@@ -560,7 +560,7 @@ def profile_replay(tmp_path, monkeypatch, request):
     consumed_contexts = []
     retained_terminals = []
     consumed_terminals = []
-    retained_candidate_batches = []
+    retained_band_members = []
     retained_cell_batches = []
     build_initial_context = production.build_initial_cid_nl_cross_sample_groups
     regroup_initial_context = production.regroup_cid_nl_cross_sample_groups
@@ -570,10 +570,12 @@ def profile_replay(tmp_path, monkeypatch, request):
     workset_grouping = production.CidNlWorksetGrouping
 
     def retain_initial_context(**kwargs):
-        grouping_scope, context, retained_candidates = build_initial_context(**kwargs)
+        grouping_scope, context = build_initial_context(**kwargs)
         bootstrap_contexts.append(context)
-        retained_candidate_batches.append(retained_candidates)
-        return grouping_scope, context, retained_candidates
+        retained_band_members.extend(
+            owner for group in grouping_scope.groups for owner in group.owners
+        )
+        return grouping_scope, context
 
     def retain_regrouped_context(**kwargs):
         grouping_scope, context = regroup_initial_context(**kwargs)
@@ -742,7 +744,7 @@ def profile_replay(tmp_path, monkeypatch, request):
         dll_dir=tmp_path,
         output_dir=tmp_path / "alignment",
         settings=settings,
-        alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+        alignment_config=AlignmentConfig(),
         signal_processing_profile=profile,
         timing_recorder=TimingRecorder.disabled(
             "alignment",
@@ -787,7 +789,7 @@ def profile_replay(tmp_path, monkeypatch, request):
                 obsolete_marker=obsolete_marker,
                 preparation_fingerprints=preparation_fingerprints,
                 projection_builds=projection_builds,
-                retained_candidate_batches=retained_candidate_batches,
+                retained_band_members=retained_band_members,
                 retained_terminals=retained_terminals,
                 retained_cell_batches=retained_cell_batches,
                 retained_contexts=retained_contexts,

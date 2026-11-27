@@ -12,7 +12,6 @@ Everything here is an in-memory calculation on measured RTs.
 
 from __future__ import annotations
 
-from bisect import bisect_left, bisect_right
 from collections import defaultdict
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -33,7 +32,6 @@ _MIN_COMMON_SAMPLES = 6
 _FAMILY_RT_MIN = 0.05
 _FAMILY_SEARCH_MIN = 5.0
 _SHAPE_BANDWIDTH_MIN = 1.0
-_TRACK_RT_WINDOW_MIN = 2.0 * _SHAPE_BANDWIDTH_MIN
 
 
 @dataclass(frozen=True, slots=True)
@@ -155,37 +153,6 @@ class RtDriftModel:
             )
 
         return lookup
-
-    def displacement_lookup(self) -> Callable[[float, str, str], tuple[float, ...]]:
-        """Prepare anchors' drift once; the lookup returns second-minus-first
-        displacements predicted by each anchor near an RT."""
-        prepared = sorted(
-            (
-                (
-                    anchor.reference_rt_min,
-                    self.sample_offsets(anchor.coefficients, anchor.shape),
-                )
-                for anchor in self.anchors
-            ),
-            key=lambda item: item[0],
-        )
-        references = [reference for reference, _ in prepared]
-
-        def displacements(rt_min: float, first: str, second: str) -> tuple[float, ...]:
-            def relative_rt(reference: float) -> float:
-                return reference - rt_min
-
-            values = set()
-            low = bisect_left(references, -_TRACK_RT_WINDOW_MIN, key=relative_rt)
-            high = bisect_right(references, _TRACK_RT_WINDOW_MIN, key=relative_rt)
-            for _, offsets in prepared[low:high]:
-                if first in offsets and second in offsets:
-                    value = offsets[second] - offsets[first]
-                    if value:
-                        values.add(value)
-            return tuple(sorted(values))
-
-        return displacements
 
     def sample_offsets(
         self, coefficients: DriftCoefficients, batch_state: Mapping[str, float]

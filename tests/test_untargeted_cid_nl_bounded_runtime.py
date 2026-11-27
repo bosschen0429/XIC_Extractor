@@ -146,7 +146,7 @@ def test_partition_capacity_keeps_batch_calibration_and_grouping(tmp_path, monke
         raws=raws,
         peaks=peaks,
         settings=settings,
-        alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+        alignment_config=AlignmentConfig(),
         known_istd_reference_workbook=reference,
     )
 
@@ -200,7 +200,7 @@ def test_batch_ms1_only_members_are_partition_invariant_and_do_not_supply_cid(
         raws=raws,
         peaks=peaks,
         settings=settings,
-        alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+        alignment_config=AlignmentConfig(),
     )
 
     separate = publish_alignment(
@@ -724,7 +724,7 @@ def test_failed_attempt_retry_recomposes_the_same_result(
     baseline = owner.execute_untargeted_plan(
         baseline_plan,
         output_dir=tmp_path / "cold-output",
-        alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+        alignment_config=AlignmentConfig(),
         max_partition_jobs=len(baseline_plan.context.samples),
         execution=ExecutionProfile(
             alignment_workers=4, backend="thread", overlap_partitions=False
@@ -749,7 +749,7 @@ def test_failed_attempt_retry_recomposes_the_same_result(
         owner.execute_untargeted_plan(
             plan,
             output_dir=output_dir,
-            alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+            alignment_config=AlignmentConfig(),
             max_partition_jobs=len(plan.context.samples),
             execution=ExecutionProfile(
                 alignment_workers=4, backend="thread", overlap_partitions=False
@@ -765,7 +765,7 @@ def test_failed_attempt_retry_recomposes_the_same_result(
     completed = owner.execute_untargeted_plan(
         retry_plan,
         output_dir=output_dir,
-        alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+        alignment_config=AlignmentConfig(),
         max_partition_jobs=len(retry_plan.context.samples),
         execution=ExecutionProfile(
             alignment_workers=4, backend="thread", overlap_partitions=False
@@ -812,7 +812,7 @@ def test_partition_acquisitions_overlap_with_shared_worker_budget_and_ordered_ou
 
     plan, _ = _plan(tmp_path, monkeypatch)
     monkeypatch.setattr(runtime_owner, "ensure_assemblies_loaded", lambda *_args: None)
-    config = AlignmentConfig(anchor_min_seed_events=1)
+    config = AlignmentConfig()
     serial = owner.execute_untargeted_plan(
         plan,
         output_dir=tmp_path / "serial-partitions",
@@ -941,7 +941,7 @@ def test_overlapped_partition_acquisition_failure_propagates(
         owner.execute_untargeted_plan(
             plan,
             output_dir=tmp_path / "overlapped-failure",
-            alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+            alignment_config=AlignmentConfig(),
             max_partition_jobs=len(plan.context.samples),
             execution=ExecutionProfile(
                 alignment_workers=4, backend="thread", overlap_partitions=True
@@ -988,7 +988,7 @@ def test_last_bootstrap_failure_prevents_backfill_admission(tmp_path, monkeypatc
         owner.execute_untargeted_plan(
             plan,
             output_dir=tmp_path / "last-bootstrap",
-            alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+            alignment_config=AlignmentConfig(),
             max_partition_jobs=len(plan.context.samples),
             execution=ExecutionProfile(
                 alignment_workers=4, backend="thread", overlap_partitions=True
@@ -1059,7 +1059,7 @@ def test_final_grouping_failure_stops_before_any_backfill(
         owner.execute_untargeted_plan(
             plan,
             output_dir=tmp_path / "grouping",
-            alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+            alignment_config=AlignmentConfig(),
             max_partition_jobs=len(plan.context.samples),
             execution=ExecutionProfile(
                 alignment_workers=4,
@@ -1095,7 +1095,7 @@ def test_backfill_requires_frozen_batch_calibration(tmp_path, monkeypatch):
     plan, _ = _plan(tmp_path, monkeypatch)
     adapter = owner.UntargetedPartitionPipelineAdapter(
         plan,
-        alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+        alignment_config=AlignmentConfig(),
         max_partition_jobs=len(plan.context.samples),
         execution=ExecutionProfile(
             alignment_workers=1, backend="thread", overlap_partitions=False
@@ -1224,7 +1224,7 @@ def test_sample_parallelism_keeps_partition_and_acquisition_counts_fixed(
     result = owner.execute_untargeted_plan(
         plan,
         output_dir=tmp_path / "parallel",
-        alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+        alignment_config=AlignmentConfig(),
         max_partition_jobs=8,
         execution=ExecutionProfile(
             alignment_workers=raw_workers, backend="thread", overlap_partitions=False
@@ -1331,7 +1331,7 @@ def test_sample_failure_drains_without_more_samples_or_partition_publication(
         owner.execute_untargeted_plan(
             plan,
             output_dir=tmp_path / "failed",
-            alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+            alignment_config=AlignmentConfig(),
             execution=ExecutionProfile(
                 alignment_workers=2, backend="thread", overlap_partitions=False
             ),
@@ -1432,7 +1432,7 @@ def test_process_recovery_dispatches_only_missing_subjects(tmp_path, monkeypatch
         return execute_recovery(request)
 
     monkeypatch.setattr(runtime, "_execute_sample_backfill_worker", observe_request)
-    config = AlignmentConfig(anchor_min_seed_events=1)
+    config = AlignmentConfig()
     with LocalProcessMessages(max_workers=1, backend="thread") as pool:
         result = runtime.execute_partition(
             batch.jobs,
@@ -1466,7 +1466,7 @@ def test_two_sample_process_messages_match_serial_results_and_attribution(
 
     plan, _ = _plan(tmp_path, monkeypatch, sample_count=2)
     batch = materialize_untargeted_partition(plan, plan.subject_batch)
-    config = AlignmentConfig(anchor_min_seed_events=1)
+    config = AlignmentConfig()
     with WorkerAdmissionPool(max_workers=1, backend="thread") as pool:
         serial = runtime.execute_partition(
             batch.jobs,
@@ -1552,7 +1552,7 @@ def test_process_outcome_must_cover_the_exact_work_units(
         result = runtime.execute_partition(
             batch.jobs,
             partition_key="crossed-worker-population",
-            alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+            alignment_config=AlignmentConfig(),
             pool=pool,
         )
 
@@ -1581,7 +1581,7 @@ def test_formal_partition_reuses_prepared_group_ids_with_ms1_only_members(
     )
     adapter = bounded_owner.UntargetedPartitionPipelineAdapter(
         plan,
-        alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+        alignment_config=AlignmentConfig(),
         max_partition_jobs=100,
         project_child=project_composed_child,
         execution=in_process_execution(),
@@ -1641,7 +1641,7 @@ def test_completed_partition_retains_only_light_parent_capture_metadata(
     plan, _reference = _plan(tmp_path, monkeypatch, scenario="mixed_eligibility")
     adapter = bounded_owner.UntargetedPartitionPipelineAdapter(
         plan,
-        alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+        alignment_config=AlignmentConfig(),
         max_partition_jobs=100,
         project_child=project_composed_child,
         execution=in_process_execution(),
@@ -1722,7 +1722,7 @@ def test_process_backend_reuses_one_shared_pool_and_closes_once(
     plan, _reference = _plan(tmp_path, monkeypatch)
     adapter = owner.UntargetedPartitionPipelineAdapter(
         plan,
-        alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+        alignment_config=AlignmentConfig(),
         max_partition_jobs=len(plan.context.samples),
         execution=ExecutionProfile(
             alignment_workers=8, backend="process", overlap_partitions=True
@@ -1773,7 +1773,7 @@ def _run_for_spool(tmp_path, monkeypatch, *, retain):
     result = execute_untargeted_plan(
         plan,
         output_dir=output_dir,
-        alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+        alignment_config=AlignmentConfig(),
         known_istd_reference=reference,
         max_partition_jobs=len(plan.context.samples),
         retain_partition_spool=retain,
@@ -1856,7 +1856,7 @@ def test_result_store_close_failure_is_reported_once(tmp_path, monkeypatch, reta
     result = execute_untargeted_plan(
         plan,
         output_dir=tmp_path / "runtime",
-        alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+        alignment_config=AlignmentConfig(),
         max_partition_jobs=len(plan.context.samples),
         retain_partition_spool=retain,
         project_child=project_composed_child,
@@ -1906,7 +1906,7 @@ def test_a_failed_attempt_leaves_no_partition_spool(tmp_path, monkeypatch):
         bounded_owner.execute_untargeted_plan(
             plan,
             output_dir=output_dir,
-            alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+            alignment_config=AlignmentConfig(),
             max_partition_jobs=len(plan.context.samples),
             project_child=project_composed_child,
             execution=in_process_execution(),
@@ -1942,15 +1942,9 @@ def test_final_grouping_uses_the_sample_shift_voted_by_direct_evidence_rows(
                     stem,
                     "calibrated",
                     ((7.0, 7.0), (9.0, 9.0)),
-                    None,
-                    None,
-                    "not_evaluated",
                 )
                 for stem in inputs.sample_stems
             },
-            None,
-            None,
-            None,
         )
         shift = voted_shift if rows else anchors_shift
         return calibration, RtDriftModel((), dict.fromkeys(inputs.sample_stems, shift))
@@ -1959,7 +1953,7 @@ def test_final_grouping_uses_the_sample_shift_voted_by_direct_evidence_rows(
     plan, _ = _plan(tmp_path, monkeypatch, sample_count=ROW_MIN_SAMPLES)
     adapter = bounded_owner.UntargetedPartitionPipelineAdapter(
         plan,
-        alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+        alignment_config=AlignmentConfig(),
         max_partition_jobs=100,
         project_child=project_composed_child,
         execution=in_process_execution(),

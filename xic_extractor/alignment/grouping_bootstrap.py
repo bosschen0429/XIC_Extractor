@@ -3,19 +3,15 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import cast, final
 
-from xic_extractor.alignment.cid_nl_grouping import CID_NL_GROUPING_RULES
+from xic_extractor.alignment.band_grouping import group_peak_bands
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSamplePeakGroupHypothesis,
-    construct_cross_sample_peak_group_hypotheses,
-    ungrouped_peak_group_hypotheses,
-)
-from xic_extractor.alignment.feature_membership_inference import (
-    FeatureInferenceOperationCounts,
+    _hypothesis_from_owner_group,
 )
 from xic_extractor.alignment.hypothesis_owner_adapter import (
     compose_peak_hypotheses_from_assessment_universe,
@@ -23,10 +19,6 @@ from xic_extractor.alignment.hypothesis_owner_adapter import (
     owner_from_ms1_observation_hypothesis,
 )
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
-from xic_extractor.alignment.peak_trajectories import (
-    PeakTrajectories,
-    resolve_peak_trajectories,
-)
 from xic_extractor.alignment.rt_anchors import (
     places_sample_on_rt_frame,
     reaches_ordinary_anchor_quorum,
@@ -40,7 +32,6 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
     cid_nl_method_subject_resolver_interval,
     validate_cid_nl_alignment_subject_compatibility,
 )
-from xic_extractor.peak_detection.elution_context import SampleElutionContext
 from xic_extractor.peak_detection.peak_hypothesis_identity import (
     HYPOTHESIS_METHOD_DDA_CID_NL,
     MeasuredPeakHypothesis,
@@ -60,7 +51,6 @@ class InitialGroupingScope:
     mz_interval: tuple[float, float]
     rt_interval: tuple[float, float]
     groups: tuple[CrossSamplePeakGroupHypothesis, ...]
-    peak_trajectories: PeakTrajectories = PeakTrajectories()
 
     def __post_init__(self) -> None:
         for name in ("mz_interval", "rt_interval"):
@@ -73,45 +63,17 @@ class InitialGroupingScope:
         )
 
 
-@final
-@dataclass(frozen=True, slots=True)
-class RetainedGroupingCandidate:
-    """One sample-local peak hypothesis kept for group Backfill and cells."""
-
-    sample: SampleMetadata
-    peak_hypothesis: MeasuredPeakHypothesis
-    assessment: CidNlMethodAssessment
-
-    @property
-    def direct_support_assessment(self) -> CidNlMethodAssessment | None:
-        if self.peak_hypothesis.method == HYPOTHESIS_METHOD_DDA_CID_NL:
-            return self.assessment
-        return None
-
-    @property
-    def sample_key(self) -> str:
-        return self.sample.sample_name
-
-    @property
-    def peak_hypothesis_id(self) -> str:
-        return self.peak_hypothesis.hypothesis_id
-
-
 def bootstrap_cid_nl_initial_population(
     *,
     sample_assessments: tuple[tuple[SampleMetadata, CidNlMethodAssessment], ...],
     alignment_config: AlignmentConfig,
-    sample_universe: frozenset[str] | None = None,
     rt_frame: SampleRtFrame,
-    operation_counts_sink: list[FeatureInferenceOperationCounts] | None = None,
-    elution_contexts: Sequence[SampleElutionContext] = (),
     retained_hypotheses_by_assessment: Mapping[
         CidNlMethodAssessment, tuple[MeasuredPeakHypothesis, ...]
     ]
     | None = None,
 ) -> tuple[
     InitialGroupingScope,
-    tuple[RetainedGroupingCandidate, ...],
     SampleRtFrame,
 ]:
     """Build initial groups and their physical candidate bindings.
@@ -119,7 +81,7 @@ def bootstrap_cid_nl_initial_population(
     Initial groups are inferred only where their anchors can calibrate: a
     workset short of the anchor quorum calibrates nothing.
     Otherwise every owner is its own group and only final grouping, which
-    resolves trajectories on the frozen frame, assigns rows.
+    links peaks on the frozen frame, assigns rows.
     """
 
     if not sample_assessments:
@@ -195,6 +157,7 @@ def bootstrap_cid_nl_initial_population(
                     owner_from_ms1_observation_hypothesis(
                         sample=sample,
                         hypothesis=hypothesis,
+                        assessment=assessment,
                     )
                 )
     searched_no_observation = not owners and all(
@@ -209,26 +172,19 @@ def bootstrap_cid_nl_initial_population(
         raise GroupingBootstrapError("bootstrap assessments have no peak observations")
     rt_frame = rt_frame.bind_owners(tuple(owners))
     if reaches_ordinary_anchor_quorum(anchor_samples, rt_frame):
-        correspondence = resolve_peak_trajectories(
+        provisional_groups = group_peak_bands(
             owners,
-            elution_contexts,
             config=alignment_config,
-            injection_order=rt_frame.injection_order,
             rt_frame=rt_frame,
-        )
-        provisional_groups = construct_cross_sample_peak_group_hypotheses(
-            tuple(owners),
-            config=alignment_config,
-            sample_universe=sample_universe,
-            rt_frame=rt_frame,
-            operation_counts_sink=operation_counts_sink,
-            bootstrap=True,
-            peak_trajectories=correspondence,
-            rules=CID_NL_GROUPING_RULES,
+            stage="bootstrap",
         )
     else:
-        correspondence = PeakTrajectories(source_contexts=tuple(elution_contexts))
-        provisional_groups = ungrouped_peak_group_hypotheses(owners)
+        provisional_groups = tuple(
+            _hypothesis_from_owner_group(
+                (owner,), disposition="provisional", evidence="ungrouped"
+            )
+            for owner in owners
+        )
     if not provisional_groups and not searched_no_observation:
         raise GroupingBootstrapError(
             "bootstrap observations did not produce consumable cross-sample groups"
@@ -291,23 +247,12 @@ def bootstrap_cid_nl_initial_population(
         field="rt_interval",
     )
     _validate_group_ids(provisional_groups)
-    grouping_scope = InitialGroupingScope(
-        mz_interval, rt_interval, provisional_groups, correspondence
-    )
+    grouping_scope = InitialGroupingScope(mz_interval, rt_interval, provisional_groups)
     _validate_group_owners(grouping_scope.groups)
     _validate_group_bounds(
         grouping_scope.groups, mz_interval=mz_interval, rt_interval=rt_interval
     )
-    retained_candidates = tuple(
-        RetainedGroupingCandidate(
-            sample=sample_by_id[sample_id],
-            peak_hypothesis=hypothesis,
-            assessment=assessment_by_hypothesis[hypothesis.hypothesis_id],
-        )
-        for sample_id in sorted(hypotheses_by_sample)
-        for hypothesis in hypotheses_by_sample[sample_id]
-    )
-    return grouping_scope, retained_candidates, rt_frame
+    return grouping_scope, rt_frame
 
 
 def _validate_group_ids(

@@ -25,7 +25,7 @@ from .errors import ExplanationError, ExplanationUnavailableError
 from .review import SUPPORT_ORIGINS
 
 EXPLANATION_ARTIFACT_NAME = "alignment_explanation.sqlite"
-SCHEMA_VERSION = "alignment_evidence"
+SCHEMA_VERSION = "alignment_evidence_bands"
 
 STORED_SUMMARY_KEYS = frozenset(
     {
@@ -91,7 +91,6 @@ TABLES: dict[str, tuple[str, ...]] = {
         "id",
         "disposition",
         "inference_basis",
-        "inference_decisions",
     ),
     "members": (
         "id",
@@ -184,7 +183,7 @@ _DDL = {
     ),
     "initial_groups": (
         "CREATE TABLE initial_groups (id INTEGER PRIMARY KEY, disposition TEXT, "
-        "inference_basis BLOB, inference_decisions BLOB)"
+        "inference_basis BLOB)"
     ),
     "members": (
         "CREATE TABLE members (id INTEGER PRIMARY KEY, subject_id TEXT NOT NULL, "

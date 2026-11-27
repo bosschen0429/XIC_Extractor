@@ -1,18 +1,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal
+from typing import Literal
 
+from xic_extractor.alignment.cross_sample.identity_models import (
+    CrossSampleGroupMemberSubject,
+)
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessment,
 )
 from xic_extractor.peak_detection.ms1_shape_identity import LocalPeakShape
 from xic_extractor.peak_detection.observations import PeakObservation
-
-if TYPE_CHECKING:
-    from xic_extractor.alignment.cross_sample.peak_groups import (
-        CrossSampleGroupMemberSubject,
-    )
+from xic_extractor.peak_detection.peak_hypothesis_identity import MeasuredPeakHypothesis
 
 OwnerAssignmentStatus = Literal["primary", "supporting", "ambiguous", "unresolved"]
 
@@ -37,17 +36,15 @@ class IdentityEvent:
 
 @dataclass(frozen=True)
 class SampleLocalMS1Owner:
-    owner_id: str
+    hypothesis: MeasuredPeakHypothesis
     sample_stem: str
     raw_file: str
-    peak: PeakObservation
     primary_identity_event: IdentityEvent | None
     supporting_events: tuple[IdentityEvent, ...]
     assignment_reason: str
     quantification_eligible: bool = True
     quantification_exclusion_reason: str = ""
-    cross_sample_member_subject: CrossSampleGroupMemberSubject | None = None
-    cid_nl_composite_assessment: CidNlMethodAssessment | None = None
+    assessment: CidNlMethodAssessment | None = None
     peak_shape: LocalPeakShape | None = None
 
     def __post_init__(self) -> None:
@@ -64,6 +61,33 @@ class SampleLocalMS1Owner:
                     if peak.integration is None
                     else "owner_apex_on_integration_boundary",
                 )
+
+    @property
+    def owner_id(self) -> str:
+        return self.hypothesis.hypothesis_id
+
+    @property
+    def peak(self) -> PeakObservation:
+        return self.hypothesis.peak
+
+    @property
+    def cross_sample_member_subject(self) -> CrossSampleGroupMemberSubject:
+        return CrossSampleGroupMemberSubject(
+            sample_key=self.peak.sample_key,
+            subject_kind="peak_hypothesis",
+            subject_id=self.owner_id,
+            physical_peaks=(self.peak.physical_identity,),
+        )
+
+    @property
+    def cid_nl_composite_assessment(self) -> CidNlMethodAssessment | None:
+        if (
+            self.assessment is not None
+            and self.primary_identity_event is not None
+            and self.assessment.method_subject.composition is not None
+        ):
+            return self.assessment
+        return None
 
     @property
     def all_events(self) -> tuple[IdentityEvent, ...]:

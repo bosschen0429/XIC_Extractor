@@ -210,7 +210,7 @@ def test_held_rows_never_become_alignment_roots(tmp_path, monkeypatch, with_supp
     result = execute_untargeted_plan(
         plan,
         output_dir=tmp_path / "alignment",
-        alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+        alignment_config=AlignmentConfig(),
         execution=ExecutionProfile(
             alignment_workers=1, backend="thread", overlap_partitions=False
         ),
@@ -306,7 +306,7 @@ def test_alignment_measurement_decides_admission_through_the_whole_run(
         kept.peak_id,
         dropped.peak_id,
     }
-    config = AlignmentConfig(anchor_min_seed_events=1)
+    config = AlignmentConfig()
     completed = execute_untargeted_plan(
         plan,
         output_dir=tmp_path / "alignment",

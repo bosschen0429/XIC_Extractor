@@ -8,7 +8,6 @@ import pytest
 from tools.diagnostics.build_sample_rt_calibration import main
 from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.alignment.sample_rt_calibration import (
-    PriorInjection,
     RtCalibrationPolicy,
     build_batch_rt_calibration,
 )
@@ -33,11 +32,10 @@ def _batch(
     return detected
 
 
-def _calibrate(detected, priors=None, **policy):
+def _calibrate(detected, **policy):
     return build_batch_rt_calibration(
         detected,
         sample_stems=SAMPLES,
-        prior_injections=priors or {},
         policy=RtCalibrationPolicy(**policy),
     )
 
@@ -125,7 +123,6 @@ def test_boundary_shift_preserves_order_and_inverse_of_supported_curve():
     calibration = build_batch_rt_calibration(
         detected,
         sample_stems=samples,
-        prior_injections={},
         policy=RtCalibrationPolicy(),
     )
     sample = calibration.samples["a"]
@@ -176,7 +173,6 @@ def _single_injection(points):
     return build_batch_rt_calibration(
         detected,
         sample_stems=("S", *peers),
-        prior_injections={},
         policy=RtCalibrationPolicy(),
     ).samples["S"]
 
@@ -293,7 +289,6 @@ def test_unshared_standard_cannot_extend_calibration_support() -> None:
     calibration = build_batch_rt_calibration(
         _batch(),
         sample_stems=SAMPLES,
-        prior_injections={},
         policy=RtCalibrationPolicy(),
         measured_istds=(("unshared", "S01", 50.0),),
     )
@@ -305,7 +300,6 @@ def test_unresolved_standard_order_is_not_forced_into_a_map() -> None:
     calibration = build_batch_rt_calibration(
         {},
         sample_stems=SAMPLES,
-        prior_injections={},
         policy=RtCalibrationPolicy(),
         measured_istds=tuple(
             (f"standard{i}", s, observed)
@@ -335,9 +329,7 @@ def test_shared_anchors_correct_systematic_and_rt_dependent_injection_shift(
         for j, rt in enumerate(np.linspace(7, 38, 12))
     }
     standards = tuple(("early", s, observed(6, i)) for i, s in enumerate(samples))
-    kwargs = dict(
-        sample_stems=samples, prior_injections={}, policy=RtCalibrationPolicy()
-    )
+    kwargs = dict(sample_stems=samples, policy=RtCalibrationPolicy())
     ordinary = build_batch_rt_calibration(groups, **kwargs)
     known = build_batch_rt_calibration({}, measured_istds=standards, **kwargs)
     joint = build_batch_rt_calibration(groups, measured_istds=standards, **kwargs)
@@ -362,7 +354,6 @@ def test_conflicting_standard_does_not_drag_a_supported_ordinary_map():
     calibration = build_batch_rt_calibration(
         detected,
         sample_stems=samples,
-        prior_injections={},
         policy=RtCalibrationPolicy(),
         measured_istds=tuple(("late", s, 35 if s == "a" else 42) for s in samples),
     )
@@ -391,9 +382,7 @@ def test_identity_landmark_corrects_locally_without_unbounded_influence(
         for s in samples
     }
     detected["ordinary_view"] = measured
-    kwargs = dict(
-        sample_stems=samples, prior_injections={}, policy=RtCalibrationPolicy()
-    )
+    kwargs = dict(sample_stems=samples, policy=RtCalibrationPolicy())
     ordinary = build_batch_rt_calibration(detected, **kwargs)
     known = build_batch_rt_calibration(
         detected,
@@ -437,9 +426,7 @@ def test_neighboring_identity_conflicts_do_not_reverse_the_supported_map():
     )
     for label, sample, observed in measured:
         detected.setdefault(label, {})[sample] = observed
-    kwargs = dict(
-        sample_stems=samples, prior_injections={}, policy=RtCalibrationPolicy()
-    )
+    kwargs = dict(sample_stems=samples, policy=RtCalibrationPolicy())
     ordinary = build_batch_rt_calibration(detected, **kwargs)
     known = build_batch_rt_calibration(detected, measured_istds=measured, **kwargs)
     assert known.samples["a"].knots == ordinary.samples["a"].knots
@@ -448,44 +435,6 @@ def test_neighboring_identity_conflicts_do_not_reverse_the_supported_map():
         detected, measured_istds=tuple(reversed(measured)), **kwargs
     )
     assert reversed_labels.samples == known.samples
-
-
-def test_measured_front_shift_decides_and_timeline_explains() -> None:
-    early = (-0.6, -0.6) + (0.0,) * (len(REFERENCE_RTS) - 2)
-    late = (0.4, 0.4) + (0.0,) * (len(REFERENCE_RTS) - 2)
-    detected = _batch({"S01": early, "S02": late, "S03": early, "S04": late})
-    del detected["F0"]["S06"]
-    normal = PriorInjection(False, False, False)
-    priors = {s: normal for s in SAMPLES}
-    priors["S01"] = PriorInjection(True, True, False)
-    priors["S02"] = PriorInjection(False, True, False)
-    del priors["S04"]
-    priors["S05"] = PriorInjection(True, True, False)
-
-    calibration = _calibrate(detected, priors)
-
-    status = {s: c.perturbation_status for s, c in calibration.samples.items()}
-    assert status["S01"] == "confirmed"
-    assert status["S02"] == "confirmed"
-    assert status["S03"] == "unexplained_outlier"
-    assert status["S04"] == "outlier_without_timeline"
-    assert status["S05"] == "flagged_unconfirmed"
-    assert status["S06"] == "unmeasured"
-    assert status["S07"] == "not_perturbed"
-    assert calibration.perturbation_tolerance_min == pytest.approx(0.1)
-
-
-def test_first_run_after_method_change_explains_outlier() -> None:
-    early = (-0.8, -0.8) + (0.0,) * (len(REFERENCE_RTS) - 2)
-    detected = _batch({"S01": early, "S02": early})
-    normal = PriorInjection(False, False, False)
-    priors = {s: normal for s in SAMPLES}
-    priors["S01"] = PriorInjection(False, False, True)
-
-    calibration = _calibrate(detected, priors)
-
-    assert calibration.samples["S01"].perturbation_status == "confirmed"
-    assert calibration.samples["S02"].perturbation_status == "unexplained_outlier"
 
 
 def test_cli_writes_calibration_and_heldout_evidence(tmp_path: Path) -> None:
@@ -501,47 +450,6 @@ def test_cli_writes_calibration_and_heldout_evidence(tmp_path: Path) -> None:
         lines += [f"{feature}\t{s}\t{status}\t{rt}" for s, rt in rts.items()]
     lines.append("F0\tS11\tbackfilled\t8.0")
     cells.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    timeline = tmp_path / "timeline.json"
-    timeline.write_text(
-        json.dumps(
-            {
-                "schema": "injection_timeline",
-                "policy": {
-                    "max_previous_run_min": 20.0,
-                    "max_previous_run_fraction": 0.5,
-                    "max_idle_min": 5.0,
-                },
-                "injections": [
-                    {
-                        "injection_order": n,
-                        "raw_stem": s,
-                        "header": {"instrument_method": "PRM" if n < 2 else "DDA"},
-                        "possibly_perturbed": s == "S01",
-                        "previous_raw_stem": "SDOLEK" if s == "S01" else "prior",
-                        "previous_run_length_min": {"S01": 8.0, "S02": 30.0}.get(
-                            s, 60.0
-                        ),
-                        "run_length_min": 70.0 if s == "S02" else 60.0,
-                        "idle_min": 1.9,
-                    }
-                    for n, s in enumerate(SAMPLES)
-                ]
-                + [
-                    {
-                        "injection_order": 3.5,
-                        "raw_stem": "Blank",
-                        "header": {"instrument_method": "Blank"},
-                        "possibly_perturbed": False,
-                        "previous_raw_stem": "S04",
-                        "previous_run_length_min": 60.0,
-                        "run_length_min": 15.0,
-                        "idle_min": 1.9,
-                    }
-                ],
-            }
-        ),
-        encoding="utf-8",
-    )
     out = tmp_path / "out"
 
     assert (
@@ -549,8 +457,6 @@ def test_cli_writes_calibration_and_heldout_evidence(tmp_path: Path) -> None:
             [
                 "--alignment-cells",
                 str(cells),
-                "--injection-timeline",
-                str(timeline),
                 "--output-dir",
                 str(out),
                 "--loess-fraction",
@@ -565,17 +471,8 @@ def test_cli_writes_calibration_and_heldout_evidence(tmp_path: Path) -> None:
     payload = json.loads((out / "sample_rt_calibration.json").read_text("utf-8"))
     assert payload["evidence_status"] == "diagnostic_only"
     assert payload["sample_count"] == 11
-    assert payload["timeline_unmatched_samples"] == ["S11"]
     assert len(payload["knots"]) == len(REFERENCE_RTS) + 1
     by_sample = {row["sample_stem"]: row for row in payload["samples"]}
-    assert by_sample["S01"]["perturbation_status"] == "confirmed"
-    assert by_sample["S01"]["after_short_run"] is True
-    assert by_sample["S01"]["previous_raw_stem"] == "SDOLEK"
-    assert by_sample["S02"]["after_short_run"] is False
-    assert by_sample["S03"]["after_method_change"] is True
-    assert by_sample["S03"]["previous_full_run_raw_stem"] == "S02"
-    assert by_sample["S04"]["after_method_change"] is False
-    assert by_sample["S05"]["after_method_change"] is False
     assert by_sample["S11"]["status"] == "insufficient_anchors"
     heldout = payload["heldout_validation"]
     assert heldout["paired_feature_count"] == 2

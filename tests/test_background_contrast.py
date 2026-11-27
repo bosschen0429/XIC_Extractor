@@ -59,7 +59,13 @@ def _group(*contrasts: float | None):
     for index, contrast in enumerate(contrasts):
         owner = _owner(f"S{index}", "m", apex_rt=10.0, precursor_mz=300.0)
         owners.append(
-            replace(owner, peak=replace(owner.peak, background_contrast=contrast))
+            replace(
+                owner,
+                hypothesis=replace(
+                    owner.hypothesis,
+                    peak=replace(owner.peak, background_contrast=contrast),
+                ),
+            )
         )
     return _hypothesis_from_owner_group(
         tuple(owners), disposition="established", evidence=""

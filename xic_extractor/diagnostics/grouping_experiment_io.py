@@ -6,7 +6,6 @@ import json
 import statistics
 from collections import Counter, defaultdict
 from collections.abc import Mapping, Sequence
-from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
@@ -94,8 +93,8 @@ def _group_decision(group: CrossSamplePeakGroupHypothesis) -> _GroupDecision:
         tuple(sorted(group.owner_ids)),
         group.disposition,
         group.evidence,
-        basis.basis if basis else "",
-        basis.reason if basis else "",
+        basis.known_identity_label or "" if basis else "",
+        group.evidence,
     )
 
 
@@ -266,20 +265,15 @@ def write_grouping_result(
     members = []
     changes = []
     group_rows = []
-    decisions: list[dict[str, Any]] = []
     coordinate_by_owner = {
-        owner.owner_id: rt_coordinates or workset.rt_calibration or workset.rt_warp
+        owner.owner_id: rt_coordinates or workset.rt_calibration
         for workset in inputs.worksets
         for owner in workset.owners
     }
     for group in groups:
         basis = group.inference_basis
         signature = _group_decision(group)
-        risks = {
-            decision.owner_id: decision.accepted_risk
-            for decision in group.inference_decisions
-            if decision.accepted_risk is not None
-        }
+        risks = dict(group.member_risks)
         group_rows.append(
             {
                 "group_id": group.group_hypothesis_id,
@@ -287,8 +281,8 @@ def write_grouping_result(
                 "rt": group.group_center_rt,
                 "sample_count": len({owner.sample_stem for owner in group.owners}),
                 "disposition": group.disposition,
-                "basis": basis.basis if basis else "",
-                "reason": basis.reason if basis else "",
+                "basis": basis.known_identity_label or "" if basis else "",
+                "reason": group.evidence,
                 "evidence": group.evidence,
             }
         )
@@ -321,7 +315,7 @@ def write_grouping_result(
                     else "not_recorded",
                     "area": owner.peak.area_raw_counts_seconds,
                     "disposition": group.disposition,
-                    "reason": basis.reason if basis else "",
+                    "reason": group.evidence,
                 }
             )
             old = before.get(owner.owner_id)
@@ -338,18 +332,9 @@ def write_grouping_result(
                         "before_members": len(old_owners),
                         "after_members": len(group.owner_ids),
                         "before_reason": old_reason,
-                        "after_reason": basis.reason if basis else "",
+                        "after_reason": group.evidence,
                     }
                 )
-        for decision in group.inference_decisions:
-            fields = asdict(decision)
-            risk = fields.pop("accepted_risk")
-            fields["accepted_risk_json"] = (
-                json.dumps(risk, ensure_ascii=False, allow_nan=False)
-                if risk is not None
-                else ""
-            )
-            decisions.append(fields)
     write_table(
         output / "groups.tsv",
         group_rows,
@@ -395,25 +380,6 @@ def write_grouping_result(
             "after_members",
             "before_reason",
             "after_reason",
-        ),
-    )
-    write_table(
-        output / "decisions.tsv",
-        decisions,
-        (
-            "direction",
-            "sample_stem",
-            "owner_id",
-            "feature_key",
-            "state",
-            "reason",
-            "cost",
-            "witness_owner_ids",
-            "selected_witness_owner_id",
-            "rt_basis",
-            "rt_raw_delta_sec",
-            "rt_drift_corrected_delta_sec",
-            "accepted_risk_json",
         ),
     )
     present = Counter(row["sample_stem"] for row in members)

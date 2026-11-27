@@ -657,7 +657,6 @@ def test_indexed_query_preserves_many_groups_and_skips_unrelated_payloads(tmp_pa
                 disposition="completed",
                 members=members,
                 inference_basis={"basis": name},
-                inference_decisions=[],
             )
         writer.add_final_group(
             "shared",

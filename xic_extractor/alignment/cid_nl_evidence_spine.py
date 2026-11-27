@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from xic_extractor.alignment.band_grouping import group_peak_bands
 from xic_extractor.alignment.cell_observation.observations import (
     CellObservation,
     CellObservationContractError,
@@ -11,11 +12,9 @@ from xic_extractor.alignment.cell_observation.observations import (
     CidNlCellGroupSupport,
     mint_cell_observation,
 )
-from xic_extractor.alignment.cid_nl_grouping import CID_NL_GROUPING_RULES
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSamplePeakGroupHypothesis,
-    construct_cross_sample_peak_group_hypotheses,
 )
 from xic_extractor.alignment.hypothesis_owner_adapter import (
     HypothesisOwnerAdapterError,
@@ -182,14 +181,22 @@ def build_cid_nl_reference_spine(
     except HypothesisOwnerAdapterError as exc:
         raise CidNlEvidenceSpineError(str(exc)) from exc
     effective_config = config or AlignmentConfig()
-    rt_frame = SampleRtFrame()
-    groups = construct_cross_sample_peak_group_hypotheses(
-        owners, config=effective_config, rt_frame=rt_frame, rules=CID_NL_GROUPING_RULES
+    rt_frame = SampleRtFrame.from_samples(tuple(sample for sample, _ in ordered))
+    groups = group_peak_bands(
+        owners,
+        config=effective_config,
+        rt_frame=rt_frame,
+        stage="targeted",
+        known_identity_bindings=tuple(
+            (owner.owner_id, target.label) for owner in owners
+        )
+        if target is not None
+        else (),
     )
     if len(groups) != 1:
         raise CidNlEvidenceSpineError(
             "CellObservation reference spine cannot resolve multiple provisional "
-            "groups; identity resolution belongs to the identity-trajectory owner"
+            "groups; identity resolution belongs to the band grouping owner"
         )
     group = groups[0]
     try:

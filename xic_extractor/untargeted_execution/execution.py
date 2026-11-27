@@ -672,12 +672,20 @@ class UntargetedPartitionPipelineAdapter:
         if self._grouping_only or self._capture_grouping is not None:
             experiment = grouping_experiment_from_prepared(
                 (
-                    cast(
-                        _GroupingInputs,
-                        store.read_header_field(
-                            self._final_groupings[index].index, "grouping"
-                        ),
-                    ).prepared
+                    (
+                        cast(
+                            _GroupingInputs,
+                            store.read_header_field(
+                                self._initial_partitions[index].index, "grouping"
+                            ),
+                        ).prepared,
+                        cast(
+                            _GroupingInputs,
+                            store.read_header_field(
+                                self._final_groupings[index].index, "grouping"
+                            ),
+                        ).prepared,
+                    )
                     for index in range(self._bootstrap_count)
                 ),
                 sample_stems=tuple(

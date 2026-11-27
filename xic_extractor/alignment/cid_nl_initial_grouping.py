@@ -5,17 +5,14 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 
+from xic_extractor.alignment.band_grouping import band_shift_rows
 from xic_extractor.alignment.cid_nl_completion import CidNlWorksetGrouping
 from xic_extractor.alignment.cid_nl_grouping import alignment_subject_worksets
 from xic_extractor.alignment.completion import UntargetWorkflowCompositionRequest
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.drift_evidence import KnownIstdReference
-from xic_extractor.alignment.feature_membership_inference import (
-    FeatureInferenceOperationCounts,
-)
 from xic_extractor.alignment.grouping_workflow import (
     build_initial_cid_nl_cross_sample_groups,
-    direct_evidence_rt_rows,
     regroup_cid_nl_cross_sample_groups,
 )
 from xic_extractor.alignment.hypothesis_owner_adapter import (
@@ -42,7 +39,6 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
     CID_NL_PROVIDER_ID,
     UntargetedCidNlMethodSubjectBatch,
 )
-from xic_extractor.peak_detection.elution_context import SampleElutionContext
 from xic_extractor.peak_detection.observations import PeakObservation
 from xic_extractor.peak_detection.search_scope import (
     SEARCH_SCOPE_SCHEMA_VERSION,
@@ -68,9 +64,7 @@ class CidNlGrouping:
         return tuple(
             observation
             for workset in self.worksets
-            for observation in rt_anchor_observations(
-                workset.grouping_scope, workset.retained_candidates
-            )
+            for observation in rt_anchor_observations(workset.grouping_scope)
         )
 
 
@@ -176,7 +170,6 @@ def prepare_cid_nl_grouping(
     sample_assessments: tuple[tuple[SampleMetadata, CidNlMethodAssessment], ...],
     alignment_config: AlignmentConfig,
     rt_frame: SampleRtFrame,
-    elution_contexts: Sequence[SampleElutionContext] = (),
     known_istd_reference: KnownIstdReference | None = None,
 ) -> CidNlGrouping:
     """Decide candidate participation and initial membership from acquired science.
@@ -387,19 +380,15 @@ def prepare_cid_nl_grouping(
                     hypothesis=matches[0],
                 )
             )
-        operation_counts: list[FeatureInferenceOperationCounts] = []
         (
             grouping_scope,
             grouping_result,
-            retained_candidates,
         ) = build_initial_cid_nl_cross_sample_groups(
             samples=samples,
             sample_assessments=assessments,
             alignment_config=alignment_config,
-            elution_contexts=elution_contexts,
             rt_frame=rt_frame,
             retained_hypotheses_by_assessment=(retained_hypotheses_by_assessment),
-            operation_counts_sink=operation_counts,
         )
         prepared_worksets.append(
             CidNlWorksetGrouping(
@@ -408,7 +397,6 @@ def prepare_cid_nl_grouping(
                 terminal_subjects=tuple(terminal_subjects),
                 grouping_scope=grouping_scope,
                 grouping_result=grouping_result,
-                retained_candidates=retained_candidates,
             )
         )
     return CidNlGrouping(
@@ -424,21 +412,16 @@ def direct_evidence_rows(
     prepared: CidNlGrouping, *, rt_frame: SampleRtFrame
 ) -> tuple[dict[str, float], ...]:
     """One workset collection's direct-evidence rows under the frozen calibration."""
-    sample_universe = frozenset(
-        sample.raw_stem for sample in prepared.request.scope.samples
-    )
     return tuple(
         row
         for workset in prepared.worksets
-        for row in direct_evidence_rt_rows(
+        for row in band_shift_rows(
             tuple(
                 owner
                 for group in workset.grouping_scope.groups
                 for owner in group.owners
             ),
-            workset.grouping_scope.peak_trajectories.source_contexts,
             config=prepared.alignment_config,
-            sample_universe=sample_universe,
             rt_frame=workset.grouping_result.rt_frame.with_calibration(rt_frame),
         )
     )
@@ -454,14 +437,11 @@ def regroup_cid_nl_grouping(
     alignment_config = prepared.alignment_config
     final_worksets = []
     for workset in prepared.worksets:
-        operation_counts: list[FeatureInferenceOperationCounts] = []
         grouping_scope, grouping_result = regroup_cid_nl_cross_sample_groups(
             samples=prepared.request.scope.samples,
             grouping_scope=workset.grouping_scope,
-            grouping_result=workset.grouping_result,
             alignment_config=alignment_config,
             rt_frame=workset.grouping_result.rt_frame.with_calibration(rt_frame),
-            operation_counts_sink=operation_counts,
         )
         final_worksets.append(
             replace(
@@ -473,21 +453,10 @@ def regroup_cid_nl_grouping(
         if progress_callback is not None:
             progress_callback(
                 {
-                    "event": "feature_membership_inference",
-                    "stage": "feature_membership_inference",
+                    "event": "peak_band_grouping",
+                    "stage": "peak_band_grouping",
                     "subject_count": len(workset.subjects),
                     "group_count": len(grouping_scope.groups),
-                    "operation_counts": {
-                        key: (
-                            max(
-                                (getattr(item, key) for item in operation_counts),
-                                default=0,
-                            )
-                            if key.startswith("largest_")
-                            else sum(getattr(item, key) for item in operation_counts)
-                        )
-                        for key in FeatureInferenceOperationCounts.__dataclass_fields__
-                    },
                 }
             )
     return CidNlGrouping(

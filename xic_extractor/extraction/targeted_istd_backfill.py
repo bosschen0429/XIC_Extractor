@@ -4,7 +4,7 @@ Backfill applies to a Target that is an internal standard or is paired with
 one. Its rule belongs to ``alignment.backfill.istd_anchored``; this module reads
 the Targeted population for what that rule consumes: the direct CID-NL peers and
 the paired internal standard's observation in each sample.
-Reference recovery uses retained Targeted peaks and the shared trajectory
+Reference recovery uses retained Targeted peaks and the shared band
 localizer; it does not promote an MS1-only observation to local CID-NL support.
 """
 
@@ -18,9 +18,9 @@ from xic_extractor.alignment.backfill.istd_anchored import (
     SampleAssessments,
     resolve_istd_anchored_backfill,
 )
+from xic_extractor.alignment.band_rt_location import BandRtLocator
 from xic_extractor.alignment.cell_observation.observations import CidNlCellGroupSupport
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.peak_trajectories import PeakTrajectory
 from xic_extractor.alignment.result.scientific_alignment import ObservedSearchSubject
 from xic_extractor.alignment.rt_frame import RtFrame, SampleRtFrame
 from xic_extractor.configuration.models import ExtractionConfig, Target
@@ -48,7 +48,7 @@ def resolve_istd_reference_peaks(
 
     Direct Targeted selections freeze the peer evidence. A missing selection,
     or the unique selection contradicting the batch's ISTD order, may use the
-    same empirical trajectory localization as Targeted Backfill. The sample
+    same empirical band localization as Targeted Backfill. The sample
     being repaired never contributes to its own localization. Only one retained
     available physical peak may win; a forecast is never a measured coordinate.
     """
@@ -111,7 +111,7 @@ def resolve_istd_reference_peaks(
             result = file_result.results.get(target.label)
             if len(peers) < 3 or result is None:
                 continue
-            location = PeakTrajectory((), peers).backfill_locations(
+            location = BandRtLocator(peers).backfill_locations(
                 (sample,),
                 reference_samples=frozenset(s for s, _ in peers),
                 rt_frame=frame,

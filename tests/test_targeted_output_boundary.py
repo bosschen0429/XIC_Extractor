@@ -1609,11 +1609,11 @@ def test_formal_targeted_backfill_uses_confirmed_peers_and_paired_istd(
                 if sample.raw_stem == "SampleC"
             )
         if not args[1].is_istd:
-            from xic_extractor.alignment.peak_trajectories import PeakTrajectory
+            from xic_extractor.alignment.band_rt_location import BandRtLocator
 
             with monkeypatch.context() as patch:
                 patch.setattr(
-                    PeakTrajectory,
+                    BandRtLocator,
                     "backfill_locations",
                     lambda *_a, **_k: pytest.fail(
                         "analyte recovery must not compute unused trajectory forecasts"

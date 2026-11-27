@@ -10,7 +10,7 @@ from xic_extractor.peak_detection.cid_nl_method_assessment import (
 )
 from xic_extractor.sample_metadata import SampleMetadata
 
-CID_NL_ALIGNMENT_CONFIG = AlignmentConfig(anchor_min_seed_events=1)
+CID_NL_ALIGNMENT_CONFIG = AlignmentConfig()
 
 
 @dataclass(frozen=True, slots=True)

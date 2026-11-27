@@ -8,72 +8,22 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from tests.alignment_pipeline_helpers import _owner, resolved_elution_context
+from tests.alignment_pipeline_helpers import _owner
 from tests.owner_peak_fixtures import with_peak
-from xic_extractor.alignment.cid_nl_grouping import CID_NL_GROUPING_RULES
+from xic_extractor.alignment.band_grouping import group_peak_bands
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.cross_sample.peak_groups import (
-    construct_cross_sample_peak_group_hypotheses,
-)
-from xic_extractor.alignment.feature_membership_inference import BatchRtWarp
 from xic_extractor.alignment.grouping_workflow import (
     contested_backfill_peaks,
-    group_cid_nl_owners,
 )
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
-from xic_extractor.alignment.peak_trajectories import (
-    resolve_peak_trajectories,
-)
 from xic_extractor.alignment.rt_frame import SampleRtFrame
+from xic_extractor.alignment.sample_rt_calibration import BatchRtCalibration
 from xic_extractor.configuration.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
 )
 
 _CONFIG = AlignmentConfig()
 _MZ = 261.1273
-
-
-def test_ms1_patterns_prevent_remerging_sample_disjoint_direct_rows() -> None:
-    owners = []
-    contexts = []
-    for sample, shift, selected in (
-        ("A", 0.0, 0),
-        ("B", 0.05, 1),
-        ("C", 0.6, 0),
-        ("D", 0.65, 1),
-    ):
-        apex = 9.0 + shift + selected * 0.6
-        owners.append(
-            _peak(
-                sample,
-                str(selected),
-                apex=apex,
-                start=apex - 0.1,
-                end=apex + 0.1,
-                area=1000.0,
-            )
-        )
-        contexts.append(
-            resolved_elution_context(
-                sample, ((9.0 + shift, 100.0), (9.6 + shift, 100.0)), mz=_MZ
-            )
-        )
-    orders = {sample: index for index, sample in enumerate(("A", "B", "C", "D"))}
-    correspondence = resolve_peak_trajectories(
-        owners, contexts, config=_CONFIG, injection_order=orders
-    )
-    result = group_cid_nl_owners(
-        owners,
-        config=_CONFIG,
-        sample_universe=frozenset(orders),
-        rt_frame=SampleRtFrame(injection_order=(orders or {})),
-        peak_trajectories=correspondence,
-    )
-    assert {frozenset(group.owner_ids) for group in result} == {
-        frozenset((owners[0].owner_id, owners[2].owner_id)),
-        frozenset((owners[1].owner_id, owners[3].owner_id)),
-    }
-    assert all(group.disposition == "established" for group in result)
 
 
 def _peak(
@@ -221,12 +171,12 @@ def test_backfill_peak_of_another_rows_member_is_contested() -> None:
     """A Backfill trace and a Discovery trace of one peak differ in content ID."""
 
     owners = tuple(_main(f"S{index}") for index in range(1, 4))
-    (group,) = construct_cross_sample_peak_group_hypotheses(
+    (group,) = group_peak_bands(
         owners,
         config=_CONFIG,
-        sample_universe=frozenset({"S1", "S2", "S3", "S4"}),
-        rt_frame=SampleRtFrame(),
-        rules=CID_NL_GROUPING_RULES,
+        rt_frame=SampleRtFrame(
+            injection_order={o.sample_stem: i for i, o in enumerate(owners)}
+        ),
     )
     s1 = _sample_id(owners[0])
     s4 = "test-sample:S4"
@@ -251,12 +201,12 @@ def test_backfill_peak_held_only_by_an_archived_group_is_not_contested() -> None
     """An archive row writes no value, so its member cannot take the peak away."""
 
     owners = tuple(_main(f"S{index}") for index in range(1, 4))
-    (group,) = construct_cross_sample_peak_group_hypotheses(
+    (group,) = group_peak_bands(
         owners,
         config=_CONFIG,
-        sample_universe=frozenset({"S1", "S2", "S3"}),
-        rt_frame=SampleRtFrame(),
-        rules=CID_NL_GROUPING_RULES,
+        rt_frame=SampleRtFrame(
+            injection_order={o.sample_stem: i for i, o in enumerate(owners)}
+        ),
     )
     s1 = _sample_id(owners[0])
     backfills = {
@@ -285,12 +235,12 @@ def test_backfill_peak_held_only_by_an_archived_group_is_not_contested() -> None
 
 def test_backfill_peak_at_another_apex_or_mass_is_not_contested() -> None:
     owners = tuple(_main(f"S{index}") for index in range(1, 4))
-    (group,) = construct_cross_sample_peak_group_hypotheses(
+    (group,) = group_peak_bands(
         owners,
         config=_CONFIG,
-        sample_universe=frozenset({"S1", "S2", "S3"}),
-        rt_frame=SampleRtFrame(),
-        rules=CID_NL_GROUPING_RULES,
+        rt_frame=SampleRtFrame(
+            injection_order={o.sample_stem: i for i, o in enumerate(owners)}
+        ),
     )
     s1 = _sample_id(owners[0])
     backfills = {
@@ -376,12 +326,12 @@ def _two_bands(early: tuple[str, ...], late: tuple[str, ...], *, gap: float):
         *(_feature(sample, 9.0) for sample in early),
         *(_feature(sample, 9.0 + gap, "late") for sample in late),
     )
-    groups = construct_cross_sample_peak_group_hypotheses(
+    groups = group_peak_bands(
         owners,
         config=_CONFIG,
-        sample_universe=frozenset(owner.sample_stem for owner in owners),
-        rt_frame=SampleRtFrame(),
-        rules=CID_NL_GROUPING_RULES,
+        rt_frame=SampleRtFrame(
+            injection_order={o.sample_stem: i for i, o in enumerate(owners)}
+        ),
     )
     assert len(groups) == 2
     assert all(group.disposition == "established" for group in groups)
@@ -399,21 +349,20 @@ def test_grouping_uses_corrected_coordinates_for_separated_bands(
     )
 
     owners = tuple(owner for group in groups for owner in group.owners)
-    warp = BatchRtWarp(
-        knots_by_sample=tuple(
-            (owner.sample_stem, ((9.0, owner.peak.integration.rt_apex_min - 9.0),))
+    frame = SampleRtFrame(injection_order={f"S{i}": i for i in range(12)})
+    calibration = BatchRtCalibration.from_coordinate_knots(
+        tuple(
+            (
+                owner.sample_stem,
+                tuple((rt + owner.peak.rt_apex_min - 9.0, rt) for rt in (7.0, 20.0)),
+            )
             for owner in owners
-        ),
-        anchor_group_count=1,
+        )
     )
-
-    result = group_cid_nl_owners(
+    result = group_peak_bands(
         owners,
         config=_CONFIG,
-        sample_universe=frozenset(f"S{i}" for i in range(12)),
-        rt_frame=SampleRtFrame(
-            injection_order=({f"S{i}": i for i in range(12)})
-        ).with_warp(warp if calibrated else None),
+        rt_frame=frame.with_sample_calibration(calibration) if calibrated else frame,
     )
     if calibrated:
         assert len(result) == 1

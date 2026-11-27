@@ -127,7 +127,7 @@ def test_one_assessment_preserves_two_individually_supported_peaks(
             for rt in observation.rt
         )
 
-    grouping_scope, _candidates, _drift = bootstrap_cid_nl_initial_population(
+    grouping_scope, _drift = bootstrap_cid_nl_initial_population(
         sample_assessments=((sample, assessment),),
         alignment_config=AlignmentConfig(),
         rt_frame=SampleRtFrame(),
@@ -162,36 +162,35 @@ def test_identity_membership_is_geometry_not_group_center_reclassification(
         )
     )
 
-    config = AlignmentConfig(anchor_min_seed_events=1)
+    config = AlignmentConfig()
     samples = tuple(sample for sample, _ in sample_assessments)
-    grouping_scope, initial, candidates = build_initial_cid_nl_cross_sample_groups(
+    grouping_scope, initial = build_initial_cid_nl_cross_sample_groups(
         samples=samples,
         sample_assessments=sample_assessments,
         alignment_config=config,
-        rt_frame=SampleRtFrame(),
+        rt_frame=SampleRtFrame(injection_order={"early": 1, "late": 2}),
     )
 
+    members = tuple(owner for group in grouping_scope.groups for owner in group.owners)
     direct_ids = frozenset(
-        candidate.peak_hypothesis_id
-        for candidate in candidates
-        if candidate.direct_support_assessment is not None
+        owner.owner_id for owner in members if owner.primary_identity_event
     )
     observation_ids = frozenset(
-        candidate.peak_hypothesis_id
-        for candidate in candidates
-        if candidate.direct_support_assessment is None
+        owner.owner_id for owner in members if not owner.primary_identity_event
     )
     assert len(direct_ids) == len(observation_ids) == 2
     final_scope, final = regroup_cid_nl_cross_sample_groups(
         samples=samples,
         grouping_scope=grouping_scope,
-        grouping_result=initial,
         alignment_config=config,
         rt_frame=initial.rt_frame,
     )
     expected = {
         direct_ids: ("established", "matrix"),
-        observation_ids: ("provisional", "archive"),
+        **{
+            frozenset((owner_id,)): ("provisional", "archive")
+            for owner_id in observation_ids
+        },
     }
     assert {
         frozenset(group.owner_ids): (group.disposition, group.destination)
@@ -203,23 +202,15 @@ def test_identity_membership_is_geometry_not_group_center_reclassification(
         for owner in group.owners
         if owner.primary_identity_event is not None
     } == direct_ids
-    assert any(
-        d.owner_id in observation_ids
-        and observation_ids.intersection(d.witness_owner_ids)
-        for group in final_scope.groups
-        for d in group.inference_decisions
-    )
-
-    reversed_scope, reversed_initial, _ = build_initial_cid_nl_cross_sample_groups(
+    reversed_scope, reversed_initial = build_initial_cid_nl_cross_sample_groups(
         samples=samples[::-1],
         sample_assessments=sample_assessments[::-1],
         alignment_config=config,
-        rt_frame=SampleRtFrame(),
+        rt_frame=SampleRtFrame(injection_order={"early": 1, "late": 2}),
     )
     _, reversed_final = regroup_cid_nl_cross_sample_groups(
         samples=samples[::-1],
         grouping_scope=reversed_scope,
-        grouping_result=reversed_initial,
         alignment_config=config,
         rt_frame=reversed_initial.rt_frame,
     )
@@ -228,10 +219,9 @@ def test_identity_membership_is_geometry_not_group_center_reclassification(
         for group in reversed_final.final_population
     } == expected
 
-    assert {
-        observation.owner_id
-        for observation in rt_anchor_observations(grouping_scope, candidates)
-    } == direct_ids
+    observations = rt_anchor_observations(grouping_scope)
+    assert {observation.owner_id for observation in observations} == direct_ids
+    assert {observation.bootstrap_group_id for observation in observations} == {None}
 
 
 def _assessment_with_observation_only_peak(

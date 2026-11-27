@@ -73,7 +73,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     case = profile_replay.case
 
     publication = completed.publication_inputs
-    assert publication.alignment_config == AlignmentConfig(anchor_min_seed_events=1)
+    assert publication.alignment_config == AlignmentConfig()
     assert dict(publication.ms1_apex_mz_by_candidate) == {
         candidate.candidate_id: candidate.ms1_apex_mz
         for sample_candidates in inputs.candidates.values()
@@ -103,9 +103,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         trace.hypothesis_universe_compositions,
     )
     retained_hypotheses_by_id = {
-        candidate.peak_hypothesis_id: candidate.peak_hypothesis
-        for retained_candidates in trace.retained_candidate_batches
-        for candidate in retained_candidates
+        member.owner_id: member.hypothesis for member in trace.retained_band_members
     }
     assert all(
         retained_hypotheses_by_id[terminal.hypothesis.hypothesis_id]
@@ -193,7 +191,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         **explanation_discovery_facts(completed),
         peaks_by_sample=inputs.candidates,
         matrix_path=matrix_path,
-        alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+        alignment_config=AlignmentConfig(),
     )
     assert len(trace.retained_contexts) == len(
         children_of(completed.application_result)

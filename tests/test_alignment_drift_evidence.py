@@ -6,28 +6,16 @@ from tests.alignment_drift_evidence_fixtures import (
     _known_reference_workbook,
 )
 from tests.owner_peak_fixtures import with_peak
-from xic_extractor.alignment.cid_nl_grouping import CID_NL_GROUPING_RULES
 from xic_extractor.alignment.drift_evidence import (
     DriftEvidenceLookup,
     SampleDriftEvidence,
 )
-from xic_extractor.alignment.edge_scoring import (
-    evaluate_owner_edge as _evaluate_owner_edge,
-)
-from xic_extractor.alignment.feature_membership_inference import BatchRtWarp
 from xic_extractor.alignment.rt_frame import SampleRtFrame
-from xic_extractor.alignment.sample_rt_calibration import BatchRtCalibrationAccumulator
+from xic_extractor.alignment.sample_rt_calibration import (
+    BatchRtCalibration,
+    BatchRtCalibrationAccumulator,
+)
 from xic_extractor.configuration.models import Target
-
-
-def evaluate_owner_edge(left, right, *, config, **kwargs):
-    return _evaluate_owner_edge(
-        left,
-        right,
-        config=config,
-        method_evidence=CID_NL_GROUPING_RULES.pair_evidence(left, right, config),
-        **kwargs,
-    )
 
 
 def test_measured_istd_binding_uses_observed_peak_not_expected_rt() -> None:
@@ -76,10 +64,12 @@ def test_measured_istd_binding_uses_observed_peak_not_expected_rt() -> None:
             known_istd_reference=reference, drift_lookup=DriftEvidenceLookup(())
         )
     bootstrap = base.with_sources(known_istd_reference=reference).bind_owners(owners)
-    frozen = bootstrap.with_warp(
-        BatchRtWarp(
-            (("early", ((7.0, 0.2), (12.0, 0.2))), ("late", ((7.0, 1.2), (12.0, 1.2)))),
-            2,
+    frozen = bootstrap.with_sample_calibration(
+        BatchRtCalibration.from_coordinate_knots(
+            (
+                ("early", ((7.2, 7.0), (12.2, 12.0))),
+                ("late", ((8.2, 7.0), (13.2, 12.0))),
+            )
         )
     )
     assert not bootstrap.has_coordinates
@@ -96,55 +86,6 @@ def test_measured_istd_binding_uses_observed_peak_not_expected_rt() -> None:
         assert frame.corrected_pair_delta_sec(*owners) == pytest.approx(0)
         assert frame.drift_injection_order_gap("early", "late") is None
     assert tuple(owner.peak.integration.rt_apex_min for owner in owners) == (8.0, 9.0)
-
-
-def test_zero_rt_calibration_is_available_without_becoming_drift_pair_evidence():
-    from tests.alignment_edge_scoring_fixtures import _owner
-
-    owner = _owner("measured", owner_apex_rt=8.0)
-    raw = SampleRtFrame()
-    measured_zero = raw.with_warp(
-        BatchRtWarp((("measured", ((7.0, 0.0), (12.0, 0.0))),), 1)
-    )
-    assert raw.corrected_rt_min(owner) == measured_zero.corrected_rt_min(owner) == 8.0
-    assert not raw.has_coordinates
-    assert measured_zero.has_coordinates
-    assert not raw.has_support("measured")
-    assert measured_zero.has_support("measured")
-    assert not measured_zero.has_support("unmeasured")
-    assert not measured_zero.has_drift
-    assert measured_zero.drift_source == "none"
-    assert measured_zero.corrected_pair_delta_sec(owner, _owner("other")) is None
-
-
-@pytest.mark.parametrize("shift", (0.0, 1.0))
-def test_frozen_coordinate_replaces_rt_evidence_without_an_extra_score(shift):
-    from tests.alignment_edge_scoring_fixtures import _owner
-    from xic_extractor.alignment.config import AlignmentConfig
-    from xic_extractor.alignment.sample_rt_calibration import BatchRtCalibration
-
-    left = _owner("a", owner_apex_rt=10.0)
-    right = _owner("b", owner_apex_rt=10.01 + shift)
-    frame = SampleRtFrame().with_sample_calibration(
-        BatchRtCalibration.from_coordinate_knots(
-            (
-                ("a", ((8.0, 8.0), (12.0, 12.0))),
-                ("b", ((8.0 + shift, 8.0), (12.0 + shift, 12.0))),
-            )
-        )
-    )
-    common = evaluate_owner_edge(left, right, config=AlignmentConfig(), rt_frame=frame)
-    raw = evaluate_owner_edge(
-        left,
-        _owner("b", owner_apex_rt=10.01),
-        config=AlignmentConfig(),
-        rt_frame=SampleRtFrame(),
-    )
-    assert common.decision == raw.decision == "strong_edge"
-    assert common.score == raw.score
-    assert common.rt_basis == "drift_corrected"
-    assert common.rt_drift_corrected_delta_sec == pytest.approx(0.6)
-    assert common.rt_raw_delta_sec == pytest.approx(0.6 + shift * 60)
 
 
 def test_known_reference_uses_declared_targets_rt_and_source_bytes(
@@ -267,7 +208,6 @@ def test_known_reference_only_corrects_unique_same_target_support_pairs(
     from dataclasses import replace
 
     from tests.alignment_edge_scoring_fixtures import _owner
-    from xic_extractor.alignment.config import AlignmentConfig
     from xic_extractor.applications.untargeted.istd_reference import (
         read_known_istd_reference,
     )
@@ -291,15 +231,7 @@ def test_known_reference_only_corrects_unique_same_target_support_pairs(
         for sample, rt in (("early", 8), ("late", 9), ("missing", 9.5))
     )
     lookup = reference.bind((early, late, other))
-    config = AlignmentConfig()
-    edge = evaluate_owner_edge(
-        early,
-        late,
-        config=config,
-        rt_frame=SampleRtFrame().with_sources(drift_lookup=lookup),
-    )
-    assert edge.rt_drift_corrected_delta_sec == pytest.approx(0)
-    assert edge.decision == "strong_edge"
+    assert lookup.corrected_pair_delta_sec(early, late) == pytest.approx(0)
     assert lookup.sample_delta_min("early") is None
     assert lookup.istd_identity_anchor is None
     no_event = replace(late, primary_identity_event=None)
@@ -316,30 +248,21 @@ def test_known_reference_only_corrects_unique_same_target_support_pairs(
 
     def assert_unavailable_pair_uses_only_raw(right, unavailable_lookup):
         assert unavailable_lookup.corrected_pair_delta_sec(early, right) is None
-        raw = evaluate_owner_edge(early, right, config=config, rt_frame=SampleRtFrame())
-        suffix = (
-            ";drift=raw_sufficient"
-            if raw.decision == "strong_edge"
-            else ";drift=unavailable"
-        )
-        assert evaluate_owner_edge(
-            early,
-            right,
-            config=config,
-            rt_frame=SampleRtFrame().with_sources(drift_lookup=unavailable_lookup),
-        ) == replace(
-            raw,
-            drift_prior_source="targeted_istd_trend",
-            reason=raw.reason + suffix,
-        )
 
     assert_unavailable_pair_uses_only_raw(other, lookup)
+    other_rt = with_peak(late, apex_rt=9.5, start_rt=9.4, end_rt=9.6)
     other_rt = replace(
-        with_peak(late, apex_rt=9.5, start_rt=9.4, end_rt=9.6),
-        owner_id="different-peak",
+        other_rt,
+        hypothesis=replace(other_rt.hypothesis, hypothesis_id="different-peak"),
     )
     assert_unavailable_pair_uses_only_raw(other_rt, lookup)
-    ambiguous = reference.bind((early, late, replace(late, owner_id="overlap")))
+    ambiguous = reference.bind(
+        (
+            early,
+            late,
+            replace(late, hypothesis=replace(late.hypothesis, hypothesis_id="overlap")),
+        )
+    )
     assert_unavailable_pair_uses_only_raw(late, ambiguous)
     workbook["XIC Results"]["C5"] = "ND"
     workbook.save(path)
@@ -350,42 +273,6 @@ def test_known_reference_only_corrects_unique_same_target_support_pairs(
     workbook.save(path)
     two_targets = read_known_istd_reference(path).bind((early, late))
     assert not two_targets.bindings
-
-
-@pytest.mark.parametrize("use_reference", (False, True))
-def test_known_reference_grouping_preserves_main_peak_against_closer_competitor(
-    tmp_path: Path,
-    use_reference: bool,
-) -> None:
-    from tests.alignment_pipeline_helpers import _owner
-    from xic_extractor.alignment.config import AlignmentConfig
-    from xic_extractor.alignment.cross_sample.peak_groups import (
-        construct_cross_sample_peak_group_hypotheses,
-    )
-    from xic_extractor.applications.untargeted.istd_reference import (
-        read_known_istd_reference,
-    )
-
-    path = tmp_path / "reference.xlsx"
-    _known_reference_workbook(path)
-    early = _owner("early", "main", apex_rt=8)
-    competitor = _owner("early", "other", apex_rt=8.8)
-    late = _owner("late", "main", apex_rt=9)
-    owners = (early, competitor, late)
-    lookup = read_known_istd_reference(path).bind(owners) if use_reference else None
-    groups = construct_cross_sample_peak_group_hypotheses(
-        owners,
-        config=AlignmentConfig(),
-        sample_universe=frozenset({"early", "late"}),
-        rt_frame=SampleRtFrame().with_sources(drift_lookup=lookup),
-        rules=CID_NL_GROUPING_RULES,
-    )
-    paired = early if use_reference else competitor
-    separate = competitor if use_reference else early
-    assert {frozenset(group.owner_ids) for group in groups} == {
-        frozenset((paired.owner_id, late.owner_id)),
-        frozenset((separate.owner_id,)),
-    }
 
 
 _LANDMARK_RTS = (8, 12, 16, 20, 24, 28, 32, 40)
@@ -441,72 +328,6 @@ def test_batch_istd_coordinates_are_shared_by_grouping_and_backfill(tmp_path):
     assert frame.common_rt_min("middle", 3.0) == 3.0
     derived = SampleRtFrame().with_calibration(frame)
     assert derived.common_rt_min("late", 16.4) == pytest.approx(16.2)
-
-
-@pytest.mark.parametrize(
-    ("early_knots", "late_knots"),
-    [
-        (_LANDMARK_RTS, _STRETCHED_RTS),
-        (_STRETCHED_RTS, _LANDMARK_RTS),
-        (_LANDMARK_RTS, _LANDMARK_RTS),
-    ],
-)
-def test_batch_reference_corrects_bootstrap_unknowns_without_merging_distinct_peaks(
-    tmp_path: Path,
-    early_knots,
-    late_knots,
-) -> None:
-    from tests.alignment_pipeline_helpers import _owner
-    from xic_extractor.alignment.config import AlignmentConfig
-    from xic_extractor.alignment.cross_sample.peak_groups import (
-        construct_cross_sample_peak_group_hypotheses,
-    )
-
-    reference = _batch_reference(tmp_path, {"early": early_knots, "late": late_knots})
-    early = _owner(
-        "early",
-        "main",
-        apex_rt=sum(early_knots[:2]) / 2,
-        precursor_mz=600,
-        product_mz=483.9526,
-    )
-    late = _owner(
-        "late",
-        "main",
-        apex_rt=sum(late_knots[:2]) / 2,
-        precursor_mz=600,
-        product_mz=483.9526,
-    )
-    competitor = _owner(
-        "early",
-        "other",
-        apex_rt=early.peak.integration.rt_apex_min + 2,
-        precursor_mz=600,
-        product_mz=483.9526,
-    )
-    owners = (early, late, competitor)
-    original = tuple(o.peak for o in owners)
-    universe = frozenset({"early", "late"})
-    order = {"early": 10, "late": 40}
-    lookup = reference.bind(owners, sample_universe=universe, injection_order=order)
-    assert not lookup.bindings
-    assert lookup.corrected_pair_delta_sec(early, late) == pytest.approx(0)
-    assert lookup.corrected_pair_delta_sec(competitor, late) > 60
-    groups = construct_cross_sample_peak_group_hypotheses(
-        owners,
-        config=AlignmentConfig(),
-        sample_universe=universe,
-        rt_frame=SampleRtFrame(injection_order=(order or {})).with_sources(
-            drift_lookup=lookup
-        ),
-        bootstrap=True,
-        rules=CID_NL_GROUPING_RULES,
-    )
-    assert {frozenset(group.owner_ids) for group in groups} == {
-        frozenset((early.owner_id, late.owner_id)),
-        frozenset((competitor.owner_id,)),
-    }
-    assert tuple(o.peak for o in owners) == original
 
 
 def test_batch_reference_does_not_invent_missing_measured_landmarks(

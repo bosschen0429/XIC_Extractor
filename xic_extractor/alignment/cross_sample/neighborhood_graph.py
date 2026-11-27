@@ -2,99 +2,18 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample.identity_models import (
-    CrossSampleEdgeDisposition,
     CrossSampleGroupMemberSubject,
-    CrossSampleInitialEdgeContext,
     CrossSampleNeighborhoodStatus,
 )
-from xic_extractor.alignment.edge_scoring import (
-    OwnerEdgeEvidence,
-)
-from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
-from xic_extractor.alignment.rt_frame import RtFrame
 
 if TYPE_CHECKING:
     from xic_extractor.alignment.cross_sample.peak_groups import (
         CrossSamplePeakGroupHypothesis,
     )
-
-
-@dataclass(frozen=True, slots=True)
-class CrossSampleNeighborhoodEdge:
-    disposition: CrossSampleEdgeDisposition
-    initial_evidence: OwnerEdgeEvidence
-    initial_context: CrossSampleInitialEdgeContext
-    config: AlignmentConfig
-    left_owner: SampleLocalMS1Owner
-    right_owner: SampleLocalMS1Owner
-    rt_frame: RtFrame = field(
-        repr=False,
-        compare=False,
-    )
-
-
-def classify_cross_sample_initial_edge(
-    edge: OwnerEdgeEvidence,
-    *,
-    context: CrossSampleInitialEdgeContext,
-    config: AlignmentConfig,
-) -> CrossSampleEdgeDisposition:
-    """Classify raw owner evidence without caller-authored compatibility flags."""
-
-    if edge.decision == "blocked_edge":
-        if context == "targeted_istd_continuity" and edge.failure_allows_rt_continuity:
-            return _targeted_istd_rt_disposition(edge, config=config)
-        return "excluded"
-    if context == "hard_gate":
-        return "eligible"
-    if edge.decision == "strong_edge":
-        return "eligible"
-    if _full_batch_weak_edge_is_eligible(edge, config=config):
-        return "eligible"
-    if context == "complete_link":
-        return "review_only"
-    if context == "targeted_istd_continuity":
-        return _targeted_istd_rt_disposition(edge, config=config)
-    return "review_only"
-
-
-def _full_batch_weak_edge_is_eligible(
-    edge: OwnerEdgeEvidence,
-    *,
-    config: AlignmentConfig,
-) -> bool:
-    return (
-        edge.decision == "weak_edge"
-        and not edge.failure_reason
-        and edge.rt_basis == "raw"
-        and edge.rt_raw_delta_sec <= config.preferred_rt_sec
-        and edge.owner_quality == "clean"
-        and edge.seed_support_level == "moderate"
-    )
-
-
-def _targeted_istd_rt_disposition(
-    edge: OwnerEdgeEvidence,
-    *,
-    config: AlignmentConfig,
-) -> CrossSampleEdgeDisposition:
-    if (
-        edge.owner_quality in {"weak", "ambiguous_nearby"}
-        or edge.seed_support_level == "weak"
-    ):
-        return "review_only"
-    rt_delta_sec = edge.rt_raw_delta_sec
-    if (
-        edge.rt_basis == "drift_corrected"
-        and edge.rt_drift_corrected_delta_sec is not None
-    ):
-        rt_delta_sec = edge.rt_drift_corrected_delta_sec
-    return "eligible" if rt_delta_sec <= config.preferred_rt_sec else "review_only"
 
 
 @dataclass(frozen=True, slots=True)
@@ -134,14 +53,3 @@ def _expected_cross_sample_lineage(
             for predecessor in relevant_predecessors
         )
     return tuple(lineage_edges)
-
-
-__all__ = (
-    "CrossSampleLineageEdge",
-    "CrossSampleNeighborhoodEdge",
-    "CrossSamplePartitionTransition",
-    "_expected_cross_sample_lineage",
-    "_full_batch_weak_edge_is_eligible",
-    "_targeted_istd_rt_disposition",
-    "classify_cross_sample_initial_edge",
-)

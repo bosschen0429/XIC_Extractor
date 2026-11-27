@@ -485,9 +485,6 @@ def test_bundle_replays_final_graded_rt_for_each_sample_and_signal(tmp_path):
             stem,
             "calibrated" if knots else "insufficient_anchors",
             knots,
-            None,
-            None,
-            "unmeasured",
             estimate_support=RtEstimateSupport((5.0, 6.0), shift, 0.1, 0.01),
         )
 
@@ -496,9 +493,7 @@ def test_bundle_replays_final_graded_rt_for_each_sample_and_signal(tmp_path):
         "sample-two": sample("sample-two", ((5.0, 4.0), (6.0, 4.5)), -1.25),
         "median-only": sample("median-only", (), 0.25),
     }
-    calibration = BatchRtCalibration(
-        RtCalibrationPolicy(), (), samples, None, None, None
-    )
+    calibration = BatchRtCalibration(RtCalibrationPolicy(), (), samples)
     base = _fixture_bundle().transitions[0]
     traces = base.traces + tuple(
         replace(base.traces[0], trace_id=stem, sample_id=stem, sample_label=stem)

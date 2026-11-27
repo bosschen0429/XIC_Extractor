@@ -7,11 +7,9 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from xic_extractor.raw_mass_recalibration import PreparedRawMassRecalibration
 
-from collections import Counter
 from collections.abc import Callable, Mapping
 from contextlib import ExitStack
 from pathlib import Path
-from threading import Lock
 from typing import cast
 
 from xic_extractor.acquisition.raw_paths import existing_raw_paths
@@ -261,32 +259,14 @@ def execute_prepared_alignment(
     """One instrumented scheduler for complete Alignment and frozen grouping."""
     recorder = timing_recorder or TimingRecorder.disabled("alignment")
     output_dir.mkdir(parents=True, exist_ok=True)
-    inference_counts: Counter[str] = Counter()
-    inference_counts_lock = Lock()
 
     def runtime_progress(event: Mapping[str, object]) -> None:
-        counts = event.get("operation_counts")
-        if event.get("event") == "feature_membership_inference" and isinstance(
-            counts, dict
-        ):
-            with inference_counts_lock:
-                for key, value in counts.items():
-                    if key.startswith("largest_"):
-                        inference_counts[key] = max(inference_counts[key], value)
-                    else:
-                        inference_counts[key] += value
-                runtime_stage.metrics.update(
-                    {
-                        f"feature_inference_{key}": value
-                        for key, value in inference_counts.items()
-                    }
-                )
         recorder.heartbeat_event(event)
         if progress_callback:
             progress_callback(event)
 
     with (
-        recorder.stage("alignment.untargeted_cid_nl_runtime") as runtime_stage,
+        recorder.stage("alignment.untargeted_cid_nl_runtime"),
         recorder.process_memory_scope("retained_runtime"),
     ):
         completed = execute_untargeted_plan(

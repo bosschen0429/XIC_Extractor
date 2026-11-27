@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from statistics import median
 from typing import TYPE_CHECKING, Literal
 
 from xic_extractor.alignment.backfill.cid_nl_evidence import (
@@ -13,24 +12,21 @@ from xic_extractor.alignment.backfill.cid_nl_evidence import (
 from xic_extractor.alignment.backfill.conservative import (
     plan_conservative_backfill_targets,
 )
+from xic_extractor.alignment.band_grouping import group_peak_bands
+from xic_extractor.alignment.band_rt_location import BackfillPeakLocation, BandRtLocator
 from xic_extractor.alignment.cell_observation.group_context import (
     select_cid_nl_group_backfill_subject,
 )
-from xic_extractor.alignment.cid_nl_grouping import (
-    CID_NL_GROUPING_RULES,
-    has_cid_nl_activation_support,
-)
+from xic_extractor.alignment.cid_nl_grouping import has_cid_nl_activation_support
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSamplePeakGroupHypothesis,
-    construct_cross_sample_peak_group_hypotheses,
 )
 from xic_extractor.alignment.hypothesis_owner_adapter import (
     compose_cid_nl_peak_hypotheses_from_assessment,
     owner_from_cid_nl_assessment_support,
 )
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
-from xic_extractor.alignment.peak_trajectories import BackfillPeakLocation
 from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessment,
@@ -88,23 +84,14 @@ def plan_grouped_cid_nl_backfills(
     rt_frame: SampleRtFrame,
     backfill_half_window_min: float,
 ) -> tuple[CidNlBackfillQuestion, ...]:
-    """Resolve subject, trajectory and window facts from frozen workset membership."""
+    """Resolve subject and window facts from frozen band membership."""
     samples = {sample.sample_name: sample for sample in sample_population}
     rt_frame = rt_frame.for_sample_stems(
         frozenset(sample.raw_stem for sample in sample_population)
     )
     questions: list[CidNlBackfillQuestion] = []
     for workset in worksets:
-        direct = {
-            candidate.peak_hypothesis_id: candidate.direct_support_assessment
-            for candidate in workset.retained_candidates
-            if candidate.direct_support_assessment is not None
-        }
-        groups = tuple(
-            group
-            for group in workset.grouping_scope.groups
-            if any(owner_id in direct for owner_id in group.owner_ids)
-        )
+        groups = workset.grouping_scope.groups
         for group, target_ids in plan_conservative_backfill_targets(
             groups, sample_population=sample_population
         ):
@@ -114,17 +101,20 @@ def plan_grouped_cid_nl_backfills(
                 group,
                 tuple(
                     {
-                        direct[owner.owner_id].method_subject
+                        owner.assessment.method_subject
                         for owner in group.owners
-                        if owner.owner_id in direct
+                        if owner.assessment is not None
                         and has_cid_nl_activation_support(owner)
                     }
                 ),
             )
-            trajectory = workset.grouping_scope.peak_trajectories.trajectory_for(
-                group.owners
+            locator = BandRtLocator(
+                tuple(
+                    (owner.sample_stem, owner.peak.rt_apex_min)
+                    for owner in group.owners
+                )
             )
-            locations = trajectory.backfill_locations(
+            locations = locator.backfill_locations(
                 tuple(samples[sample_id].raw_stem for sample_id in sorted(target_ids)),
                 reference_samples=frozenset(
                     owner.sample_stem
@@ -173,11 +163,11 @@ def plan_subject_cid_nl_backfills(
         )
     if not support_owners:
         return ()
-    groups = construct_cross_sample_peak_group_hypotheses(
+    groups = group_peak_bands(
         tuple(support_owners),
         config=alignment_config,
-        rt_frame=SampleRtFrame(),
-        rules=CID_NL_GROUPING_RULES,
+        rt_frame=SampleRtFrame.from_samples(sample_population),
+        stage="targeted",
     )
     return tuple(
         CidNlBackfillQuestion(sample_id, group, method_subject)
@@ -196,14 +186,7 @@ def _group_drift_offsets(
     basis = group.inference_basis
     if drift is None or basis is None or not basis.rt_drift.nonzero_count:
         return None
-    coordinates = [
-        estimate.rt_min
-        for owner in group.owners
-        if (estimate := rt_frame.membership_coordinate(owner)) is not None
-    ]
-    if len(coordinates) != len(group.owners):
+    reference = group.drift_reference
+    if reference is None:
         return None
-    return drift.sample_offsets(
-        basis.rt_drift,
-        drift.batch_state(group.owner_ids, float(median(coordinates))),
-    )
+    return drift.sample_offsets(basis.rt_drift, drift.batch_state(*reference))

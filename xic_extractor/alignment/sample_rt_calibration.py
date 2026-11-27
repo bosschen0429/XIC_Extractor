@@ -33,31 +33,11 @@ _ROBUST_RESIDUAL_CUTOFF = 6.0
 @dataclass(frozen=True)
 class RtCalibrationPolicy:
     loess_fraction: float = 0.3
-    front_knot_count: int = 2
-    perturbation_mad_multiplier: float = 5.0
-    perturbation_min_shift_min: float = 0.1
 
 
 def validate_rt_calibration_policy(model: RtCalibrationPolicy) -> None:
     if not 0 < model.loess_fraction <= 1:
         raise ValueError("loess_fraction must be in (0, 1]")
-    if model.front_knot_count < 1:
-        raise ValueError("front_knot_count must be at least 1")
-    values = (
-        model.perturbation_mad_multiplier,
-        model.perturbation_min_shift_min,
-    )
-    if not all(math.isfinite(v) and v >= 0 for v in values):
-        raise ValueError("calibration tolerances must be finite and nonnegative")
-
-
-@dataclass(frozen=True)
-class PriorInjection:
-    """Injection-timeline context that can explain a measured front shift."""
-
-    pre_flagged: bool
-    after_short_run: bool
-    after_method_change: bool
 
 
 @dataclass(frozen=True)
@@ -110,9 +90,6 @@ class SampleRtCalibration:
     sample_stem: str
     status: str
     knots: tuple[tuple[float, float], ...]
-    front_shift_min: float | None
-    prior_injection: PriorInjection | None
-    perturbation_status: str
     anchor_count: int = 0
     standard_residuals: tuple[tuple[str, float, float, float], ...] = ()
     estimate_support: RtEstimateSupport | None = None
@@ -213,27 +190,19 @@ class BatchRtCalibration:
     policy: RtCalibrationPolicy
     knots: tuple[CalibrationKnot, ...]
     samples: Mapping[str, SampleRtCalibration]
-    front_shift_center_min: float | None
-    front_shift_mad_min: float | None
-    perturbation_tolerance_min: float | None
 
     @classmethod
     def from_coordinate_knots(
         cls, knots_by_sample: Sequence[tuple[str, tuple[tuple[float, float], ...]]]
     ) -> BatchRtCalibration:
-        """Retain an already chosen map without claiming a new fit or perturbation."""
+        """Retain an already chosen map without claiming a new fit."""
         return cls(
             policy=RtCalibrationPolicy(),
             knots=(),
             samples={
-                sample: SampleRtCalibration(
-                    sample, "calibrated", knots, None, None, "unmeasured"
-                )
+                sample: SampleRtCalibration(sample, "calibrated", knots)
                 for sample, knots in knots_by_sample
             },
-            front_shift_center_min=None,
-            front_shift_mad_min=None,
-            perturbation_tolerance_min=None,
         )
 
     def corrected_rt_min(self, owner: SampleLocalMS1Owner) -> float:
@@ -266,7 +235,6 @@ def build_batch_rt_calibration(
     detected_rt_by_feature: Mapping[str, Mapping[str, float]],
     *,
     sample_stems: Sequence[str],
-    prior_injections: Mapping[str, PriorInjection],
     policy: RtCalibrationPolicy,
     sample_cohorts: Mapping[str, str] | None = None,
     measured_istds: Sequence[tuple[str, str, float]] = (),
@@ -280,7 +248,6 @@ def build_batch_rt_calibration(
     Ordinary correspondences need at least half their cohort and two peers.
     Measured identity anchors need a peer, not ordinary-feature prevalence.
     Predicted, interpolated or backfilled coordinates are never training data.
-    Timeline facts explain measured perturbation; they do not fit the map.
     """
     samples = tuple(sorted(set(sample_stems)))
     knots, observations_by_knot, standards, ordinary_samples = _anchor_coordinates(
@@ -307,52 +274,7 @@ def build_batch_rt_calibration(
         )
         for sample in samples
     }
-    usable = {s for s, fit in fits.items() if fit.status == "calibrated"}
-
-    front_knots = knots[: policy.front_knot_count]
-    front_shifts: dict[str, float] = {}
-    for sample in sorted(usable):
-        observed = [
-            observations_by_knot[knot.knot_id][sample] - knot.reference_rt_min
-            for knot in front_knots
-            if sample in observations_by_knot[knot.knot_id]
-        ]
-        if len(observed) == len(front_knots):
-            front_shifts[sample] = float(median(observed))
-    center = float(median(front_shifts.values())) if front_shifts else None
-    mad = (
-        float(median(abs(v - center) for v in front_shifts.values()))
-        if center is not None
-        else None
-    )
-    tolerance = (
-        max(policy.perturbation_mad_multiplier * mad, policy.perturbation_min_shift_min)
-        if mad is not None
-        else None
-    )
-
-    calibrations = {
-        sample: replace(
-            fit,
-            front_shift_min=front_shifts.get(sample),
-            prior_injection=prior_injections.get(sample),
-            perturbation_status=_perturbation_status(
-                prior_injections.get(sample),
-                front_shifts.get(sample),
-                center,
-                tolerance,
-            ),
-        )
-        for sample, fit in fits.items()
-    }
-    return BatchRtCalibration(
-        policy=policy,
-        knots=knots,
-        samples=calibrations,
-        front_shift_center_min=center,
-        front_shift_mad_min=mad,
-        perturbation_tolerance_min=tolerance,
-    )
+    return BatchRtCalibration(policy=policy, knots=knots, samples=fits)
 
 
 def ordinary_anchor_min_samples(cohort_size: int) -> int:
@@ -412,9 +334,6 @@ def fit_sample_rt_calibration(
         sample_stem=sample_stem,
         status=_sample_status(fitted, usable),
         knots=fitted if usable else (),
-        front_shift_min=None,
-        prior_injection=None,
-        perturbation_status="unmeasured",
         anchor_count=len({x for x, _ in points}),
         estimate_support=support,
         standard_residuals=tuple(
@@ -671,15 +590,12 @@ class BatchRtCalibrationAccumulator:
         self._channels: dict[str, dict[str, AnchorChannel]] = {}
 
     def add_observations(self, observations: Sequence[RtAnchorObservation]) -> None:
-        """Each agreed bootstrap group is one correspondence, keyed by its
-        smallest owner ID; observations outside such a group do not calibrate.
-        """
+        """Each bootstrap band is one calibrating correspondence."""
         by_group: dict[str, list[RtAnchorObservation]] = defaultdict(list)
         for observation in observations:
             if observation.bootstrap_group_id is not None:
                 by_group[observation.bootstrap_group_id].append(observation)
-        for anchors in by_group.values():
-            key = min(anchor.owner_id for anchor in anchors)
+        for key, anchors in by_group.items():
             self._observations[key] = {
                 anchor.sample_stem: anchor.rt_min for anchor in anchors
             }
@@ -697,7 +613,6 @@ class BatchRtCalibrationAccumulator:
             sample_cohorts=self._cohorts,
             measured_istds=measured_istds,
             channels_by_feature=self._channels,
-            prior_injections={},
             policy=RtCalibrationPolicy(),
         )
 
@@ -715,22 +630,3 @@ def _sample_status(knots: tuple[tuple[float, float], ...], usable: bool) -> str:
     if len(knots) < _MIN_LOESS_POSITIONS:
         return "insufficient_anchors"
     return "non_monotonic_anchors"
-
-
-def _perturbation_status(
-    prior: PriorInjection | None,
-    front_shift: float | None,
-    center: float | None,
-    tolerance: float | None,
-) -> str:
-    if front_shift is None or center is None or tolerance is None:
-        return "unmeasured"
-    if abs(front_shift - center) > tolerance:
-        if prior is None:
-            return "outlier_without_timeline"
-        if prior.pre_flagged or prior.after_short_run or prior.after_method_change:
-            return "confirmed"
-        return "unexplained_outlier"
-    if prior is not None and prior.pre_flagged:
-        return "flagged_unconfirmed"
-    return "not_perturbed"

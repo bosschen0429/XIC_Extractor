@@ -37,9 +37,6 @@ from xic_extractor.peak_detection.cid_nl_peak_support import (
     DdaCidNlPeakSupport,
     DdaCidNlPeakSupportPolicy,
 )
-from xic_extractor.peak_detection.elution_context import (
-    SampleElutionContext,
-)
 from xic_extractor.peak_detection.observations import (
     PeakObservation,
     RetainedCaptureEvidence,
@@ -70,7 +67,6 @@ class CidNlAcquisitionResult:
     capture_evidence: tuple[RetainedCaptureEvidence, ...] = dataclass_field(
         default=(), compare=False
     )
-    elution_contexts: tuple[SampleElutionContext, ...] = ()
 
 
 def assess_sample_regions(
@@ -91,7 +87,6 @@ def assess_sample_regions(
     evidence = tuple(ref for region in regions for ref in region.evidence)
     supports = tuple(ref for region in regions for ref in region.individual_relations)
     ambiguities = tuple(ref for region in regions for ref in region.ambiguous_relations)
-    contexts = tuple(context for region in regions for context in region.contexts)
     observed_by_scan: dict[tuple[int, float], set[PeakObservation]] = {}
     for relation in supports:
         observed_by_scan.setdefault(
@@ -261,7 +256,6 @@ def assess_sample_regions(
                 }
             ),
             capture_evidence=captures,
-            elution_contexts=contexts,
         )
     return by_subject
 

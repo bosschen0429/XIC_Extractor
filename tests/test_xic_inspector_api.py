@@ -859,14 +859,9 @@ def test_curve_replays_final_rt_estimate_including_boundary_shift(tmp_path):
         "s1",
         "calibrated",
         ((0.9, 1.8), (1.1, 2.2)),
-        None,
-        None,
-        "unmeasured",
         estimate_support=RtEstimateSupport((0.9, 1.1), 1.0, 0.1, 0.0),
     )
-    calibration = BatchRtCalibration(
-        RtCalibrationPolicy(), (), {"s1": sample}, None, None, None
-    )
+    calibration = BatchRtCalibration(RtCalibrationPolicy(), (), {"s1": sample})
     report, _, _ = create_inspector_report(
         tmp_path,
         summary={

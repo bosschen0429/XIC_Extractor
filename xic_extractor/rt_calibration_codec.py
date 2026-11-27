@@ -37,9 +37,6 @@ def rt_calibration_from_payload(value: dict[str, Any]) -> BatchRtCalibration:
             "policy",
             "knots",
             "samples",
-            "front_shift_center_min",
-            "front_shift_mad_min",
-            "perturbation_tolerance_min",
         },
     )
     if value["schema"] != "sample_rt_calibration":
@@ -76,9 +73,6 @@ def rt_calibration_from_payload(value: dict[str, Any]) -> BatchRtCalibration:
             for row in value["knots"]
         ),
         samples=samples,
-        front_shift_center_min=value["front_shift_center_min"],
-        front_shift_mad_min=value["front_shift_mad_min"],
-        perturbation_tolerance_min=value["perturbation_tolerance_min"],
     )
 
 
@@ -89,8 +83,6 @@ def sample_calibration_from_payload(row: dict[str, Any]) -> SampleRtCalibration:
             "sample_stem",
             "status",
             "knots_observed_reference_min",
-            "front_shift_min",
-            "perturbation_status",
             "anchor_count",
             "standard_residuals",
             "estimate_support",
@@ -111,9 +103,6 @@ def sample_calibration_from_payload(row: dict[str, Any]) -> SampleRtCalibration:
         sample_stem=stem,
         status=row["status"],
         knots=knots,
-        front_shift_min=row["front_shift_min"],
-        prior_injection=None,
-        perturbation_status=row["perturbation_status"],
         anchor_count=row["anchor_count"],
         standard_residuals=tuple(tuple(item) for item in row["standard_residuals"]),
         estimate_support=_read_estimate_support(row["estimate_support"]),
@@ -164,8 +153,6 @@ def sample_calibration_payload(sample: SampleRtCalibration) -> dict[str, Any]:
         "sample_stem": sample.sample_stem,
         "status": sample.status,
         "knots_observed_reference_min": sample.knots,
-        "front_shift_min": sample.front_shift_min,
-        "perturbation_status": sample.perturbation_status,
         "anchor_count": sample.anchor_count,
         "standard_residuals": sample.standard_residuals,
         "estimate_support": {
@@ -186,9 +173,6 @@ def rt_calibration_payload(calibration: BatchRtCalibration) -> dict[str, Any]:
             sample_calibration_payload(sample)
             for sample in calibration.samples.values()
         ],
-        "front_shift_center_min": calibration.front_shift_center_min,
-        "front_shift_mad_min": calibration.front_shift_mad_min,
-        "perturbation_tolerance_min": calibration.perturbation_tolerance_min,
     }
 
 

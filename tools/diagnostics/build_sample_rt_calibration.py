@@ -5,19 +5,6 @@ samples; the input is one cohort and RAW is not read. The fit is the formal
 ``alignment.sample_rt_calibration`` owner. Held-out validation reserves every
 fifth feature in median-RT order, fits the rest, and compares raw and
 calibrated dispersion on the same held-out rows.
-
-With an injection timeline, a sample's front shift (the median shift at the
-batch's earliest knots) is an outlier when it differs from the batch median by
-more than max(k x batch MAD, a minimum shift). An outlier is ``confirmed`` when
-the timeline pre-flags the sample, it follows a short method, or it is the
-first full-length run after a method change. A short method uses the
-timeline's persisted run-length limits without the idle limit; a method change
-compares with the latest earlier run longer than the persisted length fraction,
-skipping blanks and SDO/LEK. Otherwise the outlier is
-``unexplained_outlier``, or ``outlier_without_timeline`` without a timeline
-row. A pre-flagged sample within tolerance is ``flagged_unconfirmed``; a
-missing front knot is ``unmeasured``. No consumer reads the status, and it does
-not change grouping, peak selection or values.
 """
 
 from __future__ import annotations
@@ -34,7 +21,6 @@ from statistics import median
 
 from xic_extractor.alignment.sample_rt_calibration import (
     BatchRtCalibration,
-    PriorInjection,
     RtCalibrationPolicy,
     build_batch_rt_calibration,
     validate_rt_calibration_policy,
@@ -64,58 +50,6 @@ def read_detected_rts(
             if math.isfinite(rt):
                 detected.setdefault(row["feature_id"], {})[row["sample_stem"]] = rt
     return detected, tuple(sorted(samples))
-
-
-def read_prior_injections(
-    timeline_path: Path,
-) -> dict[str, tuple[PriorInjection, dict[str, object]]]:
-    """Timeline context per sample, judged by the timeline's persisted policy.
-
-    ``after_short_run`` reuses the pre-flag run-length limits without the idle
-    limit: a short method can leave the gradient unsettled after a long idle.
-    ``after_method_change`` compares the latest earlier run longer than the
-    pre-flag length fraction, skipping blanks and SDO/LEK, whose own methods
-    always differ from the sample method.
-    """
-    payload = json.loads(timeline_path.read_text(encoding="utf-8"))
-    if payload.get("schema") != "injection_timeline":
-        raise ValueError(f"{timeline_path} is not an injection_timeline sidecar")
-    policy = payload["policy"]
-    fraction = policy["max_previous_run_fraction"]
-    rows = sorted(payload["injections"], key=lambda row: row["injection_order"])
-    context: dict[str, tuple[PriorInjection, dict[str, object]]] = {}
-    for index, row in enumerate(rows):
-        previous = row["previous_run_length_min"]
-        after_short_run = previous is not None and (
-            previous <= policy["max_previous_run_min"]
-            and previous <= row["run_length_min"] * fraction
-        )
-        full_run = next(
-            (
-                earlier
-                for earlier in reversed(rows[:index])
-                if earlier["run_length_min"] > row["run_length_min"] * fraction
-            ),
-            None,
-        )
-        method = row["header"]["instrument_method"]
-        context[row["raw_stem"]] = (
-            PriorInjection(
-                pre_flagged=bool(row["possibly_perturbed"]),
-                after_short_run=after_short_run,
-                after_method_change=full_run is not None
-                and full_run["header"]["instrument_method"] != method,
-            ),
-            {
-                "previous_raw_stem": row["previous_raw_stem"],
-                "previous_run_length_min": _round(previous),
-                "idle_min": _round(row["idle_min"]),
-                "previous_full_run_raw_stem": (
-                    full_run["raw_stem"] if full_run is not None else None
-                ),
-            },
-        )
-    return context
 
 
 def heldout_band_offsets(
@@ -204,15 +138,10 @@ def _round(value: float | None) -> float | None:
     return None if value is None else round(float(value), 4)
 
 
-def _sample_rows(
-    calibration: BatchRtCalibration,
-    timeline_context: Mapping[str, Mapping[str, object]],
-) -> list[dict[str, object]]:
+def _sample_rows(calibration: BatchRtCalibration) -> list[dict[str, object]]:
     rows = []
     for sample in calibration.samples.values():
         span = sample.reliable_observed_range
-        prior = sample.prior_injection
-        context = timeline_context.get(sample.sample_stem, {})
         rows.append(
             {
                 "sample_stem": sample.sample_stem,
@@ -220,15 +149,6 @@ def _sample_rows(
                 "knot_count": len(sample.knots),
                 "reliable_observed_start_min": _round(span[0]) if span else None,
                 "reliable_observed_end_min": _round(span[1]) if span else None,
-                "front_shift_min": _round(sample.front_shift_min),
-                "perturbation_status": sample.perturbation_status,
-                "pre_flagged": prior.pre_flagged if prior else None,
-                "after_short_run": prior.after_short_run if prior else None,
-                "previous_raw_stem": context.get("previous_raw_stem"),
-                "previous_run_length_min": context.get("previous_run_length_min"),
-                "idle_min": context.get("idle_min"),
-                "after_method_change": prior.after_method_change if prior else None,
-                "previous_full_run_raw_stem": context.get("previous_full_run_raw_stem"),
             }
         )
     return rows
@@ -248,29 +168,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     defaults = RtCalibrationPolicy()
     parser.add_argument("--alignment-cells", type=Path, required=True)
-    parser.add_argument(
-        "--injection-timeline",
-        type=Path,
-        help="injection_timeline JSON; explains measured front-shift outliers",
-    )
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument(
         "--loess-fraction",
         type=float,
         default=defaults.loess_fraction,
-    )
-    parser.add_argument(
-        "--front-knot-count", type=int, default=defaults.front_knot_count
-    )
-    parser.add_argument(
-        "--perturbation-mad-multiplier",
-        type=float,
-        default=defaults.perturbation_mad_multiplier,
-    )
-    parser.add_argument(
-        "--perturbation-min-shift-min",
-        type=float,
-        default=defaults.perturbation_min_shift_min,
     )
     parser.add_argument(
         "--heldout-min-sample-fraction",
@@ -284,25 +186,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         default=DEFAULT_BAND_EDGES,
     )
     args = parser.parse_args(argv)
-    policy = RtCalibrationPolicy(
-        loess_fraction=args.loess_fraction,
-        front_knot_count=args.front_knot_count,
-        perturbation_mad_multiplier=args.perturbation_mad_multiplier,
-        perturbation_min_shift_min=args.perturbation_min_shift_min,
-    )
+    policy = RtCalibrationPolicy(loess_fraction=args.loess_fraction)
     validate_rt_calibration_policy(policy)
     band_edges = tuple(sorted(args.band_edges))
     detected, samples = read_detected_rts(args.alignment_cells)
-    timeline = (
-        read_prior_injections(args.injection_timeline)
-        if args.injection_timeline
-        else {}
-    )
     calibration = build_batch_rt_calibration(
-        detected,
-        sample_stems=samples,
-        prior_injections={s: prior for s, (prior, _) in timeline.items()},
-        policy=policy,
+        detected, sample_stems=samples, policy=policy
     )
     unique: dict[tuple[tuple[str, float], ...], str] = {}
     for feature in sorted(detected):
@@ -317,7 +206,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if index % 5 != 2
     }
     validation = build_batch_rt_calibration(
-        training, sample_stems=samples, prior_injections={}, policy=policy
+        training, sample_stems=samples, policy=policy
     )
     heldout_rows, heldout_summary = heldout_band_offsets(
         {
@@ -329,25 +218,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         min_samples=math.ceil(args.heldout_min_sample_fraction * len(samples)),
         band_edges=band_edges,
     )
-    sample_rows = _sample_rows(
-        calibration, {s: ctx for s, (_, ctx) in timeline.items()}
-    )
+    sample_rows = _sample_rows(calibration)
     payload = {
         "schema": "sample_rt_calibration",
-        "schema_version": 4,
+        "schema_version": 5,
         "evidence_status": "diagnostic_only",
         "alignment_cells": str(args.alignment_cells.resolve()),
-        "injection_timeline": (
-            str(args.injection_timeline.resolve()) if args.injection_timeline else None
-        ),
         "policy": asdict(policy),
         "sample_count": len(samples),
-        "timeline_unmatched_samples": (
-            sorted(set(samples) - set(timeline)) if args.injection_timeline else None
-        ),
-        "front_shift_center_min": _round(calibration.front_shift_center_min),
-        "front_shift_mad_min": _round(calibration.front_shift_mad_min),
-        "perturbation_tolerance_min": _round(calibration.perturbation_tolerance_min),
         "knot_count_by_rt_band": knot_band_counts(calibration, band_edges),
         "knots": [asdict(knot) for knot in calibration.knots],
         "samples": [
@@ -383,9 +261,6 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "samples": len(samples),
                 "knots": len(calibration.knots),
                 "status": Counter(str(row["status"]) for row in sample_rows),
-                "perturbation": Counter(
-                    str(row["perturbation_status"]) for row in sample_rows
-                ),
                 "heldout": heldout_summary,
             }
         )

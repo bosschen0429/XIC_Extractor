@@ -20,10 +20,8 @@ grouping consumes this frame.
 
 ### Anchor qualification
 
-Bootstrap obtains measured anchors from consistent directional grouping
-results; ordinary bootstrap membership is not used directly as the final
-answer. Pattern seeds participate in both directions. Extensions that disagree
-between directions remain unresolved without downgrading the seed.
+Bootstrap links peaks in measured RT. Established bands supply measured anchors
+from direct, quantifiable members; bootstrap membership is not final membership.
 
 Known-ISTD reference acquisition reuses Targeted's authoritative peak selection
 and credible-anchor decisions rather than adding a separate rule that makes all
@@ -38,27 +36,26 @@ input selection.
 | Known-ISTD reference | Exact identity bindings and measured coordinates. Bootstrap comparison uses the shared fitter with ISTDs only; final calibration combines those measurements with ordinary anchors. |
 | Sample RT calibration | One frozen map per batch, fitted from its measured ISTDs and the ordinary bootstrap correspondences of the reference population without shoulder overlap. Final Grouping, Backfill localization/admission, and replay consume this map through `SampleRtFrame`. |
 | Batch drift model | Frozen batch state (B), sample shift (M) and drift anchors, measured on the same reference population; see [Drift beyond the map](#drift-beyond-the-map). |
-| Peak trajectory | Ordered correspondences and direct/MS1-only positions, used for membership constraints and sample-local localization. |
+| Band | Links measured member peaks in injection order; the final band supplies sample-local Backfill coordinates. |
 | Calibration diagnostic | Uses the same fit owner with detected-cell inputs and an interleaved held-out comparison. Its files do not alter production results. |
 
 [`rt_anchors`](../../xic_extractor/alignment/rt_anchors.py) produces the
 anchor observations once per initial grouping: an owner with direct method
 support, a primary identity event and quantification-eligible integration,
-with its method channel, apex RT and, when its bootstrap group is agreed, that
-group. Bootstrap takes measured support from the retained assessment binding,
-not nominal method-query masses projected into an observation-only owner. The
-published RT map and the [drift model](#drift-beyond-the-map) are both fitted on
-one population: the bootstrap channels of every admitted Discovery peak, plus
-the measured ISTDs. M is [voted](#drift-beyond-the-map) from the same
-population's direct-evidence rows. Removing a peak only after grouping is not
+with its method channel, apex RT and, when it belongs to an established
+bootstrap band holding at least two such owners, that band. Each band is one
+calibrating correspondence; the general map also uses the measured ISTD
+coordinates. The [drift model](#drift-beyond-the-map) reads every observation
+by channel, banded or not. M is [voted](#drift-beyond-the-map) from the same
+population's direct bands. Removing a peak only after grouping is not
 equivalent: that peak may have set a channel center or changed which bootstrap
-correspondences agreed. Final rows and their coefficients are inferred on the
-full population.
+bands formed. Final rows and their coefficients are inferred on the full
+population.
 
 The calibration population is read from the first pass, not acquired again.
-Bootstrap groups exist only to calibrate, so they are inferred only where they
+Bootstrap bands exist only to calibrate, so they are linked only where they
 can: not for a workset whose anchors fall short of the correspondence quorum
-below in every cohort. Such owners stay ungrouped until final grouping, and
+below in every cohort. Such owners stay unlinked until final grouping, and
 their anchors still reach the drift model.
 
 [`sample_rt_calibration`](../../xic_extractor/alignment/sample_rt_calibration.py)
@@ -130,7 +127,7 @@ statistical confidence interval or independent identity verification.
 ### Graded query support
 
 The strong-only map and inverse remain bounded by the supported anchor range.
-Final membership and localization explicitly use a graded query instead:
+Localization explicitly uses a graded query instead:
 
 - Inside a usable curve, preserve its LOESS coordinate exactly.
 - Outside it, use the nearest endpoint's constant shift (`boundary_shift`).
@@ -144,9 +141,10 @@ Final membership and localization explicitly use a graded query instead:
 The frozen measured support is prepared once. Each answer carries its method,
 qualified position count, measured range, model residual spread, nearest-anchor
 distance and distance outside model support. These are descriptive facts, not
-probabilities or bounds on true error. Weak estimates multiply RT costs by 0.5,
-in addition to signal-quality weighting; mass and independent shape costs are
-unchanged. Accepted membership risks retain the applied query facts in the
+probabilities or bounds on true error. The bounded map supplies band membership
+coordinates, apart from an under-equilibrated injection's
+[early segment](#early-segment-of-an-under-equilibrated-injection); the graded
+estimates remain available for Backfill forecasts and their review facts. Accepted membership risks retain the applied query facts in the
 review outputs. Weak localization uses an `estimated_` basis and remains a
 forecast, not a physical observation. Neither query changes observed RT, peak
 boundaries, area, identity, or Backfill admission rules.
@@ -155,6 +153,33 @@ The persisted calibration retains the measured support for these queries. Legacy
 v1/v2 coordinates remain exact and bounded, with quality unrecorded; old knots
 do not create weak estimates. Bootstrap's strong-only APIs and ISTD-only unique
 same-target fallback retain their existing meaning.
+
+### Early segment of an under-equilibrated injection
+
+After a short method (a 15 min Blank or an 8 min SDOLEK), the next injection
+starts on a column that has not re-equilibrated, and its early-eluting compounds
+come early (#786): shift(RT, injection) = A × g(RT). The map absorbs the shift
+from about 9 min, where the injection has anchors; before that it usually has
+none, so its early peaks kept the whole shift, up to two minutes, and fell out
+of their bands.
+
+[`early_segment_shift`](../../xic_extractor/alignment/early_segment_shift.py)
+measures A from the frozen calibration's own standards. A standard's deviation is
+its observed RT minus the median of the same standard in up to three injections
+on each side. An injection is affected when its earliest standard is earlier
+than both 10 s and five times the batch's median absolute deviation, and its next
+standard moved the same way by a fraction closer to g's decay than to a uniform
+shift; with fewer than two standards no injection is affected. g is
+exp(−(RT − 8.5)/5.26) from 8.5 min and, before that, the medians #786 measured:
+0 at 2.6 min, rising to 2.6 at 5.0 min, then 1.4 at 6.5 min and 1.0 from 7.5 min.
+Both were measured on the 60 min dna_dr gradient; another gradient needs g
+measured again. Single compounds at 4–7 min spread from 1.2 to 3.1 times A.
+
+Only band linking reads it. An affected injection's peak before 8.5 min moves to
+the elution time solving observed = elution + A × g(elution), then is read
+through the maps of the unaffected injections around it. Such a predicted
+coordinate does not vote on M. The published calibration, Backfill localization
+and every output keep their values.
 
 ### Persisted RT replay
 
@@ -297,14 +322,14 @@ after the general fit and before final grouping:
   neutral loss). When a sample has exactly one
   [anchor observation](#anchor-qualification) in that channel, its apex RT is
   that channel's observation in that sample; several leave the sample unknown.
-  Whether the bootstrap group agreed is not consulted, so compounds that drift
-  too far to group before calibration still contribute. Grouping by channel
-  measures drift only; it does not anchor the general map.
+  Whether the peak joined a bootstrap band is not consulted, so compounds that
+  drift too far to link before calibration still contribute. Grouping by
+  channel measures drift only; it does not anchor the general map.
 - **Drift anchors** are channels whose general-calibrated RT keeps a robust
-  spread of at least 12 seconds and whose residuals correlate (Spearman ≥ 0.75 over at least six common samples) with a channel
-  of another elution family. Channels whose apices coincide within 0.05 min
-  (median over the samples both observe) form one family (isotopes, adducts,
-  co-eluting ions) and vote once.
+  spread of at least 12 seconds and whose residuals correlate (Spearman ≥ 0.75
+  over at least six common samples) with a channel of another elution family.
+  Channels whose apices coincide within 0.05 min (median over the samples both
+  observe) form one family (isotopes, adducts, co-eluting ions) and vote once.
 - **M**: each drift anchor's residual is detrended by its pooled-QC trend (the
   samples' own running median along injection order when fewer than two QCs
   carry it). Anchors whose scatter around their own running trend has a robust
@@ -314,8 +339,8 @@ after the general fit and before final grouping:
   M is arbitrary: a constant is absorbed by the group center.
 - **Rows vote M**: channels need one peak per sample, so some samples are voted
   by one or two families. In a batch of at least 20 samples, the peaks with
-  their own method evidence are therefore grouped once on that frozen frame,
-  over the full population. A row seen in at least 20 samples is compared with
+  their own method evidence are therefore linked once with the initial drift
+  model, over the full population. A row seen in at least 20 samples is compared with
   its eight nearest injection-order neighbours, which cancels its slow trend.
   It votes when that local offset follows the anchors' M (Theil–Sen response
   of at least 0.3, Spearman ≥ 0.75), and its vote is the offset divided by its
@@ -339,23 +364,16 @@ Final grouping uses them as follows:
   Theil–Sen (alternating for both). A coefficient is estimated only with at
   least six members having that regressor and a regressor range of at least a
   quarter of the shape range (B) or 10 seconds (M); otherwise it stays zero.
-  Each nonzero coefficient costs what a 10-second RT difference costs a pair.
-  A group keeps the cheapest feasible choice, zero included. After the initial
-  whole-band grouping, each settled group's coefficients are also a candidate
-  for every group it overlaps during per-sample and per-owner reassignment. A
-  moved owner is judged by the model of the group it joins or leaves, not by
-  how its move perturbs a refit; a refit can otherwise shift a worst pair the
-  moved owner is not part of.
-- A member with unknown B or M does not enter the fit; it keeps its general
-  coordinate with half the RT weight and is not placed in the drift-adjusted
-  frame for the population-gap constraint. It does not force the group to
-  zero coefficients.
-- Once chosen, pair costs, population gap, local trend, mean peer fit and
-  contradiction flags all use the group's adjusted coordinate. Backfill
-  admission keeps the group's coefficients and B, and a Backfill forecast is
-  fitted in the adjusted coordinate with the target's drift added back.
-- Pattern correspondence between two calibrated samples also tries each nearby
-  drift anchor's own predicted displacement; see [Alignment](alignment.md).
+  A seed keeps the fit with the least robust residual spread, preferring
+  zero or fewer coefficients on equal spread. Relinking uses that fixed seed
+  fit, never one refitted to peaks the relink would add. In final grouping,
+  seeds that one joint fit explains merge first: two seeds join when their
+  union, with the drift fitted to it removed, links into one band on its own;
+  the merged seed is fitted on seed members only. Shift-vote rows and Targeted
+  keep one fit per seed, so M does not depend on the merge. A peak with an unknown used
+  regressor stays out of that relink; remaining peaks can still link without
+  the drift model. Backfill reads the accepted band's coefficients and seed
+  shape without refitting them.
 - Observed RT, peak boundaries and area are unchanged. Review rows record
   `rt_time_coefficient` and `rt_sample_shift_coefficient`; run metadata records
   `rt_drift_summary` (drift anchors, unknown-M samples, knots per RT segment,
@@ -364,4 +382,9 @@ Final grouping uses them as follows:
 Known limits: a non-anchor drifting compound near the RT boundary between two
 shape types can borrow the wrong shape; isomers that occupy different injection
 segments can be explained by a segment-aligned M only when the shift within
-each segment does not contradict it.
+each segment does not contradict it. A seed's coefficients come only from seed
+members, and seeds are taken by direct-peak count after merging: a seed that
+holds two lines in some injections cannot merge with the rest of either, and an
+earlier seed can still take peaks that a later seed's fit would have joined.
+Pieces of one line more than eight injections apart, with no detected peak
+between them, stay separate rows.

@@ -26,8 +26,6 @@ def test_default_config_matches_alignment_contract():
     assert config.preferred_rt_sec == 60.0
     assert config.product_mz_tolerance_ppm == 20.0
     assert config.min_peak_shape_similarity == 0.80
-    assert config.anchor_min_evidence_score == 60
-    assert config.anchor_min_seed_events == 2
     assert config.rt_unit == "min"
     assert config.fragmentation_model == "cid_nl"
 
@@ -107,11 +105,6 @@ def test_bool_tolerance_windows_are_rejected(field):
 @pytest.mark.parametrize(
     "kwargs",
     [
-        {"anchor_min_evidence_score": -1},
-        {"anchor_min_evidence_score": 101},
-        {"anchor_min_evidence_score": True},
-        {"anchor_min_seed_events": 0},
-        {"anchor_min_seed_events": True},
         {"rt_unit": "sec"},
         {"fragmentation_model": "hcd"},
     ],

@@ -28,7 +28,7 @@ from xic_extractor.alignment.cross_sample.peak_groups import (
     accepted_membership_risks,
 )
 from xic_extractor.alignment.drift_evidence import KnownIstdReference
-from xic_extractor.alignment.membership_selection import AcceptedMembershipRisk
+from xic_extractor.alignment.membership_risk import AcceptedMembershipRisk
 from xic_extractor.alignment.result.application_result import (
     FinalizedUntargetApplicationResult,
     FinalizedUntargetBatchApplicationResult,
@@ -373,12 +373,6 @@ def group_acquired_partition(
     progress_callback: Callable[[Mapping[str, object]], None] | None = None,
 ) -> CidNlGrouping:
     """Hand acquired in-memory facts to Alignment, retaining no eligibility policy."""
-    context_batches = {
-        id(
-            result.adapter_result.elution_contexts
-        ): result.adapter_result.elution_contexts
-        for result in sample_results
-    }
     prepared = prepare_cid_nl_grouping(
         subject_batch=batch.subject_batch,
         request_subjects=cast(
@@ -398,9 +392,6 @@ def group_acquired_partition(
         ),
         alignment_config=alignment_config,
         rt_frame=batch.context.rt_frame,
-        elution_contexts=tuple(
-            context for contexts in context_batches.values() for context in contexts
-        ),
         known_istd_reference=known_istd_reference,
     )
     if bootstrap_only:

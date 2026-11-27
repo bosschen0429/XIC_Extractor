@@ -39,7 +39,12 @@ def _member(sample: str, trace: np.ndarray, query: float):
         end_rt=segment.right_rt_min,
         area=segment.area_counts_seconds,
     )
-    return replace(owner, peak=replace(owner.peak, physical_evaluation=evaluation))
+    return replace(
+        owner,
+        hypothesis=replace(
+            owner.hypothesis, peak=replace(owner.peak, physical_evaluation=evaluation)
+        ),
+    )
 
 
 def _gaussian(apex: float, height: float, width: float = 0.06) -> np.ndarray:
