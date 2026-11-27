@@ -1604,7 +1604,6 @@ def test_run_alignment_cli_routes_sample_metadata_without_losing_cohorts(
             review_tsv=None,
             matrix_tsv=None,
             cells_tsv=None,
-            status_matrix_tsv=None,
         )
 
     monkeypatch.setattr(run_alignment, "run_untargeted_application", fake_application)

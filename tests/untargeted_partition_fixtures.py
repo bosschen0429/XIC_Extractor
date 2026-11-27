@@ -77,7 +77,6 @@ ALL_ROW_OUTPUTS = AlignmentRunOutputs(
     matrix_tsv=Path("matrix.tsv"),
     backfill_cell_evidence_tsv=Path("backfill.tsv"),
     cells_tsv=Path("cells.tsv"),
-    status_matrix_tsv=Path("status.tsv"),
 )
 
 

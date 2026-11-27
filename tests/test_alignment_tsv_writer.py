@@ -578,7 +578,7 @@ def test_write_alignment_review_tsv_reports_archived_row_route(tmp_path: Path):
     assert row["accepted_backfill_count"] == "1"
 
 
-def test_debug_tsvs_write_cells_and_status_matrix(tmp_path: Path):
+def test_cells_tsv_preserves_sample_states_and_selected_source(tmp_path: Path):
     samples = ("sample-a", "sample-b", "sample-c", "sample-d", "sample-e")
     matrix = _matrix(
         samples,
@@ -593,7 +593,6 @@ def test_debug_tsvs_write_cells_and_status_matrix(tmp_path: Path):
     )
 
     cells = _read_tsv(render("cells", tmp_path / "cells.tsv", matrix))
-    (status,) = _read_tsv(render("status", tmp_path / "status.tsv", matrix))
 
     assert list(cells[0]) == list(ALIGNMENT_CELLS_COLUMNS)
     assert [row["status"] for row in cells] == [
@@ -603,7 +602,6 @@ def test_debug_tsvs_write_cells_and_status_matrix(tmp_path: Path):
         "backfilled",
         "detected",
     ]
-    assert [status[sample] for sample in samples] == [row["status"] for row in cells]
     assert cells[0]["area"] == "10"
     assert cells[0]["primary_matrix_area_source"] == "gaussian15_positive_asls_residual"
     assert cells[0]["source_candidate_id"] == "sample-a#1"
@@ -671,17 +669,6 @@ def test_tsv_writers_escape_formula_like_text(tmp_path: Path):
         "'@candidate-2",
     ]
     assert "'=sample" in matrix_rows[0]
-
-
-def test_written_tsv_uses_lf_and_formats_values(tmp_path: Path) -> None:
-    matrix = _matrix(("sample-a",), _row(owner_cell(area=100.0)))
-
-    text = render("status", tmp_path / "status.tsv", matrix).read_text(encoding="utf-8")
-
-    assert text == (
-        "feature_id\tneutral_loss_tag\tgroup_center_mz\tgroup_center_rt"
-        "\tsample-a\nF000001\tDNA_dR\t500.123\t8.49\tdetected\n"
-    )
 
 
 def test_advisory_signal_quality_is_sample_scoped_and_matrix_unchanged(tmp_path):

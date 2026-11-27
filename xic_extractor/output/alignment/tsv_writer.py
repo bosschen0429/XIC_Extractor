@@ -97,13 +97,6 @@ ALIGNMENT_CELLS_COLUMNS = (
     "source_candidate_id",
 )
 
-STATUS_MATRIX_GROUP_COLUMNS = (
-    "feature_id",
-    "neutral_loss_tag",
-    "group_center_mz",
-    "group_center_rt",
-)
-
 
 def untarget_sample_order(
     canonical_samples: Iterable[SampleMetadata],
@@ -189,7 +182,6 @@ def _output_headers(sample_order: tuple[str, ...]) -> dict[str, tuple[str, ...]]
         "review": ALIGNMENT_REVIEW_COLUMNS,
         "backfill": ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS,
         "cells": ALIGNMENT_CELLS_COLUMNS,
-        "status": (*STATUS_MATRIX_GROUP_COLUMNS, *sample_order),
     }
 
 
@@ -212,7 +204,7 @@ def project_untarget_child_rows(
     membership_risks_by_owner: Mapping[str, AcceptedMembershipRisk] | None = None,
 ) -> tuple[UntargetGroupRows, ...]:
     """Format one child's groups for the requested TSVs (``matrix``,
-    ``review``, ``backfill``, ``cells``, ``status``) without batch numbering."""
+    ``review``, ``backfill``, ``cells``) without batch numbering."""
 
     requested = frozenset(outputs)
     headers = _output_headers(sample_order)
@@ -307,18 +299,6 @@ def project_untarget_child_rows(
             (
                 _cell_fields(sample_stem, cell, candidate_ids)
                 for sample_stem, cell in zip(sample_order, cells, strict=True)
-            ),
-        )
-        emit(
-            "status",
-            (
-                {
-                    **group_columns,
-                    **{
-                        sample_stem: cell_status(cell)
-                        for sample_stem, cell in zip(sample_order, cells, strict=True)
-                    },
-                },
             ),
         )
         projected.append(
@@ -874,15 +854,14 @@ def _merge_batch_rows(
             by_sample.get(stem) or ("", stem, "not_searched", *empty)
             for stem in global_order
         )
-    if name in {"matrix", "status"}:
-        fixed = 2 if name == "matrix" else 4
+    if name == "matrix":
         values: dict[str, str] = {}
         for order, rows in present:
-            values.update(zip(order, rows[0][fixed:], strict=True))
-        first = list(present[0][1][0][:fixed])
-        first[fixed - 1] = reference_rt(first[fixed - 1])
-        missing = "" if name == "matrix" else "not_searched"
-        return ((*first, *(values.get(stem, missing) for stem in global_order)),)
+            values.update(zip(order, rows[0][2:], strict=True))
+        mz, rt = present[0][1][0][:2]
+        return (
+            (mz, reference_rt(rt), *(values.get(stem, "") for stem in global_order)),
+        )
     if name == "review":
         columns = ALIGNMENT_REVIEW_COLUMNS
         records = [dict(zip(columns, rows[0], strict=True)) for _, rows in present]
