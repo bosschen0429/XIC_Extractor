@@ -519,6 +519,7 @@ def test_result_chooser_opens_batch_folders_and_report_files(
     alignment.mkdir(parents=True)
     report = alignment / EXPLANATION_ARTIFACT_NAME
     copyfile(original, report)
+    copyfile(original.with_name("matrix.tsv"), alignment / "matrix.tsv")
     chosen = str(batch if kind == "folder" else report)
     choices, calls = [chosen, ""], []
 
