@@ -4,10 +4,15 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
+from functools import cached_property
 from pathlib import Path, PureWindowsPath
 from typing import Literal
 
-from xic_extractor.injection_timeline import Injection
+from xic_extractor.injection_timeline import (
+    Injection,
+    InjectionSequence,
+    PreviousInjection,
+)
 from xic_extractor.sample_metadata import (
     SAMPLE_ROLES,
     SampleMetadata,
@@ -34,6 +39,7 @@ class AnalysisSetEntry:
     metadata: SampleMetadata
     role_source: RoleSource
     context_reason: ContextReason | None
+    previous: PreviousInjection | None = None
 
     @property
     def raw_stem(self) -> str:
@@ -82,9 +88,26 @@ class AnalysisSet:
     def analyzed(self) -> tuple[AnalysisSetEntry, ...]:
         return tuple(entry for entry in self.entries if entry.analyzed)
 
+    @cached_property
+    def injections(self) -> InjectionSequence:
+        return injection_sequence_for_entries(self.analyzed)
+
     @property
     def raw_paths(self) -> tuple[Path, ...]:
         return tuple(entry.raw_path for entry in self.analyzed)
+
+
+def injection_sequence_for_entries(
+    entries: Sequence[AnalysisSetEntry],
+) -> InjectionSequence:
+    return InjectionSequence.from_samples(
+        (entry.metadata for entry in entries),
+        previous={
+            entry.raw_stem: entry.previous
+            for entry in entries
+            if entry.previous is not None
+        },
+    )
 
 
 def discover_raw_files(root: Path) -> tuple[Path, ...]:
@@ -215,6 +238,7 @@ def select_analysis_set(
                 ),
                 role_source=source,
                 context_reason=reason,
+                previous=injection.previous,
             )
         )
     for path, row in (unopened_context or {}).items():

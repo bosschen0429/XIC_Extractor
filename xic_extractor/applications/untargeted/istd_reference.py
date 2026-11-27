@@ -78,7 +78,6 @@ def extract_batch_known_istd_reference(
         config,
         istd_targets,
         raw_paths=[raw_path for _, raw_path in samples],
-        injection_order={},
         mass_recalibration_by_sample=mass_recalibration_by_sample,
     )
     results_by_sample = {}

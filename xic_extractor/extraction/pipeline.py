@@ -50,7 +50,6 @@ def run_pipeline(
             raw_paths=raw_paths,
             progress_callback=progress_callback,
             should_stop=should_stop,
-            injection_order=resolved_inputs.injection_order,
             **acquisition_kwargs,
         )
     else:
@@ -63,7 +62,6 @@ def run_pipeline(
             raw_paths=raw_paths,
             progress_callback=progress_callback,
             should_stop=should_stop,
-            injection_order=resolved_inputs.injection_order,
             **acquisition_kwargs,
         )
 

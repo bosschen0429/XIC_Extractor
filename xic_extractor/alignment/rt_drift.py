@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from xic_extractor.alignment.sample_rt_calibration import BatchRtCalibration
+from xic_extractor.injection_timeline import InjectionSequence
 
 if TYPE_CHECKING:
     from xic_extractor.alignment.rt_anchors import RtAnchorObservation
@@ -176,11 +177,11 @@ class BatchRtModelAccumulator:
         self,
         *,
         sample_cohorts: Mapping[str, str],
-        injection_order: Mapping[str, int],
+        injections: InjectionSequence,
         qc_samples: frozenset[str] = frozenset(),
     ) -> None:
         self._cohorts = sample_cohorts
-        self._orders = injection_order
+        self._injections = injections
         self._qc = qc_samples
         self._observed: dict[tuple[str, str], dict[str, float]] = defaultdict(dict)
 
@@ -206,7 +207,7 @@ class BatchRtModelAccumulator:
         return fit_rt_drift_model(
             channels,
             calibration,
-            injection_order=self._orders,
+            injections=self._injections,
             sample_cohorts=self._cohorts,
             qc_samples=self._qc,
             channel_owner_ids={key: frozenset(value) for key, value in owners.items()},
@@ -218,7 +219,7 @@ def fit_rt_drift_model(
     channels: Mapping[str, Mapping[str, float]],
     calibration: BatchRtCalibration,
     *,
-    injection_order: Mapping[str, int],
+    injections: InjectionSequence,
     sample_cohorts: Mapping[str, str] | None = None,
     qc_samples: frozenset[str] = frozenset(),
     channel_owner_ids: Mapping[str, frozenset[str]] | None = None,
@@ -232,13 +233,13 @@ def fit_rt_drift_model(
     """
     cohorts = dict(sample_cohorts or {})
     unsettled = _unsettled_channels(
-        _calibrated(channels, calibration), injection_order, cohorts
+        _calibrated(channels, calibration), injections, cohorts
     )
     drifting = frozenset(_synchronized(unsettled, _families(channels)))
     calibrated = _calibrated({key: channels[key] for key in drifting}, calibration)
     return _drift_model(
         calibrated,
-        injection_order=injection_order,
+        injections=injections,
         qc_samples=qc_samples,
         cohorts=cohorts,
         families=_families(calibrated),
@@ -309,7 +310,7 @@ def _robust_spread_sec(values: Sequence[float]) -> float:
 
 def _cohort_residuals(
     values: Mapping[str, float],
-    orders: Mapping[str, int],
+    injections: InjectionSequence,
     cohorts: Mapping[str, str],
 ) -> dict[str, float]:
     """Offsets from the same-cohort median, as calibration references are."""
@@ -320,18 +321,18 @@ def _cohort_residuals(
     return {
         sample: rt - centers[cohorts.get(sample, "")]
         for sample, rt in values.items()
-        if sample in orders
+        if sample in injections
     }
 
 
 def _unsettled_channels(
     calibrated: Mapping[str, Mapping[str, float]],
-    orders: Mapping[str, int],
+    injections: InjectionSequence,
     cohorts: Mapping[str, str],
 ) -> dict[str, dict[str, float]]:
     """Residuals of channels whose spread the general map leaves large."""
     residuals = {
-        channel: _cohort_residuals(values, orders, cohorts)
+        channel: _cohort_residuals(values, injections, cohorts)
         for channel, values in calibrated.items()
     }
     return {
@@ -383,9 +384,18 @@ def _ranks(values: Sequence[float]) -> np.ndarray:
     return ranks
 
 
-def _smooth(values: Mapping[str, float], orders: Mapping[str, int]) -> dict[str, float]:
+def _smooth(
+    values: Mapping[str, float], injections: InjectionSequence
+) -> dict[str, float]:
     """Running median along injection order, interpolated to every sample."""
-    known = sorted((orders[s], v) for s, v in values.items() if s in orders)
+    known = [
+        (injections.required_order(sample), values[sample])
+        for sample in injections.ordered_rows(
+            (sample for sample in values if sample in injections),
+            stem=lambda sample: sample,
+            within_sample=lambda sample: (values[sample],),
+        )
+    ]
     if not known:
         return {}
     width = max(3, round(len(known) / 6))
@@ -399,8 +409,8 @@ def _smooth(values: Mapping[str, float], orders: Mapping[str, int]) -> dict[str,
         ]
     )
     return {
-        sample: float(np.interp(order, xs, smoothed))
-        for sample, order in orders.items()
+        sample: float(np.interp(injections.required_order(sample), xs, smoothed))
+        for sample in injections.stems
     }
 
 
@@ -419,7 +429,7 @@ def _unit_range(shape: Mapping[str, float]) -> dict[str, float]:
 def _drift_model(
     calibrated: Mapping[str, Mapping[str, float]],
     *,
-    injection_order: Mapping[str, int],
+    injections: InjectionSequence,
     qc_samples: frozenset[str],
     cohorts: Mapping[str, str],
     families: Mapping[str, int],
@@ -429,7 +439,7 @@ def _drift_model(
     if not calibrated:
         return RtDriftModel()
     residual = {
-        channel: _cohort_residuals(values, injection_order, cohorts)
+        channel: _cohort_residuals(values, injections, cohorts)
         for channel, values in calibrated.items()
     }
     qc_basis = any(
@@ -440,13 +450,9 @@ def _drift_model(
     scatter = {}
     for channel, values in residual.items():
         qc = {s: v for s, v in values.items() if s in qc_samples}
-        trend = (
-            _smooth(qc, injection_order)
-            if len(qc) >= 2
-            else _smooth(values, injection_order)
-        )
+        trend = _smooth(qc, injections) if len(qc) >= 2 else _smooth(values, injections)
         detrended[channel] = {s: v - trend[s] for s, v in values.items()}
-        local = _smooth(values, injection_order)
+        local = _smooth(values, injections)
         scatter[channel] = {s: v - local[s] for s, v in values.items()}
     members = _synchronized(
         {
@@ -474,7 +480,7 @@ def _drift_model(
         return {s: float(median(v)) for s, v in family_offsets.items()}
 
     anchor_shift = shift(None)
-    sample_shift = _row_voted_shift(anchor_shift, shift_rows, injection_order)
+    sample_shift = _row_voted_shift(anchor_shift, shift_rows, injections)
     anchors = []
     for channel in sorted(residual):
         values = residual[channel]
@@ -491,14 +497,14 @@ def _drift_model(
                 for s, v in values.items()
                 if s in own_shift or response == 0.0
             },
-            injection_order,
+            injections,
         )
         shape = _unit_range(trend)
         if (
             shape
             and _spearman(
                 [shape[s] for s in sorted(shape)],
-                [injection_order[s] for s in sorted(shape)],
+                [injections.required_order(s) for s in sorted(shape)],
             )
             < 0
         ):
@@ -534,7 +540,7 @@ _MIN_ROW_VOTES = 3
 def _row_voted_shift(
     base: dict[str, float],
     rows: Iterable[Mapping[str, float]],
-    injection_order: Mapping[str, int],
+    injections: InjectionSequence,
 ) -> dict[str, float]:
     """Let rows of direct-evidence peaks vote each sample's shift M.
 
@@ -549,21 +555,11 @@ def _row_voted_shift(
     """
     voters = []
     for row in rows:
-        members = sorted(
-            (s for s in row if s in injection_order),
-            key=lambda s: (injection_order[s], s),
-        )
+        members = tuple(stem for stem in injections.stems if stem in row)
         if len(members) < ROW_MIN_SAMPLES:
             continue
         neighbors = {
-            sample: sorted(
-                (other for other in members if other != sample),
-                key=lambda other: (
-                    abs(injection_order[other] - injection_order[sample]),
-                    injection_order[other],
-                    other,
-                ),
-            )[:_ROW_NEIGHBORS]
+            sample: injections.nearest_by_order(sample, members, _ROW_NEIGHBORS)
             for sample in members
         }
         local = {

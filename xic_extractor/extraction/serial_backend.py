@@ -21,7 +21,6 @@ def run_serial(
     targets: list[Target],
     *,
     raw_paths: list[Path],
-    injection_order: dict[str, int],
     progress_callback: Callable[[int, int, str], None] | None = None,
     should_stop: Callable[[], bool] | None = None,
     acquisition_sources_by_sample: Mapping[str, AcquisitionSourceExpectation]

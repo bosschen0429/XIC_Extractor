@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
 from xic_extractor.configuration.models import ExtractionConfig
+from xic_extractor.injection_timeline import InjectionSequence
 from xic_extractor.processing_identity import (
     AcquisitionSourceIdentity,
     IdentityContractError,
@@ -21,7 +22,7 @@ from xic_extractor.sample_metadata import SampleMetadata
 @dataclass(frozen=True)
 class ResolvedTargetedInputs:
     raw_paths: tuple[Path, ...]
-    injection_order: dict[str, int]
+    injections: InjectionSequence
     sample_metadata: tuple[SampleMetadata, ...] = ()
 
 
@@ -40,9 +41,11 @@ def resolve_targeted_inputs(
     entries = sorted(analysis_set.analyzed, key=lambda entry: entry.raw_path)
     return ResolvedTargetedInputs(
         raw_paths=tuple(entry.raw_path for entry in entries),
-        injection_order=injection_order
-        if injection_order is not None
-        else {entry.raw_stem: entry.injection_order for entry in entries},
+        injections=(
+            analysis_set.injections
+            if injection_order is None
+            else analysis_set.injections.with_orders(injection_order)
+        ),
         sample_metadata=tuple(entry.metadata for entry in entries),
     )
 
@@ -50,7 +53,7 @@ def resolve_targeted_inputs(
 def build_targeted_acquisition_sources(
     *,
     raw_paths: Sequence[Path],
-    injection_order: Mapping[str, int],
+    injections: InjectionSequence,
     should_cancel: Callable[[], bool] | None = None,
 ) -> dict[str, AcquisitionSourceIdentity]:
     """Bind each Targeted RAW to its local file revision, keyed by RAW stem."""
@@ -67,7 +70,7 @@ def build_targeted_acquisition_sources(
             should_cancel=should_cancel,
         )
     expected_stems = set(sources_by_stem)
-    actual_stems = set(injection_order)
+    actual_stems = set(injections.stems)
     if actual_stems != expected_stems:
         missing = sorted(expected_stems - actual_stems)
         unexpected = sorted(actual_stems - expected_stems)
@@ -75,6 +78,6 @@ def build_targeted_acquisition_sources(
             "injection order must bind every acquisition source exactly once; "
             f"missing={missing!r}, unexpected={unexpected!r}"
         )
-    if len(set(injection_order.values())) != len(injection_order):
+    if not injections.has_unique_orders:
         raise IdentityContractError("injection_order values must be unique")
     return sources_by_stem

@@ -105,7 +105,7 @@ class Figures:
     ) -> None:
         self.drift = drift
         self.calibration = calibration
-        self.order = dict(inputs.injection_order)
+        self.injections = inputs.injections
         self.qc = inputs.qc_samples
         self.observations = [o for batch in inputs.anchor_batches for o in batch]
         self.mz = {o.channel: o.precursor_mz for o in self.observations}
@@ -151,7 +151,7 @@ class Figures:
         ):
             samples = [s for s in values if (s in self.qc) == qc]
             ax.scatter(
-                [self.order[s] for s in samples],
+                [self.injections.required_order(s) for s in samples],
                 [values[s] for s in samples],
                 s=18 if not qc else 26,
                 color=color,
@@ -193,10 +193,12 @@ class Figures:
         cmap = matplotlib.colormaps["viridis"]
         fig, ax = plt.subplots(figsize=(10, 3.8))
         for anchor in anchors:
-            samples = sorted(anchor.shape, key=self.order.__getitem__)
+            samples = tuple(
+                sample for sample in self.injections.stems if sample in anchor.shape
+            )
             highlighted = anchor is example
             ax.plot(
-                [self.order[s] for s in samples],
+                [self.injections.required_order(s) for s in samples],
                 [anchor.shape[s] for s in samples],
                 color="#111827" if highlighted else cmap(norm(anchor.reference_rt_min)),
                 alpha=1.0 if highlighted else 0.6,
@@ -208,7 +210,13 @@ class Figures:
             )
         ax.legend(loc="upper left", frameon=False)
         for sample in sorted(self.qc):
-            ax.axvline(self.order[sample], color=QC, alpha=0.35, linewidth=1, zorder=0)
+            ax.axvline(
+                self.injections.required_order(sample),
+                color=QC,
+                alpha=0.35,
+                linewidth=1,
+                zorder=0,
+            )
         bar = fig.colorbar(matplotlib.cm.ScalarMappable(norm, cmap), ax=ax)
         bar.set_label("漂移錨點的 RT（min）")
         ax.set_xlabel("進樣順序（直線：pooled QC 的位置）")

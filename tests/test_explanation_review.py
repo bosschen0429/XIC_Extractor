@@ -33,6 +33,7 @@ from xic_extractor.applications.untargeted.alignment_explanation_projection impo
     write_alignment_explanation,
 )
 from xic_extractor.diagnostics.explanation_conversion import compact_explanation
+from xic_extractor.injection_timeline import InjectionSequence
 from xic_inspector.api import SelectionRequest, generate_report
 from xic_inspector.sources.cid_nl import CidNlSource
 
@@ -480,7 +481,9 @@ def test_production_publication_automatically_includes_recorded_risk(
         (*group.owners, rival),
         config=config,
         rt_frame=SampleRtFrame(
-            injection_order={o.sample_stem: i for i, o in enumerate(group.owners)}
+            injections=InjectionSequence(
+                {o.sample_stem: i for i, o in enumerate(group.owners)}
+            )
         ),
     )
     (admitted,) = tuple(band for band in bands if band.destination == "matrix")

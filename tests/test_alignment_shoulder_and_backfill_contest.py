@@ -21,6 +21,7 @@ from xic_extractor.alignment.sample_rt_calibration import BatchRtCalibration
 from xic_extractor.configuration.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
 )
+from xic_extractor.injection_timeline import InjectionSequence
 
 _CONFIG = AlignmentConfig()
 _MZ = 261.1273
@@ -175,7 +176,9 @@ def test_backfill_peak_of_another_rows_member_is_contested() -> None:
         owners,
         config=_CONFIG,
         rt_frame=SampleRtFrame(
-            injection_order={o.sample_stem: i for i, o in enumerate(owners)}
+            injections=InjectionSequence(
+                {o.sample_stem: i for i, o in enumerate(owners)}
+            )
         ),
     )
     s1 = _sample_id(owners[0])
@@ -205,7 +208,9 @@ def test_backfill_peak_held_only_by_an_archived_group_is_not_contested() -> None
         owners,
         config=_CONFIG,
         rt_frame=SampleRtFrame(
-            injection_order={o.sample_stem: i for i, o in enumerate(owners)}
+            injections=InjectionSequence(
+                {o.sample_stem: i for i, o in enumerate(owners)}
+            )
         ),
     )
     s1 = _sample_id(owners[0])
@@ -239,7 +244,9 @@ def test_backfill_peak_at_another_apex_or_mass_is_not_contested() -> None:
         owners,
         config=_CONFIG,
         rt_frame=SampleRtFrame(
-            injection_order={o.sample_stem: i for i, o in enumerate(owners)}
+            injections=InjectionSequence(
+                {o.sample_stem: i for i, o in enumerate(owners)}
+            )
         ),
     )
     s1 = _sample_id(owners[0])
@@ -330,7 +337,9 @@ def _two_bands(early: tuple[str, ...], late: tuple[str, ...], *, gap: float):
         owners,
         config=_CONFIG,
         rt_frame=SampleRtFrame(
-            injection_order={o.sample_stem: i for i, o in enumerate(owners)}
+            injections=InjectionSequence(
+                {o.sample_stem: i for i, o in enumerate(owners)}
+            )
         ),
     )
     assert len(groups) == 2
@@ -349,7 +358,7 @@ def test_grouping_uses_corrected_coordinates_for_separated_bands(
     )
 
     owners = tuple(owner for group in groups for owner in group.owners)
-    frame = SampleRtFrame(injection_order={f"S{i}": i for i in range(12)})
+    frame = SampleRtFrame(injections=InjectionSequence({f"S{i}": i for i in range(12)}))
     calibration = BatchRtCalibration.from_coordinate_knots(
         tuple(
             (

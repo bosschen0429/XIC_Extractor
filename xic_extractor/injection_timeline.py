@@ -1,12 +1,176 @@
-"""Diagnostic injection chronology; no selection or quantitative authority."""
+"""RAW acquisition chronology and the injection coordinates of sample populations."""
 
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from collections.abc import Callable, Container, Iterable, Mapping, Sequence
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+from functools import cached_property
 from pathlib import PureWindowsPath
-from typing import Sequence
+from typing import TYPE_CHECKING, Any, TypeVar
+
+if TYPE_CHECKING:
+    from xic_extractor.sample_metadata import SampleMetadata
+
+_Row = TypeVar("_Row")
+
+
+@dataclass(frozen=True, slots=True)
+class PreviousInjection:
+    """Header facts about the acquisition immediately before this one."""
+
+    instrument_method: str
+    idle_min: float
+
+
+@dataclass(frozen=True)
+class InjectionSequence:
+    """A sample population on the RAW timeline, with its own dense positions.
+
+    Ordinals include injections outside the selected population. Positions and
+    the before/after window count only members of this population (or its view).
+    """
+
+    _orders: Mapping[str, int] = field(default_factory=dict)
+    _previous: Mapping[str, PreviousInjection] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "_orders", dict(self._orders))
+        object.__setattr__(self, "_previous", dict(self._previous))
+
+    @classmethod
+    def from_samples(
+        cls,
+        samples: Iterable[SampleMetadata],
+        *,
+        previous: Mapping[str, PreviousInjection] | None = None,
+    ) -> InjectionSequence:
+        return cls(
+            {
+                sample.raw_stem: sample.injection_order
+                for sample in samples
+                if sample.injection_order is not None
+            },
+            {} if previous is None else previous,
+        )
+
+    @cached_property
+    def stems(self) -> tuple[str, ...]:
+        return tuple(sorted(self._orders, key=lambda stem: (self._orders[stem], stem)))
+
+    @cached_property
+    def _positions(self) -> dict[str, int]:
+        return {stem: position for position, stem in enumerate(self.stems)}
+
+    def __contains__(self, stem: str) -> bool:
+        return stem in self._orders
+
+    def __len__(self) -> int:
+        return len(self._orders)
+
+    def order(self, stem: str) -> int | None:
+        return self._orders.get(stem)
+
+    def required_order(self, stem: str) -> int:
+        return self._orders[stem]
+
+    def position(self, stem: str) -> int | None:
+        return self._positions.get(stem)
+
+    def order_gap(self, left: str, right: str) -> int | None:
+        return _gap(self.order(left), self.order(right))
+
+    def position_gap(self, left: str, right: str) -> int | None:
+        return _gap(self.position(left), self.position(right))
+
+    def previous(self, stem: str) -> PreviousInjection | None:
+        """Previous acquisition, including context; absent in order-only snapshots."""
+        return self._previous.get(stem)
+
+    @property
+    def has_unique_orders(self) -> bool:
+        return len(set(self._orders.values())) == len(self)
+
+    def with_orders(self, orders: Mapping[str, int]) -> InjectionSequence:
+        """Use explicit analysis ordinals without changing the header facts."""
+        return InjectionSequence(orders, self._previous)
+
+    def restrict(self, stems: Container[str]) -> InjectionSequence:
+        if all(stem in stems for stem in self._orders):
+            return self
+        return InjectionSequence(
+            {stem: order for stem, order in self._orders.items() if stem in stems},
+            {
+                stem: previous
+                for stem, previous in self._previous.items()
+                if stem in stems
+            },
+        )
+
+    def around(self, stem: str, k: int) -> tuple[str, ...]:
+        position = self.position(stem)
+        if position is None:
+            return ()
+        return (
+            self.stems[max(0, position - k) : position]
+            + self.stems[position + 1 : position + k + 1]
+        )
+
+    def nearest_by_order(
+        self, stem: str, candidates: Iterable[str], k: int
+    ) -> tuple[str, ...]:
+        return self.nearest_rows_by_order(
+            stem,
+            (candidate for candidate in candidates if candidate != stem),
+            k,
+            stem=lambda candidate: candidate,
+            within_sample=lambda candidate: (candidate,),
+        )
+
+    def nearest_rows_by_order(
+        self,
+        query: str,
+        rows: Iterable[_Row],
+        k: int,
+        *,
+        stem: Callable[[_Row], str],
+        within_sample: Callable[[_Row], tuple[Any, ...]],
+    ) -> tuple[_Row, ...]:
+        order = self.order(query)
+        if order is None:
+            return ()
+
+        def key(row: _Row) -> tuple[Any, ...]:
+            candidate_order = self.required_order(stem(row))
+            return abs(candidate_order - order), candidate_order, *within_sample(row)
+
+        return tuple(sorted((row for row in rows if stem(row) in self), key=key)[:k])
+
+    def ordered_rows(
+        self,
+        rows: Iterable[_Row],
+        *,
+        stem: Callable[[_Row], str],
+        within_sample: Callable[[_Row], tuple[Any, ...]],
+        by_position: bool = False,
+    ) -> list[_Row]:
+        """Sort measured rows along the sequence; unknown samples come last."""
+
+        def key(row: _Row) -> tuple[Any, ...]:
+            coordinate = self.position if by_position else self.order
+            order = coordinate(stem(row))
+            return (order is None, order, *within_sample(row))
+
+        return sorted(rows, key=key)
+
+    def snapshot_orders(self) -> dict[str, int]:
+        """Keep the persisted order field a plain stem-to-ordinal mapping."""
+        return dict(self._orders)
+
+
+def _gap(left: int | None, right: int | None) -> int | None:
+    return abs(right - left) if left is not None and right is not None else None
 
 
 @dataclass(frozen=True)
@@ -57,8 +221,15 @@ class Injection:
     previous_raw_stem: str | None
     previous_run_length_min: float | None
     idle_min: float | None
+    previous_instrument_method: str | None
     possibly_perturbed: bool
     timing_warning: str | None
+
+    @property
+    def previous(self) -> PreviousInjection | None:
+        if self.previous_instrument_method is None or self.idle_min is None:
+            return None
+        return PreviousInjection(self.previous_instrument_method, self.idle_min)
 
 
 def local_raw_stem(copy_paths: Sequence[str], acquisition_stem: str) -> str:
@@ -84,7 +255,7 @@ def acquisition_key(source: str) -> str:
 
 def build_injection_timeline(
     headers: Sequence[InjectionHeader],
-    policy: PerturbationPolicy,
+    policy: PerturbationPolicy | None = None,
 ) -> tuple[Injection, ...]:
     """Order actual injections across folders; preserve copies and overlap evidence.
 
@@ -119,7 +290,8 @@ def build_injection_timeline(
             else None
         )
         flagged = bool(
-            previous
+            policy
+            and previous
             and idle is not None
             and 0 <= idle <= policy.max_idle_min
             and previous.run_length_min <= policy.max_previous_run_min
@@ -146,6 +318,9 @@ def build_injection_timeline(
                 previous_raw_stem=previous.raw_stem if previous else None,
                 previous_run_length_min=previous.run_length_min if previous else None,
                 idle_min=idle,
+                previous_instrument_method=previous.header.instrument_method
+                if previous
+                else None,
                 possibly_perturbed=flagged,
                 timing_warning="overlapping_acquisitions"
                 if idle is not None and idle < 0

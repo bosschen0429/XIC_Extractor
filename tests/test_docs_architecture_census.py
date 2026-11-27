@@ -416,6 +416,31 @@ def test_ppm_arithmetic_gate_accepts_other_uses_and_the_owner(tmp_path: Path) ->
     assert census.validate_ppm_arithmetic(tmp_path, (other, owner)) == []
 
 
+def test_injection_coordinate_gate_rejects_local_sort_and_position_arithmetic(
+    tmp_path: Path,
+) -> None:
+    relative = Path("consumer.py")
+    (tmp_path / relative).write_text(
+        "def local_order(frame, samples, left, right):\n"
+        "    sorted(samples, key=lambda sample: sample.injection_order)\n"
+        "    sorted(samples, key=frame.injections.required_order)\n"
+        "    for index, sample in enumerate(frame.injections.stems):\n"
+        "        pass\n"
+        "    position = frame.injections.position(left)\n"
+        "    return frame.injections.position(right) - position\n"
+        "\n"
+        "def owner_queries(frame, left, right):\n"
+        "    return (frame.injections.around(left, 3),\n"
+        "            frame.injections.order_gap(left, right))\n",
+        encoding="utf-8",
+    )
+    assert census.validate_injection_coordinates(tmp_path, (relative,)) == [
+        f"consumer.py:{line}: derive injection coordinates in "
+        f"{census.INJECTION_COORDINATE_OWNER}; query InjectionSequence"
+        for line in (2, 3, 4, 7)
+    ]
+
+
 ROOT = Path(__file__).resolve().parents[1]
 
 

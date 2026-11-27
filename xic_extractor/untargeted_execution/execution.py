@@ -253,7 +253,7 @@ class UntargetedPartitionPipelineAdapter:
             if known_istd_reference is None
             else known_istd_reference.prepare_batch(
                 sample_universe=sample_universe,
-                injection_order=reference_frame.injection_order,
+                injections=reference_frame.injections,
             )
         )
         self._max_partition_jobs = max_partition_jobs
@@ -691,7 +691,7 @@ class UntargetedPartitionPipelineAdapter:
                 sample_stems=tuple(
                     sample.raw_stem for sample in self._plan.context.samples
                 ),
-                injection_order=self._plan.context.rt_frame.injection_order,
+                injection_order=self._plan.context.rt_frame.injections.snapshot_orders(),
                 alignment_config=self._alignment_config,
                 initial_job_count=self._initial_job_count,
                 rt_calibration=(

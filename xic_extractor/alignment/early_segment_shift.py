@@ -13,13 +13,14 @@ from __future__ import annotations
 import math
 from bisect import bisect_right
 from collections import defaultdict
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from statistics import median
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from xic_extractor.alignment.sample_rt_calibration import BatchRtCalibration
+    from xic_extractor.injection_timeline import InjectionSequence
 
 SEGMENT_END_MIN = 8.5
 _DECAY_MIN = 5.26
@@ -83,7 +84,7 @@ class EarlySegmentShift:
 
 
 def measure_early_segment_shift(
-    calibration: BatchRtCalibration, injection_order: Mapping[str, int]
+    calibration: BatchRtCalibration, injections: InjectionSequence
 ) -> EarlySegmentShift:
     """Find injections whose earliest standard came early, fading with RT.
 
@@ -94,13 +95,13 @@ def measure_early_segment_shift(
     way by a fraction closer to the shape's decay than to a uniform shift.
     With fewer than two standards, no injection is affected.
     """
-    stems = sorted(
-        (stem for stem in injection_order if stem in calibration.samples),
-        key=lambda stem: (injection_order[stem], stem),
-    )
+    injections = injections.restrict(calibration.samples)
+    neighbours = {
+        stem: injections.around(stem, _NEIGHBOURS) for stem in injections.stems
+    }
     observed: dict[str, dict[str, float]] = defaultdict(dict)
     references: dict[str, list[float]] = defaultdict(list)
-    for stem in stems:
+    for stem in injections.stems:
         for label, rt, reference, _ in calibration.samples[stem].standard_residuals:
             observed[label][stem] = rt
             references[label].append(reference)
@@ -108,10 +109,10 @@ def measure_early_segment_shift(
     if len(labels) < 2:
         return EarlySegmentShift()
     first_shape = early_segment_shape(median(references[labels[0]]))
-    first = _deviations(observed[labels[0]], stems)
+    first = _deviations(observed[labels[0]], neighbours)
     if not first_shape or not first:
         return EarlySegmentShift()
-    second = _deviations(observed[labels[1]], stems)
+    second = _deviations(observed[labels[1]], neighbours)
     limit = max(
         _MIN_SHIFT_MIN,
         _JITTER_MULTIPLIER * median(abs(value) for value in first.values()),
@@ -130,27 +131,18 @@ def measure_early_segment_shift(
     return EarlySegmentShift(
         amplitude,
         {
-            stem: tuple(
-                other for other in _around(stems, index) if other not in amplitude
-            )
-            for index, stem in enumerate(stems)
-            if stem in amplitude
+            stem: tuple(other for other in neighbours[stem] if other not in amplitude)
+            for stem in amplitude
         },
     )
 
 
-def _around(stems: Sequence[str], index: int) -> tuple[str, ...]:
-    return tuple(
-        stem
-        for stem in stems[max(0, index - _NEIGHBOURS) : index + _NEIGHBOURS + 1]
-        if stem != stems[index]
-    )
-
-
-def _deviations(values: Mapping[str, float], stems: Sequence[str]) -> dict[str, float]:
+def _deviations(
+    values: Mapping[str, float], neighbours: Mapping[str, tuple[str, ...]]
+) -> dict[str, float]:
     result = {}
-    for index, stem in enumerate(stems):
-        near = [values[other] for other in _around(stems, index) if other in values]
+    for stem, peers in neighbours.items():
+        near = [values[other] for other in peers if other in values]
         if stem in values and len(near) >= _NEIGHBOURS:
             result[stem] = values[stem] - median(near)
     return result

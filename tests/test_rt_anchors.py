@@ -18,6 +18,7 @@ from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.alignment.sample_rt_calibration import (
     BatchRtCalibrationAccumulator,
 )
+from xic_extractor.injection_timeline import InjectionSequence
 from xic_extractor.output.alignment.rt_anchor_table import write_rt_anchor_table
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     mint_untargeted_cid_nl_method_subject,
@@ -41,7 +42,8 @@ def _observation(sample, group, rt, *, precursor_mz=500.0):
 def test_published_map_and_drift_are_measured_on_the_reference_population():
     samples = {f"s{i:02}": i for i in range(12)}
     frame = SampleRtFrame(
-        injection_order=samples, sample_cohorts=dict.fromkeys(samples, "batch")
+        injections=InjectionSequence(samples),
+        sample_cohorts=dict.fromkeys(samples, "batch"),
     )
     full, clean = CidNlBatchGrouping(frame), CidNlBatchGrouping(frame)
     for i, base in enumerate((4.0, 8.0, 12.0, 16.0, 20.0, 24.0, 28.0, 32.0)):

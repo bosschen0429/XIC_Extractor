@@ -202,7 +202,7 @@ def test_queued_targeted_metadata_membership_is_frozen(tmp_path, monkeypatch):
         assert jobs.state()["job"]["status"] == "succeeded"
         request, selected, inputs = captured[0]
         assert [path.stem for path in selected] == ["A"]
-        assert inputs.injection_order == {"A": 1}
+        assert inputs.injections.snapshot_orders() == {"A": 1}
         assert not request.config.injection_order_source.exists()
         assert request.config.injection_order_source != order_source
         assert order_source.read_bytes() != original_order

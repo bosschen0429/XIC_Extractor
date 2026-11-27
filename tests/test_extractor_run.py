@@ -56,14 +56,12 @@ def test_acquire_uses_serial_backend_by_default(
         raw_paths: list[Path],
         progress_callback=None,
         should_stop=None,
-        injection_order=None,
         defer_analyte_selection=False,
     ) -> RunOutput:
         assert defer_analyte_selection is True
         calls.append((config_arg, targets_arg, [path.name for path in raw_paths]))
         assert progress_callback is _progress
         assert should_stop is _should_stop
-        assert injection_order == {"SampleA": 1}
 
         return returned
 
@@ -381,14 +379,12 @@ def test_acquire_resolves_scoring_inputs_before_backend(
         raw_paths: list[Path],
         progress_callback=None,
         should_stop=None,
-        injection_order=None,
         defer_analyte_selection=False,
     ) -> RunOutput:
         assert defer_analyte_selection is True
         assert config_arg is config
         assert targets_arg is targets
         assert [path.name for path in raw_paths] == ["SampleA.raw"]
-        assert injection_order == {"SampleA": 1}
 
         return RunOutput(file_results=[], diagnostics=[])
 
@@ -446,14 +442,12 @@ def test_acquire_orders_by_raw_even_with_a_sample_metadata_source(
         raw_paths: list[Path],
         progress_callback=None,
         should_stop=None,
-        injection_order=None,
         defer_analyte_selection=False,
     ) -> RunOutput:
         assert defer_analyte_selection is True
         assert config_arg is config
         assert targets_arg is targets
         assert [path.name for path in raw_paths] == ["RawA.raw"]
-        assert injection_order == {"RawA": 1}
 
         return RunOutput(file_results=[], diagnostics=[])
 

@@ -70,6 +70,7 @@ from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.configuration.execution_profile import ExecutionProfile
 from xic_extractor.diagnostics.stage_snapshot import load_snapshot
 from xic_extractor.execution.timing import TimingRecorder
+from xic_extractor.injection_timeline import InjectionSequence
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlEvaluationReceipt,
     mint_cid_nl_method_assessment,
@@ -209,9 +210,9 @@ def test_backfill_batch_retains_shape_contradictions_as_soft_risk(
 
     config = AlignmentConfig()
     frame = SampleRtFrame(
-        injection_order={name: index for index, name in enumerate(widths, 1)}
-        if with_order
-        else {}
+        injections=InjectionSequence(
+            {name: index for index, name in enumerate(widths, 1)} if with_order else {}
+        )
     )
     references = (owners["reference1"], owners["reference2"])
     (group,) = group_peak_bands(

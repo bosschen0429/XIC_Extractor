@@ -15,6 +15,7 @@ from xic_extractor.alignment.sample_rt_calibration import (
     RtCalibrationPolicy,
     SampleRtCalibration,
 )
+from xic_extractor.injection_timeline import InjectionSequence
 
 REFERENCES = (("first", 9.0), ("second", 12.5))
 FADING = (8.4544, 12.2195)
@@ -59,9 +60,9 @@ def test_an_under_equilibrated_injection_keeps_its_early_peak_in_the_band():
     (band,) = group_peak_bands(
         owners,
         config=AlignmentConfig(),
-        rt_frame=SampleRtFrame(injection_order=order).with_sample_calibration(
-            calibration
-        ),
+        rt_frame=SampleRtFrame(
+            injections=InjectionSequence(order)
+        ).with_sample_calibration(calibration),
     )
     assert band.owners == owners
 
@@ -73,7 +74,9 @@ def test_only_an_early_shift_that_fades_with_rt_marks_an_injection():
         "s5": (8.75, 12.25),
         "s7": (9.4, 12.6),
     }
-    shift = measure_early_segment_shift(_calibration(standards), order)
+    shift = measure_early_segment_shift(
+        _calibration(standards), InjectionSequence(order)
+    )
     assert set(shift.amplitude_min) == {"s3"}
     assert shift.amplitude_min["s3"] == pytest.approx(-0.6, abs=1e-3)
     assert shift.neighbours["s3"] == ("s1", "s2", "s4", "s5", "s6")
@@ -82,7 +85,7 @@ def test_only_an_early_shift_that_fades_with_rt_marks_an_injection():
 
     one_standard = {stem: values[:1] for stem, values in standards.items()}
     assert not measure_early_segment_shift(
-        _calibration(one_standard), order
+        _calibration(one_standard), InjectionSequence(order)
     ).amplitude_min
     assert early_segment_shape(2.0) == 0.0
 
@@ -100,8 +103,8 @@ def test_a_peak_placed_by_the_shift_does_not_vote_on_sample_shift():
     (row,) = band_shift_rows(
         owners,
         config=AlignmentConfig(),
-        rt_frame=SampleRtFrame(injection_order=order).with_sample_calibration(
-            calibration
-        ),
+        rt_frame=SampleRtFrame(
+            injections=InjectionSequence(order)
+        ).with_sample_calibration(calibration),
     )
     assert set(row) == set(order) - {"s10"}

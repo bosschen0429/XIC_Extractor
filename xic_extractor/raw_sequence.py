@@ -15,7 +15,6 @@ from xic_extractor.configuration.execution_profile import RAW_HEADER_READ_THREAD
 from xic_extractor.execution.workers import iter_thread_results
 from xic_extractor.injection_timeline import (
     InjectionHeader,
-    PerturbationPolicy,
     ScheduledInjection,
     build_injection_timeline,
 )
@@ -147,7 +146,7 @@ def read_analysis_set(
         outcomes.close()
     if progress is not None and paths:
         progress(len(paths), len(paths), "RAW 檔頭讀取完成")
-    timeline = build_injection_timeline(headers, PerturbationPolicy())
+    timeline = build_injection_timeline(headers)
     sequence = (
         load_and_match_sample_metadata(
             sequence_source,

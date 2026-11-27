@@ -260,9 +260,7 @@ def test_istd_reference_runs_raw_files_through_targeted_process_backend(
     target = _make_target("ISTD")
     calls = []
 
-    def run_process(
-        config, targets, *, raw_paths, injection_order, mass_recalibration_by_sample
-    ):
+    def run_process(config, targets, *, raw_paths, mass_recalibration_by_sample):
         calls.append((config.execution.backend, targets, raw_paths))
         return RunOutput(
             file_results=[

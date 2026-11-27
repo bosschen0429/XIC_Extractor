@@ -30,6 +30,7 @@ from xic_extractor.diagnostics.stage_snapshot import (
     read_grouping_inputs,
     write_grouping_inputs,
 )
+from xic_extractor.injection_timeline import InjectionSequence
 from xic_extractor.untargeted_execution.alignment import execute_prepared_alignment
 
 
@@ -309,7 +310,7 @@ def test_istd_experiment_and_saved_replay_use_formal_batch_coordinates(
     formal_frame = formal_frame.with_sample_calibration(
         BatchRtCalibrationAccumulator(
             sample_stems=tuple(
-                formal_frame.sample_universe or formal_frame.injection_order
+                formal_frame.sample_universe or formal_frame.injections.stems
             ),
             sample_cohorts=formal_frame.sample_cohorts,
         ).freeze(measured_istds=formal_frame.measured_istd_coordinates)
@@ -357,7 +358,7 @@ def test_replay_refits_batch_rt_models_from_retained_anchors(
     model_inputs = BatchRtModelInputs(
         sample_stems=samples,
         sample_cohorts=dict.fromkeys(samples, ""),
-        injection_order=dict(zip(samples, (1, 2, 3), strict=True)),
+        injections=InjectionSequence({"a": 1, "b": 5, "c": 6}),
         qc_samples=frozenset(),
         measured_istds=(),
         anchor_batches=(
@@ -386,7 +387,7 @@ def test_replay_refits_batch_rt_models_from_retained_anchors(
     kept = model_inputs if retained else None
     inputs = GroupingInputs(
         sample_stems=samples,
-        injection_order=dict(model_inputs.injection_order),
+        injection_order=model_inputs.injections.snapshot_orders(),
         alignment_config=AlignmentConfig(),
         worksets=(
             GroupingWorkset("mass-window", tuple(owners), (), rt_calibration=stale),
@@ -403,7 +404,11 @@ def test_replay_refits_batch_rt_models_from_retained_anchors(
     snapshot, output = tmp_path / "inputs.gz", tmp_path / "replay"
     write_grouping_inputs(snapshot, inputs, provenance={"evidence": "synthetic"})
     with gzip.open(snapshot, "rt", encoding="utf-8") as stream:
-        assert len(json.load(stream)["rt_models"]) == 1
+        payload = json.load(stream)
+    assert payload["injection_order"] == {"a": 1, "b": 5, "c": 6}
+    [model] = payload["rt_models"]
+    if retained:
+        assert model["rt_model_inputs"]["injection_order"] == payload["injection_order"]
     restored, _ = read_grouping_inputs(snapshot)
     first, second = restored.worksets
     assert first.rt_model_inputs == kept

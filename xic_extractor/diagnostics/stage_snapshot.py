@@ -32,6 +32,7 @@ from xic_extractor.execution._serialization import (
     owner_pickle_dumps,
     owner_pickle_loads,
 )
+from xic_extractor.injection_timeline import InjectionSequence
 from xic_extractor.peak_detection.integration_result import (
     IntegrationResult,
     validate_stored_integration_numbers,
@@ -231,7 +232,7 @@ def _rt_model_inputs_payload(inputs: BatchRtModelInputs) -> dict[str, Any]:
     return {
         "sample_stems": list(inputs.sample_stems),
         "sample_cohorts": dict(inputs.sample_cohorts),
-        "injection_order": dict(inputs.injection_order),
+        "injection_order": inputs.injections.snapshot_orders(),
         "qc_samples": sorted(inputs.qc_samples),
         "measured_istds": [list(item) for item in inputs.measured_istds],
         "anchor_batches": [
@@ -244,7 +245,7 @@ def _read_rt_model_inputs(value: Mapping[str, Any]) -> BatchRtModelInputs:
     return BatchRtModelInputs(
         sample_stems=tuple(value["sample_stems"]),
         sample_cohorts=value["sample_cohorts"],
-        injection_order=value["injection_order"],
+        injections=InjectionSequence(value["injection_order"]),
         qc_samples=frozenset(value["qc_samples"]),
         measured_istds=tuple(
             (label, sample, rt) for label, sample, rt in value["measured_istds"]

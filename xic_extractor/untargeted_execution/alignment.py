@@ -15,6 +15,7 @@ from typing import cast
 from xic_extractor.acquisition.raw_paths import existing_raw_paths
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.drift_evidence import KnownIstdReference
+from xic_extractor.analysis_set import injection_sequence_for_entries
 from xic_extractor.configuration.execution_profile import ExecutionProfile
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
@@ -83,6 +84,7 @@ def prepare_untargeted_alignment_inputs(
     ordered_raw_paths = tuple(
         raw_paths[sample_stem] for sample_stem in discovery_batch.sample_order
     )
+    injections = None
     if sample_metadata is not None:
         by_stem = {row.raw_stem: row for row in sample_metadata}
         missing_stems = [
@@ -98,11 +100,10 @@ def prepare_untargeted_alignment_inputs(
     else:
         from xic_extractor.raw_sequence import read_analysis_set
 
+        analysis_set = read_analysis_set(raw_dir, dll_dir, analysis="untargeted")
         by_path = {
-            path.resolve(): entry.metadata
-            for entry in read_analysis_set(
-                raw_dir, dll_dir, analysis="untargeted"
-            ).entries
+            path.resolve(): entry
+            for entry in analysis_set.entries
             for path in entry.copy_paths
         }
         missing_paths = [
@@ -113,9 +114,9 @@ def prepare_untargeted_alignment_inputs(
                 "RAW analysis set has no injection for: "
                 + ", ".join(map(str, missing_paths))
             )
-        retained_sample_metadata = tuple(
-            by_path[path.resolve()] for path in ordered_raw_paths
-        )
+        entries = tuple(by_path[path.resolve()] for path in ordered_raw_paths)
+        injections = injection_sequence_for_entries(entries)
+        retained_sample_metadata = tuple(entry.metadata for entry in entries)
     recorder = timing_recorder or TimingRecorder.disabled("alignment")
     output_dir.mkdir(parents=True, exist_ok=True)
     with recorder.stage("alignment.verify_acquisition_sources"):
@@ -150,6 +151,7 @@ def prepare_untargeted_alignment_inputs(
             dll_dir=dll_dir,
             profile=signal_processing_profile,
             acquisition_source_expectations=expectations,
+            injections=injections,
         )
 
 
