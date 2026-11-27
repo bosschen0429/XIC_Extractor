@@ -2226,9 +2226,9 @@ def test_untargeted_curves_open_beside_saved_report_and_reuse_loaded_view(
     _open_results(page)
     page.locator("#source").fill(str(db))
     page.locator("#open-form button[type=submit]").click()
+    page.get_by_role("button", name="瀏覽矩陣 feature").click()
     selected_view = None
     if sample_count > 1:
-        page.get_by_role("button", name="瀏覽矩陣 feature").click()
         page.locator("#item-list button").first.click()
         _wait_for_curve_report(page, inline=True)
         expect(
