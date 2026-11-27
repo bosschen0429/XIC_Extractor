@@ -34,7 +34,13 @@ from xic_extractor.execution.partitions import (
     PartitionPipelineScheduler,
     WorkPartition,
 )
-from xic_extractor.execution.result_store import SealedPartition, StreamedResultStore
+from xic_extractor.execution.result_store import (
+    SealedPartition,
+    StreamedResultStore,
+    WrittenPartition,
+    read_spooled_header_field,
+    write_spooled_partition,
+)
 from xic_extractor.execution.workers import WorkerAdmissionPool
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CidNlMethodSubject,
@@ -83,20 +89,35 @@ class _GroupingInputs:
     backfill_questions: tuple[CidNlBackfillQuestion, ...] = ()
 
 
+@dataclass(frozen=True, slots=True)
+class _SpooledGrouping:
+    """One partition's initial grouping, which the worker reads from the spool."""
+
+    path: Path
+    shared_owners: Path
+
+    def read(self) -> _GroupingInputs:
+        return cast(
+            _GroupingInputs,
+            read_spooled_header_field(self.path, "grouping", self.shared_owners),
+        )
+
+
 def _direct_evidence_partition_rows(
-    task: tuple[_GroupingInputs, SampleRtFrame],
+    task: tuple[_SpooledGrouping, SampleRtFrame],
 ) -> tuple[dict[str, float], ...]:
     """One partition's direct-evidence rows under the frozen calibration."""
-    initial, rt_frame = task
-    return direct_evidence_rows(initial.prepared, rt_frame=rt_frame)
+    spooled, rt_frame = task
+    return direct_evidence_rows(spooled.read().prepared, rt_frame=rt_frame)
 
 
 def _finalize_partition_grouping(
-    task: tuple[_GroupingInputs, SampleRtFrame, bool],
-) -> tuple[_GroupingInputs, tuple[Mapping[str, object], ...]]:
-    """One partition's final grouping, its Backfill questions when a Backfill
-    follows, and the progress it reported."""
-    initial, rt_frame, plan_backfill = task
+    task: tuple[_SpooledGrouping, SampleRtFrame, bool],
+) -> tuple[WrittenPartition, tuple[Mapping[str, object], ...]]:
+    """One partition's final grouping, with its Backfill questions when a
+    Backfill follows, written into the spool; and the progress it reported."""
+    spooled, rt_frame, plan_backfill = task
+    initial = spooled.read()
     events: list[Mapping[str, object]] = []
     prepared = regroup_cid_nl_grouping(
         initial.prepared, rt_frame=rt_frame, progress_callback=events.append
@@ -106,7 +127,9 @@ def _finalize_partition_grouping(
         if plan_backfill and prepared.alignment_config.backfill_enabled
         else ()
     )
-    return _GroupingInputs(initial.batch, prepared, questions), tuple(events)
+    final = _GroupingPartition(_GroupingInputs(initial.batch, prepared, questions))
+    written = write_spooled_partition(spooled.path.parent, final, spooled.shared_owners)
+    return written, tuple(events)
 
 
 @dataclass(frozen=True, slots=True)
@@ -432,9 +455,11 @@ class UntargetedPartitionPipelineAdapter:
         """Finish the frozen-calibration grouping phase before any Backfill.
 
         Partitions regroup independently on the RAW workers, so at most one
-        grouping per worker is resident. Both full execution and snapshots
-        consume these answers; neither regroups in the Backfill lane. The
-        same worker plans the partition's Backfill questions, which a
+        grouping per worker is resident. Each worker reads its partition's
+        initial grouping from the spool and writes the final one beside it, so
+        the groupings never pass through this process. Both full execution and
+        snapshots consume these answers; neither regroups in the Backfill lane.
+        The same worker plans the partition's Backfill questions, which a
         Backfill partition would otherwise compute before it could dispatch.
         """
         if len(self._initial_partitions) != self._bootstrap_count:
@@ -450,35 +475,33 @@ class UntargetedPartitionPipelineAdapter:
         rt_frame: SampleRtFrame = frozen
         partitions = tuple(self.bootstrap_partitions)
         plan_backfill = not self._grouping_only or self._capture_backfill is not None
+        shared_owners = store.shared_owners_path()
 
         def task(
             partition: WorkPartition[tuple[CidNlMethodSubject, ...]],
-        ) -> tuple[_GroupingInputs, SampleRtFrame]:
+        ) -> tuple[_SpooledGrouping, SampleRtFrame]:
             check_cancellation()
-            initial = cast(
-                _GroupingInputs,
-                store.read_header_field(
-                    self._initial_partitions[partition.index].index, "grouping"
-                ),
+            spooled = _SpooledGrouping(
+                store.partition_path(self._initial_partitions[partition.index].index),
+                shared_owners,
             )
-            return initial, rt_frame
+            return spooled, rt_frame
 
         def finalize_task(
             partition: WorkPartition[tuple[CidNlMethodSubject, ...]],
-        ) -> tuple[_GroupingInputs, SampleRtFrame, bool]:
+        ) -> tuple[_SpooledGrouping, SampleRtFrame, bool]:
             return (*task(partition), plan_backfill)
 
         def seal(
             completed: int,
             total: int,
             partition: WorkPartition[tuple[CidNlMethodSubject, ...]],
-            result: tuple[_GroupingInputs, tuple[Mapping[str, object], ...]],
+            result: tuple[WrittenPartition, tuple[Mapping[str, object], ...]],
         ) -> None:
             check_cancellation()
-            final, events = result
-            self._final_groupings[partition.index] = store.append(
-                f"partition-{partition.index:05d}-grouping",
-                _GroupingPartition(final),
+            written, events = result
+            self._final_groupings[partition.index] = store.adopt_written(
+                f"partition-{partition.index:05d}-grouping", written
             )
             if progress_callback is not None:
                 for event in events:

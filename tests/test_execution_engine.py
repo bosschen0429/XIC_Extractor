@@ -26,6 +26,7 @@ from xic_extractor.execution.partitions import (
 )
 from xic_extractor.execution.result_store import (
     StreamedResultStore,
+    WrittenPartition,
     _OwnerUnpickler,
     open_preserved_results,
 )
@@ -1220,35 +1221,34 @@ def test_worker_admission_pool_stop_on_error() -> None:
     assert len(errors) >= 1
 
 
-def test_reserved_partition_written_elsewhere_reads_back_identically(
+def test_partition_written_by_another_process_is_adopted_identically(
     tmp_path: Path,
 ) -> None:
-    """A writer outside this process may produce the bytes; the store still
-    owns the index and the path, and the same content
-    written elsewhere must land byte-identical."""
+    """A worker process writes a partition beside the spool with the published
+    shared owners; the store adopts it into its next slot, restores the shared
+    owner by reference, and holds the bytes its own write would have."""
 
     import subprocess
     import sys
 
-    store = StreamedResultStore(tmp_path / "spool", ())
-    reservation = store.reserve_partition("partition-remote")
-    assert reservation.path == tmp_path.resolve() / "spool" / "00000000.pickle"
-    module = "xic_extractor.execution.result_store"
+    owner = {"plan": "shared"}
+    store = StreamedResultStore(tmp_path / "spool", (owner,))
+    store.append("partition-local-first", MockPayload(child_outputs=(), label="first"))
     script = "; ".join(
         (
             "import json",
             "from pathlib import Path",
             "from tests.test_execution_engine import MockPayload",
-            "from %s import write_partition_payload" % module,
-            "payload = MockPayload(child_outputs=(), method_assessments=('a', 'b'),"
+            "from xic_extractor.execution.result_store import"
+            " load_shared_owners, write_spooled_partition",
+            "owners = Path(%r)" % str(store.shared_owners_path()),
+            "(owner,) = load_shared_owners(owners)",
+            "payload = MockPayload(child_outputs=(), method_assessments=(owner, 'b'),"
             " label='remote')",
-            "kids = tuple({'child': index} for index in range(4))",
-            "size, lengths, records, _ = write_partition_payload("
-            "Path(%r), payload, shared_objects=(), child_outputs=kids)"
-            % str(reservation.path),
-            "print(json.dumps({'lengths': lengths,"
-            " 'size': size, 'records': {name: [list(item) for item in rows]"
-            " for name, rows in records.items()}}))",
+            "written = write_spooled_partition(owners.parent, payload, owners)",
+            "print(json.dumps({'path': str(written.path), 'lengths': written.lengths,"
+            " 'records': {name: [list(item) for item in rows]"
+            " for name, rows in written.records.items()}}))",
         )
     )
     completed = subprocess.run(
@@ -1258,32 +1258,34 @@ def test_reserved_partition_written_elsewhere_reads_back_identically(
         check=True,
         cwd=str(Path(__file__).resolve().parents[1]),
     )
-    written = json.loads(completed.stdout.strip())
-    sealed = store.adopt_partition(
-        reservation,
-        lengths=written["lengths"],
-        records={
-            name: tuple((offset, length) for offset, length in rows)
-            for name, rows in written["records"].items()
-        },
+    reported = json.loads(completed.stdout.strip())
+    sealed = store.adopt_written(
+        "partition-remote",
+        WrittenPartition(
+            Path(reported["path"]),
+            reported["lengths"],
+            {
+                name: tuple((offset, length) for offset, length in rows)
+                for name, rows in reported["records"].items()
+            },
+        ),
     )
-    assert sealed.size_bytes == written["size"]
-    assert sealed.size_bytes == reservation.path.stat().st_size
 
-    restored = store.read(0)
+    assert sealed.index == 1
+    assert not Path(reported["path"]).exists()
+    restored = store.read(1)
     assert restored.label == "remote"
-    assert restored.method_assessments == ("a", "b")
-    assert restored.child_outputs == tuple({"child": index} for index in range(4))
+    assert restored.method_assessments == (owner, "b")
+    assert restored.method_assessments[0] is owner
 
-    local = StreamedResultStore(tmp_path / "local", ())
-    local_sealed = local.append_child_outputs(
+    local = StreamedResultStore(tmp_path / "local", (owner,))
+    local.append("partition-local-first", MockPayload(child_outputs=(), label="first"))
+    local.append(
         "partition-local",
-        MockPayload(child_outputs=(), method_assessments=("a", "b"), label="remote"),
-        tuple({"child": index} for index in range(4)),
+        MockPayload(child_outputs=(), method_assessments=(owner, "b"), label="remote"),
     )
-    assert local_sealed.size_bytes == sealed.size_bytes
-    assert next((tmp_path / "local").glob("*.pickle")).read_bytes() == (
-        reservation.path.read_bytes()
+    assert (tmp_path / "local" / "00000001.pickle").read_bytes() == (
+        store.partition_path(1).read_bytes()
     )
 
 

@@ -7,13 +7,16 @@ import re
 import shutil
 from collections.abc import Buffer, Callable, Iterable
 from dataclasses import dataclass, fields
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, BinaryIO, Protocol
+from uuid import uuid4
 
 from xic_extractor.execution._serialization import _OwnerPickler, _OwnerUnpickler
 from xic_extractor.immutable_sequence import ImmutableSequence
 
 PRESERVED_INDEX_NAME = "partition-index.pickle"
+SHARED_OWNERS_NAME = "shared-owners.pickle"
 
 
 class StreamingPartitionPayload(Protocol):
@@ -44,12 +47,42 @@ class SealedPartition:
 
 
 @dataclass(frozen=True, slots=True)
-class PartitionReservation:
-    """One store-owned slot an external writer may publish bytes into."""
+class WrittenPartition:
+    """A partition file another worker wrote into the spool for adoption."""
 
-    index: int
-    key: str
     path: Path
+    lengths: dict[str, int]
+    records: dict[str, tuple[tuple[int, int], ...]]
+
+
+@lru_cache(maxsize=1)
+def load_shared_owners(path: Path) -> tuple[object, ...]:
+    """The spool's shared owners, read once per process."""
+    with path.open("rb") as stream:
+        shared = _OwnerUnpickler(stream, ()).load()
+    if type(shared) is not tuple:
+        raise TypeError("spool shared owners must be a tuple")
+    return shared
+
+
+def read_spooled_header_field(path: Path, field_name: str, shared_owners: Path) -> Any:
+    """Restore one header field of a sealed partition file in any process."""
+    with path.open("rb") as stream:
+        _, values = _OwnerUnpickler(stream, load_shared_owners(shared_owners)).load()
+    if field_name not in values:
+        raise ValueError("read_spooled_header_field requires a stored non-tuple field")
+    return values[field_name]
+
+
+def write_spooled_partition(
+    directory: Path, payload: Any, shared_owners: Path
+) -> WrittenPartition:
+    """Write one partition file beside the spool for its store to adopt."""
+    path = directory / f"written-{uuid4().hex}.pickle"
+    _, lengths, records, _ = write_partition_payload(
+        path, payload, shared_objects=load_shared_owners(shared_owners)
+    )
+    return WrittenPartition(path, lengths, records)
 
 
 def write_partition_payload(
@@ -71,8 +104,9 @@ def write_partition_payload(
 ]:
     """Write one partition file and return its content facts and record table.
 
-    The store calls this in process; a worker composing a partition elsewhere
-    calls it for a reserved path. One writer keeps both paths byte-identical.
+    The store calls this in process; a worker writing a partition for the store
+    to adopt calls it through write_spooled_partition. One writer keeps both
+    paths byte-identical.
     """
 
     field_names = tuple(item.name for item in fields(payload))
@@ -177,12 +211,33 @@ class StreamedResultStore:
         self._field_records: list[dict[str, tuple[tuple[int, int], ...]]] = []
         self._field_caches: list[dict[str, tuple[tuple[Any, ...], ...]]] = []
         self._keys: set[str] = set()
-        self._reserved_keys: set[str] = set()
-        self._reservations: dict[int, PartitionReservation] = {}
         self._sealed = False
 
     def _path(self, index: int) -> Path:
         return self._directory / f"{index:08d}.pickle"
+
+    @property
+    def directory(self) -> Path:
+        return self._directory
+
+    def partition_path(self, index: int) -> Path:
+        """The sealed file another worker may read with the shared owners."""
+        if isinstance(index, bool) or not 0 <= index < len(self._partitions):
+            raise IndexError("partition index out of range")
+        return self._path(index)
+
+    def shared_owners_path(self) -> Path:
+        """Publish the shared owners once, for workers reading or writing here."""
+        path = self._directory / SHARED_OWNERS_NAME
+        if not path.exists():
+            temporary = path.with_suffix(".tmp")
+            try:
+                with temporary.open("xb") as stream:
+                    _OwnerPickler(stream, ()).dump(self._shared_objects)
+                os.replace(temporary, path)
+            finally:
+                temporary.unlink(missing_ok=True)
+        return path
 
     def append(
         self, partition_key: str, payload: object, retain_memory: bool = False
@@ -239,21 +294,12 @@ class StreamedResultStore:
             raise ValueError("partition store is sealed")
         if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", partition_key) is None:
             raise ValueError("invalid partition key")
-        if partition_key in self._keys or partition_key in self._reserved_keys:
+        if partition_key in self._keys:
             raise ValueError("duplicate partition key")
 
     def _claim_index(self) -> int:
-        """Return the lowest slot no sealed partition or reservation holds.
-
-        A failed write publishes nothing, so it must not consume a slot; an
-        outstanding reservation does hold one until it is adopted.
-        """
-
-        used = {entry.index for entry in self._partitions} | set(self._reservations)
-        index = 0
-        while index in used:
-            index += 1
-        return index
+        """Return the next slot; a failed write publishes nothing and keeps it."""
+        return len(self._partitions)
 
     def _register(
         self,
@@ -268,57 +314,39 @@ class StreamedResultStore:
         self._field_caches.append(cached_fields)
         self._keys.add(entry.key)
 
-    def reserve_partition(self, partition_key: str) -> PartitionReservation:
-        """Claim one partition slot for a writer running outside this process.
+    def adopt_written(
+        self, partition_key: str, written: WrittenPartition
+    ) -> SealedPartition:
+        """Seal a partition file a worker wrote into this spool.
 
-        The store keeps ownership of the index and the readable path. A writer
-        given this reservation produces the bytes; it does not decide where they
-        land. `adopt_partition` records the landed file size and checks record
-        offsets before making the reserved partition readable.
+        The store still decides the slot: the file moves into it here, in the
+        order partitions are adopted, so slots stay the positions reads use.
         """
 
         self._require_writable_key(partition_key)
+        if written.path.parent != self._directory:
+            raise ValueError("written partition is outside this spool")
         index = self._claim_index()
-        reservation = PartitionReservation(index, partition_key, self._path(index))
-        self._reserved_keys.add(partition_key)
-        self._reservations[index] = reservation
-        return reservation
-
-    def adopt_partition(
-        self,
-        reservation: PartitionReservation,
-        *,
-        lengths: dict[str, int],
-        records: dict[str, tuple[tuple[int, int], ...]],
-    ) -> SealedPartition:
-        """Register a reserved partition an external writer has published."""
-
-        if self._reservations.get(reservation.index) is not reservation:
-            raise ValueError("partition reservation is not outstanding")
-        if self._sealed:
-            raise ValueError("partition store is sealed")
-        if not reservation.path.is_file():
-            raise FileNotFoundError(
-                f"reserved partition is missing: {reservation.path}"
-            )
-        size_bytes = reservation.path.stat().st_size
-        validated_lengths = {str(name): int(value) for name, value in lengths.items()}
-        if any(length < 0 for length in validated_lengths.values()):
+        path = self._path(index)
+        if path.exists():
+            raise FileExistsError(f"partition artifact already exists: {path}")
+        os.replace(written.path, path)
+        size_bytes = path.stat().st_size
+        lengths = {str(name): int(value) for name, value in written.lengths.items()}
+        if any(length < 0 for length in lengths.values()):
             raise ValueError("chunk lengths must be non-negative integers")
-        validated_records = {
+        records = {
             str(name): tuple((int(offset), int(length)) for offset, length in entries)
-            for name, entries in records.items()
+            for name, entries in written.records.items()
         }
-        for entries in validated_records.values():
-            if any(
-                offset < 0 or length < 0 or offset >= size_bytes
-                for offset, length in entries
-            ):
-                raise ValueError("adopted partition record leaves its sealed bytes")
-        entry = SealedPartition(reservation.index, reservation.key, size_bytes)
-        self._register(entry, validated_lengths, validated_records, {})
-        self._reserved_keys.discard(reservation.key)
-        del self._reservations[reservation.index]
+        if any(
+            offset < 0 or length < 0 or offset >= size_bytes
+            for entries in records.values()
+            for offset, length in entries
+        ):
+            raise ValueError("adopted partition record leaves its sealed bytes")
+        entry = SealedPartition(index, partition_key, size_bytes)
+        self._register(entry, lengths, records, {})
         return entry
 
     def read(self, index: int) -> object:
@@ -530,7 +558,5 @@ def open_preserved_results(path: Path) -> StreamedResultStore:
     store._field_records = index["field_records"]
     store._field_caches = []
     store._keys = {partition.key for partition in store._partitions}
-    store._reserved_keys = set()
-    store._reservations = {}
     store._sealed = True
     return store
