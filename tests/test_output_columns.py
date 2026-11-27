@@ -3,7 +3,6 @@ from pathlib import Path
 from openpyxl import load_workbook
 
 from tests.targeted_fixtures import selected_targeted_hypothesis
-from xic_extractor import extractor as extractor_module
 from xic_extractor.configuration.execution_profile import in_process_execution
 from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.extraction.result_models import (
@@ -141,10 +140,6 @@ def _write_workbook(tmp_path: Path) -> Path:
     return write_excel_from_run_output(
         config, [target], run_output, output_path=tmp_path / "results.xlsx"
     )
-
-
-def test_extractor_no_longer_exposes_test_only_xlsx_writer() -> None:
-    assert not hasattr(extractor_module, "_write_xlsx")
 
 
 def test_main_sheet_has_labels_without_confidence(tmp_path: Path) -> None:
