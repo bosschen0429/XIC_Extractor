@@ -316,7 +316,44 @@ private bytes rising 6.3 to 10.6 GB. The shared default stays at four; use
 `--raw-workers 8` locally. A one-entry prepared-signal memo gained less than
 baseline noise and was removed.
 
-Rerun for changed host resources, workload or locality.
+Rerun for changed host resources, workload or locality. On 85RAW the initial
+acquisition is worker-bound; see [where the RAW phases spend time](#where-the-raw-phases-spend-time).
+
+### Where the RAW phases spend time
+
+`diagnostic_only`; `78cf27ceb` (#1306), 85RAW `dna_dr`, four process workers.
+One probed run; its Matrix, review, Backfill evidence and RT anchors match an
+un-probed `713a72b3e` run byte for byte.
+
+- Summed partition acquisition over wall is capped at two by the two
+  overlapping partition producers, so it does not measure the workers. Worker
+  utilization was 93% in initial acquisition (398 s, worker-bound) and 33% in
+  Backfill (432 s with the probe; 350–397 s in four un-probed runs).
+- Backfill waits on the parent. Before dispatching a partition, its producer
+  computes band RT locations (393 s: target `locate` 54%, leave-one-out
+  `_empirical_tolerances` 41%). In two un-probed timelines, 13 and 15 of 28
+  Backfill partitions also waited for in-order composition to return an
+  admission credit. Replaying the measured spans reproduces the wall (431 vs
+  432 s) and predicts 267 s without the location step on the dispatch path
+  (#1315).
+- Every (partition, sample) task reopens its RAW: open 15 ms, dispose 10 ms,
+  and about 0.13 s on the handle's first chromatogram call while the vendor
+  builds its scan structure, with or without the `ms` filter. That is 2,550
+  tasks per phase and about 22% of initial worker time. This is the per-handle
+  cost the scan-list entry under
+  [Rejected Alignment designs](#rejected-alignment-designs) could not share.
+- RAW reads stayed warm: per-task read time did not rise with revisits, and
+  RAW calls were no slower during physical-read bursts.
+- Discovery's windows would fully answer at most 0.06% of initial and 0.84% of
+  Backfill XIC requests. Initial region reads answer 98.8% of Backfill requests
+  within 2 ppm, but 0.66% at the same mass centre.
+- Separate RawFileReader processes do not wait on one another: per-task time is
+  flat from one to four processes, and task throughput at six and eight is 1.26
+  and 1.46 times that of four.
+
+Rerun when partition packing, worker scheduling, Backfill planning or the RAW
+reader changes. Artifacts: `output/1306/` in the `research-1306-raw-time-46fb42`
+worktree.
 
 ### Drift grouping reuses prepared numerical evidence
 
@@ -481,6 +518,8 @@ model.
   order, so identical partitions differ in bytes across processes.
 - **Evidence caching or sample-affinity scheduling:** 11,420 cache reads hit
   11,260 unique keys; reusing every repeat saves 3.3% of payload bytes.
+  Reusing open RAW handles is a different cost, measured in
+  [where the RAW phases spend time](#where-the-raw-phases-spend-time).
 - **Sample-major replay:** three paired replays (9.07 vs 8.80 s median) fall
   inside measurement noise; no scheduler change.
 - **Identity memoization:** at most 0.85 s of 2.65 s total.
@@ -505,6 +544,10 @@ Eight identical four-partition cache-only runs at `005fd18f` produced
 byte-identical output but wall times from 49.5 to 70.5 s, a 42% spread. A 5 ms
 stack sampler ran at an effective 18.8 ms and overstated CPU hot spots about
 fourfold; use its ordering, not its percentages.
+
+On this host, `time.process_time()` and psutil process CPU report 56–79% of a
+pure CPU loop's wall time with one to eight processes (#1306); do not infer a
+worker's CPU share from them.
 
 ## Discovery And Acquisition
 
