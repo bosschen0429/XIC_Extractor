@@ -674,3 +674,74 @@ def test_atomic_publication_preserves_ms1_peak_and_no_peak(
         "MS1Only": 8.03,
         "NoPeak": None,
     }
+
+
+def test_paired_batch_publication_binds_matrix_review_and_sqlite(tmp_path, monkeypatch):
+    """The real publisher consumes calibrated pairing without splitting values."""
+    from xic_extractor.alignment.batch_correspondence import (
+        BatchIstd,
+        pair_grouped_batches,
+    )
+    from xic_extractor.alignment_explanation.published_cells import read_published_cells
+    from xic_extractor.alignment_explanation.reader import read_review_evidence
+
+    stems = ("Old1", "Old2", "New1", "New2", "New3")
+    paths = raw_paths(tmp_path, stems)
+    raws = {stem: _FakeRaw((8.0,)) for stem in stems}
+    for scale, raw in enumerate(raws.values(), start=1):
+        raw.intensity *= scale
+    peaks = {stem: discover(raws[stem], paths[stem]) for stem in stems}
+    metadata = tuple(
+        SampleMetadata(
+            stem, stem, injection_order=index, batch_id=stem[:-1], sample_role="sample"
+        )
+        for index, stem in enumerate(stems, start=1)
+    )
+
+    def pair_with_fixture_istds(batches, **kwargs):
+        return pair_grouped_batches(
+            [
+                replace(
+                    batch,
+                    istds=(
+                        BatchIstd(batch.batch_id, "early", 7.6),
+                        BatchIstd(batch.batch_id, "late", 8.5),
+                    ),
+                )
+                for batch in batches
+            ],
+            **kwargs,
+        )
+
+    monkeypatch.setattr(
+        "xic_extractor.applications.untargeted.application.pair_grouped_batches",
+        pair_with_fixture_istds,
+    )
+    output = publish_alignment(
+        tmp_path,
+        monkeypatch,
+        paths=paths,
+        raws=raws,
+        peaks=peaks,
+        sample_metadata=metadata,
+    )
+    (matrix,) = read_tsv(output / "alignment_matrix.tsv")
+    (review,) = read_tsv(output / "alignment_review.tsv")
+    assert review["matrix_row_index"] == "1"
+    assert review["batch_pairing"] == "paired"
+    assert set(review["batch_ids"].split(";")) == {"Old", "New"}
+    areas = [float(matrix[stem]) for stem in stems]
+    assert areas == pytest.approx(
+        [areas[0] * i for i in range(1, len(stems) + 1)], rel=5e-6
+    )
+    cells = read_published_cells(output)
+    assert {(cell.row, cell.feature_id, cell.origin) for cell in cells} == {
+        (1, review["feature_id"], "detected")
+    }
+    assert {cell.sample: cell.value for cell in cells} == pytest.approx(
+        dict(zip(stems, areas, strict=True)), rel=5e-6
+    )
+    stored = read_review_evidence(output / "alignment_explanation.sqlite")
+    row = stored.groups[review["feature_id"]]
+    assert row.disposition == "established"
+    assert {member["sample_key"] for member in row.members} == set(stems)

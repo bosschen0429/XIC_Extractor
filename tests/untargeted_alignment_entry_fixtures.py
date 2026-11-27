@@ -172,7 +172,13 @@ def publish_alignment(
     }
     assert repeated == {}, repeated
     stages = Counter((r.stage, r.sample_stem) for r in recorder.records)
-    assert [stage for stage, count in stages.items() if count > 1] == []
+    batch_count = len({row.batch_id for row in sample_metadata or ()}) or 1
+    repeated_stages = {
+        (stage, stem): count
+        for (stage, stem), count in stages.items()
+        if count > (1 if stem else batch_count)
+    }
+    assert not repeated_stages, repeated_stages
     return output_dir
 
 
