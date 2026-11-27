@@ -99,6 +99,7 @@ def test_istd_apex_is_the_discovery_peak_with_most_events_near_expected_rt():
         peak("off_mass", "S1", 200.004, 10.0, 9),
         peak("off_window", "S1", 200.0, 12.5, 9),
         peak("other_loss", "S1", 200.0, 10.0, 9, tag="R"),
+        peak("other_ion", "S1", 200.0, 10.0, 9, status="doubly_charged"),
         peak("unattached", "S2", 200.0, 9.5, 0, status="no_nl_event"),
         peak("tie_far", "S3", 200.0, 10.4, 3),
         peak("tie_near", "S3", 200.0, 9.8, 3),

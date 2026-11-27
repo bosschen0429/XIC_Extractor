@@ -31,13 +31,17 @@ def istd_apex_rts(
 
     A candidate sits at the target's m/z, carries an event of the target's
     neutral loss and has its apex within ISTD_APEX_HALF_WINDOW_MIN of the
-    expected RT. Status is not a condition: an apex measured without an attached
-    event is still the standard's elution. The spiked standard triggers the most
-    events; ties go to the apex closest to the expected RT. A sample whose
-    standard DDA never sampled has no coordinate for that label.
+    expected RT. A doubly charged reading is another ion. The other statuses
+    describe support, not identity: an apex without an attached event, or near
+    solvent-blank background, is still the standard's elution. The spiked
+    standard triggers the most events; ties go to the apex closest to the
+    expected RT. A sample whose standard DDA never sampled has no coordinate for
+    that label.
     """
     chosen: dict[tuple[str, str], tuple[tuple[int, float, str], float]] = {}
     for peak in peaks:
+        if peak.status == "doubly_charged":
+            continue
         losses = {neutral_loss_by_tag[tag] for tag in peak.matched_tag_names}
         for target in targets:
             expected = (

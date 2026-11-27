@@ -24,9 +24,9 @@ Bootstrap links peaks in measured RT. Established bands supply measured anchors
 from direct, quantifiable members; bootstrap membership is not final membership.
 
 A Known-ISTD reference from a target list takes each sample's ISTD apex from
-its Discovery peaks without reading RAW: a peak of any status at the target's
-m/z, carrying an event of the target's neutral loss, with its apex within 2 min
-of the expected RT. The spiked standard triggers the most events; ties go to the
+its Discovery peaks without reading RAW: a peak at the target's m/z, carrying
+an event of the target's neutral loss, with its apex within 2 min of the
+expected RT and not read as a doubly charged ion. The spiked standard triggers the most events; ties go to the
 apex closest to the expected RT. A sample whose standard DDA never sampled has
 no coordinate for that label. An imported reference workbook retains its
 declared measurement contract; the reader does not add MS2 qualification. See the

@@ -368,10 +368,16 @@ vendor calls 6,844 to 2,142, worker time 1,474 to 1,034 s), Backfill 190 s
 (166 s of it in-order composition) and the runtime 586 s. The ISTD reference
 stage then set the tree's private-memory peak at 12.2 GB, with 11 Targeted
 processes before acquisition. Taking each sample's ISTD apex from its Discovery
-peaks instead, without RAW, reproduced that run's reference (510 coordinates,
-every provenance key) and every output byte for byte. The stage took 0.07 s
-instead of 38 s, and the run peaked at 10.1 GB in Backfill (6.4 initial, 9.4
-grouping) with 6 processes instead of 17.
+peaks instead, without RAW (`expected_diff`), reproduced that run's reference
+(510 coordinates, every provenance key; 8RAW's 48 likewise). The 85RAW Matrix,
+review, Backfill evidence and RT anchors matched byte for byte, and every
+explanation table and run-metadata key by content, attempt id and output path
+aside. The stage took 0.07 s instead of 38 s, and the run peaked at 10.1 GB in
+Backfill with 6 processes instead of 17; one run each, Backfill read 9.8 to
+10.1 GB and grouping 9.2 to 9.4 GB. All 510 pairs exist on both sides, so none
+of the removed Targeted paths ran: its credibility gate, elution-order check,
+cross-sample recovery and error on a failed RAW. A sample whose standard DDA
+never sampled now has no coordinate for that label.
 
 Rerun when partition packing, worker scheduling, Backfill planning, the ISTD
 reference or the RAW reader changes. Artifacts: `output/1306/` in the `research-1306-raw-time-46fb42`
