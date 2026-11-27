@@ -14,8 +14,7 @@ Files used by the [user guides](../README.md) and the developer maps.
   `xic_extractor/output/result_labels.py` needs a row and a figure there
   (`tests/test_result_labels.py`).
 - `rt-drift/` holds the figures of the [RT 漂移模型](../rt-drift.md) page.
-  `anchor-selection.svg`, `coefficient-choice.svg` and `shape-borrowing.svg`
-  are hand-edited schematics.
+  `anchor-selection.svg` and `shape-borrowing.svg` are hand-edited schematics.
   The other four are drawn from one Alignment run's grouping snapshot (an
   Alignment run with `--save-grouping-inputs`) by
   `tools/rt_drift_guide_figures.py`; the page names that run's injection

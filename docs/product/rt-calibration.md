@@ -378,4 +378,8 @@ Final grouping uses them as follows:
 Known limits: a non-anchor drifting compound near the RT boundary between two
 shape types can borrow the wrong shape; isomers that occupy different injection
 segments can be explained by a segment-aligned M only when the shift within
-each segment does not contradict it.
+each segment does not contradict it. A seed's coefficients come only from its
+own linked members, and seeds are taken by direct-peak count: a seed covering
+part of a drifting band can extrapolate poorly to the rest, which then forms
+its own row, and an earlier seed can take peaks that a later seed's fit would
+have joined.
