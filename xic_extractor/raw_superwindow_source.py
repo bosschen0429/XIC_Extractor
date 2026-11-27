@@ -2,7 +2,7 @@
 
 Requests whose scan windows overlap share one chromatogram call over their
 union window, and each returned trace is cropped back to its own request's scan
-window.
+window. Requests for the same mass window in one call are read once.
 """
 
 from __future__ import annotations
@@ -73,12 +73,20 @@ class RawSuperWindowSource:
                 )
                 for _index, request, _scan_window in group
             )
-            union_traces = tuple(self._source.extract_xic_many(union_requests))
-            for trace, (original_index, _request, scan_window) in zip(
-                union_traces,
+            unique = tuple(dict.fromkeys(union_requests))
+            read = dict(zip(unique, self._source.extract_xic_many(unique), strict=True))
+            cropped: set[XICRequest] = set()
+            for union_request, (original_index, _request, scan_window) in zip(
+                union_requests,
                 group,
                 strict=True,
             ):
+                trace = read[union_request]
+                if union_request in cropped:
+                    trace = XICTrace.from_arrays(
+                        trace.rt.copy(), trace.intensity.copy()
+                    )
+                cropped.add(union_request)
                 traces[original_index] = _crop_trace_to_scan_window(
                     self,
                     trace,

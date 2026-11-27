@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from bisect import bisect_left, bisect_right
-from collections.abc import Callable, Iterable, Iterator, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, replace
 from statistics import median
 from typing import Protocol
@@ -34,7 +34,10 @@ from xic_extractor.discovery.same_ion_peaks import group_same_ion_peaks
 from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.discovery.strict_event_receipts import resolve_discovery_scan_events
 from xic_extractor.mass_accuracy import mz_tolerance_da, mz_window, signed_ppm_error
-from xic_extractor.peak_detection.background_contrast import background_contrast
+from xic_extractor.peak_detection.background_contrast import (
+    CONTRAST_HALF_WINDOW_MIN,
+    background_contrast,
+)
 from xic_extractor.peak_detection.cid_nl_candidate_set_relation import (
     DdaCidNlCandidateSetRelation,
 )
@@ -71,6 +74,10 @@ from xic_extractor.xic_models import XICRequest, XICTrace
 
 EVENT_NEIGHBORHOOD_MIN = 3.0
 """A peak apex this far from every batch event of its region is not minted."""
+
+CONTRAST_READ_REACH_MIN = CONTRAST_HALF_WINDOW_MIN + 0.5
+"""Each ion is also read this far past its window, so a peak's background
+neighbourhood never ends on a boundary scan."""
 
 
 class RegionRawSource(ScanResolvedXICSource, Protocol):
@@ -240,7 +247,8 @@ def acquire_cid_nl_sample_regions(
     """Read every planned ion within this RAW's LC run, even without local CID.
 
     An ion whose event window lies outside this run's LC range is not read, nor
-    is a region restricted to other samples.
+    is a region restricted to other samples. Each ion's request is followed by
+    its background neighbourhood, so both come from one vendor read.
     """
     if not regions:
         return ()
@@ -264,9 +272,31 @@ def acquire_cid_nl_sample_regions(
     capability = mint_trace_acquisition_capability(
         acquisition_source, adapter_namespace=__name__
     )
-    acquired = tuple(_acquire_regions(raw, capability, requests))
+    paired = tuple(
+        _acquire_regions(
+            raw,
+            capability,
+            tuple(
+                item
+                for request in requests
+                for item in (
+                    request,
+                    replace(
+                        request,
+                        rt_min=max(rt_start, request.rt_min - CONTRAST_READ_REACH_MIN),
+                        rt_max=min(rt_end, request.rt_max + CONTRAST_READ_REACH_MIN),
+                    ),
+                )
+            ),
+        )
+    )
+    acquired = paired[0::2]
+    contexts = {
+        request: context.trace
+        for (request, _, _), (_, context, _) in zip(acquired, paired[1::2], strict=True)
+        if context is not None
+    }
     captures = iter(acquired)
-    channels = _whole_run_channels(raw, acquired, rt_start=rt_start, rt_end=rt_end)
     results = []
     for region, region_requests in zip(regions, per_region, strict=True):
         results.append(
@@ -279,48 +309,10 @@ def acquire_cid_nl_sample_regions(
                 events=region_events(region),
                 settings=settings,
                 profile=profile,
-                channels=channels,
+                contexts=contexts,
             )
         )
     return tuple(results)
-
-
-def _whole_run_channels(
-    raw: RegionRawSource,
-    acquired: tuple[_Capture, ...],
-    *,
-    rt_start: float,
-    rt_end: float,
-) -> dict[tuple[float, float], XICTrace]:
-    """Each requested mass channel over the whole run, read in shared passes.
-
-    Only channels that were acquired are read; one whose region trace already
-    spans the run reuses it. Requests
-    sharing one scan range are one vendor pass, so the rest cost about one
-    narrow read per channel batch.
-    """
-    traces: dict[tuple[float, float], XICTrace] = {
-        (request.mz, request.ppm_tol): trace.trace
-        for request, trace, _ in acquired
-        if trace is not None and request.rt_min <= rt_start and request.rt_max >= rt_end
-    }
-    channels = tuple(
-        key
-        for key in dict.fromkeys(
-            (r.mz, r.ppm_tol) for r, trace, _ in acquired if trace is not None
-        )
-        if key not in traces
-    )
-    for start in range(0, len(channels), PHYSICAL_CAPTURE_BATCH_MAX_REQUESTS):
-        chunk = channels[start : start + PHYSICAL_CAPTURE_BATCH_MAX_REQUESTS]
-        read = raw.extract_xic_many(
-            tuple(
-                XICRequest(mz=mz, rt_min=rt_start, rt_max=rt_end, ppm_tol=ppm)
-                for mz, ppm in chunk
-            )
-        )
-        traces.update(zip(chunk, read, strict=True))
-    return traces
 
 
 def relate_region_events(
@@ -412,7 +404,7 @@ def _measure_region(
     events: tuple[DiscoveryEvent, ...],
     settings: DiscoverySettings,
     profile: SignalProcessingProfile,
-    channels: dict[tuple[float, float], XICTrace],
+    contexts: Mapping[XICRequest, XICTrace],
 ) -> CidNlSampleRegion:
     """Resolve signal aliases before attaching any CID-NL events.
 
@@ -485,7 +477,7 @@ def _measure_region(
             measured_mz=(mz,),
             signal_processing_profile=profile,
         )
-        channel = channels[request.mz, request.ppm_tol]
+        channel = contexts[request]
         peak = replace(
             peak,
             background_contrast=background_contrast(
