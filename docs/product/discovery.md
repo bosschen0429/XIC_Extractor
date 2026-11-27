@@ -113,8 +113,8 @@ this table wins.
 
 | `status` | Meaning | Enters Alignment |
 | --- | --- | --- |
-| `blank` | Demoted by [blank qualification](#blank-qualification) | No |
 | `doubly_charged` | The MS1 ion reads as a doubly charged isotope ([accurate-mass reading](#accurate-mass-reading)) | No |
+| `blank` | Demoted by [blank qualification](#blank-qualification) | No |
 | `no_nl_event` | A measurable MS1 peak without an [attached](#cid-nl-support-relations), precursor-verified NL event | No; review only |
 | `admitted` | At least one attached event and none of the above | Yes |
 
@@ -372,7 +372,7 @@ does not enable it; an explicit opt-in requires method-appropriate validation.
   software filtering does not recreate an unacquired spectrum.
 - When enabled, a peak matched within 10 ppm keeps its admission only when its
   MS1 height is at least 3× the blank's maximum intensity. Below that its
-  `status` is `blank`. Qualification changes eligibility
+  `status` is `blank`, unless it reads as doubly charged. Qualification changes eligibility
   only; it does not change the peak's boundaries, apex or area.
 
 ## Delta Mass Discovery

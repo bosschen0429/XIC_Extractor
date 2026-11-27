@@ -232,6 +232,8 @@ def test_discovery_only_filters_background_when_explicitly_enabled(
     c_background = peak(300.1002, 80000.0)
     c_override = peak(400.2001, 400000.0)
     c_clean = peak(550.3000, 150000.0)
+    c_doubly = peak(300.1001, 80000.0)
+    c_doubly = replace(c_doubly, peak=replace(c_doubly.peak, status="doubly_charged"))
 
     raw = tmp_path / "test.raw"
     raw.write_bytes(b"sample")
@@ -248,7 +250,7 @@ def test_discovery_only_filters_background_when_explicitly_enabled(
     )
     assert (spec.acquisition_inputs[0].blank_library_content is not None) is enabled
     qualified = _apply_blank_qualification_if_enabled(
-        (c_background, c_override, c_clean),
+        (c_background, c_override, c_clean, c_doubly),
         settings=settings,
         timing_recorder=TimingRecorder.disabled("discovery"),
         sample_stem="test",
@@ -256,11 +258,11 @@ def test_discovery_only_filters_background_when_explicitly_enabled(
     )
 
     if not enabled:
-        assert qualified == (c_background, c_override, c_clean)
+        assert qualified == (c_background, c_override, c_clean, c_doubly)
         return
 
     assert qualified[0].peak == replace(c_background.peak, status="blank")
-    assert qualified[1:] == (c_override, c_clean)
+    assert qualified[1:] == (c_override, c_clean, c_doubly)
 
 
 def test_blank_library_gzip_serialization(tmp_path: Path) -> None:
