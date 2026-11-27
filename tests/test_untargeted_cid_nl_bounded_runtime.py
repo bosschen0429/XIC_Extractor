@@ -726,7 +726,9 @@ def test_backfill_partition_request_crosses_the_process_boundary_unchanged(
     tmp_path: Path, monkeypatch
 ) -> None:
     """A worker process receives a Backfill partition's request by value;
-    running the partition from that copy writes the same rows."""
+    running the partition from that copy writes the same rows. A process
+    worker has no caller to ask about cancellation, so the copy runs without
+    the thread worker's ``should_cancel``."""
     import xic_extractor.untargeted_execution.execution as owner
     from xic_extractor.execution._serialization import (
         owner_pickle_dumps,
@@ -750,7 +752,7 @@ def test_backfill_partition_request_crosses_the_process_boundary_unchanged(
     original = owner._run_backfill_partition
     requests = []
 
-    def across_processes(task):
+    def across_processes(task, **_in_process_only):
         requests.append(task)
         return original(owner_pickle_loads(owner_pickle_dumps(task, ()), ()))
 
