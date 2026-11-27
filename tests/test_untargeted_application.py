@@ -360,6 +360,12 @@ def test_pipeline_publishes_projected_children_and_cleans_up(
             return {
                 table: sorted(connection.execute(f"SELECT * FROM {table}").fetchall())
                 for table in tables
+                if table != "run"
+            } | {
+                "run": connection.execute(
+                    "SELECT processing_attempt_id,matrix_sha256,neutral_loss_by_tag,"
+                    "sample_rt_calibration FROM run"
+                ).fetchall()
             }
 
     if failure is None:
@@ -372,7 +378,6 @@ def test_pipeline_publishes_projected_children_and_cleans_up(
             **explanation_discovery_facts(expected),
             peaks_by_sample=candidates,
             matrix_path=matrix_path,
-            alignment_config=config,
         )
         matrix_path.unlink()
     expected.close()
@@ -470,9 +475,10 @@ def test_pipeline_publishes_projected_children_and_cleans_up(
                     == completed.processing_attempt_id
                 )
                 assert rows(report_path) == rows(reference)
-                assert read_alignment_explanation(
-                    report_path
-                ) == read_alignment_explanation(reference)
+                assert read_alignment_explanation(report_path) == {
+                    **read_alignment_explanation(reference),
+                    "matrix_path": "alignment_matrix.tsv",
+                }
                 for values in candidates.values():
                     for candidate in values:
                         assert read_alignment_explanation(

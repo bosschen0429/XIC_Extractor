@@ -31,6 +31,8 @@ from xic_inspector.api import (
 )
 from xic_inspector.cli import main as cli_main
 
+ALL_SAMPLES = SelectionRequest(strategy="query", sample_ids=("S1", "S2"))
+
 
 def _ref_key(ref):
     """A record ref as a dict key; a cell's ref is its (row, sample) pair."""
@@ -86,13 +88,13 @@ def test_normalized_links_preserve_candidate_query_and_inspector_scope(tmp_path)
     assert detail["groups"][0]["cells"]
 
 
-def test_generate_report_sample_strategy_success() -> None:
+def test_generate_report_success() -> None:
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp = Path(tmpdir)
         db_path, matrix_path, matrix_hash = create_inspector_report(tmp)
         out_html = tmp / "report.html"
 
-        req = SelectionRequest(strategy="sample", limit=10, seed=0)
+        req = SelectionRequest(strategy="query", review_scope="matrix", limit=10)
         progresses = []
 
         res = generate_report(
@@ -129,18 +131,6 @@ def test_group_query_keeps_unlinked_stored_cells_scoped_and_readable(tmp_path):
             "G2", feature_id="G2", disposition="completed", members=[]
         )
         writer.add_cells("G2", [{**stored_cell, "variant": "not_searched"}])
-        writer.add_assessment(
-            {
-                "sample_key": "S1",
-                "method_subject_id": "M1",
-                "method_result": "HOLD",
-                "reason_codes": [
-                    "insufficient_method_evidence",
-                    "no_unique_qualifying_relation",
-                ],
-            },
-            candidate_physical_peak_keys=(),
-        )
 
     report, _, _ = create_inspector_report(
         tmp_path,
@@ -177,16 +167,6 @@ def test_group_query_keeps_unlinked_stored_cells_scoped_and_readable(tmp_path):
         "unresolved": 0,
     }
     assert item["badge_label"] == "已記錄"
-    trigger = next(
-        trigger
-        for trigger in item["details"]["attention_triggers"]
-        if trigger["reason"] == "HOLD"
-    )
-    assert trigger["reason"] == "HOLD"
-    assert trigger["reason_codes"] == [
-        "insufficient_method_evidence",
-        "no_unique_qualifying_relation",
-    ]
 
     scoped_output = tmp_path / "s1-only.html"
     generate_report(
@@ -196,34 +176,6 @@ def test_group_query_keeps_unlinked_stored_cells_scoped_and_readable(tmp_path):
     )
     scoped_item = read_report_payload(scoped_output)["items"][0]
     assert [sample["sample_id"] for sample in scoped_item["samples"]] == ["S1"]
-
-
-def test_unrelated_hold_does_not_become_a_cell_risk_after_record_renumbering(tmp_path):
-    from xic_inspector.api import prepare_report
-
-    def assessments(writer):
-        for code in ("no_unique_qualifying_relation", "insufficient_method_evidence"):
-            writer.add_assessment(
-                {
-                    "sample_key": "S1",
-                    "method_subject_id": "subject-C1",
-                    "method_result": "HOLD",
-                    "reason_codes": [code],
-                },
-                candidate_physical_peak_keys=(),
-            )
-
-    report, _, _ = create_inspector_report(tmp_path, extend=assessments)
-    selection = SelectionRequest(strategy="query", group_ids=("G1",))
-
-    def answers():
-        item = prepare_report(report, selection).payload["items"][0]
-        return item["badge_label"], [s["risk_labels"] for s in item["samples"]]
-
-    before = answers()
-    with sqlite3.connect(report) as db:
-        db.execute("UPDATE method_assessments SET id=100000-id")
-    assert answers() == before == ("已記錄", [[]])
 
 
 def test_review_candidate_scope_paginates_in_recorded_order(tmp_path):
@@ -286,7 +238,11 @@ def test_error_code_3_source_unavailable() -> None:
         missing_db = tmp / "missing.sqlite"
         out_html = tmp / "report.html"
         with pytest.raises(InspectorError) as exc_info:
-            generate_report(missing_db, SelectionRequest(), out_html)
+            generate_report(
+                missing_db,
+                ALL_SAMPLES,
+                out_html,
+            )
         assert exc_info.value.code == 3
 
 
@@ -299,7 +255,11 @@ def test_error_code_4_source_invalid_mismatched_matrix() -> None:
         matrix_path.write_text("tampered content", encoding="utf-8")
 
         with pytest.raises(InspectorError) as exc_info:
-            generate_report(db_path, SelectionRequest(), out_html)
+            generate_report(
+                db_path,
+                ALL_SAMPLES,
+                out_html,
+            )
         assert exc_info.value.code == 4
 
 
@@ -309,11 +269,19 @@ def test_error_code_6_output_aliasing_source() -> None:
         db_path, matrix_path, _ = create_inspector_report(tmp)
 
         with pytest.raises(InspectorError) as exc_info:
-            generate_report(db_path, SelectionRequest(), db_path)
+            generate_report(
+                db_path,
+                ALL_SAMPLES,
+                db_path,
+            )
         assert exc_info.value.code == 6
 
         with pytest.raises(InspectorError) as exc_info:
-            generate_report(db_path, SelectionRequest(), matrix_path)
+            generate_report(
+                db_path,
+                ALL_SAMPLES,
+                matrix_path,
+            )
         assert exc_info.value.code == 6
 
 
@@ -327,7 +295,7 @@ def test_cancellation_preserves_old_html_and_code_130() -> None:
         with pytest.raises(InspectorCancelled) as exc_info:
             generate_report(
                 db_path,
-                SelectionRequest(),
+                ALL_SAMPLES,
                 out_html,
                 is_cancelled=lambda: True,
             )
@@ -348,19 +316,23 @@ def test_normalized_sample_scope_semantics() -> None:
         )
         out_html = tmp / "report.html"
 
-        res1 = generate_report(db_path, SelectionRequest(strategy="sample"), out_html)
+        res1 = generate_report(
+            db_path,
+            SelectionRequest(strategy="query", review_scope="matrix"),
+            out_html,
+        )
         assert res1.sample_ids == ("S_A", "S_B")
 
         res2 = generate_report(
             db_path,
-            SelectionRequest(strategy="sample", sample_ids=("S_B",)),
+            SelectionRequest(strategy="query", sample_ids=("S_B",)),
             out_html,
         )
         assert res2.sample_ids == ("S_B",)
 
         res3 = generate_report(
             db_path,
-            SelectionRequest(strategy="sample", sample_ids=("UNKNOWN_S",)),
+            SelectionRequest(strategy="query", sample_ids=("UNKNOWN_S",)),
             out_html,
         )
         assert res3.sample_ids == ()
@@ -381,7 +353,9 @@ def test_cli_execution() -> None:
                 "--output",
                 str(out_html),
                 "--strategy",
-                "sample",
+                "query",
+                "--sample-id",
+                "S1",
                 "--limit",
                 "5",
                 "--no-open",
@@ -433,7 +407,6 @@ def test_real_source_query_uses_one_scoped_candidate_observation(tmp_path):
         writer.add_terminal(
             "C2",
             "S2",
-            variant="observed",
             hypothesis_id="h2",
             physical_peak_key="obs-02",
         )
@@ -493,7 +466,7 @@ def test_source_strata_use_only_selected_samples_actual_cells(tmp_path):
         ],
     )
     full = tmp_path / "full.html"
-    generate_report(report, SelectionRequest(), full)
+    generate_report(report, ALL_SAMPLES, full)
     assert read_report_payload(full)["items"][0]["stratum"] == "null"
     full_samples = {
         s["sample_id"]: s for s in read_report_payload(full)["items"][0]["samples"]
@@ -501,7 +474,9 @@ def test_source_strata_use_only_selected_samples_actual_cells(tmp_path):
     assert full_samples["S1"]["quantitative_value"] == 1000.0
     assert full_samples["S2"]["quantitative_value"] is None
     scoped = tmp_path / "scope.html"
-    generate_report(report, SelectionRequest(sample_ids=("S1",)), scoped)
+    generate_report(
+        report, SelectionRequest(strategy="query", sample_ids=("S1",)), scoped
+    )
     item = read_report_payload(scoped)["items"][0]
     assert item["stratum"] == "rest"
     assert item["samples"][0]["quantitative_value"] == 1000.0
@@ -552,31 +527,18 @@ def test_candidate_presentation_ids_preserve_sample_identity(tmp_path):
 
 
 def test_sample_without_a_cell_keeps_evidence_but_has_no_origin(tmp_path):
-    def assessment(writer):
-        writer.add_assessment(
-            {
-                "sample_key": "S1",
-                "method_subject_id": "M1",
-                "detector_invocation_id": "untargeted-cid-nl-real-data:local_minimum",
-                "method_result": "SUPPORT",
-            },
-            candidate_physical_peak_keys=("obs-01",),
-        )
-
     report, _, _ = create_inspector_report(
         tmp_path,
         candidate={"method_subject_id": "M1", "neutral_loss_tag": "dR"},
         cells=[],
-        extend=assessment,
     )
 
     output = tmp_path / "recovery-origin.html"
-    generate_report(report, SelectionRequest(), output)
+    generate_report(report, ALL_SAMPLES, output)
     item = read_report_payload(output)["items"][0]
 
     assert item["review_summary"]["origin_kinds"] == ["unavailable"]
     origin = item["samples"][0]["support_origin"]
-    assert len(origin.pop("method_refs")) == 1
     assert origin == {
         "kind": "unavailable",
         "label": "來源未記錄",
@@ -586,15 +548,7 @@ def test_sample_without_a_cell_keeps_evidence_but_has_no_origin(tmp_path):
 
 def test_recovery_origin_survives_zero_terminal_final_cell_binding(tmp_path):
     def backfill_recovery(writer):
-        writer.add_assessment(
-            {
-                "sample_key": "S1",
-                "method_subject_id": "M1",
-                "detector_invocation_id": "untargeted-cid-nl-backfill",
-                "method_result": "SUPPORT",
-            },
-            candidate_physical_peak_keys=("obs-01",),
-        )
+        writer.add_backfill_support("S1", "M1", ("obs-01",))
 
     report, _, _ = create_inspector_report(
         tmp_path,
@@ -618,7 +572,7 @@ def test_recovery_origin_survives_zero_terminal_final_cell_binding(tmp_path):
     )
 
     output = tmp_path / "zero-terminal-recovery.html"
-    generate_report(report, SelectionRequest(), output)
+    generate_report(report, ALL_SAMPLES, output)
     item = read_report_payload(output)["items"][0]
 
     assert item["witnesses"][0]["observation_id"] is None
@@ -635,21 +589,21 @@ def test_recovery_origin_survives_zero_terminal_final_cell_binding(tmp_path):
 def test_obsolete_istd_display_calibration_requires_rerun_alignment(tmp_path):
     report, _, _ = create_inspector_report(tmp_path)
     with sqlite3.connect(report) as connection:
-        summary = json.loads(
-            connection.execute("SELECT payload FROM run").fetchone()[0]
+        connection.execute("ALTER TABLE run DROP COLUMN sample_rt_calibration")
+        connection.execute("ALTER TABLE run ADD COLUMN known_istd_reference TEXT")
+    with pytest.raises(InspectorError, match="重新執行 Alignment") as caught:
+        generate_report(
+            report,
+            ALL_SAMPLES,
+            tmp_path / "invalid.html",
         )
-        summary.pop("sample_rt_calibration")
-        summary["known_istd_reference"] = {"calibration": {"samples": []}}
-        connection.execute("UPDATE run SET payload=?", (json.dumps(summary),))
-    with pytest.raises(InspectorError, match="rerun Alignment") as caught:
-        generate_report(report, SelectionRequest(), tmp_path / "invalid.html")
     assert caught.value.code == 4
 
 
 def test_saved_cell_is_answered_on_its_sample_without_internal_records(tmp_path):
     report, _, _ = create_inspector_report(tmp_path)
     output = tmp_path / "readable.html"
-    generate_report(report, SelectionRequest(), output)
+    generate_report(report, ALL_SAMPLES, output)
     item = read_report_payload(output)["items"][0]
     assert item["details"]["readable_records"] == []
     sample = item["samples"][0]
@@ -670,7 +624,7 @@ def test_sample_answers_keep_null_zero_and_unknown_distinct(
     )
 
     output = tmp_path / "null-zero.html"
-    generate_report(report, SelectionRequest(), output)
+    generate_report(report, ALL_SAMPLES, output)
     item = read_report_payload(output)["items"][0]
     samples = {sample["sample_id"]: sample for sample in item["samples"]}
     assert samples["S1"]["quantitative_value"] is None
@@ -689,13 +643,11 @@ def test_sample_answers_keep_null_zero_and_unknown_distinct(
 
 def test_excluded_candidate_exposes_exact_exclusion_without_curve(tmp_path):
     def excluded_candidates(writer):
-        writer.add_method_subject({"method_subject_id": "M1"})
         for candidate_id in ("C2", "C3"):
             writer.add_candidate(
                 candidate_id,
                 "S2",
                 precursor_mz=510.0,
-                peak_status="doubly_charged",
                 method_subject_id="M1",
                 neutral_loss_tag="dR",
             )
@@ -706,7 +658,7 @@ def test_excluded_candidate_exposes_exact_exclusion_without_curve(tmp_path):
     report, _, _ = create_inspector_report(tmp_path, extend=excluded_candidates)
 
     output = tmp_path / "excluded-candidate.html"
-    generate_report(report, SelectionRequest(), output)
+    generate_report(report, ALL_SAMPLES, output)
     items = read_report_payload(output)["items"]
     candidates = {
         item["witnesses"][0]["candidate_id"]: item
@@ -736,18 +688,16 @@ def test_excluded_candidate_exposes_exact_exclusion_without_curve(tmp_path):
 
 
 def test_readable_numeric_formatting_keeps_scientific_payload_precision(tmp_path):
-    precursor_mz = 307.1023254394531
     area = 28578.925063705414
 
     report, _, _ = create_inspector_report(
         tmp_path,
         candidate={"method_subject_id": "M1", "neutral_loss_tag": "dR"},
-        method_subject={"precursor_mz": precursor_mz},
         base_cell={"value": area},
     )
 
     output = tmp_path / "formatted-values.html"
-    generate_report(report, SelectionRequest(), output)
+    generate_report(report, ALL_SAMPLES, output)
     item = read_report_payload(output)["items"][0]
     assert item["samples"][0]["quantitative_value"] == area
 
@@ -779,13 +729,12 @@ def test_source_labels_explain_recorded_group_and_sample_outcome(
     report, _, _ = create_inspector_report(
         tmp_path,
         candidate={"method_subject_id": "M1", "neutral_loss_tag": "dR"},
-        method_subject={"neutral_loss_da": 116.0474},
         group={"disposition": state},
         cells=cells,
         extend=lambda writer: writer.set_row_destination("G1", destination),
     )
     output = tmp_path / "labels.html"
-    generate_report(report, SelectionRequest(), output)
+    generate_report(report, ALL_SAMPLES, output)
     item = read_report_payload(output)["items"][0]
     assert len(item["samples"]) == sample_count
     assert ("已建立" if state == "established" else "暫定") in item["title"]
@@ -1123,27 +1072,24 @@ def test_target_role_rejects_portable_curve_bundles(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "old_schema", ["alignment_explanation", "alignment_explanation_review"]
+    "old_run",
+    [
+        "CREATE TABLE metadata (key TEXT PRIMARY KEY, payload TEXT)",
+        "CREATE TABLE run (payload TEXT NOT NULL)",
+    ],
+    ids=["metadata-table", "payload-run"],
 )
-def test_old_explanation_requires_rerun(tmp_path: Path, old_schema: str) -> None:
+def test_old_explanation_requires_rerun(tmp_path: Path, old_run: str) -> None:
     path, _matrix, _digest = create_inspector_report(tmp_path)
     with sqlite3.connect(path) as connection:
-        summary = json.loads(
-            connection.execute("SELECT payload FROM run").fetchone()[0]
-        )
-        summary["schema_version"] = old_schema
-        summary["query_index_version"] = 2
         connection.execute("DROP TABLE run")
-        connection.execute("CREATE TABLE metadata (key TEXT PRIMARY KEY, payload TEXT)")
-        connection.execute(
-            "INSERT INTO metadata VALUES ('summary', ?)", (json.dumps(summary),)
-        )
-        connection.execute(
-            "ALTER TABLE samples RENAME COLUMN sample_key "
-            "TO canonical_sample_identity_id"
-        )
+        connection.execute(old_run)
     with pytest.raises(InspectorError, match="重新執行 Alignment") as error:
-        generate_report(path, SelectionRequest(), tmp_path / "review.html")
+        generate_report(
+            path,
+            ALL_SAMPLES,
+            tmp_path / "review.html",
+        )
     assert error.value.code == 4
     assert not (tmp_path / "review.html").exists()
 

@@ -15,7 +15,6 @@ from pathlib import Path
 from typing import Any
 
 from xic_extractor.alignment_explanation.query import (
-    ScopedReviewFacts,
     open_review_query,
 )
 from xic_extractor.alignment_explanation.reader import (
@@ -26,22 +25,16 @@ from xic_extractor.alignment_explanation.reader import (
     read_review_evidence,
 )
 from xic_extractor.alignment_explanation.review import (
-    assessment_attention,
     cell_attention,
     group_attention,
 )
+from xic_inspector.errors import InspectorError
 from xic_inspector.selection.canonical import (
     CanonicalItem,
     Witness,
     build_canonical_ref,
-    serialize_canonical_ref,
 )
 from xic_inspector.selection.query import filter_by_query
-from xic_inspector.selection.sampler import (
-    review_case,
-    review_case_order,
-    sampling_rank,
-)
 from xic_inspector.selection.strata import classify_scoped_stratum
 from xic_inspector.sources import cid_nl_presentation as presentation
 from xic_inspector.sources.untargeted_overview import (
@@ -53,10 +46,14 @@ CardRef = str | tuple[str, str]
 
 
 def read_summary(path: str | Path) -> dict[str, Any]:
-    """Read compact metadata without retrieving curve payloads."""
+    """Read compact metadata without retrieving curve payloads.
+
+    Recorded witnesses carry their RT, so RT selection needs no plotted curve.
+    """
     return {
         **read_alignment_explanation(path),
         "plot_evidence_capability": "metadata_only",
+        "selection_evidence_capability": "recorded_decisions",
     }
 
 
@@ -111,24 +108,11 @@ def build_item_evidence(
     keys = set(keys)
     scoped = sorted(key for key in keys if key[1] in scope)
     group = evidence.groups.get(gid) if gid is not None else None
-    subjects: Linked = {}
-    assessments: Linked = {}
-    initial: Linked = {}
     groups: dict[str, set[CandidateKey]] = {}
-
-    def link(found: Linked, ref: str, facts: dict[str, Any], key) -> None:
-        found.setdefault(ref, (facts, set()))[1].add(key)
-
     for key in scoped:
-        candidate = evidence.candidates[key]
-        link(subjects, candidate.method_subject_id, candidate.method_subject, key)
-        for ref, assessment in candidate.assessments:
-            link(assessments, ref, assessment, key)
-        for ref in candidate.groups:
+        for ref in evidence.candidates[key].groups:
             if evidence.groups[ref].feature_id in (None, gid):
                 groups.setdefault(ref, set()).add(key)
-        for ref in candidate.initial_groups:
-            link(initial, ref, evidence.initial_groups[ref], key)
     excluded_keys = [key for key in scoped if evidence.candidates[key].exclusion]
     cells = [
         {**cell, "quantitative_value": cell["value"]}
@@ -143,24 +127,11 @@ def build_item_evidence(
         triggers.append({"scope": "group", "ref": gid, "reason": group.disposition})
     for sid, cell in cells_by_sample.items():
         reason = cell_attention(
-            cell["variant"],
-            cell["value"],
-            any(risk.get("risk_flags") for risk in cell["membership_risks"]),
+            cell["variant"], cell["value"], bool(cell["risk_flags"])
         )
         if reason:
             triggers.append(
                 _trigger((identifier, sid), reason, {sid}, cell["reason_codes"])
-            )
-    for ref, (assessment, linked) in sorted(assessments.items()):
-        reason = assessment_attention(assessment["method_result"])
-        if reason:
-            triggers.append(
-                _trigger(
-                    ref,
-                    reason,
-                    {sid for _, sid in linked},
-                    assessment["reason_codes"],
-                )
             )
     excluded = {sid for _, sid in excluded_keys}
     stratum = classify_scoped_stratum(
@@ -184,18 +155,8 @@ def build_item_evidence(
         for sid in sample_ids
     }
     origins = {
-        sid: _support_origin(
-            sid,
-            support_observations[sid],
-            cells_by_sample.get(sid),
-            assessments,
-        )
+        sid: _support_origin(support_observations[sid], cells_by_sample.get(sid))
         for sid in sample_ids
-    }
-    initial_member_ids = {
-        member["subject_id"]
-        for record, _ in initial.values()
-        for member in record.get("member_subjects", [])
     }
     review_summary = {
         "observed_sample_count": len(
@@ -203,10 +164,6 @@ def build_item_evidence(
         ),
         "scope_sample_count": len(sample_ids),
         "origin_kinds": sorted({origin["kind"] for origin in origins.values()}),
-        "initial_member_count": (
-            len(initial_member_ids) if initial_member_ids else len(keys)
-        ),
-        "final_member_count": len(members) if group is not None else len(keys),
     }
     item = CanonicalItem(
         kind=kind,  # type: ignore[arg-type]
@@ -243,9 +200,12 @@ def build_item_evidence(
         losses=tuple(
             sorted(
                 {
-                    facts["neutral_loss_da"]
-                    for facts, _ in subjects.values()
-                    if isinstance(facts["neutral_loss_da"], (int, float))
+                    loss
+                    for key in scoped
+                    if isinstance(
+                        loss := evidence.candidates[key].fields["neutral_loss_da"],
+                        (int, float),
+                    )
                 }
             )
         ),
@@ -328,45 +288,15 @@ def _support_observation_refs(sample_id, members, witnesses, cell):
     return sorted(refs)
 
 
-def _support_origin(sample_id, observation_refs, cell, assessments):
+def _support_origin(observation_refs, cell):
     """Read the cell owner; without a cell, show evidence but no origin."""
-    if cell is not None:
-        kind = cell["support_origin"]
-        return {
-            "kind": kind if kind in ("backfilled", "detected") else "unavailable",
-            "label": presentation.support_origin_label(
-                kind if kind in ("backfilled", "detected") else "unavailable"
-            ),
-            "method_refs": [],
-            "observation_refs": observation_refs,
-        }
-    observation_set = set(observation_refs)
-    methods = [
-        (ref, facts)
-        for ref, (facts, _) in assessments.items()
-        if facts["sample_key"] == sample_id
-        and facts["method_result"] == "SUPPORT"
-        and observation_set.intersection(facts["candidate_physical_peak_keys"])
-    ]
-    kind = "unavailable"
+    kind = cell["support_origin"] if cell is not None else "unavailable"
+    kind = kind if kind in ("backfilled", "detected") else "unavailable"
     return {
         "kind": kind,
         "label": presentation.support_origin_label(kind),
-        "method_refs": sorted(ref for ref, _ in methods),
         "observation_refs": observation_refs,
     }
-
-
-def _review_order(kind: str, facts: ScopedReviewFacts) -> tuple[int, bool, bool]:
-    stratum = classify_scoped_stratum(
-        is_attention=facts.attention,
-        is_excluded=facts.excluded,
-        has_null_cell=facts.nulls,
-        has_zero_cell=facts.zeros,
-    )
-    case = review_case(kind, stratum, facts.observed, facts.present, facts.origins)
-    coverage, origin, status = review_case_order(case)
-    return coverage * 20 + origin * 5 + status, status == 0, kind == "candidate"
 
 
 class CidNlSource:
@@ -442,57 +372,46 @@ class CidNlSource:
             rt_max=request.rt_max,
         )
         review_scope = request.review_scope
+        if request.strategy != "query":
+            raise InspectorError(
+                2, "Alignment evidence is reviewed with the query strategy"
+            )
         with open_review_query(self.path, self.summary) as query:
-            if request.strategy == "query":
-                ordered = None
-                if review_scope != "all":
-                    overview, rows = review_overview(
-                        self.path, self.summary, request.curation_removed_ids
-                    )
-                    headers = query.item_headers()
-                    overview["candidate_count"] = sum(
-                        kind == "candidate" for _, kind, _ in headers
-                    )
-                    self.summary["overview"] = overview
-                    ordered = ordered_review_items(headers, rows, review_scope)
-                if request.nearest_mz is not None:
-                    (
-                        ids,
-                        run_total,
-                        eligible,
-                        matched,
-                        missing,
-                        self.missing_mz_count,
-                        distances,
-                    ) = query.nearest_page(
-                        scope,
-                        mz=request.nearest_mz,
-                        offset=request.offset,
-                        limit=request.limit,
-                        ordered_item_ids=ordered,
-                        **criteria,
-                    )
-                else:
-                    ids, run_total, eligible, matched, missing = query.page(
-                        scope,
-                        **criteria,
-                        offset=request.offset,
-                        limit=request.limit,
-                        ordered_item_ids=ordered,
-                    )
-            else:
-
-                def rank(sort_key):
-                    ref = json.loads(sort_key)
-                    full = serialize_canonical_ref([ref[0], self.attempt_id, *ref[1:]])
-                    return sampling_rank(full, request.seed)
-
-                ids, run_total, eligible, matched, missing = query.review_page(
+            ordered = None
+            if review_scope != "all":
+                overview, rows = review_overview(
+                    self.path, self.summary, request.curation_removed_ids
+                )
+                headers = query.item_headers()
+                overview["candidate_count"] = sum(
+                    kind == "candidate" for _, kind, _ in headers
+                )
+                self.summary["overview"] = overview
+                ordered = ordered_review_items(headers, rows, review_scope)
+            if request.nearest_mz is not None:
+                (
+                    ids,
+                    run_total,
+                    eligible,
+                    matched,
+                    missing,
+                    self.missing_mz_count,
+                    distances,
+                ) = query.nearest_page(
                     scope,
-                    classify=_review_order,
-                    rank=rank,
-                    attention_only=request.strategy == "attention",
+                    mz=request.nearest_mz,
+                    offset=request.offset,
                     limit=request.limit,
+                    ordered_item_ids=ordered,
+                    **criteria,
+                )
+            else:
+                ids, run_total, eligible, matched, missing = query.page(
+                    scope,
+                    **criteria,
+                    offset=request.offset,
+                    limit=request.limit,
+                    ordered_item_ids=ordered,
                 )
 
             def item(item_id):
@@ -528,11 +447,10 @@ class CidNlSource:
             selected = []
             for item_id in ids:
                 primary = item(item_id)
-                if request.strategy == "query":
-                    with_matches, _, _ = filter_by_query([primary], **criteria, limit=1)
-                    primary = replace(
-                        primary, matched_witnesses=with_matches[0].matched_witnesses
-                    )
+                with_matches, _, _ = filter_by_query([primary], **criteria, limit=1)
+                primary = replace(
+                    primary, matched_witnesses=with_matches[0].matched_witnesses
+                )
                 selected.append(primary)
                 if request.nearest_mz is not None:
                     self.mz_distances[primary.serialized_ref] = distances[item_id]

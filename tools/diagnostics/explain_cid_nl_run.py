@@ -1,6 +1,8 @@
 """Read the diagnostic-only explanation from a completed CID-NL Alignment run.
 
-Returns a compact summary or one candidate's details without reading RAW;
+Returns a compact summary or one candidate's terminal peak, exclusion and
+groups without reading RAW; a candidate's full decision chain is in the replay
+snapshots of a debug-level run.
 ``--curve-bundle`` writes review curves for Inspector. It does not recalculate
 decisions or grant Matrix authority.
 """
@@ -137,7 +139,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.json or args.candidate_id is not None:
         print(json.dumps(result, ensure_ascii=False, indent=2))
     else:
-        print(f"Diagnostic only | {result['completion']}")
+        print("Diagnostic only")
         print(
             f"Candidates: {result['candidate_count']} | "
             f"Matrix rows: {result['matrix_row_count']}"

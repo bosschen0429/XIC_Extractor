@@ -50,7 +50,6 @@ def test_explanation_freezes_final_rt_owner_and_preserves_reference_provenance(
         **explanation_discovery_facts(completed),
         peaks_by_sample=candidates,
         matrix_path=matrix,
-        alignment_config=config,
     )
     summary = read_alignment_explanation(path)
     replay = rt_calibration_from_payload(summary["sample_rt_calibration"])

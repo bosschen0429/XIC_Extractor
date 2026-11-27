@@ -81,9 +81,7 @@ def _group_with_missing_apex_review(
         for (cid, sid), mz, rt in zip(keys, (499.0, 501.0), (7.9, 8.1), strict=True):
             writer.add_peak(sid, cid, (extraction[sid][0], rt, extraction[sid][1]))
             writer.add_candidate(cid, sid, precursor_mz=mz, **discovery(cid))
-            writer.add_terminal(
-                cid, sid, variant="observed", hypothesis_id=cid, physical_peak_key=cid
-            )
+            writer.add_terminal(cid, sid, hypothesis_id=cid, physical_peak_key=cid)
         writer.add_final_group(
             "G1",
             feature_id="G1",
@@ -143,7 +141,6 @@ def _group_with_missing_apex_review(
             writer.add_terminal(
                 peak,
                 owner,
-                variant="observed",
                 hypothesis_id=peak,
                 physical_peak_key=peak,
             )
@@ -270,7 +267,6 @@ def _quality_review_report(
             writer.add_terminal(
                 cid,
                 sid,
-                variant="observed",
                 hypothesis_id=f"member-{sid}",
                 physical_peak_key=f"obs-{sid}",
             )
@@ -280,16 +276,10 @@ def _quality_review_report(
             disposition="completed",
             members=members,
         )
-        if member_risks:
-            writer.add_initial_group(
-                disposition="completed",
-                members=members,
-                inference_basis={},
-                member_risks={
-                    f"member-{sid}": risk for sid, risk in member_risks.items()
-                },
-            )
         writer.add_cells("G1", cells)
+        writer.add_member_risks(
+            {(sid, f"member-{sid}"): risk for sid, risk in member_risks.items()}
+        )
         writer.finalize(
             explanation_summary(
                 {

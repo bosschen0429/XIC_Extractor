@@ -41,6 +41,5 @@ def publish_owner_run(tmp_path, monkeypatch, level):
         **explanation_discovery_facts(completed),
         peaks_by_sample=candidates,
         matrix_path=outputs.matrix_tsv,
-        alignment_config=config,
     )
     return output_dir

@@ -132,10 +132,8 @@ Any new selection, search or page cancels a running RAW read and proceeds;
   unselected alternative is not assigned a published feature ID. Internal
   records stay in SQLite. No recorded risk is not a claim of scientific
   acceptance.
-- Older current-format results remain readable with their saved origins;
-  values with no recorded origin use dotted lines, not detect's solid lines.
-  Rerun Alignment to correct missing backfill origins. Review never rewrites
-  them or infers the extraction stage from method evidence.
+- A value with no recorded origin uses dotted lines, not detect's solid lines.
+  Review never infers the extraction stage from method evidence.
 
 ## Reading order
 
@@ -177,18 +175,22 @@ new-read versus saved-answer distinction; the diagnostic export CLI owns RAW
 access. This does not add a Delta Mass Matrix or an analysis form in Workbench.
 
 `alignment_explanation.sqlite` is the shared, method-neutral Alignment
-evidence file. Its content is `diagnostic_only`: it records request/attempt
-provenance, effective configuration, retained candidate/group/cell facts and
-the published Matrix hash. It cannot authorize a writer or prove readiness.
+evidence file for Matrix review, Matrix curation and the records that did not
+enter the Matrix. It records the attempt, the bound Matrix and its hash,
+samples, peaks, candidates with their exclusions, final groups with their
+members, and cells. It cannot authorize a writer or prove readiness.
 
-- The report keeps values, membership and review reasons, and the saved raw
-  curve of each cell with a value. For other samples, request the RAW curve
-  without changing the recorded result.
-- Repeated membership owner facts and compared peer groups are stored once.
-  Readers restore every selected group, alternative partition, score and reason;
-  this is lossless storage, not a reduction in review evidence.
-- Readers reject obsolete layouts instead of upgrading them. Rerun Alignment to
-  produce a current report.
+- The report keeps values, review reasons, risk flags and the saved raw curve of
+  each cell with a value. For other samples, request the RAW curve without
+  changing the recorded result.
+- A cell's recorded pairing competition keeps the peers each alternative would
+  give its peak. Scores, RT estimates, method assessments and the other inputs
+  of a decision are not in the report; a debug-level run's replay snapshots
+  hold them.
+- Which candidates explain a group is a stored relation, written once with the
+  report. Review selects this evidence with the query strategy.
+- The schema text is the format. A file whose schema differs is rejected, not
+  upgraded; rerun Alignment to produce a current report.
 - Explanation publication follows successful Matrix writing. If explanation IO
   fails, the command fails and the Matrix can remain without a report.
 - Aligned-time plots replay the final frozen `SampleRtFrame` calibration, never the bootstrap

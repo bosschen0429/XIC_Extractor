@@ -60,8 +60,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--strategy",
         choices=["sample", "attention", "query"],
-        default="sample",
-        help="Selection strategy: sample (default), attention, or query.",
+        help=(
+            "Selection strategy: sample (default for workbooks and JSON "
+            "bundles), attention, or query. Alignment evidence is reviewed "
+            "with query only; without this option it opens the Matrix rows."
+        ),
     )
     parser.add_argument(
         "--limit",
@@ -151,8 +154,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     output = args.output or report.parent / DEFAULT_OUTPUT_NAME
 
     try:
+        alignment = report.suffix.lower() not in (".xlsx", ".json")
         selection = SelectionRequest(
-            strategy=args.strategy,
+            strategy=args.strategy or ("query" if alignment else "sample"),
+            review_scope="matrix" if alignment and args.strategy is None else "all",
             limit=args.limit,
             seed=args.seed,
             sample_ids=tuple(args.sample_ids),

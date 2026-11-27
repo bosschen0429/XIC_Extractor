@@ -54,9 +54,7 @@ def blank_reason(cell: dict[str, Any]) -> str | None:
 
 def cell_risks(cell: dict[str, Any]) -> list[str]:
     """Recorded interpretation risks; ordinary MS1-only backfill is not one."""
-    flags = {
-        flag for risk in cell.get("membership_risks", ()) for flag in risk["risk_flags"]
-    }
+    flags = set(cell.get("risk_flags", ()))
     labels = []
     if flags & {"low_rt_support", "backfill_low_localization_confidence"}:
         labels.append("RT 支持弱")
@@ -72,41 +70,6 @@ def cell_risks(cell: dict[str, Any]) -> list[str]:
     ):
         labels.append("低 SNR")
     return labels
-
-
-def competition_groups(cell: dict[str, Any]) -> list[list[list[Any]]]:
-    """The peers each recorded alternative would give this cell's peak.
-
-    The peak is its full owner key (sample, measured m/z, native apex RT), so
-    another peak of the same sample is not mistaken for it. An empty entry
-    means the alternative leaves the peak out of this group. Alternatives are
-    compared configurations, not published features: never invent a feature
-    ID for one that was not selected.
-    """
-    groups: list[list[list[Any]]] = []
-    sid = cell["sample_key"]
-    for risk in cell.get("membership_risks", ()):
-        if not {"accepted_competition", "backfill_competition"}.intersection(
-            risk["risk_flags"]
-        ):
-            continue
-        selected = risk["selected_owners"]
-        own = [owner for owner in selected if owner[0] == sid]
-        if len(own) != 1:
-            continue
-        peak = own[0]
-        alternative = risk.get("alternative_partition")
-        for partition in [
-            *([alternative] if alternative is not None else []),
-            *risk.get("equivalent_alternatives", []),
-        ]:
-            group = next((group for group in partition if peak in group), [peak])
-            if sorted(group) == sorted(selected):
-                continue
-            peers = [owner for owner in group if owner != peak]
-            if peers not in groups:
-                groups.append(peers)
-    return groups
 
 
 def competition_label(peers: list[list[Any]], sample_labels: Mapping[str, str]) -> str:
@@ -220,7 +183,7 @@ def build_sample(
             *(
                 competition_label(peers, sample_labels)
                 for cell in cells
-                for peers in competition_groups(cell)
+                for peers in cell.get("competition", ())
             ),
         ],
         "decision_refs": decision_refs,

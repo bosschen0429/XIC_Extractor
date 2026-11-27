@@ -72,14 +72,10 @@ def test_sqlite_diagnostic_roundtrip(tmp_path: Path):
     assert EXPLANATION_ARTIFACT_NAME == "alignment_explanation.sqlite"
 
     with ExplanationReportWriter(db_path) as writer:
-        writer.finalize(
-            explanation_summary(
-                {"processing_algorithm_version": "discovery"},
-            )
-        )
+        writer.finalize(explanation_summary({"processing_attempt_id": "discovery"}))
 
     rows_generic = read_alignment_explanation(db_path)
     rows_cid_nl = read_alignment_explanation(db_path)
     assert rows_generic == rows_cid_nl
-    assert rows_generic["diagnostic_only"] is True
-    assert rows_generic["processing_algorithm_version"] == "discovery"
+    assert rows_generic["processing_attempt_id"] == "discovery"
+    assert rows_generic["candidate_count"] == 0
