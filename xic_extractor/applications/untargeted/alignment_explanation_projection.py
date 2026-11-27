@@ -817,7 +817,6 @@ def prepare_batch_alignment_explanation(
                         merged[args[0]] = merge_into[offset]
                         sink.extend_final_group(
                             merge_into[offset],
-                            disposition=kwargs["disposition"],
                             members=kwargs["members"],
                         )
                     else:

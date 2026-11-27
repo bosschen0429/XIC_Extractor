@@ -335,6 +335,75 @@ def project_untarget_child_rows(
     return tuple(projected)
 
 
+class _AlignmentRowWriter:
+    """Number and publish the finalized rows of either batch layout."""
+
+    def __init__(
+        self,
+        stack: ExitStack,
+        paths: Mapping[str, Path],
+        headers: Mapping[str, tuple[str, ...]],
+    ) -> None:
+        self.group_count = 0
+        self._matrix_row_count = 0
+        self._source_candidate_owners: dict[str, str] = {}
+        self._seen_physical_peaks: set[tuple[str, str]] = set()
+        self._write_rows: dict[str, Callable[[Iterable[str]], object]] = {}
+        for name, path in paths.items():
+            path.parent.mkdir(parents=True, exist_ok=True)
+            handle = stack.enter_context(
+                path.open("w", newline="", encoding="utf-8", buffering=1024 * 1024)
+            )
+            writer = csv.writer(handle, delimiter="\t", lineterminator="\n")
+            writer.writerow([escape_excel_formula(column) for column in headers[name]])
+            self._write_rows[name] = writer.writerow
+
+    def write(
+        self,
+        groups: Sequence[UntargetGroupRows],
+        tables: Iterable[tuple[str, tuple[tuple[str, ...], ...]]],
+        *,
+        review_suffix: tuple[str, ...] = (),
+    ) -> str:
+        self.group_count += 1
+        feature_id = format_value(feature_id_label(self.group_count))
+        peaks = {peak for group in groups for peak in group.physical_peaks}
+        duplicates = self._seen_physical_peaks.intersection(peaks)
+        if duplicates:
+            raise ValueError(
+                "writer projection reused physical observations across rows: "
+                + ", ".join(sorted(key for key, _digest in duplicates))
+            )
+        self._seen_physical_peaks.update(peaks)
+        matrix_row_index = ""
+        if groups[0].destination == "matrix":
+            for group in groups:
+                for candidate_id in group.source_candidate_ids:
+                    previous = self._source_candidate_owners.setdefault(
+                        candidate_id, feature_id
+                    )
+                    if previous != feature_id:
+                        raise ValueError(
+                            "source peak cannot contribute to multiple product "
+                            f"hypothesis rows: {candidate_id}"
+                        )
+            self._matrix_row_count += 1
+            matrix_row_index = format_value(self._matrix_row_count)
+
+        for name, rows in tables:
+            write_row = self._write_rows.get(name)
+            if write_row is None:
+                continue
+            for row in rows:
+                if name == "matrix":
+                    write_row(row)
+                elif name == "review":
+                    write_row((feature_id, matrix_row_index, *row[2:], *review_suffix))
+                else:
+                    write_row((feature_id, *row[1:]))
+        return feature_id
+
+
 def write_alignment_tsvs(
     paths: Mapping[str, Path],
     completed: FinalizedUntargetBatchApplicationResult,
@@ -364,64 +433,16 @@ def write_projected_alignment_tsvs(
     """
 
     sample_order = untarget_sample_order(canonical_samples)
-    headers = _output_headers(sample_order)
-    source_candidate_owners: dict[str, str] = {}
-    seen_physical_peaks: set[tuple[str, str]] = set()
-    group_count = 0
-    matrix_row_count = 0
     with ExitStack() as stack:
-        writers = {}
-        for name, path in paths.items():
-            path.parent.mkdir(parents=True, exist_ok=True)
-            handle = stack.enter_context(
-                path.open("w", newline="", encoding="utf-8", buffering=1024 * 1024)
-            )
-            writer = csv.writer(handle, delimiter="\t", lineterminator="\n")
-            writer.writerow([escape_excel_formula(column) for column in headers[name]])
-            writers[name] = writer
-
+        writer = _AlignmentRowWriter(stack, paths, _output_headers(sample_order))
         for child in child_outputs:
             child = cast(UntargetChildOutputs, child)
-            first_group = group_count
+            first_group = writer.group_count
             for group in child.groups:
-                group_count += 1
-                feature_id = format_value(feature_id_label(group_count))
-                duplicate_peaks = seen_physical_peaks.intersection(group.physical_peaks)
-                if duplicate_peaks:
-                    raise ValueError(
-                        "writer projection reused physical observations across rows: "
-                        + ", ".join(sorted(key for key, _digest in duplicate_peaks))
-                    )
-                seen_physical_peaks.update(group.physical_peaks)
-                matrix_row_index = ""
-                if group.destination == "matrix":
-                    for candidate_id in group.source_candidate_ids:
-                        previous = source_candidate_owners.setdefault(
-                            candidate_id, feature_id
-                        )
-                        if previous != feature_id:
-                            raise ValueError(
-                                "source peak cannot contribute to multiple product "
-                                f"hypothesis rows: {candidate_id}"
-                            )
-                    matrix_row_count += 1
-                    matrix_row_index = format_value(matrix_row_count)
-                for name, rows in group.formatted_rows(sample_order).items():
-                    row_writer = writers.get(name)
-                    if row_writer is None:
-                        continue
-                    for row in rows:
-                        if name == "matrix":
-                            row_writer.writerow(row)
-                        elif name == "review":
-                            row_writer.writerow(
-                                (feature_id, matrix_row_index, *row[2:])
-                            )
-                        else:
-                            row_writer.writerow((feature_id, *row[1:]))
+                writer.write((group,), group.formatted_rows(sample_order).items())
             if consume_child is not None:
                 consume_child(child, first_group)
-    return group_count
+    return writer.group_count
 
 
 def _membership_risk_flags(
@@ -756,24 +777,12 @@ def write_batch_alignment_tsvs(
                         (source.batch_id, child_index, offset),
                     )
 
-    source_candidate_owners: dict[str, str] = {}
-    seen_physical_peaks: set[tuple[str, str]] = set()
     written_partners: set[tuple[str, str]] = set()
-    group_count = 0
-    matrix_row_count = 0
     ordered_sources = sorted(
         sources, key=lambda item: (item.batch_id != reference_batch, item.batch_id)
     )
     with ExitStack() as stack:
-        writers = {}
-        for name, path in paths.items():
-            path.parent.mkdir(parents=True, exist_ok=True)
-            handle = stack.enter_context(
-                path.open("w", newline="", encoding="utf-8", buffering=1024 * 1024)
-            )
-            writer = csv.writer(handle, delimiter="\t", lineterminator="\n")
-            writer.writerow([escape_excel_formula(column) for column in headers[name]])
-            writers[name] = writer
+        writer = _AlignmentRowWriter(stack, paths, headers)
         for source in ordered_sources:
             for child_index, child in enumerate(source.child_outputs):
                 groups = cast(UntargetChildOutputs, child).groups
@@ -790,31 +799,6 @@ def write_batch_alignment_tsvs(
                             parts.append((partner[0], partner_group))
                             places.append(partner_place)
                             written_partners.add(partner)
-                    group_count += 1
-                    feature_id = format_value(feature_id_label(group_count))
-                    peaks = {peak for _, part in parts for peak in part.physical_peaks}
-                    duplicate_peaks = seen_physical_peaks.intersection(peaks)
-                    if duplicate_peaks:
-                        raise ValueError(
-                            "writer projection reused physical observations across "
-                            "rows: "
-                            + ", ".join(sorted(key for key, _ in duplicate_peaks))
-                        )
-                    seen_physical_peaks.update(peaks)
-                    matrix_row_index = ""
-                    if group.destination == "matrix":
-                        for _, part in parts:
-                            for candidate_id in part.source_candidate_ids:
-                                previous = source_candidate_owners.setdefault(
-                                    candidate_id, feature_id
-                                )
-                                if previous != feature_id:
-                                    raise ValueError(
-                                        "source peak cannot contribute to multiple "
-                                        f"product hypothesis rows: {candidate_id}"
-                                    )
-                        matrix_row_count += 1
-                        matrix_row_index = format_value(matrix_row_count)
                     mapped_batch = (
                         source.batch_id if source.batch_id != reference_batch else None
                     )
@@ -822,29 +806,32 @@ def write_batch_alignment_tsvs(
                         (orders[batch_id], part.formatted_rows(orders[batch_id]))
                         for batch_id, part in parts
                     ]
-                    for name, row_writer in writers.items():
-                        rows = _merge_batch_rows(
-                            name,
-                            [(order, rows.get(name, ())) for order, rows in batch_rows],
-                            global_order,
-                            headers[name],
-                            partial(_reference_rt_text, to_reference_rt, mapped_batch),
-                        )
-                        for row in rows:
-                            if name == "matrix":
-                                row_writer.writerow(row)
-                            elif name == "review":
-                                row_writer.writerow(
-                                    (
-                                        feature_id,
-                                        matrix_row_index,
-                                        *row[2:],
-                                        ";".join(batch_id for batch_id, _ in parts),
-                                        states.get(member, "") if key else "",
-                                    )
-                                )
-                            else:
-                                row_writer.writerow((feature_id, *row[1:]))
+                    reference_rt = partial(
+                        _reference_rt_text, to_reference_rt, mapped_batch
+                    )
+                    feature_id = writer.write(
+                        [part for _, part in parts],
+                        (
+                            (
+                                name,
+                                _merge_batch_rows(
+                                    name,
+                                    [
+                                        (order, rows.get(name, ()))
+                                        for order, rows in batch_rows
+                                    ],
+                                    global_order,
+                                    headers[name],
+                                    reference_rt,
+                                ),
+                            )
+                            for name in paths
+                        ),
+                        review_suffix=(
+                            ";".join(batch_id for batch_id, _ in parts),
+                            states.get(member, "") if key else "",
+                        ),
+                    )
                     if consume_row is not None:
                         consume_row(feature_id, places)
     if written_partners != paired_elsewhere:
@@ -852,7 +839,7 @@ def write_batch_alignment_tsvs(
             "paired features without a written reference row: "
             + ", ".join(sorted(key for _, key in paired_elsewhere - written_partners))
         )
-    return group_count
+    return writer.group_count
 
 
 def _reference_rt_text(
