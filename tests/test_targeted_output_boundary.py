@@ -5,6 +5,7 @@ from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from dataclasses import replace
 from multiprocessing import get_context
 from pathlib import Path
+from statistics import median
 from threading import Barrier
 from typing import Any
 
@@ -36,11 +37,11 @@ from xic_extractor.configuration.execution_profile import in_process_execution
 from xic_extractor.configuration.signal_processing_profile import (
     resolve_signal_processing_profile,
 )
-from xic_extractor.extraction.result_assembly import reproject_extraction_result
 from xic_extractor.extraction.targeted_inputs import (
     THERMO_RAW_ACQUISITION_FORMAT,
     THERMO_RAW_OBSERVATION_NAMESPACE,
 )
+from xic_extractor.extraction.targeted_product_projection import project_targeted_result
 from xic_extractor.output.excel_pipeline import _run_output_to_long_rows
 from xic_extractor.output.messages import DiagnosticRecord
 from xic_extractor.peak_detection.physical_peak_evaluation import (
@@ -475,19 +476,16 @@ def test_publication_renders_the_finalized_numeric_hypothesis(tmp_path: Path) ->
 
 
 @pytest.mark.parametrize(
-    ("nl_status", "not_counted_reason", "count_no_ms2_as_detected"),
-    [
-        ("NL_FAIL", "cid_nl_method_not_supported", False),
-        ("NO_MS2", "cid_nl_method_not_supported", False),
-        ("NO_MS2", "cid_nl_method_not_supported", True),
-    ],
+    ("nl_status", "count_no_ms2_as_detected"),
+    [("NL_FAIL", False), ("NO_MS2", False), ("NO_MS2", True)],
 )
 def test_service_publishes_finalized_numeric_values_without_counting_detection(
     tmp_path: Path,
     nl_status: str,
-    not_counted_reason: str,
     count_no_ms2_as_detected: bool,
 ) -> None:
+    from xic_workbench.targeted import build_summary
+
     config, target, output = production_case(
         tmp_path,
         sample_names=("SampleA", "SampleB"),
@@ -538,20 +536,15 @@ def test_service_publishes_finalized_numeric_values_without_counting_detection(
                 alignment_source="none",
                 best_product_evidence=None,
             )
-        policy_result = reproject_extraction_result(
-            with_method_universe(
-                replace(extraction, candidate_ms2_evidence=evidence), target
-            ),
-            target=target,
-            sample_name=file_result.sample_name,
+        acquired = with_method_universe(
+            replace(extraction, candidate_ms2_evidence=evidence), target
         )
-        projection = policy_result.targeted_product_projection
-        assert projection is not None
-        assert projection.counted_detection is False
-        assert projection.not_counted_reasons == (not_counted_reason,)
-        assert projection.conflict_reasons == projection.exclusion_reasons == ()
-        assert projection.review_state == "review_required"
-        file_result.results[target.label] = policy_result
+        file_result.results[target.label] = replace(
+            acquired,
+            targeted_product_projection=project_targeted_result(
+                acquired, target=target, sample_name=file_result.sample_name
+            ),
+        )
 
     excel_path = config.output_csv.with_suffix(".xlsx")
     request = build_targeted_application_request(
@@ -571,6 +564,12 @@ def test_service_publishes_finalized_numeric_values_without_counting_detection(
     assert set(decisions) == {"SampleA", "SampleB"}
     assert all(decision.variant == "numeric" for decision in decisions.values())
     assert decisions["SampleB"].value == pytest.approx(decisions["SampleA"].value * 2.5)
+    summary = build_summary([target], execution.active_output, excel_path)
+    (target_summary,) = summary["targets"]
+    assert target_summary["detected"] == 0
+    assert target_summary["median_area"] == pytest.approx(
+        median(decision.value for decision in decisions.values())
+    )
     long_rows = {
         row["SampleName"]: row
         for row in _run_output_to_long_rows(execution.active_output, [target])
@@ -640,7 +639,7 @@ def test_service_publishes_finalized_numeric_values_without_counting_detection(
         assert long_rows[sample_name]["Review State"] == "review_required"
         assert (
             long_rows[sample_name]["Projection Not Counted Reasons"]
-            == not_counted_reason
+            == "cid_nl_method_not_supported"
         )
         assert (
             long_rows[sample_name]["Projection Reason"] == projection.projection_reason
@@ -775,93 +774,6 @@ def test_neutral_loss_disabled_target_publishes_ms1_backfill(
     assert row["NL"] == ""
     assert row["Area"] != "ND"
     assert row["依據"] == "僅 MS1 峰"
-
-
-def test_workbench_summary_consumes_the_finalized_publication_view(
-    tmp_path: Path,
-) -> None:
-    from xic_workbench.targeted import build_summary
-
-    config, target, output = production_case(tmp_path)
-    extraction = output.file_results[0].results[target.label]
-    candidate_evidence = extraction.candidate_ms2_evidence
-    assert candidate_evidence is not None
-    product_evidence = candidate_evidence.best_product_evidence
-    assert product_evidence is not None
-    observed_loss_da = 115.9
-    assert target.neutral_loss_da is not None
-    observed_loss_error_ppm = (
-        abs(observed_loss_da - target.neutral_loss_da)
-        / target.neutral_loss_da
-        * 1_000_000.0
-    )
-    policy_result = reproject_extraction_result(
-        with_method_universe(
-            replace(
-                extraction,
-                candidate_ms2_evidence=replace(
-                    candidate_evidence,
-                    nl_match=False,
-                    nl_status="NL_FAIL",
-                    strict_nl_scan_count=0,
-                    best_loss_ppm=observed_loss_error_ppm,
-                    best_product_evidence=replace(
-                        product_evidence,
-                        product_mz=product_evidence.precursor_mz - observed_loss_da,
-                        observed_loss_da=observed_loss_da,
-                        observed_loss_error_ppm=observed_loss_error_ppm,
-                    ),
-                ),
-            ),
-            target,
-        ),
-        target=target,
-        sample_name="SampleA",
-    )
-    assert policy_result.targeted_product_projection is not None
-    assert policy_result.targeted_product_projection.counted_detection is False
-    assert (
-        "cid_nl_method_not_supported"
-        in policy_result.targeted_product_projection.not_counted_reasons
-    )
-    output.file_results[0].results[target.label] = policy_result
-    request = build_targeted_application_request(
-        config,
-        [target],
-        excel_output_path=config.output_csv.with_suffix(".xlsx"),
-        injection_order={"SampleA": 1},
-    )
-    service = TargetedApplicationService(
-        lambda *_args, **_kwargs: output,
-    )
-
-    execution = service.execute_application(request)
-    final_output = execution.active_output
-    finalized_value = (
-        execution.finalized_results[0].completed_projection.decisions[0].value
-    )
-    final_projection = (
-        final_output.file_results[0].results[target.label].targeted_product_projection
-    )
-    assert final_projection is not None
-    assert final_projection.product_state == "not_counted"
-    assert final_projection.counted_detection is False
-    final_result = final_output.file_results[0].results[target.label]
-    assert final_result.reported_peak_area is not None
-    summary = build_summary(
-        [target],
-        final_output,
-        config.output_csv.with_name("xic_results.xlsx"),
-    )
-
-    assert final_output is not output
-    assert summary["targets"][0]["detected"] == 0
-    assert summary["targets"][0]["median_area"] == finalized_value
-    row = _run_output_to_long_rows(final_output, [target])[0]
-    assert row["Product State"] == "not_counted"
-    assert row["Counted Detection"] == "FALSE"
-    assert row["RT"] == f"{final_result.reported_rt:.4f}"
-    assert row["Area"] == f"{finalized_value:.2f}"
 
 
 def test_collision_leaves_existing_output_and_publishes_nothing_else(
