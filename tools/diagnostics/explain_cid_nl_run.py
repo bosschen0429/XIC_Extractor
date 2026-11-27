@@ -1,7 +1,6 @@
 """Read the diagnostic-only explanation from a completed CID-NL Alignment run.
 
 Returns a compact summary or one candidate's details without reading RAW;
-``--compact-to`` writes compact review from a full report and
 ``--curve-bundle`` writes review curves for Inspector. It does not recalculate
 decisions or grant Matrix authority.
 """
@@ -32,11 +31,6 @@ def main(argv: list[str] | None = None) -> int:
         "--json", action="store_true", help="Emit machine-readable JSON"
     )
     parser.add_argument(
-        "--compact-to",
-        type=Path,
-        help="Write compact review facts from a full report, without RAW or Backfill",
-    )
-    parser.add_argument(
         "--curve-bundle",
         type=Path,
         help=(
@@ -57,8 +51,6 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--curve-padding-min", type=float, default=0.5)
     args = parser.parse_args(argv)
-    if sum(option is not None for option in (args.compact_to, args.curve_bundle)) > 1:
-        parser.error("Choose only one of --compact-to or --curve-bundle")
     if args.group_id is not None and args.curve_bundle is None:
         parser.error("--group-id requires --curve-bundle")
     if args.curve_bundle is not None and args.curve_bundle.exists():
@@ -120,18 +112,6 @@ def main(argv: list[str] | None = None) -> int:
                     + ", ".join(unusable),
                     file=sys.stderr,
                 )
-            return 0
-        if args.compact_to is not None:
-            from xic_extractor.diagnostics.explanation_conversion import (
-                compact_explanation,
-            )
-
-            result = compact_explanation(
-                Path(args.report),
-                args.compact_to,
-                progress=lambda message: print(message, file=sys.stderr, flush=True),
-            )
-            print(json.dumps(result, indent=2))
             return 0
         if args.candidate_id is None and not args.json:
             result, examples = read_summary_with_examples(Path(args.report))

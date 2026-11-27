@@ -1,7 +1,7 @@
 """Explanation metadata defaults and opt-in completed Alignment scenarios."""
 
 
-def explanation_summary(values, *, review_only=False):
+def explanation_summary(values):
     """Complete persisted metadata for small diagnostic writer fixtures."""
     summary = {
         "scientific_input_schema_version": "fixture",
@@ -15,10 +15,7 @@ def explanation_summary(values, *, review_only=False):
         "matrix_sha256": "",
         "alignment_config": {},
         "neutral_loss_by_tag": {},
-        "retention": "review" if review_only else "full_audit",
         "selection_evidence_capability": "recorded_decisions",
-        "curve_retention": "none",
-        "curve_mz_ranges": [],
         "audit_availability": {},
         "sample_rt_calibration": None,
         "injection_order": {},

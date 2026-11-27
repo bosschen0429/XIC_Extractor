@@ -20,7 +20,6 @@ from tests.untargeted_partition_fixtures import children_of
 from xic_extractor.alignment.cell_decision.owner import CellOrigin
 from xic_extractor.alignment_explanation.errors import ExplanationError
 from xic_extractor.alignment_explanation.reader import (
-    read_alignment_curves,
     read_alignment_explanation,
     read_explanation_metadata,
     read_review_evidence,
@@ -32,7 +31,6 @@ from xic_extractor.alignment_explanation.writer import (
 from xic_extractor.applications.untargeted.alignment_explanation_projection import (
     write_alignment_explanation,
 )
-from xic_extractor.diagnostics.explanation_conversion import compact_explanation
 from xic_extractor.injection_timeline import InjectionSequence
 from xic_inspector.api import (
     InspectorError,
@@ -158,7 +156,7 @@ def test_review_selection_keeps_witness_scope_and_counts(
     matrix = tmp_path / "matrix.tsv"
     matrix.write_text("matrix fixture", encoding="utf-8")
     report = tmp_path / "review.sqlite"
-    with ExplanationReportWriter(report, review_only=True) as writer:
+    with ExplanationReportWriter(report) as writer:
         writer.declare_samples(
             [{"sample_key": s, "sample_stem": s} for s in ("S1", "S2")]
         )
@@ -217,7 +215,6 @@ def test_review_selection_keeps_witness_scope_and_counts(
                     "matrix_sha256": hashlib.sha256(matrix.read_bytes()).hexdigest(),
                     "selection_evidence_capability": "recorded_decisions",
                 },
-                review_only=writer.review_only,
             )
         )
     request = SelectionRequest(**{"strategy": "query", **criteria})
@@ -273,7 +270,6 @@ def test_default_review_keeps_values_and_query_without_curves(
         for row in _cells(report).values()
     )
     assert actual == expected
-    assert read_alignment_curves(report) == []
     assert all("observation" not in row for row in _cells(report).values())
     result = generate_report(
         report,
@@ -292,86 +288,6 @@ def test_default_review_keeps_values_and_query_without_curves(
             output=tmp_path / "invalid.html",
         )
     assert exc.value.code == 4
-
-
-def test_selected_curves_are_explicit_and_other_ranges_stay_small(
-    tmp_path, monkeypatch
-):
-    completed, candidates, matrix, config = run_alignment_fixture(
-        tmp_path, monkeypatch, "positive"
-    )
-    arguments = dict(
-        completed=completed,
-        children=children_of(completed.application_result),
-        **explanation_discovery_facts(completed),
-        peaks_by_sample=candidates,
-        matrix_path=matrix,
-        alignment_config=config,
-    )
-    selected = write_alignment_explanation(
-        tmp_path / "selected.sqlite", curve_mz_ranges=((499, 501),), **arguments
-    )
-    assert read_alignment_curves(selected)
-    assert read_alignment_explanation(selected)["curve_retention"] == "selected"
-    other = write_alignment_explanation(
-        tmp_path / "other.sqlite", curve_mz_ranges=((200, 201),), **arguments
-    )
-    assert read_alignment_curves(other) == []
-    full = write_alignment_explanation(
-        tmp_path / "full.sqlite", full_audit=True, **arguments
-    )
-    assert read_alignment_explanation(full)["retention"] == "full_audit"
-    assert full.stat().st_size > other.stat().st_size
-
-
-def test_existing_full_report_conversion_preserves_sample_values(tmp_path, monkeypatch):
-    completed, candidates, matrix, config = run_alignment_fixture(
-        tmp_path, monkeypatch, "positive"
-    )
-    full = write_alignment_explanation(
-        tmp_path / "full.sqlite",
-        completed=completed,
-        children=children_of(completed.application_result),
-        **explanation_discovery_facts(completed),
-        peaks_by_sample=candidates,
-        matrix_path=matrix,
-        alignment_config=config,
-        full_audit=True,
-    )
-    before = full.read_bytes()
-    review = tmp_path / "compact.sqlite"
-    result = compact_explanation(full, review)
-    assert full.read_bytes() == before
-    assert result["review_bytes"] < result["source_bytes"]
-    for candidate in (candidates["S1"][0], candidates["S2"][0]):
-        old = read_alignment_explanation(full, candidate_id=candidate.peak_id)
-        new = read_alignment_explanation(review, candidate_id=candidate.peak_id)
-
-        def values(detail):
-            return sorted(
-                (
-                    row["feature_id"],
-                    row["sample_key"],
-                    row["variant"],
-                    row.get("value"),
-                )
-                for row in _detail_cells(detail)
-            )
-
-        assert values(old) == values(new)
-        for detail in (old, new):
-            for cell in _detail_cells(detail):
-                assert cell["signal_quality"]
-                assert all(
-                    quality["status"] != "not_recorded"
-                    for quality in cell["signal_quality"]
-                )
-        assert [c["signal_quality"] for c in _detail_cells(old)] == [
-            c["signal_quality"] for c in _detail_cells(new)
-        ]
-        assert (
-            old["groups"][0]["member_subjects"] == new["groups"][0]["member_subjects"]
-        )
 
 
 def test_signal_quality_survives_review_storage_without_changing_results(tmp_path):
@@ -514,10 +430,7 @@ def test_production_publication_automatically_includes_recorded_risk(
     assert all(cell["value"] > 0 for cell in cells)
 
 
-@pytest.mark.parametrize("review_only", (False, True))
-def test_named_cells_preserve_values_and_details_across_input_order(
-    tmp_path, review_only
-):
+def test_named_cells_preserve_values_and_details_across_input_order(tmp_path):
     cells = [
         {
             "sample_key": "S1",
@@ -535,7 +448,7 @@ def test_named_cells_preserve_values_and_details_across_input_order(
     outputs = []
     for index, ordered in enumerate((cells, cells[::-1])):
         path = tmp_path / f"order-{index}.sqlite"
-        with ExplanationReportWriter(path, review_only=review_only) as writer:
+        with ExplanationReportWriter(path) as writer:
             writer.declare_samples(
                 [{"sample_key": s, "sample_stem": s} for s in ("S1", "S2")]
             )
@@ -546,7 +459,7 @@ def test_named_cells_preserve_values_and_details_across_input_order(
                 members=(),
             )
             writer.add_cells("F1", ordered)
-            writer.finalize(explanation_summary({}, review_only=review_only))
+            writer.finalize(explanation_summary({}))
         outputs.append(_cells(path))
         with sqlite3.connect(path) as db:
             assert db.execute(
@@ -562,7 +475,7 @@ def test_named_cells_preserve_values_and_details_across_input_order(
 def test_named_cells_reject_duplicate_group_sample(tmp_path):
     path = tmp_path / "duplicate.sqlite"
     with pytest.raises(ValueError, match="duplicate review cell"):
-        with ExplanationReportWriter(path, review_only=True) as writer:
+        with ExplanationReportWriter(path) as writer:
             writer.declare_samples([{"sample_key": "S1", "sample_stem": "S1"}])
             writer.add_final_group(
                 "F1",

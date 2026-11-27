@@ -75,7 +75,6 @@ def test_sqlite_diagnostic_roundtrip(tmp_path: Path):
         writer.finalize(
             explanation_summary(
                 {"processing_algorithm_version": "discovery"},
-                review_only=writer.review_only,
             )
         )
 

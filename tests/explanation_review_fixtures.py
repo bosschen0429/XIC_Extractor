@@ -76,7 +76,7 @@ def _group_with_missing_apex_review(
         "S3": (500.0, 20.0),
     }
     samples = [{"sample_key": sid, "sample_stem": sid} for sid in ("S1", "S2", "S3")]
-    with ExplanationReportWriter(report, review_only=True) as writer:
+    with ExplanationReportWriter(report) as writer:
         writer.declare_samples(samples)
         for (cid, sid), mz, rt in zip(keys, (499.0, 501.0), (7.9, 8.1), strict=True):
             writer.add_peak(sid, cid, (extraction[sid][0], rt, extraction[sid][1]))
@@ -186,7 +186,6 @@ def _group_with_missing_apex_review(
                     "matrix_path": str(matrix),
                     "matrix_sha256": hashlib.sha256(matrix.read_bytes()).hexdigest(),
                 },
-                review_only=True,
             )
         )
     return report, matrix
@@ -256,7 +255,7 @@ def _quality_review_report(
         for sid in ("S1", "S2")
     ]
     samples = [{"sample_stem": sid, "sample_key": sid} for sid in ("S1", "S2")]
-    with ExplanationReportWriter(report, review_only=True) as writer:
+    with ExplanationReportWriter(report) as writer:
         writer.declare_samples(samples)
         keys = [("C1", "S1"), ("C2", "S2")]
         for cid, sid in keys:
@@ -300,7 +299,6 @@ def _quality_review_report(
                     "matrix_sha256": hashlib.sha256(matrix.read_bytes()).hexdigest(),
                     "samples": samples,
                 },
-                review_only=writer.review_only,
             )
         )
     return report, matrix

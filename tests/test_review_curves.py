@@ -1,9 +1,7 @@
 """Review curves: saved curves for cells with a value, RAW reads for the rest."""
 
 import json
-import sqlite3
 import struct
-import zlib
 from contextlib import contextmanager
 
 import numpy as np
@@ -48,38 +46,32 @@ def test_review_curve_codec_keeps_float64_bits():
     assert struct.pack("<8d", *times, *intensities) == struct.pack("<8d", *rt, *raw)
 
 
-def _full_audit_curves(report):
-    """Full-audit raw and processed series by sample and physical peak."""
-    with sqlite3.connect(report) as db:
-        return {
-            (sample, key): json.loads(zlib.decompress(payload))["curves"]
-            for sample, key, payload in db.execute(
-                "SELECT sample_id, physical_peak_key, payload FROM curves "
-                "WHERE physical_peak_key IS NOT NULL"
-            )
-        }
-
-
 def test_cells_with_values_show_their_run_curves_without_raw(tmp_path, monkeypatch):
     from tests.cid_nl_raw_fixture import TEST_PROFILE
 
     completed, candidates, matrix, config = run_alignment_fixture(
         tmp_path, monkeypatch, "positive"
     )
-    reports = {}
-    for name, full_audit in (("review", False), ("audit", True)):
-        folder = tmp_path / name
-        folder.mkdir()
-        reports[name] = write_alignment_explanation(
-            folder / "alignment_explanation.sqlite",
-            completed=completed,
-            children=children_of(completed.application_result),
-            **explanation_discovery_facts(completed),
-            peaks_by_sample=candidates,
-            matrix_path=matrix,
-            alignment_config=config,
-            full_audit=full_audit,
-        )
+    folder = tmp_path / "review"
+    folder.mkdir()
+    children = children_of(completed.application_result)
+    report = write_alignment_explanation(
+        folder / "alignment_explanation.sqlite",
+        completed=completed,
+        children=children,
+        **explanation_discovery_facts(completed),
+        peaks_by_sample=candidates,
+        matrix_path=matrix,
+        alignment_config=config,
+    )
+    peaks = {
+        peak.physical_peak_key: peak
+        for child in children
+        for terminal in child.scientific_core.terminal_subjects
+        if (hypothesis := getattr(terminal, "hypothesis", None)) is not None
+        for peak in (hypothesis.peak,)
+    }
+    completed.close()
     _write_metadata_json(
         tmp_path / "review" / "alignment_run_metadata.json",
         {
@@ -93,10 +85,10 @@ def test_cells_with_values_show_their_run_curves_without_raw(tmp_path, monkeypat
         lambda *_args, **_kwargs: pytest.fail("saved curves must not open RAW"),
     )
     detail = read_alignment_explanation(
-        reports["review"], candidate_id=candidates["S1"][0].peak_id
+        report, candidate_id=candidates["S1"][0].peak_id
     )
     group_id = detail["groups"][0]["feature_id"]
-    curves = read_review_curves(reports["review"], feature_id=group_id)
+    curves = read_review_curves(report, feature_id=group_id)
     saved = {loc.sample_key for loc in curves.locations if loc.curve is not None}
     assert saved == {"S1", "S2"}
     assert not curves.needs_raw(saved)
@@ -109,7 +101,7 @@ def test_cells_with_values_show_their_run_curves_without_raw(tmp_path, monkeypat
         main(
             [
                 "--report",
-                str(reports["review"]),
+                str(report),
                 "--group-id",
                 group_id,
                 "--curve-bundle",
@@ -119,17 +111,17 @@ def test_cells_with_values_show_their_run_curves_without_raw(tmp_path, monkeypat
         == 0
     )
     bundle = read_curve_bundle(path)
-    audit = _full_audit_curves(reports["audit"])
     keys = {loc.sample_key: loc.physical_peak_key for loc in curves.locations}
     traces = bundle.transitions[0].traces
     assert {trace.sample_id for trace in traces} == {"S1", "S2"}
     for trace in traces:
-        expected = audit[trace.sample_id, keys[trace.sample_id]]
-        assert list(trace.raw.rt) == expected["rt"]
-        assert list(trace.raw.intensity) == expected["raw"]
-        assert list(trace.gaussian15.intensity) == expected["smoothed"]
-        assert list(trace.baseline.intensity) == expected["baseline"]
-        assert list(trace.positive_signal.intensity) == expected["positive"]
+        peak = peaks[keys[trace.sample_id]]
+        prepared = peak.physical_evaluation.retained_prepared_signal
+        assert tuple(trace.raw.rt) == tuple(peak.source_trace.rt)
+        assert tuple(trace.raw.intensity) == tuple(peak.source_trace.intensity)
+        assert tuple(trace.gaussian15.intensity) == tuple(prepared.smoothed)
+        assert tuple(trace.baseline.intensity) == tuple(prepared.baseline)
+        assert tuple(trace.positive_signal.intensity) == tuple(prepared.positive_signal)
 
 
 def test_saved_curves_stay_with_their_own_cell(tmp_path):
@@ -147,7 +139,7 @@ def test_saved_curves_stay_with_their_own_cell(tmp_path):
         "S1": ((7.9, 8.0, 8.1), (10.0, 30.0, 10.0)),
         "S2": ((8.0, 8.1, 8.2, 8.3), (5.0, 50.0, 40.0, 5.0)),
     }
-    with ExplanationReportWriter(report, review_only=True) as writer:
+    with ExplanationReportWriter(report) as writer:
         writer.declare_samples(samples)
         for sid, apex in (("S1", 8.0), ("S2", 8.1)):
             writer.add_peak(sid, f"P{sid}", (500.0, apex, 5.0))
@@ -184,7 +176,6 @@ def test_saved_curves_stay_with_their_own_cell(tmp_path):
                     "matrix_path": str(matrix),
                     "matrix_sha256": hashlib.sha256(matrix.read_bytes()).hexdigest(),
                 },
-                review_only=True,
             )
         )
 

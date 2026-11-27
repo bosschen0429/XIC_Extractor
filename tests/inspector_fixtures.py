@@ -6,11 +6,10 @@ import hashlib
 import json
 import re
 from collections.abc import Callable
-from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
-from tests.alignment_explanation_fixtures import curve_provenance, explanation_summary
+from tests.alignment_explanation_fixtures import explanation_summary
 from xic_extractor.alignment_explanation.storage import encode_review_curve
 
 
@@ -25,7 +24,7 @@ def create_review_batch(tmp_path, sample_count=2, *, keep_curves=False):
     matrix = tmp_path / "matrix.tsv"
     matrix.write_text("recorded matrix fixture", encoding="utf-8")
     report = tmp_path / "review.sqlite"
-    with ExplanationReportWriter(report, review_only=True) as writer:
+    with ExplanationReportWriter(report) as writer:
         writer.declare_samples(samples)
         for rid, route, values in (
             ("a-complete", "matrix", tuple(100 * (i + 1) for i in range(sample_count))),
@@ -74,7 +73,6 @@ def create_review_batch(tmp_path, sample_count=2, *, keep_curves=False):
                     "selection_evidence_capability": "recorded_decisions",
                     "neutral_loss_by_tag": NEUTRAL_LOSS_BY_TAG,
                 },
-                review_only=writer.review_only,
             )
         )
     return report, matrix
@@ -97,7 +95,7 @@ def create_nearest_review_batch(tmp_path):
         ("multi-witness", ((350.0, 2.0), (123.4, 2.5)), False),
     ]
     samples = [{"sample_key": "S1", "sample_stem": "S1"}]
-    with ExplanationReportWriter(report, review_only=True) as writer:
+    with ExplanationReportWriter(report) as writer:
         writer.declare_samples(samples)
         for rid, witnesses, unresolved in rows:
             members = [
@@ -127,7 +125,6 @@ def create_nearest_review_batch(tmp_path):
                     "selection_evidence_capability": "recorded_decisions",
                     "neutral_loss_by_tag": NEUTRAL_LOSS_BY_TAG,
                 },
-                review_only=writer.review_only,
             )
         )
     return report, matrix
@@ -191,62 +188,6 @@ def read_report_payload(path: Path) -> dict:
     return json.loads(match.group(1))
 
 
-def inspector_curve_payload(
-    sample_id: str,
-    candidate_id: str | None,
-    physical_peak_key: str | None,
-    *,
-    kind: str = "initial_capture",
-    attempt_id: str = "att-01",
-    mz: float = 500.0,
-    apex_rt: float = 1.0,
-) -> dict[str, Any]:
-    """One valid retained curve centred on ``apex_rt``."""
-    from xic_extractor.peak_detection.integration_result import IntegrationResult
-
-    rts = [round(apex_rt + offset, 6) for offset in (-0.2, -0.1, 0.0, 0.1, 0.2)]
-    return {
-        "schema_version": "curve_payload",
-        "kind": kind,
-        "sample_id": sample_id,
-        "candidate_id": candidate_id,
-        "physical_peak_key": physical_peak_key,
-        "trace_coordinate": {
-            "mz": mz,
-            "rt_min": rts[0],
-            "rt_max": rts[-1],
-            "ppm_tol": 10.0,
-        },
-        "curves": {
-            "rt": rts,
-            "raw": [10.0, 50.0, 1000.0, 40.0, 5.0],
-            "baseline": None,
-            "smoothed": None,
-            "positive": None,
-        },
-        "integration": asdict(
-            IntegrationResult(
-                rt_left_min=rts[1],
-                rt_apex_min=apex_rt,
-                rt_right_min=rts[3],
-                raw_apex_rt_min=apex_rt,
-                rt_width_min=rts[3] - rts[1],
-                height_raw=1000.0,
-                height_smoothed=1000.0,
-                area_raw_counts_seconds=2500.0,
-                area_ms1_morphology=2400.0,
-                ms1_morphology_area_source=(
-                    "trapezoid_counts_seconds_on_canonical_signal"
-                ),
-            )
-        ),
-        "provenance": {
-            **curve_provenance(),
-            "processing_attempt_id": attempt_id,
-        },
-    }
-
-
 def create_inspector_report(
     directory: Path,
     *,
@@ -259,11 +200,9 @@ def create_inspector_report(
     group: dict[str, Any] | None = None,
     cells: list[dict[str, Any]] | None = None,
     base_cell: dict[str, Any] | None = None,
-    curve: bool = True,
     prepare: Callable[[Any], None] | None = None,
     extend: Callable[[Any], None] | None = None,
     summary: dict[str, Any] | None = None,
-    review_only: bool = False,
 ) -> tuple[Path, Path, str]:
     """One saved row ``G1`` whose candidate ``C1`` was observed as ``obs-01``.
 
@@ -271,8 +210,7 @@ def create_inspector_report(
 
     ``prepare`` adds candidates before ``G1`` is written (so ``group`` can name
     them); ``extend`` adds further evidence before finalization. Both receive
-    the active writer. Records without a natural key are numbered in emission
-    order: ``G1`` is 1 and its curve 2.
+    the active writer.
     """
     from xic_extractor.alignment_explanation.writer import ExplanationReportWriter
 
@@ -294,7 +232,7 @@ def create_inspector_report(
     samples = [{"sample_stem": sample["sample_key"], **sample} for sample in samples]
 
     sid = samples[0]["sample_key"]
-    with ExplanationReportWriter(db_path, review_only=review_only) as writer:
+    with ExplanationReportWriter(db_path) as writer:
         writer.declare_samples(samples)
         writer.add_peak(sid, "obs-01", (None, 1.0, None))
         if (candidate or {}).get("method_subject_id") is not None:
@@ -326,6 +264,7 @@ def create_inspector_report(
                 **(group or {}),
             },
         )
+        writer.set_row_destination("G1", "matrix")
         writer.add_cells(
             "G1",
             cells
@@ -339,15 +278,6 @@ def create_inspector_report(
                 }
             ],
         )
-        if curve:
-            writer.add_curve_payload(
-                sample_id=sid,
-                kind="initial_capture",
-                record_id="obs-01",
-                payload=inspector_curve_payload(
-                    sid, "C1", "obs-01", attempt_id=attempt_id
-                ),
-            )
         if extend is not None:
             extend(writer)
         writer.finalize(
@@ -360,7 +290,6 @@ def create_inspector_report(
                     "neutral_loss_by_tag": {"dR": 116.0474},
                     **(summary or {}),
                 },
-                review_only=writer.review_only,
             )
         )
 

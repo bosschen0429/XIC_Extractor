@@ -7,10 +7,6 @@ from pathlib import Path
 
 import pytest
 
-from tests.alignment_explanation_fixtures import (
-    explanation_discovery_facts,
-    explanation_summary,
-)
 from tests.alignment_pipeline_helpers import (
     render,
     written_cells,
@@ -20,9 +16,7 @@ from tests.alignment_pipeline_helpers import (
 from tests.discovery_csv_fixtures import representative_event
 from tests.untargeted_cid_nl_production_batch_fixtures import (
     _assert_composite_no_input_exclusion_coverage,
-    _assert_fresh_process_curve_parity,
     _assert_jobs_match_direct_construction,
-    _expected_capture_curve,
 )
 from tests.untargeted_cid_nl_production_batch_fixtures import (
     profile_replay as profile_replay,
@@ -117,56 +111,6 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         for cell in cells
         for support in cell.group_context.supports
     )
-    persisted_capture_evidence = tuple(completed.capture_evidence)
-    runtime_captures = tuple(
-        evidence
-        for result in trace.runtime_results
-        for sample_result in result.sample_results
-        for evidence in (
-            *sample_result.adapter_result.capture_evidence,
-            *(
-                item
-                for attempt in sample_result.backfill_attempts
-                for item in attempt.capture_evidence
-            ),
-        )
-    )
-    assert len(persisted_capture_evidence) == len(runtime_captures)
-    assert persisted_capture_evidence
-    for retained, source in zip(
-        persisted_capture_evidence, runtime_captures, strict=True
-    ):
-        assert retained.sample_key == source.sample_key
-        assert retained.candidate_id == source.candidate_id
-        assert retained.capture_stage == source.capture_stage
-        assert retained.physical_evaluation is not None
-        assert source.physical_evaluation is not None
-        assert (
-            retained.physical_evaluation.retained_prepared_signal
-            == source.physical_evaluation.retained_prepared_signal
-        )
-        assert retained.observation_ref == source.observation_ref
-        if retained.observation_ref is not None:
-            assert retained.observation_ref.capture_stage == retained.capture_stage
-            assert (
-                retained.observation_ref.physical_evaluation
-                == retained.physical_evaluation
-            )
-
-    expected_curves = []
-    expected_curve_links = {}
-    for evidence in persisted_capture_evidence:
-        expected = _expected_capture_curve(evidence)
-        expected_curves.append(expected)
-        if evidence.candidate_id is not None:
-            expected_curve_links.setdefault(evidence.candidate_id, []).append(expected)
-
-    def close_and_verify_persisted_curves():
-        completed.close()
-        _assert_fresh_process_curve_parity(
-            tmp_path / "producer-evidence.sqlite", expected_curves, expected_curve_links
-        )
-
     assert trace.preparation_fingerprints == [], "preparation must not read RAW content"
     assert trace.obsolete_marker.read_bytes() == b"obsolete attempt status"
     assert trace.runtime_fingerprints == [], (
@@ -179,20 +123,6 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     render("matrix", matrix_path, writer)
     with matrix_path.open(encoding="utf-8", newline="") as handle:
         matrix_rows = tuple(csv.DictReader(handle, delimiter="\t"))
-    from xic_extractor.applications.untargeted.alignment_explanation_projection import (
-        write_alignment_explanation,
-    )
-
-    write_alignment_explanation(
-        tmp_path / "producer-evidence.sqlite",
-        full_audit=True,
-        completed=completed,
-        children=children_of(completed.application_result),
-        **explanation_discovery_facts(completed),
-        peaks_by_sample=inputs.candidates,
-        matrix_path=matrix_path,
-        alignment_config=AlignmentConfig(),
-    )
     assert len(trace.retained_contexts) == len(
         children_of(completed.application_result)
     )
@@ -298,7 +228,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             assert matrix_row["S4"]
         else:
             assert len(tuple(written_cells(writer))) == len(inputs.sample_stems)
-        close_and_verify_persisted_curves()
+        completed.close()
         return
     if case.nearby:
         assert len(matrix_rows) == (0 if case.method_mode == "intersection" else 1)
@@ -333,7 +263,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             _assert_composite_no_input_exclusion_coverage(
                 completed, trace.runtime_results[0], batch
             )
-            close_and_verify_persisted_curves()
+            completed.close()
             return
         if case.method_mode == "union":
             (child,) = children_of(completed.application_result)
@@ -354,7 +284,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
                 assert cell.value == peak.area_counts_seconds
                 assert cell.selected_integration is not None
                 assert cell.selected_integration.rt_apex_min == peak.apex_rt_min
-            close_and_verify_persisted_curves()
+            completed.close()
             return
     cells = tuple(written_cells(writer))
     assert len(cells) == len(case.group_sizes) * len(inputs.sample_stems)
@@ -389,7 +319,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             == 2
         )
         assert len(matrix_rows) == 1
-        close_and_verify_persisted_curves()
+        completed.close()
         return
     if inputs.separate_groups:
         (child,) = children_of(completed.application_result)
@@ -418,10 +348,10 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             )
             != revisited
         )
-        close_and_verify_persisted_curves()
+        completed.close()
         return
 
-    close_and_verify_persisted_curves()
+    completed.close()
 
 
 def test_profile_replay_retains_positive_and_empty_backfill_evidence(
@@ -447,7 +377,6 @@ def test_profile_replay_retains_positive_and_empty_backfill_evidence(
         expected_acquisition_source=job.acquisition_source_expectation.source,
     )
     recovery_args = dict(
-        processing_attempt_id=job.processing_attempt_id,
         sample=job.sample,
         acquisition_source=job.acquisition_source_expectation.source,
         method_subject=job.method_subject,
@@ -478,11 +407,6 @@ def test_profile_replay_retains_positive_and_empty_backfill_evidence(
         observation.physical_evaluation.retained_prepared_signal
         == recovery_prepared.prepared
     )
-    (retained_recovery,) = recovered.capture_evidence
-    assert retained_recovery.observation_ref is observation
-    assert retained_recovery.physical_evaluation is observation.physical_evaluation
-    assert tuple(retained_recovery.trace.rt) == tuple(acquired.trace.rt)
-    assert tuple(retained_recovery.trace.intensity) == tuple(acquired.trace.intensity)
     integ = observation.integration
     selected = observation.physical_evaluation.answer.selected_segment
     assert selected is not None
@@ -539,14 +463,6 @@ def test_profile_replay_retains_positive_and_empty_backfill_evidence(
         assert unavailable.assessment.candidate_peaks == ()
         assert unavailable.assessment.method_result == "HOLD"
         assert unavailable.backfill_input is None
-        (retained_unavailable,) = unavailable.capture_evidence
-        assert retained_unavailable.observation_ref is None
-        assert retained_unavailable.physical_evaluation.state == "unavailable"
-        signal = retained_unavailable.physical_evaluation.retained_prepared_signal
-        assert signal is None
-        assert len(retained_unavailable.trace.rt) > 0
-        assert all(value == 0.0 for value in retained_unavailable.trace.intensity)
-
         vendor = inputs.opened_raws[inputs.paths[0]][-1]
         vendor_chromatogram = vendor.GetChromatogramData
 
@@ -569,49 +485,6 @@ def test_profile_replay_retains_positive_and_empty_backfill_evidence(
         assert empty.assessment.method_result == "HOLD"
         assert empty.backfill_input is None
         assert empty.acquisition.traces[0].coordinate.trace_point_count == 0
-        (retained_empty,) = empty.capture_evidence
-        assert retained_empty.observation_ref is None
-        assert retained_empty.physical_evaluation.state == "unavailable"
-        assert retained_empty.physical_evaluation.reason == "no_signal_above_baseline"
-        assert retained_empty.physical_evaluation.integration is None
-        assert retained_empty.physical_evaluation.retained_prepared_signal is None
-        assert len(retained_empty.trace.rt) == len(retained_empty.trace.intensity) == 0
-
     finally:
         inputs.source_raws[inputs.paths[0]].intensity = original_intensity
         recovery_raw.__exit__(None, None, None)
-
-    from xic_extractor.alignment_explanation.writer import (
-        ExplanationReportWriter,
-    )
-    from xic_extractor.applications.untargeted.alignment_explanation_projection import (
-        _emit_curve_payload,
-    )
-
-    recovery_path = tmp_path / "recovery-evidence.sqlite"
-    recovery_sources = (retained_recovery, retained_unavailable, retained_empty)
-    with ExplanationReportWriter(recovery_path) as sink:
-        for evidence in recovery_sources:
-            _emit_curve_payload(
-                sink,
-                evidence.observation_ref,
-                evidence.sample_key,
-                kind="backfill_observation",
-                trace=evidence.trace,
-                evaluation=evidence.physical_evaluation,
-                provenance={
-                    "processing_attempt_id": evidence.processing_attempt_id,
-                    "method_subject_id": evidence.method_subject_id,
-                },
-            )
-        sink.finalize(
-            explanation_summary(
-                {
-                    "processing_attempt_id": (job.processing_attempt_id),
-                },
-                review_only=sink.review_only,
-            )
-        )
-    _assert_fresh_process_curve_parity(
-        recovery_path, [_expected_capture_curve(item) for item in recovery_sources]
-    )
