@@ -4,6 +4,7 @@ import pytest
 
 from xic_extractor.alignment.band_rt_location import BandRtLocator
 from xic_extractor.alignment.rt_frame import SampleRtFrame
+from xic_extractor.injection_timeline import InjectionSequence
 
 
 @pytest.mark.parametrize("offset_scatter", [0.04, 2.0])
@@ -27,7 +28,7 @@ def test_paired_istd_localization_uses_only_confirmed_same_batch_offsets(
         ("missing", "other_missing"),
         reference_samples=frozenset({"ref1", "ref2", "other_batch"}),
         rt_frame=SampleRtFrame(
-            injection_order=({"ref1": 1, "ref2": 2, "missing": 3}),
+            injections=InjectionSequence({"ref1": 1, "ref2": 2, "missing": 3}),
             sample_cohorts=(
                 {
                     "ref1": "batch",
@@ -67,7 +68,7 @@ def test_backfill_localization_does_not_turn_row_scatter_into_unbounded_permissi
         ("missing",),
         reference_samples=frozenset(sample for sample, _ in references),
         rt_frame=SampleRtFrame(
-            injection_order=(orders or {}),
+            injections=InjectionSequence(orders or {}),
             sample_cohorts=({sample: "batch" for sample in orders}),
         ),
         backfill_half_window_min=1.0,
@@ -87,7 +88,8 @@ def test_forecast_requires_agreement_with_direct_reference_trajectory(pattern_of
     orders["missing"] = 12
     kwargs = {
         "rt_frame": SampleRtFrame(
-            injection_order=orders, sample_cohorts=dict.fromkeys(orders, "batch")
+            injections=InjectionSequence(orders),
+            sample_cohorts=dict.fromkeys(orders, "batch"),
         ),
         "backfill_half_window_min": 1.0,
     }
@@ -113,7 +115,7 @@ def test_sparse_reference_median_cannot_veto_a_supported_drift_forecast():
         ("missing",),
         reference_samples=frozenset(sample for sample, _ in references),
         rt_frame=SampleRtFrame(
-            injection_order=(orders or {}),
+            injections=InjectionSequence(orders or {}),
             sample_cohorts=(dict.fromkeys(orders, "batch")),
         ),
         backfill_half_window_min=1.0,
@@ -128,7 +130,7 @@ def test_observed_peak_keeps_its_location_without_borrowing_another_batch():
         ("missing", "observed"),
         reference_samples=frozenset(("a", "b")),
         rt_frame=SampleRtFrame(
-            injection_order=({"a": 1, "b": 2, "observed": 3, "missing": 4}),
+            injections=InjectionSequence({"a": 1, "b": 2, "observed": 3, "missing": 4}),
             sample_cohorts=({"a": "A", "b": "A", "observed": "B", "missing": "B"}),
         ),
         backfill_half_window_min=1.0,
@@ -153,7 +155,7 @@ def test_sparse_calibration_localizes_in_target_coordinates_without_strong_claim
         policy=RtCalibrationPolicy(),
     )
     frame = SampleRtFrame(
-        injection_order={"a": 1, "target": 2, "b": 3},
+        injections=InjectionSequence({"a": 1, "target": 2, "b": 3}),
         sample_cohorts=dict.fromkeys(("a", "b", "target"), "batch"),
     ).with_sample_calibration(calibration)
     prediction = BandRtLocator((("a", 10), ("b", 10))).locate(
@@ -169,7 +171,7 @@ def test_sparse_calibration_localizes_in_target_coordinates_without_strong_claim
 
 def test_backfill_frame_scope_does_not_borrow_an_outside_population_reference():
     frame = SampleRtFrame(
-        injection_order={"a": 1, "target": 2, "b": 3, "outside": 4},
+        injections=InjectionSequence({"a": 1, "target": 2, "b": 3, "outside": 4}),
         sample_cohorts=dict.fromkeys(("a", "b", "target", "outside"), "batch"),
     ).for_sample_stems(frozenset({"a", "b", "target"}))
     trajectory = BandRtLocator((("a", 10.0), ("b", 12.0), ("outside", 30.0)))

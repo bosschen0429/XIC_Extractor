@@ -35,6 +35,7 @@ from xic_extractor.configuration.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
     SignalProcessingProfile,
 )
+from xic_extractor.injection_timeline import InjectionSequence
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlEvaluationReceipt,
     mint_cid_nl_method_assessment,
@@ -204,7 +205,9 @@ def test_one_measured_lobe_keeps_one_direct_claim_or_one_backfill_winner(
             hypothesis=hypothesis,
         )
     config = AlignmentConfig()
-    frame = SampleRtFrame(injection_order={stem: i for i, stem in enumerate(pairs)})
+    frame = SampleRtFrame(
+        injections=InjectionSequence({stem: i for i, stem in enumerate(pairs)})
+    )
     groups = tuple(
         group_peak_bands(
             tuple(owners[stem] for stem in stems),

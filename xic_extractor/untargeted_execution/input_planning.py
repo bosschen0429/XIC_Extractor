@@ -17,6 +17,7 @@ from xic_extractor.configuration.signal_processing_profile import (
 from xic_extractor.discovery.input_source import DiscoveryInputSource
 from xic_extractor.discovery.models import DiscoveryPeak, representative_event_rt
 from xic_extractor.discovery.settings import DiscoverySettings
+from xic_extractor.injection_timeline import InjectionSequence
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CidNlComposition,
     CidNlMethodSubject,
@@ -209,6 +210,7 @@ def prepare_indexed_untargeted_plan(
     dll_dir: Path,
     profile: SignalProcessingProfile,
     acquisition_source_expectations: tuple[AcquisitionSourceExpectation, ...],
+    injections: InjectionSequence | None = None,
 ) -> UntargetedInputPlan:
     """Keep whole-batch IDs, not whole-batch candidates or physical graphs."""
     composition = cid_nl_composition(settings)
@@ -274,6 +276,7 @@ def prepare_indexed_untargeted_plan(
         peak_map={stem: () for stem in source},
         receipt_map=source.batch.peak_receipts,
         signal_processing_profile=profile,
+        injections=injections,
     )
     return UntargetedInputPlan(
         subject_batch=subject_batch,

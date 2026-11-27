@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import InitVar, dataclass, field
 from pathlib import Path
 
 from xic_extractor.alignment.rt_frame import SampleRtFrame
@@ -18,6 +18,7 @@ from xic_extractor.discovery.models import DiscoveryPeak
 from xic_extractor.discovery.settings import (
     DiscoverySettings,
 )
+from xic_extractor.injection_timeline import InjectionSequence
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CidNlMethodSubject,
     UntargetedCidNlMethodSubjectBatch,
@@ -52,11 +53,13 @@ class UntargetedPartitionContext:
 
     rt_frame: SampleRtFrame = field(init=False, repr=False, compare=False)
 
-    def __post_init__(self) -> None:
+    injections: InitVar[InjectionSequence | None] = None
+
+    def __post_init__(self, injections: InjectionSequence | None) -> None:
         object.__setattr__(
             self,
             "rt_frame",
-            SampleRtFrame.from_samples(self.samples),
+            SampleRtFrame.from_samples(self.samples, injections=injections),
         )
 
     def sample(self, raw_stem: str) -> SampleMetadata:
@@ -80,20 +83,16 @@ def compose_partition_context(
     peak_map: Mapping[str, tuple[DiscoveryPeak, ...]],
     receipt_map: Mapping[str, DiscoveryPeakUniverseReceipt],
     signal_processing_profile: SignalProcessingProfile,
+    injections: InjectionSequence | None = None,
 ) -> UntargetedPartitionContext:
     """Compose one run from input-owner verified facts, samples in injection order."""
-    samples = tuple(
-        metadata
-        for _stem, metadata in sorted(
-            metadata_by_stem.items(),
-            key=lambda item: (item[1].injection_order, item[0]),
-        )
-    )
-    orders = [sample.injection_order for sample in samples]
-    if None in orders:
+    if injections is None:
+        injections = InjectionSequence.from_samples(metadata_by_stem.values())
+    if len(injections) != len(metadata_by_stem):
         raise IdentityContractError("sample metadata requires injection_order")
-    if len(set(orders)) != len(orders):
+    if not injections.has_unique_orders:
         raise IdentityContractError("injection_order values must be unique")
+    samples = tuple(metadata_by_stem[stem] for stem in injections.stems)
     return UntargetedPartitionContext(
         processing_attempt_id=str(uuid.uuid4()),
         samples=samples,
@@ -104,6 +103,7 @@ def compose_partition_context(
         discovery_receipts_by_sample=dict(receipt_map),
         signal_processing_profile=signal_processing_profile,
         acquisition_sources_by_sample=source_expectations,
+        injections=injections,
     )
 
 

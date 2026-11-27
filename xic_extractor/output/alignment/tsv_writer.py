@@ -37,6 +37,7 @@ from xic_extractor.alignment.result.scientific_alignment import (
     ObservedSearchSubject,
 )
 from xic_extractor.alignment.rt_drift import DriftCoefficients
+from xic_extractor.injection_timeline import InjectionSequence
 from xic_extractor.output.alignment.matrix_output_contract import (
     canonical_mz_text,
     serialize_public_matrix_table,
@@ -118,14 +119,8 @@ def untarget_sample_order(
         raise ValueError(
             "writer projection requires unique positive sample injection order"
         )
-    ordered_samples = tuple(
-        sorted(
-            canonical_samples,
-            key=lambda sample: cast(int, sample.injection_order),
-        )
-    )
-    sample_stems = tuple(sample.raw_stem for sample in ordered_samples)
-    if not sample_stems or len(sample_stems) != len(set(sample_stems)):
+    sample_stems = InjectionSequence.from_samples(canonical_samples).stems
+    if not sample_stems or len(sample_stems) != len(canonical_samples):
         raise ValueError("writer projection requires unique canonical sample stems")
     return sample_stems
 

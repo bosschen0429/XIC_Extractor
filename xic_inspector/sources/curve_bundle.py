@@ -18,6 +18,7 @@ from typing import Any
 
 from xic_extractor.alignment_explanation.errors import ExplanationError
 from xic_extractor.alignment_explanation.reader import SameMzPeak
+from xic_extractor.injection_timeline import InjectionSequence
 from xic_inspector.selection.canonical import (
     CanonicalItem,
     Witness,
@@ -528,6 +529,7 @@ class CurveBundleSource:
     ) -> None:
         self.bundle = bundle
         self.locator = locator
+        self.injections = InjectionSequence(bundle.injection_order)
         labels: dict[str, str] = {}
         for transition in self.bundle.transitions:
             for trace in transition.traces:
@@ -842,42 +844,56 @@ class CurveBundleSource:
         """
         if not transition.same_mz_peaks:
             return None
-        order = self.bundle.injection_order
         points = [
             {
                 **asdict(peak),
                 "aligned_apex_rt_min": self._aligned(peak),
-                "injection_order": order.get(peak.sample_stem),
+                "injection_order": self.injections.order(peak.sample_stem),
             }
             for peak in transition.same_mz_peaks
         ]
-        own = sorted(
-            (p["injection_order"], p["aligned_apex_rt_min"], p["sample_key"])
-            for p in points
-            if p["feature_id"] == transition.key and p["injection_order"] is not None
-        )
-        deviations = {}
-        for index, (position, apex, sample_id) in enumerate(own):
-            others = own[:index] + own[index + 1 :]
-            nearest = sorted(others, key=lambda o: abs(o[0] - position))
-            if nearest:
-                neighbours = [o[1] for o in nearest[:NEIGHBOUR_COUNT]]
-                deviations[sample_id] = apex - statistics.median(neighbours)
-        far = sorted(
+        own = self.injections.ordered_rows(
             (
-                {"sample_id": sid, "deviation_min": deviation}
-                for sid, deviation in deviations.items()
-                if abs(deviation) > FAR_FROM_NEIGHBOURS_MIN
+                p
+                for p in points
+                if p["feature_id"] == transition.key
+                and p["injection_order"] is not None
             ),
-            key=lambda entry: (-abs(entry["deviation_min"]), entry["sample_id"]),
+            stem=lambda p: p["sample_stem"],
+            within_sample=lambda p: (p["aligned_apex_rt_min"], p["sample_key"]),
         )
+        deviations: dict[str, float] = {}
+        for point in own:
+            nearest = self.injections.nearest_rows_by_order(
+                point["sample_stem"],
+                (other for other in own if other is not point),
+                NEIGHBOUR_COUNT,
+                stem=lambda p: p["sample_stem"],
+                within_sample=lambda p: (p["aligned_apex_rt_min"], p["sample_key"]),
+            )
+            if nearest:
+                neighbours = [p["aligned_apex_rt_min"] for p in nearest]
+                deviations[point["sample_key"]] = point[
+                    "aligned_apex_rt_min"
+                ] - statistics.median(neighbours)
+        far = [
+            {"sample_id": sid, "deviation_min": deviation}
+            for sid, deviation in sorted(
+                (
+                    item
+                    for item in deviations.items()
+                    if abs(item[1]) > FAR_FROM_NEIGHBOURS_MIN
+                ),
+                key=lambda item: (-abs(item[1]), item[0]),
+            )
+        ]
         rows_by_sample: dict[str, set[str]] = {}
         for point in points:
             rows_by_sample.setdefault(point["sample_key"], set()).add(
                 point["feature_id"]
             )
         far_ids = {entry["sample_id"] for entry in far}
-        apexes = {sid: apex for _, apex, sid in own}
+        apexes = {p["sample_key"]: p["aligned_apex_rt_min"] for p in own}
         center = statistics.median(apexes.values()) if apexes else 0.0
         typical = min(
             (sid for sid in deviations if sid not in far_ids),

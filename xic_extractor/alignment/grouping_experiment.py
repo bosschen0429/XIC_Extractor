@@ -15,6 +15,7 @@ from xic_extractor.alignment.rt_anchors import BatchRtModelInputs, fit_batch_rt_
 from xic_extractor.alignment.rt_drift import RtDriftModel
 from xic_extractor.alignment.rt_frame import RtFrame, SampleRtFrame
 from xic_extractor.alignment.sample_rt_calibration import BatchRtCalibration
+from xic_extractor.injection_timeline import InjectionSequence
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,7 +67,8 @@ def replay_grouping(
     """Replay band membership before envelope/shape checks or Backfill."""
     sample_universe = frozenset(inputs.sample_stems)
     base_frame = SampleRtFrame(
-        injection_order=inputs.injection_order, sample_universe=sample_universe
+        injections=InjectionSequence(inputs.injection_order),
+        sample_universe=sample_universe,
     )
     if isinstance(rt_coordinates, SampleRtFrame):
         override = base_frame.with_calibration(rt_coordinates)
@@ -100,7 +102,8 @@ def refit_rt_models(inputs: GroupingInputs) -> GroupingInputs:
     """
     sample_universe = frozenset(inputs.sample_stems)
     base_frame = SampleRtFrame(
-        injection_order=inputs.injection_order, sample_universe=sample_universe
+        injections=InjectionSequence(inputs.injection_order),
+        sample_universe=sample_universe,
     )
     fitted: dict[int, tuple[BatchRtCalibration, RtDriftModel]] = {}
     for workset in inputs.worksets:

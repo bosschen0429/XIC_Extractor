@@ -107,9 +107,9 @@ class CidNlBatchGrouping:
         source = reference if reference is not None else self
         frame = source._bootstrap_frame
         self._rt_model_inputs = BatchRtModelInputs(
-            sample_stems=tuple(frame.sample_universe or frame.injection_order),
+            sample_stems=tuple(frame.sample_universe or frame.injections.stems),
             sample_cohorts=frame.sample_cohorts,
-            injection_order=frame.injection_order,
+            injections=frame.injections,
             qc_samples=frame.qc_samples,
             measured_istds=self._bootstrap_frame.measured_istd_coordinates,
             anchor_batches=tuple(source._anchor_batches),
@@ -126,7 +126,7 @@ class CidNlBatchGrouping:
             frame is not None
             and frame.drift_model is not None
             and bool(frame.drift_model.sample_shift_min)
-            and len(frame.injection_order) >= ROW_MIN_SAMPLES
+            and len(frame.injections) >= ROW_MIN_SAMPLES
         )
 
     def vote_sample_shift(self, rows: Iterable[Mapping[str, float]]) -> None:
@@ -287,7 +287,7 @@ def prepare_cid_nl_grouping(
     if known_istd_reference is not None:
         known_istd_reference = known_istd_reference.prepare_batch(
             sample_universe=sample_universe,
-            injection_order=rt_frame.injection_order,
+            injections=rt_frame.injections,
         )
     rt_frame = rt_frame.with_sources(known_istd_reference=known_istd_reference)
     active_subjects = tuple(

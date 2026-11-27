@@ -24,6 +24,7 @@ from xic_extractor.alignment.early_segment_shift import (
 )
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 from xic_extractor.alignment.sample_rt_calibration import RtEstimate
+from xic_extractor.injection_timeline import InjectionSequence
 from xic_extractor.sample_metadata import SampleMetadata
 
 if TYPE_CHECKING:
@@ -35,7 +36,7 @@ class RtFrame(Protocol):
     """The RT questions shared by grouping and localization consumers."""
 
     @property
-    def injection_order(self) -> Mapping[str, int]: ...
+    def injections(self) -> InjectionSequence: ...
 
     @property
     def sample_cohorts(self) -> Mapping[str, str]: ...
@@ -106,14 +107,14 @@ class RtFrame(Protocol):
 
 @dataclass(frozen=True)
 class SampleRtFrame:
-    """One stage's sources; derived stages reuse the same metadata mappings.
+    """One stage's sources; derived stages reuse the sample injection sequence.
 
     The batch owner freezes calibration. Owner-local ISTD bindings are retained
     when that calibration is attached, rather than rebound to another population.
     Diagnostic coordinate overrides do not provide Backfill calibration support.
     """
 
-    injection_order: Mapping[str, int] = field(default_factory=dict)
+    injections: InjectionSequence = field(default_factory=InjectionSequence)
     sample_cohorts: Mapping[str, str] = field(default_factory=dict)
     sample_universe: frozenset[str] | None = None
     qc_samples: frozenset[str] = frozenset()
@@ -136,14 +137,14 @@ class SampleRtFrame:
     def from_samples(
         cls,
         samples: Sequence[SampleMetadata],
+        *,
+        injections: InjectionSequence | None = None,
     ) -> SampleRtFrame:
         """Derive metadata once at the boundary that owns the sample universe."""
         return cls(
-            injection_order={
-                sample.raw_stem: sample.injection_order
-                for sample in samples
-                if sample.injection_order is not None
-            },
+            injections=InjectionSequence.from_samples(samples)
+            if injections is None
+            else injections,
             sample_cohorts={sample.raw_stem: sample.batch_id for sample in samples},
             sample_universe=frozenset(sample.raw_stem for sample in samples),
             qc_samples=frozenset(
@@ -175,7 +176,7 @@ class SampleRtFrame:
             _drift=self._reference.bind(
                 tuple(owners),
                 sample_universe=self.sample_universe,
-                injection_order=self.injection_order,
+                injections=self.injections,
             ),
         )
 
@@ -189,9 +190,7 @@ class SampleRtFrame:
             self,
             _sample_calibration=calibration,
             _drift_model=drift_model,
-            _early_segment=measure_early_segment_shift(
-                calibration, self.injection_order
-            ),
+            _early_segment=measure_early_segment_shift(calibration, self.injections),
             _coordinate_override=None,
         )
 
@@ -219,9 +218,7 @@ class SampleRtFrame:
         return replace(
             self,
             sample_universe=samples,
-            injection_order={
-                k: v for k, v in self.injection_order.items() if k in samples
-            },
+            injections=self.injections.restrict(samples),
             sample_cohorts={
                 k: v for k, v in self.sample_cohorts.items() if k in samples
             },
@@ -314,13 +311,11 @@ class SampleRtFrame:
         )
 
     def drift_injection_order_gap(self, left: str, right: str) -> int | None:
-        if self._drift is None:
-            return None
-        left_order = self._drift.injection_order(left)
-        right_order = self._drift.injection_order(right)
-        if left_order is None or right_order is None:
-            return None
-        return abs(left_order - right_order)
+        return (
+            self._drift.injection_gap(left, right)
+            if isinstance(self._drift, DriftEvidenceLookup)
+            else None
+        )
 
     def corrected_rt_min(self, owner: SampleLocalMS1Owner) -> float:
         if self._coordinate_override is not None:

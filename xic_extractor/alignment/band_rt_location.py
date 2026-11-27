@@ -184,7 +184,7 @@ class BandRtLocator:
             reference_orders: dict[str, set[int]] = defaultdict(set)
             for sample, _ in reference_points:
                 cohort = rt_frame.sample_cohorts.get(sample)
-                order = rt_frame.injection_order.get(sample)
+                order = rt_frame.injections.order(sample)
                 if cohort in forecast_cohorts and order is not None:
                     assert cohort is not None
                     reference_orders[cohort].add(order)
@@ -298,27 +298,26 @@ class BandRtLocator:
         backfill_half_window_min: float,
         drift_offsets: Mapping[str, float] | None = None,
     ) -> PeakLocation:
-        order = rt_frame.injection_order.get(sample_stem)
+        order = rt_frame.injections.order(sample_stem)
         cohort = rt_frame.sample_cohorts.get(sample_stem)
         offsets = (
             drift_offsets if drift_offsets and sample_stem in drift_offsets else None
         )
-        nearest = sorted(
-            (
-                (sample, rt)
-                for sample, rt in self.sample_apices
-                if order is not None
-                and cohort is not None
-                and sample in rt_frame.injection_order
-                and rt_frame.sample_cohorts.get(sample) == cohort
-                and (offsets is None or sample in offsets)
-            ),
-            key=lambda point: (
-                abs(rt_frame.injection_order[point[0]] - (order or 0)),
-                rt_frame.injection_order[point[0]],
-                point[0],
-            ),
-        )[:_TRAJECTORY_NEIGHBORS]
+        positions = self._positions
+        nearest = [
+            (sample, positions[sample])
+            for sample in rt_frame.injections.nearest_by_order(
+                sample_stem,
+                (
+                    sample
+                    for sample, _ in self.sample_apices
+                    if cohort is not None
+                    and rt_frame.sample_cohorts.get(sample) == cohort
+                    and (offsets is None or sample in offsets)
+                ),
+                _TRAJECTORY_NEIGHBORS,
+            )
+        ]
         if order is None or not nearest:
             return PeakLocation(
                 float(np.median([rt for _, rt in self.sample_apices])),
@@ -338,7 +337,7 @@ class BandRtLocator:
             else [rt for _, rt in nearest]
         )
         fitted = _fit_rt_trajectory(
-            [rt_frame.injection_order[sample] for sample, _ in nearest],
+            [rt_frame.injections.required_order(sample) for sample, _ in nearest],
             coordinates,
             order,
             backfill_half_window_min=backfill_half_window_min,
@@ -358,7 +357,7 @@ class BandRtLocator:
                     f"{'estimated' if weak else 'calibrated'}_{fitted.basis}",
                 )
             fitted = _fit_rt_trajectory(
-                [rt_frame.injection_order[sample] for sample, _ in nearest],
+                [rt_frame.injections.required_order(sample) for sample, _ in nearest],
                 [rt for _, rt in nearest],
                 order,
                 backfill_half_window_min=backfill_half_window_min,

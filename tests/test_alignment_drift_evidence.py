@@ -16,6 +16,7 @@ from xic_extractor.alignment.sample_rt_calibration import (
     BatchRtCalibrationAccumulator,
 )
 from xic_extractor.configuration.models import Target
+from xic_extractor.injection_timeline import InjectionSequence
 
 
 def test_measured_istd_binding_uses_observed_peak_not_expected_rt() -> None:
@@ -55,7 +56,7 @@ def test_measured_istd_binding_uses_observed_peak_not_expected_rt() -> None:
     assert lookup.corrected_pair_delta_sec(*owners) == pytest.approx(0)
 
     base = SampleRtFrame(
-        injection_order={"early": 1, "late": 2},
+        injections=InjectionSequence({"early": 1, "late": 2}),
         sample_cohorts={"early": "batch", "late": "batch"},
         sample_universe=frozenset({"early", "late"}),
     )
@@ -218,7 +219,7 @@ def test_known_reference_only_corrects_unique_same_target_support_pairs(
     if use_batch_context:
         reference = reference.prepare_batch(
             sample_universe=frozenset({"early", "late", "missing"}),
-            injection_order={"early": 1, "late": 2, "missing": 3},
+            injections=InjectionSequence({"early": 1, "late": 2, "missing": 3}),
         )
     early, late, other = tuple(
         _owner(
@@ -313,9 +314,9 @@ def test_batch_istd_coordinates_are_shared_by_grouping_and_backfill(tmp_path):
     )
     samples = frozenset({"early", "middle", "late"})
     orders = {"early": 1, "middle": 2, "late": 3}
-    frame = SampleRtFrame(injection_order=orders, sample_universe=samples).with_sources(
-        known_istd_reference=reference
-    )
+    frame = SampleRtFrame(
+        injections=InjectionSequence(orders), sample_universe=samples
+    ).with_sources(known_istd_reference=reference)
     frame = frame.with_sample_calibration(
         BatchRtCalibrationAccumulator(
             sample_stems=tuple(samples), sample_cohorts=dict.fromkeys(samples, "batch")
@@ -352,7 +353,7 @@ def test_batch_reference_does_not_invent_missing_measured_landmarks(
     lookup = reference.bind(
         (early, middle, late),
         sample_universe=universe,
-        injection_order=order,
+        injections=InjectionSequence(order),
     )
     assert lookup.corrected_pair_delta_sec(early, middle) is None
     assert lookup.corrected_pair_delta_sec(middle, late) is None
@@ -397,7 +398,7 @@ def test_batch_reference_declines_extrapolation_or_nonmonotone_knots(
     lookup = reference.bind(
         (early, late),
         sample_universe=frozenset(observations),
-        injection_order={"early": 10, "late": 40},
+        injections=InjectionSequence({"early": 10, "late": 40}),
     )
     assert lookup.corrected_pair_delta_sec(early, late) is None
 
@@ -419,7 +420,9 @@ def test_batch_reference_preparation_is_shared_across_method_bindings(
     )
     universe = frozenset({"early", "late"})
     order = {"early": 10, "late": 40}
-    prepared = reference.prepare_batch(sample_universe=universe, injection_order=order)
+    prepared = reference.prepare_batch(
+        sample_universe=universe, injections=InjectionSequence(order)
+    )
 
     def unexpected_recomputation(*_args, **_kwargs):
         pytest.fail("unchanged prepared batch recomputed reference medians")
@@ -428,14 +431,14 @@ def test_batch_reference_preparation_is_shared_across_method_bindings(
     assert (
         prepared.prepare_batch(
             sample_universe=universe,
-            injection_order=dict(order),
+            injections=InjectionSequence(dict(order)),
         )
         is prepared
     )
     assert (
         reference.prepare_batch(
             sample_universe=universe,
-            injection_order=dict(order),
+            injections=InjectionSequence(dict(order)),
         )
         is prepared
     )
@@ -445,7 +448,7 @@ def test_batch_reference_preparation_is_shared_across_method_bindings(
         lookup = prepared.bind(
             (early, late),
             sample_universe=universe,
-            injection_order=order,
+            injections=InjectionSequence(order),
         )
         assert lookup.reference is prepared
         assert lookup.corrected_pair_delta_sec(early, late) == pytest.approx(0)
@@ -470,12 +473,12 @@ def test_batch_reference_changed_universe_does_not_reuse_stale_medians(
     original = reference.bind(
         (early, late),
         sample_universe=frozenset({"early", "late"}),
-        injection_order=order,
+        injections=InjectionSequence(order),
     )
     changed = reference.bind(
         (early, late),
         sample_universe=frozenset(order),
-        injection_order=order,
+        injections=InjectionSequence(order),
     )
     assert original.corrected_pair_delta_sec(early, late) == pytest.approx(27)
     assert changed.corrected_pair_delta_sec(early, late) == pytest.approx(30)

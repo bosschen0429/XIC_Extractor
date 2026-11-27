@@ -276,7 +276,7 @@ def _rt_drift_summary(completed: CompletedUntargetBatchWorkflowResult) -> str:
                 for anchor in (drift.anchors if drift else ())
             ],
             "sample_shift_unknown_samples": sorted(
-                set(frame.sample_universe or frame.injection_order)
+                set(frame.sample_universe or frame.injections.stems)
                 - set(drift.sample_shift_min)
             )
             if drift is not None and frame is not None

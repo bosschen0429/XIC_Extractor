@@ -214,13 +214,10 @@ def _build_publication_output(
         cells,
         targets_by_label,
     )
-    ordered_files = sorted(
+    ordered_files = prepared.rt_frame.injections.ordered_rows(
         files.items(),
-        key=lambda item: (
-            item[0].injection_order is None,
-            item[0].injection_order or 0,
-            item[1][0].sample_name,
-        ),
+        stem=lambda item: item[0].raw_stem,
+        within_sample=lambda item: (item[1][0].sample_name,),
     )
     return RunOutput(
         file_results=[
@@ -560,7 +557,7 @@ def _prepare_targeted_production_workflow(
             metadata_by_stem[raw_path.stem],
             sample_name=file_result.sample_name,
             raw_stem=raw_path.stem,
-            injection_order=resolved_inputs.injection_order[raw_path.stem],
+            injection_order=resolved_inputs.injections.required_order(raw_path.stem),
         )
         for raw_path, file_result in results_by_raw_path
     )
@@ -590,7 +587,9 @@ def _prepare_targeted_production_workflow(
         raise RuntimeError("Targeted acquisition crossed its configured signal profile")
     return _PreparedTargetedProductionWorkflow(
         acquisition_sources=current_inputs.acquisition_sources,
-        rt_frame=SampleRtFrame.from_samples(samples),
+        rt_frame=SampleRtFrame.from_samples(
+            samples, injections=resolved_inputs.injections
+        ),
         samples=samples,
         targets=targets,
         results_by_sample=tuple(
@@ -621,7 +620,7 @@ def snapshot_targeted_production_inputs(
     raw_file_states = _raw_file_states(raw_paths)
     acquisition_sources = build_targeted_acquisition_sources(
         raw_paths=raw_paths,
-        injection_order=resolved_inputs.injection_order,
+        injections=resolved_inputs.injections,
         should_cancel=request.should_stop,
     )
     if _raw_file_states(raw_paths) != raw_file_states:

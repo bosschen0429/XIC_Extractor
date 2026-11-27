@@ -57,6 +57,7 @@ def validate_repository(repo_root: Path) -> list[str]:
     problems.extend(validate_semantic_identifiers(repo_root))
     problems.extend(validate_documented_code_names(repo_root))
     problems.extend(validate_ppm_arithmetic(repo_root))
+    problems.extend(validate_injection_coordinates(repo_root))
     problems.extend(validate_typed_input_guards(repo_root))
     problems.extend(validate_post_init_raises(repo_root))
     problems.extend(validate_test_source_boundaries(repo_root))
@@ -388,6 +389,170 @@ def _is_ppm_scale(node: ast.expr) -> bool:
         and isinstance(node.value, (int, float))
         and not isinstance(node.value, bool)
         and abs(node.value) in _PPM_SCALES
+    )
+
+
+INJECTION_COORDINATE_OWNER = "xic_extractor/injection_timeline.py"
+_INJECTION_FIELDS = frozenset({"injection_order", "injection_positions"})
+_INJECTION_QUERIES = frozenset(
+    {"order", "required_order", "position", "snapshot_orders"}
+)
+_ORDERING_CALLS = frozenset(
+    {
+        "sorted",
+        "sort",
+        "argsort",
+        "min",
+        "max",
+        "nsmallest",
+        "nlargest",
+        "enumerate",
+    }
+)
+
+
+def validate_injection_coordinates(
+    repo_root: Path, paths: Sequence[Path] | None = None
+) -> list[str]:
+    """Keep ordering, indexing and differences on the Raw injection sequence."""
+    if paths is None:
+        paths = tuple(
+            path
+            for path in repository_python_paths(repo_root)
+            if path.parts[0] in REPOSITORY_ROOTS
+        )
+    problems = []
+    for relative in paths:
+        path = relative.as_posix()
+        if path == INJECTION_COORDINATE_OWNER:
+            continue
+        tree = ast.parse((repo_root / relative).read_text(encoding="utf-8"), path)
+        for line in sorted(_injection_coordinate_violations(tree, path)):
+            problems.append(
+                f"{path}:{line}: derive injection coordinates in "
+                f"{INJECTION_COORDINATE_OWNER}; query InjectionSequence"
+            )
+    return problems
+
+
+def _injection_coordinate_violations(tree: ast.Module, path: str) -> set[int]:
+    """Ignore annotation matching: its declared row numbers predate RAW chronology."""
+    violations: set[int] = set()
+    scope_types = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
+
+    def local_nodes(scope: ast.AST) -> Iterator[ast.AST]:
+        for node in ast.iter_child_nodes(scope):
+            if not isinstance(node, scope_types):
+                yield node
+                yield from local_nodes(node)
+
+    for scope in ast.walk(tree):
+        if not isinstance(scope, (ast.Module, *scope_types)):
+            continue
+        if (
+            path == "xic_extractor/sample_metadata.py"
+            and isinstance(scope, ast.FunctionDef)
+            and scope.name == "match_sample_metadata"
+        ):
+            continue
+        nodes = tuple(local_nodes(scope))
+        aliases = set(_INJECTION_FIELDS)
+
+        assignments = (
+            node for node in nodes if isinstance(node, (ast.Assign, ast.AnnAssign))
+        )
+        for assignment in sorted(assignments, key=lambda node: node.lineno):
+            value = assignment.value
+            if value is not None and _reads_injection_coordinate(value, aliases):
+                targets = (
+                    assignment.targets
+                    if isinstance(assignment, ast.Assign)
+                    else (assignment.target,)
+                )
+                aliases.update(
+                    target.id for target in targets if isinstance(target, ast.Name)
+                )
+        for node in nodes:
+            if isinstance(node, ast.Call):
+                func = node.func
+                name = (
+                    func.id
+                    if isinstance(func, ast.Name)
+                    else func.attr
+                    if isinstance(func, ast.Attribute)
+                    else ""
+                )
+                if name in _ORDERING_CALLS and any(
+                    _reads_injection_coordinate(part, aliases)
+                    or (name == "enumerate" and _injection_stems(part))
+                    for part in ast.walk(node)
+                ):
+                    violations.add(node.lineno)
+                if (
+                    name == "index"
+                    and isinstance(func, ast.Attribute)
+                    and (
+                        _reads_injection_coordinate(func.value, aliases)
+                        or _injection_stems(func.value)
+                    )
+                ):
+                    violations.add(node.lineno)
+            elif (
+                isinstance(node, ast.Subscript)
+                and isinstance(node.slice, ast.Slice)
+                and (
+                    _reads_injection_coordinate(node.value, aliases)
+                    or _injection_stems(node.value)
+                )
+            ):
+                violations.add(node.lineno)
+            elif (
+                isinstance(node, ast.BinOp)
+                and isinstance(node.op, (ast.Add, ast.Sub))
+                and any(
+                    _reads_injection_coordinate(operand, aliases)
+                    for operand in (node.left, node.right)
+                )
+            ):
+                violations.add(node.lineno)
+    return violations
+
+
+def _reads_injection_coordinate(node: ast.AST, aliases: set[str]) -> bool:
+    if isinstance(node, ast.Name):
+        return node.id in aliases
+    if isinstance(node, ast.Attribute):
+        return node.attr in _INJECTION_FIELDS or (
+            node.attr in _INJECTION_QUERIES and _injection_receiver(node.value)
+        )
+    if isinstance(node, ast.Subscript):
+        return _reads_injection_coordinate(node.value, aliases) or (
+            isinstance(node.slice, ast.Constant)
+            and node.slice.value in _INJECTION_FIELDS
+        )
+    if isinstance(node, ast.Call):
+        return _reads_injection_coordinate(node.func, aliases) or (
+            isinstance(node.func, ast.Attribute)
+            and node.func.attr in {"get", "__getitem__"}
+            and _reads_injection_coordinate(node.func.value, aliases)
+        )
+    return False
+
+
+def _injection_receiver(node: ast.AST) -> bool:
+    return (
+        isinstance(node, ast.Name)
+        and node.id in {"injections", "_injections"}
+        or isinstance(node, ast.Attribute)
+        and node.attr in {"injections", "_injections"}
+    )
+
+
+def _injection_stems(node: ast.AST) -> bool:
+    return (
+        isinstance(node, ast.Attribute)
+        and node.attr == "stems"
+        and _injection_receiver(node.value)
     )
 
 
@@ -940,6 +1105,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         except (OSError, subprocess.CalledProcessError, SyntaxError, ValueError) as exc:
             problems = [str(exc)]
         problems.extend(validate_ppm_arithmetic(ROOT))
+        problems.extend(validate_injection_coordinates(ROOT))
         problems.extend(validate_typed_input_guards(ROOT))
         problems.extend(validate_post_init_raises(ROOT))
         problems.extend(validate_test_source_boundaries(ROOT))
@@ -947,7 +1113,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(problem, file=sys.stderr)
         if not problems:
             print(
-                "Post-init, subclass growth, typed-input, ppm "
+                "Post-init, subclass growth, typed-input, ppm, injection-coordinate "
                 "and test-source gates passed."
             )
         return int(bool(problems))

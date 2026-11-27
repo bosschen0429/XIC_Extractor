@@ -15,6 +15,7 @@ from xic_extractor.alignment.rt_drift import (
     RtDriftModel,
     _own_fit,
 )
+from xic_extractor.injection_timeline import InjectionSequence
 from xic_extractor.mass_accuracy import within_ppm
 
 MAX_INJECTION_GAP = 8
@@ -24,20 +25,6 @@ MAX_BOOTSTRAP_RT_STEP_MIN = 0.6
 MAX_BAND_PRECURSOR_SPAN_PPM = 10.0
 
 
-def injection_positions(injection_order: Mapping[str, int]) -> dict[str, int]:
-    """Each injection's position in its batch, counted 0, 1, 2 ... in run order.
-
-    Band links count this batch's injections: a sequence number taken by an
-    injection outside the batch does not widen the gap between two samples.
-    """
-    return {
-        stem: position
-        for position, stem in enumerate(
-            sorted(injection_order, key=lambda stem: (injection_order[stem], stem))
-        )
-    }
-
-
 def _within_link_step(step: float, limit: float) -> bool:
     return step <= limit or isclose(step, limit, rel_tol=0.0, abs_tol=1e-12)
 
@@ -45,7 +32,7 @@ def _within_link_step(step: float, limit: float) -> bool:
 def link_peak_bands(
     coordinates: Sequence[tuple[SampleLocalMS1Owner, float]],
     *,
-    injection_positions: Mapping[str, int],
+    injections: InjectionSequence,
     max_rt_step_min: float = MAX_CALIBRATED_RT_STEP_MIN,
     precursor_ppm: float = MAX_BAND_PRECURSOR_SPAN_PPM,
 ) -> tuple[tuple[SampleLocalMS1Owner, ...], ...]:
@@ -58,24 +45,26 @@ def link_peak_bands(
     transitive pairwise bounds alone would allow an out-of-tolerance band.
     Peaks with no known injection position have no links.
     """
-    points = sorted(
+    points = injections.ordered_rows(
         coordinates,
-        key=lambda item: (
-            injection_positions.get(item[0].sample_stem, float("inf")),
+        stem=lambda item: item[0].sample_stem,
+        within_sample=lambda item: (
             item[1],
             item[0].peak.measured_order_key,
             item[0].sample_stem,
         ),
+        by_position=True,
     )
-    ranks = [injection_positions.get(owner.sample_stem) for owner, _ in points]
+    stems = [owner.sample_stem for owner, _ in points]
+    ranks = [injections.position(stem) for stem in stems]
     edges: list[tuple[float, int, int, int]] = []
     for i, (_, left_rt) in enumerate(points):
         rank = ranks[i]
         if rank is None:
             break
         for j in range(i + 1, len(points)):
-            right_rank = ranks[j]
-            if right_rank is None or (gap := right_rank - rank) > MAX_INJECTION_GAP:
+            gap = injections.position_gap(stems[i], stems[j])
+            if gap is None or gap > MAX_INJECTION_GAP:
                 break
             if not gap:
                 continue
@@ -126,7 +115,7 @@ class LinkedPeakBand:
 def link_with_band_drift(
     coordinates: Sequence[tuple[SampleLocalMS1Owner, float]],
     *,
-    injection_positions: Mapping[str, int],
+    injections: InjectionSequence,
     drift: RtDriftModel | None,
     has_direct_support: Callable[[SampleLocalMS1Owner], bool],
     precursor_ppm: float = MAX_BAND_PRECURSOR_SPAN_PPM,
@@ -145,7 +134,7 @@ def link_with_band_drift(
     def link(points: Sequence[tuple[SampleLocalMS1Owner, float]]):
         return link_peak_bands(
             points,
-            injection_positions=injection_positions,
+            injections=injections,
             precursor_ppm=precursor_ppm,
         )
 
@@ -281,7 +270,7 @@ def competing_band_members(
     members: Sequence[SampleLocalMS1Owner],
     coordinates: Sequence[tuple[SampleLocalMS1Owner, float]],
     *,
-    injection_positions: Mapping[str, int],
+    injections: InjectionSequence,
     has_direct_support: Callable[[SampleLocalMS1Owner], bool],
     precursor_ppm: float = MAX_BAND_PRECURSOR_SPAN_PPM,
 ) -> tuple[tuple[SampleLocalMS1Owner, SampleLocalMS1Owner], ...]:
@@ -307,7 +296,6 @@ def competing_band_members(
         points = points_by_sample[selected.sample_stem]
         if len(points) < 2:
             continue
-        rank = injection_positions[selected.sample_stem]
         direct_without_member = direct_count - has_direct_support(selected)
         peers = tuple(
             (owner, rt_by_owner[owner.owner_id])
@@ -319,9 +307,9 @@ def competing_band_members(
         neighbor_rts = {
             owner.owner_id: rt
             for owner, rt in peers
-            if 0
-            < abs(injection_positions[owner.sample_stem] - rank)
-            <= MAX_INJECTION_GAP
+            if (gap := injections.position_gap(owner.sample_stem, selected.sample_stem))
+            is not None
+            and 0 < gap <= MAX_INJECTION_GAP
         }
         components = None
         for rival, rival_rt in sorted(
@@ -344,7 +332,7 @@ def competing_band_members(
             if components is None:
                 components = link_peak_bands(
                     peers,
-                    injection_positions=injection_positions,
+                    injections=injections,
                     precursor_ppm=precursor_ppm,
                 )
             if all(
@@ -359,23 +347,22 @@ def band_extension_distance(
     members: Sequence[tuple[SampleLocalMS1Owner, float]],
     candidate: tuple[SampleLocalMS1Owner, float],
     *,
-    injection_positions: Mapping[str, int],
+    injections: InjectionSequence,
     precursor_ppm: float,
 ) -> float | None:
     """Closest admissible link into a band's otherwise empty injection."""
     owner, rt = candidate
-    rank = injection_positions.get(owner.sample_stem)
-    if rank is None:
+    if owner.sample_stem not in injections:
         return None
     mz = owner.peak.mz
     lo = hi = mz
     closest = None
     for peer, peer_rt in members:
-        peer_rank = injection_positions[peer.sample_stem]
-        if rank == peer_rank:
+        gap = injections.position_gap(owner.sample_stem, peer.sample_stem)
+        if gap == 0:
             return None
         lo, hi = min(lo, peer.peak.mz), max(hi, peer.peak.mz)
-        if abs(peer_rank - rank) <= MAX_INJECTION_GAP:
+        if gap is not None and gap <= MAX_INJECTION_GAP:
             step = abs(peer_rt - rt)
             if _within_link_step(step, MAX_CALIBRATED_RT_STEP_MIN) and (
                 closest is None or step < closest

@@ -13,7 +13,7 @@ from xic_extractor.extraction.targeted_inputs import (
     build_targeted_acquisition_sources,
     resolve_targeted_inputs,
 )
-from xic_extractor.injection_timeline import InjectionHeader
+from xic_extractor.injection_timeline import InjectionHeader, InjectionSequence
 from xic_extractor.processing_identity import (
     FingerprintCancelledError,
     IdentityContractError,
@@ -350,9 +350,11 @@ def test_sample_metadata_alias_projection_binds_targeted_sources(
         injection_order=None,
     )
 
-    sources = _sources([raw_path], injection_order=resolved.injection_order)
+    sources = _sources(
+        [raw_path], injection_order=resolved.injections.snapshot_orders()
+    )
 
-    assert resolved.injection_order == {raw_path.stem: 1}
+    assert resolved.injections.snapshot_orders() == {raw_path.stem: 1}
     assert tuple(sources) == (raw_path.stem,)
 
 
@@ -398,7 +400,7 @@ def test_targeted_and_untargeted_read_one_sequence_owner(
         ]
     }
 
-    assert targeted.injection_order == {
+    assert targeted.injections.snapshot_orders() == {
         "Older_batch_S1": 1,
         "NormalBC001_DNA": 2,
         "TumorBC001_DNA": 3,
@@ -415,7 +417,7 @@ def test_targeted_and_untargeted_read_one_sequence_owner(
 
 def _sources(paths: list[Path], *, injection_order: dict[str, int]):
     return build_targeted_acquisition_sources(
-        raw_paths=paths, injection_order=injection_order
+        raw_paths=paths, injections=InjectionSequence(injection_order)
     )
 
 

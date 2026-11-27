@@ -27,6 +27,7 @@ from xic_extractor.alignment.hypothesis_owner_adapter import (
 )
 from xic_extractor.alignment.rt_anchors import rt_anchor_observations
 from xic_extractor.alignment.rt_frame import SampleRtFrame
+from xic_extractor.injection_timeline import InjectionSequence
 from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
 from xic_extractor.peak_detection.cid_nl_evidence import (
     CidNlEvidenceObservation,
@@ -168,7 +169,7 @@ def test_identity_membership_is_geometry_not_group_center_reclassification(
         samples=samples,
         sample_assessments=sample_assessments,
         alignment_config=config,
-        rt_frame=SampleRtFrame(injection_order={"early": 1, "late": 2}),
+        rt_frame=SampleRtFrame(injections=InjectionSequence({"early": 1, "late": 2})),
     )
 
     members = tuple(owner for group in grouping_scope.groups for owner in group.owners)
@@ -206,7 +207,7 @@ def test_identity_membership_is_geometry_not_group_center_reclassification(
         samples=samples[::-1],
         sample_assessments=sample_assessments[::-1],
         alignment_config=config,
-        rt_frame=SampleRtFrame(injection_order={"early": 1, "late": 2}),
+        rt_frame=SampleRtFrame(injections=InjectionSequence({"early": 1, "late": 2})),
     )
     _, reversed_final = regroup_cid_nl_cross_sample_groups(
         samples=samples[::-1],

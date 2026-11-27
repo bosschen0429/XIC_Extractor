@@ -15,6 +15,7 @@ from xic_extractor.alignment.sample_rt_calibration import (
     interpolate_calibrated_rt_min,
 )
 from xic_extractor.configuration.models import Target
+from xic_extractor.injection_timeline import InjectionSequence
 from xic_extractor.mass_accuracy import mz_tolerance_da, neutral_loss_match
 
 DriftPriorSource = Literal[
@@ -60,16 +61,15 @@ class KnownIstdReference:
         self,
         *,
         sample_universe: frozenset[str],
-        injection_order: Mapping[str, int] | None,
+        injections: InjectionSequence | None,
     ) -> KnownIstdReference:
         """Prepare immutable RT knots once for this canonical batch context."""
         samples = tuple(sorted(sample_universe))
         orders = tuple(
-            sorted(
-                (sample, order)
-                for sample, order in (injection_order or {}).items()
-                if sample in sample_universe
-            )
+            (sample, order)
+            for sample in samples
+            if injections is not None
+            and (order := injections.order(sample)) is not None
         )
         context = samples, orders
         if self._batch_context == context:
@@ -114,14 +114,14 @@ class KnownIstdReference:
         owners: tuple[SampleLocalMS1Owner, ...],
         *,
         sample_universe: frozenset[str] | None = None,
-        injection_order: Mapping[str, int] | None = None,
+        injections: InjectionSequence | None = None,
     ) -> KnownIstdOwnerLookup:
         """Bind measured ISTD coordinates to every eligible physical owner."""
         reference = (
             self
             if sample_universe is None
             else self.prepare_batch(
-                sample_universe=sample_universe, injection_order=injection_order
+                sample_universe=sample_universe, injections=injections
             )
         )
         targets = {target.label: target for target in self.anchor.targets}
@@ -173,9 +173,6 @@ class KnownIstdOwnerLookup:
         return "targeted_istd_trend"
 
     def sample_delta_min(self, sample_stem: str) -> None:
-        return None
-
-    def injection_order(self, sample_stem: str) -> None:
         return None
 
     @cached_property
@@ -328,12 +325,26 @@ class DriftEvidenceLookup:
 
     def injection_order(self, sample_stem: str) -> int | None:
         orders = self._injection_orders_by_sample.get(sample_stem)
-        if not orders:
-            return None
-        if len(orders) == 1:
-            return orders[0]
-        raise ValueError(
-            f"conflicting injection order for sample {sample_stem!r}: {list(orders)}"
+        if orders and len(orders) > 1:
+            raise ValueError(
+                f"conflicting injection order for sample {sample_stem!r}: "
+                f"{list(orders)}"
+            )
+        return self._injections.order(sample_stem)
+
+    def injection_gap(self, left: str, right: str) -> int | None:
+        self.injection_order(left)
+        self.injection_order(right)
+        return self._injections.order_gap(left, right)
+
+    @cached_property
+    def _injections(self) -> InjectionSequence:
+        return InjectionSequence(
+            {
+                sample: orders[0]
+                for sample, orders in self._injection_orders_by_sample.items()
+                if len(orders) == 1
+            }
         )
 
     @cached_property

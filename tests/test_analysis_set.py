@@ -57,10 +57,41 @@ def header_rows(headers, roles):
 
 
 def resolve(headers, roles, metadata=None):
-    timeline = build_injection_timeline(headers, PerturbationPolicy())
+    timeline = build_injection_timeline(headers)
     return select_analysis_set(
         timeline, header_rows(headers, roles), metadata or (), analysis="untargeted"
     )
+
+
+def test_injection_coordinates_keep_context_in_the_raw_timeline() -> None:
+    headers = [
+        replace(header(f"/b/{stem}.raw", minute), instrument_method=method)
+        for stem, minute, method in (
+            ("A", 0, "long.meth"),
+            ("B", 12, "long.meth"),
+            ("blank1", 24, "short.meth"),
+            ("blank2", 36, "wash.meth"),
+            ("C", 48, "long.meth"),
+            ("D", 60, "long.meth"),
+        )
+    ]
+    roles = {
+        h.raw_path: "blank" if "blank" in h.raw_path else "sample" for h in headers
+    }
+    injections = resolve(list(reversed(headers)), roles).injections
+
+    assert injections.stems == ("A", "B", "C", "D")
+    assert injections.order("C") == 5
+    assert injections.position("C") == 2
+    assert injections.order_gap("B", "C") == 3
+    assert injections.position_gap("B", "C") == 1
+    assert injections.around("A", 2) == ("B", "C")
+    assert injections.around("D", 2) == ("B", "C")
+    assert injections.nearest_by_order("C", ("A", "B", "D"), 2) == ("D", "B")
+    assert injections.previous("A") is None
+    previous = injections.previous("C")
+    assert previous is not None
+    assert (previous.instrument_method, previous.idle_min) == ("wash.meth", 2.0)
 
 
 def test_flat_and_nested_layouts_give_the_same_analysis_set() -> None:

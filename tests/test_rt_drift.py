@@ -20,6 +20,7 @@ from xic_extractor.alignment.rt_drift import (
 )
 from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.alignment.sample_rt_calibration import BatchRtCalibration
+from xic_extractor.injection_timeline import InjectionSequence
 
 SAMPLES = tuple(f"s{i:02}" for i in range(12))
 ORDERS = {sample: index + 1 for index, sample in enumerate(SAMPLES)}
@@ -38,7 +39,7 @@ def _frame(model: RtDriftModel) -> SampleRtFrame:
         tuple((sample, ((0.0, 0.0), (60.0, 60.0))) for sample in SAMPLES)
     )
     return SampleRtFrame(
-        injection_order=ORDERS,
+        injections=InjectionSequence(ORDERS),
         sample_cohorts=dict.fromkeys(SAMPLES, ""),
         sample_universe=frozenset(SAMPLES),
     ).with_sample_calibration(identity, model)
@@ -108,7 +109,7 @@ def test_anchor_without_shift_response_keeps_samples_whose_shift_is_unknown():
     }
     model = _drift_model(
         calibrated,
-        injection_order=ORDERS,
+        injections=InjectionSequence(ORDERS),
         qc_samples=frozenset(),
         cohorts={},
         families={"a": 0, "b": 1, "flat": 2},
@@ -165,10 +166,10 @@ def test_rows_correct_a_sample_shift_the_anchors_got_wrong():
     anchors = {**_TRUE_SHIFT, "S12": _TRUE_SHIFT["S12"] + 1.5}
     rows = _shift_rows((0.5, 0.8, 1.0, 1.2, 1.5))
 
-    voted = _row_voted_shift(anchors, rows, _ROW_ORDER)
+    voted = _row_voted_shift(anchors, rows, InjectionSequence(_ROW_ORDER))
 
     assert voted == pytest.approx(_TRUE_SHIFT, abs=0.02)
-    assert _row_voted_shift(anchors, rows[::-1], _ROW_ORDER) == voted
+    assert _row_voted_shift(anchors, rows[::-1], InjectionSequence(_ROW_ORDER)) == voted
 
 
 @pytest.mark.parametrize(
@@ -197,12 +198,12 @@ def test_rows_correct_a_sample_shift_the_anchors_got_wrong():
 def test_sample_shift_stays_with_the_anchors_without_enough_following_rows(rows):
     wrong = {**_TRUE_SHIFT, "S12": _TRUE_SHIFT["S12"] + 1.5}
 
-    assert _row_voted_shift(wrong, rows, _ROW_ORDER) == wrong
+    assert _row_voted_shift(wrong, rows, InjectionSequence(_ROW_ORDER)) == wrong
 
 
 def test_several_supported_peaks_leave_that_channel_sample_unknown():
     accumulator = BatchRtModelAccumulator(
-        sample_cohorts=dict.fromkeys(SAMPLES, ""), injection_order=ORDERS
+        sample_cohorts=dict.fromkeys(SAMPLES, ""), injections=InjectionSequence(ORDERS)
     )
 
     def anchor(channel, sample, owner_id, rt_min):

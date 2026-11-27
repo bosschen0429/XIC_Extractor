@@ -20,6 +20,7 @@ from xic_extractor.alignment.sample_rt_calibration import (
     BatchRtCalibrationAccumulator,
     ordinary_anchor_min_samples,
 )
+from xic_extractor.injection_timeline import InjectionSequence
 
 if TYPE_CHECKING:
     from xic_extractor.alignment.grouping_bootstrap import (
@@ -61,7 +62,7 @@ def reaches_ordinary_anchor_quorum(
     ``ordinary_anchor_min_samples`` of that cohort's samples, so a population
     below the quorum in every cohort calibrates nothing however it is grouped.
     """
-    universe = frame.sample_universe or frame.injection_order
+    universe = frame.sample_universe or frame.injections.stems
     cohorts = frame.sample_cohorts
     sizes = Counter(cohorts[stem] for stem in universe if stem in cohorts)
     present = Counter(
@@ -125,7 +126,7 @@ class BatchRtModelInputs:
 
     sample_stems: tuple[str, ...]
     sample_cohorts: Mapping[str, str]
-    injection_order: Mapping[str, int]
+    injections: InjectionSequence
     qc_samples: frozenset[str]
     measured_istds: tuple[tuple[str, str, float], ...]
     anchor_batches: tuple[tuple[RtAnchorObservation, ...], ...]
@@ -145,7 +146,7 @@ def fit_batch_rt_model(
     )
     drift = BatchRtModelAccumulator(
         sample_cohorts=inputs.sample_cohorts,
-        injection_order=inputs.injection_order,
+        injections=inputs.injections,
         qc_samples=inputs.qc_samples,
     )
     for batch in inputs.anchor_batches:
