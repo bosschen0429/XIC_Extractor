@@ -132,8 +132,15 @@ def link_with_band_drift(
     precursor_ppm: float = MAX_BAND_PRECURSOR_SPAN_PPM,
     batch_state_lookup: Callable[[Sequence[str], float], Mapping[str, float]]
     | None = None,
+    unite_seeds: bool = False,
 ) -> tuple[LinkedPeakBand, ...]:
-    """Fit each seed before asking whether additional peaks follow its band."""
+    """Fit each seed before asking whether additional peaks follow its band.
+
+    With ``unite_seeds``, seeds that one joint fit explains are merged first:
+    two seeds join when, flattened by the fit of their union, the union alone
+    links into one band. Fits only ever use seed members, never peaks that a
+    flattened relink would add, so a band cannot fit away its own jumps.
+    """
 
     def link(points: Sequence[tuple[SampleLocalMS1Owner, float]]):
         return link_peak_bands(
@@ -147,23 +154,23 @@ def link_with_band_drift(
         return tuple(LinkedPeakBand(band) for band in first)
     lookup = batch_state_lookup or drift.batch_state_lookup()
     rt_by_owner = {owner.owner_id: rt for owner, rt in coordinates}
-    seeds = sorted(
-        (
-            (-direct, -len(band), median(rt_by_owner[o.owner_id] for o in band), band)
-            for band in first
-            if len(band) >= MIN_COEFFICIENT_MEMBERS
-            and (direct := sum(has_direct_support(o) for o in band)) >= 2
-        ),
-        key=lambda seed: seed[:3],
-    )
-    taken: set[str] = set()
-    accepted = []
-    for _, _, reference_rt, seed in seeds:
-        reference_ids = tuple(owner.owner_id for owner in seed)
-        reference_set = set(reference_ids)
-        if taken & reference_set:
-            continue
-        shape = lookup(reference_ids, reference_rt)
+
+    def direct(band: Sequence[SampleLocalMS1Owner]) -> int:
+        return sum(has_direct_support(owner) for owner in band)
+
+    def seed_order(band: Sequence[SampleLocalMS1Owner]) -> tuple[int, int, float]:
+        return (
+            -direct(band),
+            -len(band),
+            median(rt_by_owner[owner.owner_id] for owner in band),
+        )
+
+    def fit(band: Sequence[SampleLocalMS1Owner]):
+        reference = (
+            tuple(owner.owner_id for owner in band),
+            median(rt_by_owner[owner.owner_id] for owner in band),
+        )
+        shape = lookup(*reference)
         coefficients = _own_fit(
             [
                 (
@@ -171,9 +178,43 @@ def link_with_band_drift(
                     shape.get(owner.sample_stem),
                     drift.sample_shift_min.get(owner.sample_stem),
                 )
-                for owner in seed
+                for owner in band
             ]
         )
+        return reference, shape, coefficients
+
+    def explained_together(band: Sequence[SampleLocalMS1Owner]) -> bool:
+        _, shape, coefficients = fit(band)
+        if not coefficients.nonzero_count:
+            return False
+        offsets = drift.sample_offsets(coefficients, shape)
+        if any(owner.sample_stem not in offsets for owner in band):
+            return False
+        flat = [
+            (owner, rt_by_owner[owner.owner_id] - offsets[owner.sample_stem])
+            for owner in band
+        ]
+        return len(link(flat)) == 1
+
+    seeds = sorted(
+        (
+            band
+            for band in first
+            if len(band) >= MIN_COEFFICIENT_MEMBERS and direct(band) >= 2
+        ),
+        key=seed_order,
+    )
+    if unite_seeds:
+        seeds = sorted(
+            _united_seeds(seeds, explained_together, precursor_ppm), key=seed_order
+        )
+    taken: set[str] = set()
+    accepted = []
+    for seed in seeds:
+        reference_set = {owner.owner_id for owner in seed}
+        if taken & reference_set:
+            continue
+        reference, shape, coefficients = fit(seed)
         if not coefficients.nonzero_count:
             continue
         offsets = drift.sample_offsets(coefficients, shape)
@@ -186,15 +227,13 @@ def link_with_band_drift(
             (overlap, len(band), band)
             for band in link(flat)
             if (overlap := sum(o.owner_id in reference_set for o in band))
-            and sum(has_direct_support(o) for o in band) >= 2
+            and direct(band) >= 2
         )
         best = max(candidates, key=lambda candidate: candidate[:2], default=None)
         if best is None:
             continue
         band = best[2]
-        accepted.append(
-            LinkedPeakBand(band, coefficients, (reference_ids, reference_rt))
-        )
+        accepted.append(LinkedPeakBand(band, coefficients, reference))
         taken.update(owner.owner_id for owner in band)
     if not accepted:
         return tuple(LinkedPeakBand(band) for band in first)
@@ -202,6 +241,40 @@ def link_with_band_drift(
         (owner, rt) for owner, rt in coordinates if owner.owner_id not in taken
     ]
     return (*accepted, *(LinkedPeakBand(band) for band in link(remaining)))
+
+
+def _united_seeds(
+    seeds: Sequence[tuple[SampleLocalMS1Owner, ...]],
+    explained_together: Callable[[Sequence[SampleLocalMS1Owner]], bool],
+    precursor_ppm: float,
+) -> tuple[tuple[SampleLocalMS1Owner, ...], ...]:
+    """Merge seeds pairwise in seed order; each test covers both whole unions."""
+    parent = list(range(len(seeds)))
+
+    def root(index: int) -> int:
+        while parent[index] != index:
+            parent[index] = parent[parent[index]]
+            index = parent[index]
+        return index
+
+    centers = [median(owner.peak.mz for owner in seed) for seed in seeds]
+    for i in range(len(seeds)):
+        for j in range(i + 1, len(seeds)):
+            left, right = root(i), root(j)
+            if left == right or not within_ppm(centers[i], centers[j], precursor_ppm):
+                continue
+            union = [
+                owner
+                for k, seed in enumerate(seeds)
+                if root(k) in (left, right)
+                for owner in seed
+            ]
+            if explained_together(union):
+                parent[right] = left
+    united: dict[int, list[SampleLocalMS1Owner]] = {}
+    for k, seed in enumerate(seeds):
+        united.setdefault(root(k), []).extend(seed)
+    return tuple(tuple(members) for members in united.values())
 
 
 def competing_band_members(

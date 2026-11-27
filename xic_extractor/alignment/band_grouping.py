@@ -105,6 +105,7 @@ def group_peak_bands(
             has_direct_support=has_cid_nl_activation_support,
             precursor_ppm=precursor_ppm,
             batch_state_lookup=lookup,
+            unite_seeds=stage == "final",
         )
     groups = []
     for label, members in sorted(known.items()):

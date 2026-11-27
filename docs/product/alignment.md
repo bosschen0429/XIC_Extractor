@@ -144,8 +144,10 @@ would elute without its
 [early-segment shift](rt-calibration.md#early-segment-of-an-under-equilibrated-injection).
 
 A band with at least six members and two direct peaks may seed its own
-[drift fit](rt-calibration.md#drift-beyond-the-map). Peaks in the workset
-are linked again after removing that seed's frozen drift; only the band
+[drift fit](rt-calibration.md#drift-beyond-the-map). In final grouping, seeds
+that one joint fit explains merge first: two seeds join when, after removing
+the drift fitted to their union, the union alone links into one band. Peaks in
+the workset are linked again after removing that seed's frozen drift; only the band
 overlapping the seed may be taken on this pass. Peaks with an unknown used
 regressor do not participate in that pass. Unclaimed peaks are linked in the
 general coordinate; groups with fewer than two direct peaks stay out of the

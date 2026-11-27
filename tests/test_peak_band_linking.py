@@ -13,6 +13,11 @@ from xic_extractor.alignment.peak_band_linking import (
 )
 from xic_extractor.alignment.rt_drift import DriftAnchor, RtDriftModel
 from xic_extractor.alignment.rt_frame import SampleRtFrame
+from xic_extractor.alignment.sample_rt_calibration import (
+    BatchRtCalibration,
+    RtCalibrationPolicy,
+    SampleRtCalibration,
+)
 
 
 def test_competing_peaks_keep_their_parallel_bands_without_using_owner_ids():
@@ -286,3 +291,30 @@ def test_drift_is_fitted_to_the_seed_and_only_relinks_known_coordinates():
     )
     assert linked_without_support[0].members == without_support[:6]
     assert linked_without_support[0].coefficients.nonzero_count == 0
+
+
+def test_final_rows_unite_seeds_that_one_fit_explains_but_vote_rows_do_not():
+    """Ten injections before a batch-state step and ten after: neither piece
+    spans any batch state to fit, so each seed alone leaves its own row. Their
+    union's fit (0.6 min per unit) flattens the step into one row."""
+    order = {f"s{i:02}": i for i in range(1, 21)}
+    state = {stem: 0.0 if position <= 10 else 1.0 for stem, position in order.items()}
+    owners = tuple(
+        cid_nl_owner(stem, "x", apex_rt=10.0 + 0.6 * state[stem]) for stem in order
+    )
+    frame = SampleRtFrame(injection_order=order).with_sample_calibration(
+        BatchRtCalibration(
+            policy=RtCalibrationPolicy(),
+            knots=(),
+            samples={
+                stem: SampleRtCalibration(
+                    stem, "calibrated", ((2.0, 2.0), (40.0, 40.0))
+                )
+                for stem in order
+            },
+        ),
+        RtDriftModel(anchors=(DriftAnchor("anchor", 10.3, 0, state),)),
+    )
+    (row,) = group_peak_bands(owners, config=AlignmentConfig(), rt_frame=frame)
+    assert row.owners == owners
+    assert band_shift_rows(owners, config=AlignmentConfig(), rt_frame=frame) == ()

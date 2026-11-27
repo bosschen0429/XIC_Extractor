@@ -366,7 +366,11 @@ Final grouping uses them as follows:
   quarter of the shape range (B) or 10 seconds (M); otherwise it stays zero.
   A seed keeps the fit with the least robust residual spread, preferring
   zero or fewer coefficients on equal spread. Relinking uses that fixed seed
-  fit, never one fitted to the proposed union. A peak with an unknown used
+  fit, never one refitted to peaks the relink would add. In final grouping,
+  seeds that one joint fit explains merge first: two seeds join when their
+  union, with the drift fitted to it removed, links into one band on its own;
+  the merged seed is fitted on seed members only. Shift-vote rows and Targeted
+  keep one fit per seed, so M does not depend on the merge. A peak with an unknown used
   regressor stays out of that relink; remaining peaks can still link without
   the drift model. Backfill reads the accepted band's coefficients and seed
   shape without refitting them.
@@ -378,8 +382,9 @@ Final grouping uses them as follows:
 Known limits: a non-anchor drifting compound near the RT boundary between two
 shape types can borrow the wrong shape; isomers that occupy different injection
 segments can be explained by a segment-aligned M only when the shift within
-each segment does not contradict it. A seed's coefficients come only from its
-own linked members, and seeds are taken by direct-peak count: a seed covering
-part of a drifting band can extrapolate poorly to the rest, which then forms
-its own row, and an earlier seed can take peaks that a later seed's fit would
-have joined.
+each segment does not contradict it. A seed's coefficients come only from seed
+members, and seeds are taken by direct-peak count after merging: a seed that
+holds two lines in some injections cannot merge with the rest of either, and an
+earlier seed can still take peaks that a later seed's fit would have joined.
+Pieces of one line more than eight injections apart, with no detected peak
+between them, stay separate rows.
