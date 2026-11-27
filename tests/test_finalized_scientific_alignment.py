@@ -154,13 +154,13 @@ def _finalization_inputs(
 ):
     del monkeypatch
     tmp_path.mkdir(parents=True, exist_ok=True)
-    fixture, spine, handoff = _owner_handoff(tmp_path)
+    fixture, predecessor_cells, handoff = _owner_handoff(tmp_path)
     receipt = _final_receipt(
         SimpleNamespace(context=SimpleNamespace(samples=fixture.samples)),
         predecessors=handoff.coverage.groups,
         successors=handoff.final_population,
     )
-    method_subject = spine.cells[0].group_context.method_subject
+    method_subject = predecessor_cells[0].group_context.method_subject
 
     candidate_ids = tuple(f"candidate-{sample.raw_stem}" for sample in fixture.samples)
     scope = TargetSearchScope(
@@ -205,4 +205,4 @@ def _finalization_inputs(
             )
         ),
     )
-    return scope, terminals, receipt, handoff, spine.cells
+    return scope, terminals, receipt, handoff, predecessor_cells

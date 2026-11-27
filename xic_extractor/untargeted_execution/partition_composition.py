@@ -254,7 +254,6 @@ def compose_and_persist_untargeted_partition(
     sample_rt_frame: SampleRtFrame | None = None,
     known_istd_reference: KnownIstdReference | None = None,
     should_cancel: Callable[[], object] | None = None,
-    retain_memory: bool = False,
 ) -> PersistedUntargetedPartition:
     """Compose one child at a time and publish only after the full partition.
 
@@ -313,7 +312,6 @@ def compose_and_persist_untargeted_partition(
         child_outputs=child_outputs(),
         before_publish=check_cancellation,
         metadata_payload=metadata_payload,
-        retain_memory=retain_memory,
     )
     return PersistedUntargetedPartition(
         sealed=sealed,

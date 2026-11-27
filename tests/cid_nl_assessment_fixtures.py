@@ -1,4 +1,4 @@
-"""Helpers shared by test_cid_nl_evidence_spine and other test modules."""
+"""Helpers shared by test_cid_nl_assessment_evidence and other test modules."""
 
 from __future__ import annotations
 

@@ -16,12 +16,13 @@ from tests.alignment_cell_decision_fixtures import (
 from tests.cell_observations_fixtures import (
     _coverage_for_groups,
     _final_receipt,
+    _group_and_predecessor_cells,
     _owner_handoff,
     _owner_handoff_for_cells,
     _receipt_fixture,
     _support_assessment,
 )
-from tests.cid_nl_evidence_spine_fixtures import _completed_receipt
+from tests.cid_nl_assessment_fixtures import _completed_receipt
 from tests.cid_nl_peak_support_no_raw_fixture import PRECURSOR_MZ
 from tests.group_fixtures import group_from_members
 from tests.owner_peak_fixtures import trace_peak
@@ -40,9 +41,6 @@ from xic_extractor.alignment.cell_decision.owner import (
 from xic_extractor.alignment.cell_observation.observations import (
     compose_final_group_cell_observation_population,
     mint_cell_observation,
-)
-from xic_extractor.alignment.cid_nl_evidence_spine import (
-    build_cid_nl_reference_spine,
 )
 from xic_extractor.alignment.cross_sample.association import (
     build_cross_sample_association_lineage_handoff,
@@ -220,7 +218,7 @@ def test_group_numeric_uses_real_primary_matrix_area(tmp_path, monkeypatch):
 def test_group_closed_state_table_maps_owner_observations_without_reason_parsing(
     tmp_path,
 ):
-    _, spine, handoff = _owner_handoff(tmp_path)
+    _, _, handoff = _owner_handoff(tmp_path)
     observations = compose_final_group_cell_observation_population(handoff=handoff)
     answers = tuple(
         decision_owner._decide_group(
@@ -248,7 +246,7 @@ def test_group_closed_state_table_maps_owner_observations_without_reason_parsing
 def test_group_hold_counterexample_distinguishes_observed_and_zero_candidate(
     tmp_path: Path,
 ) -> None:
-    fixture, spine, handoff = _owner_handoff(tmp_path)
+    fixture, source_cells, handoff = _owner_handoff(tmp_path)
     observed_cells = compose_final_group_cell_observation_population(
         handoff=handoff,
     )
@@ -266,7 +264,9 @@ def test_group_hold_counterexample_distinguishes_observed_and_zero_candidate(
         detector_invocation_id="gaussian15:s4:cell-decision-negative",
         evaluation_receipt=_completed_receipt(),
     )
-    source = next(item for item in spine.cells if item.sample_key == sample.sample_name)
+    source = next(
+        item for item in source_cells if item.sample_key == sample.sample_name
+    )
     negative_cell = mint_cell_observation(
         sample=sample,
         target=fixture.target,
@@ -274,7 +274,7 @@ def test_group_hold_counterexample_distinguishes_observed_and_zero_candidate(
         method_assessment=negative_assessment,
     )
     predecessor_cells = tuple(
-        negative_cell if item is source else item for item in spine.cells
+        negative_cell if item is source else item for item in source_cells
     )
     handoff = _owner_handoff_for_cells(
         fixture,
@@ -294,7 +294,7 @@ def test_group_hold_counterexample_distinguishes_observed_and_zero_candidate(
 def test_group_reject_decides_rejected_observation(
     tmp_path: Path,
 ) -> None:
-    _fixture, spine, handoff = _owner_handoff(tmp_path)
+    _, _, handoff = _owner_handoff(tmp_path)
     cells = compose_final_group_cell_observation_population(
         handoff=handoff,
     )
@@ -330,20 +330,18 @@ def test_group_merge_selects_one_direct_integration_among_lanes(
         )
         for index, sample in enumerate(samples)
     )
-    left_spine = build_cid_nl_reference_spine(
-        target=fixture.target,
-        sample_assessments=((samples[0], assessments[0]),),
+    left, left_cells = _group_and_predecessor_cells(
+        ((samples[0], assessments[0]),),
+        known_label=fixture.target.label,
     )
-    right_spine = build_cid_nl_reference_spine(
-        target=fixture.target,
-        sample_assessments=((samples[1], assessments[1]),),
+    right, right_cells = _group_and_predecessor_cells(
+        ((samples[1], assessments[1]),),
+        known_label=fixture.target.label,
     )
-    left = left_spine.group
-    right = right_spine.group
     merged = group_from_members(
         member_subjects=left.member_subjects + right.member_subjects,
     )
-    predecessor_cells = (left_spine.cells[0], right_spine.cells[0])
+    predecessor_cells = (left_cells[0], right_cells[0])
     coverage = _coverage_for_groups(
         fixture,
         (left, right),
@@ -398,11 +396,10 @@ def test_group_split_nonmember_maps_exact_not_searched_closure(
         )
         for index, sample in enumerate(samples)
     )
-    spine = build_cid_nl_reference_spine(
-        target=fixture.target,
-        sample_assessments=tuple(zip(samples, assessments, strict=True)),
+    predecessor, predecessor_cells = _group_and_predecessor_cells(
+        tuple(zip(samples, assessments, strict=True)),
+        known_label=fixture.target.label,
     )
-    predecessor = spine.group
     left = group_from_members(
         member_subjects=(predecessor.member_subjects[0],),
     )
@@ -413,7 +410,7 @@ def test_group_split_nonmember_maps_exact_not_searched_closure(
         fixture,
         (predecessor,),
         samples,
-        predecessor_cells=spine.cells,
+        predecessor_cells=predecessor_cells,
     )
     receipt = _final_receipt(
         _receipt_fixture(fixture, samples),

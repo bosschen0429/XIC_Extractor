@@ -318,7 +318,6 @@ def test_pipeline_publishes_projected_children_and_cleans_up(
             output_dir=tmp_path / name,
             alignment_config=config,
             max_partition_jobs=4,
-            retain_partition_memory=False,
             project_child=project_child,
             execution=in_process_execution(),
         ).bind_publication_inputs(

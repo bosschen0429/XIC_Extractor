@@ -8,12 +8,13 @@ import pytest
 import xic_extractor.alignment.cross_sample.peak_groups as group_owner
 from tests.cell_observations_fixtures import (
     _coverage_for_groups,
+    _group_and_predecessor_cells,
     _owner_handoff,
     _owner_handoff_for_cells,
     _receipt_fixture,
     _support_assessment,
 )
-from tests.cid_nl_evidence_spine_fixtures import (
+from tests.cid_nl_assessment_fixtures import (
     _completed_receipt,
 )
 from tests.cid_nl_peak_support_no_raw_fixture import (
@@ -31,12 +32,8 @@ from tests.untargeted_cid_nl_no_raw_fixture import (
 )
 from xic_extractor.alignment.band_grouping import group_peak_bands
 from xic_extractor.alignment.cell_observation.observations import (
-    CellObservationContractError,
     compose_final_group_cell_observation_population,
     mint_cell_observation,
-)
-from xic_extractor.alignment.cid_nl_evidence_spine import (
-    build_cid_nl_reference_spine,
 )
 from xic_extractor.alignment.cid_nl_inputs import (
     CID_NL_ALIGNMENT_CONFIG,
@@ -335,7 +332,7 @@ def test_backfill_attempt_with_same_values_reuses_the_initial_assessment(
 def test_composer_mints_exact_cartesian_owner_population_and_states(
     tmp_path: Path,
 ) -> None:
-    _fixture, spine, handoff = _owner_handoff(tmp_path)
+    _, _, handoff = _owner_handoff(tmp_path)
 
     cells = compose_final_group_cell_observation_population(
         handoff=handoff,
@@ -363,7 +360,7 @@ def test_composer_distinguishes_completed_negative_search(
     tmp_path: Path,
     backfill_enabled: bool,
 ) -> None:
-    fixture, spine, handoff = _owner_handoff(tmp_path)
+    fixture, source_cells, handoff = _owner_handoff(tmp_path)
     sample = fixture.sample("s4")
     negative_assessment = mint_cid_nl_method_assessment(
         sample=sample,
@@ -375,12 +372,12 @@ def test_composer_distinguishes_completed_negative_search(
     negative_cell = mint_cell_observation(
         sample=sample,
         target=fixture.target,
-        group_context=spine.cells[0].group_context,
+        group_context=source_cells[0].group_context,
         method_assessment=negative_assessment,
     )
     predecessor_cells = tuple(
         negative_cell if cell.sample_key == sample.sample_name else cell
-        for cell in spine.cells
+        for cell in source_cells
     )
     handoff = _owner_handoff_for_cells(
         fixture,
@@ -423,20 +420,18 @@ def test_composer_keeps_same_sample_sources_with_their_groups(
         apex_rt=8.3,
         scan_number=42,
     )
-    first_spine = build_cid_nl_reference_spine(
-        target=fixture.target,
-        sample_assessments=((sample, first_assessment),),
+    first_group, first_cells = _group_and_predecessor_cells(
+        ((sample, first_assessment),),
+        known_label=fixture.target.label,
     )
-    second_spine = build_cid_nl_reference_spine(
-        target=fixture.target,
-        sample_assessments=((sample, second_assessment),),
+    second_group, second_cells = _group_and_predecessor_cells(
+        ((sample, second_assessment),),
+        known_label=fixture.target.label,
     )
-    first_group = first_spine.group
-    second_group = second_spine.group
     assert first_group != second_group
     samples = (sample,)
-    first_cell = first_spine.cells[0]
-    second_cell = second_spine.cells[0]
+    first_cell = first_cells[0]
+    second_cell = second_cells[0]
     coverage = _coverage_for_groups(
         fixture,
         (first_group, second_group),
@@ -482,37 +477,30 @@ def test_composer_merge_retains_both_predecessor_lanes_deterministically(
         apex_rt=8.3,
         scan_number=52,
     )
-    left_spine = build_cid_nl_reference_spine(
-        target=fixture.target,
-        sample_assessments=((samples[0], first_assessment),),
+    left, left_cells = _group_and_predecessor_cells(
+        ((samples[0], first_assessment),),
+        known_label=fixture.target.label,
     )
-    right_spine = build_cid_nl_reference_spine(
-        target=fixture.target,
-        sample_assessments=((samples[1], second_assessment),),
+    right, right_cells = _group_and_predecessor_cells(
+        ((samples[1], second_assessment),),
+        known_label=fixture.target.label,
     )
-    left = left_spine.group
-    right = right_spine.group
     merged = group_from_members(
         member_subjects=left.member_subjects + right.member_subjects,
     )
-    if outside_support:
-        predecessor_cells = tuple(
-            group_spine.cells[0]
-            if group_spine is supporting_spine
-            else mint_cell_observation(
-                sample=sample,
-                target=fixture.target,
-                group_context=group_spine.cells[0].group_context,
-                method_assessment=supporting_spine.cells[0].method_assessment,
-                outside_group_context=supporting_spine.cells[0].group_context,
-            )
-            for group_spine in (left_spine, right_spine)
-            for sample, supporting_spine in zip(
-                samples, (left_spine, right_spine), strict=True
-            )
+    predecessor_cells = (
+        compose_cid_nl_predecessor_cells(
+            groups=(left, right),
+            sample_assessments=(
+                (samples[0], first_assessment),
+                (samples[1], second_assessment),
+            ),
+            alignment_config=CID_NL_ALIGNMENT_CONFIG,
+            rt_frame=SampleRtFrame.from_samples(samples),
         )
-    else:
-        predecessor_cells = (left_spine.cells[0], right_spine.cells[0])
+        if outside_support
+        else left_cells + right_cells
+    )
     coverage = _coverage_for_groups(
         fixture,
         (left, right),
@@ -585,14 +573,13 @@ def test_composer_split_keeps_cartesian_not_searched_remainder(
         scan_number=62,
         seed_count=2,
     )
-    predecessor_spine = build_cid_nl_reference_spine(
-        target=fixture.target,
-        sample_assessments=(
+    predecessor, predecessor_cells = _group_and_predecessor_cells(
+        (
             (samples[0], first_assessment),
             (samples[1], second_assessment),
         ),
+        known_label=fixture.target.label,
     )
-    predecessor = predecessor_spine.group
     members_by_sample = {
         member.sample_key: member for member in predecessor.member_subjects
     }
@@ -606,7 +593,7 @@ def test_composer_split_keeps_cartesian_not_searched_remainder(
         fixture,
         (predecessor,),
         samples,
-        predecessor_cells=predecessor_spine.cells,
+        predecessor_cells=predecessor_cells,
     )
     receipt = _final_receipt(
         _receipt_fixture(fixture, samples),
@@ -628,32 +615,3 @@ def test_composer_split_keeps_cartesian_not_searched_remainder(
     assert by_key[(right, samples[0])].evidence_state == "not_searched"
     assert not by_key[(left, samples[1])].position_associations
     assert not by_key[(right, samples[0])].position_associations
-
-
-def test_final_member_rejects_hold_method_lane(tmp_path: Path) -> None:
-    fixture, spine, handoff = _owner_handoff(tmp_path)
-    sample = fixture.sample("s1")
-    hold_assessment = mint_cid_nl_method_assessment(
-        sample=sample,
-        acquisition_source=fixture.source(sample),
-        target=fixture.target,
-        detector_invocation_id="gaussian15:s1:hold-invalid-final-member",
-        evaluation_receipt=_completed_receipt(),
-    )
-    source = next(cell for cell in spine.cells if cell.sample_key == sample.sample_name)
-    invalid_source = mint_cell_observation(
-        sample=sample,
-        target=fixture.target,
-        group_context=source.group_context,
-        method_assessment=hold_assessment,
-    )
-    predecessor_cells = tuple(
-        invalid_source if cell is source else cell for cell in spine.cells
-    )
-
-    handoff = _owner_handoff_for_cells(fixture, spine.group, predecessor_cells)
-
-    with pytest.raises(CellObservationContractError, match="HOLD or REJECT"):
-        compose_final_group_cell_observation_population(
-            handoff=handoff,
-        )

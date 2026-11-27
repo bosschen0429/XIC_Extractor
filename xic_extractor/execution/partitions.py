@@ -104,7 +104,6 @@ class PartitionPipelineAdapter(
         acquisition_output: PartitionAcquisitionOutput[TAcquisitionResult],
         store: StreamedResultStore,
         *,
-        retain_memory: bool = False,
         should_cancel: Callable[[], None] | Callable[[], bool] | None = None,
     ) -> PartitionCompositionOutput[TCompositionResult]: ...
 
@@ -143,7 +142,6 @@ class PartitionPipelineScheduler:
         pipeline_overlap: bool = True,
         phases: Sequence[PartitionPipelinePhase[TPartitionPayload]] | None = None,
         acquisition_workers: int = 1,
-        retain_partition_memory: bool = False,
         store_factory: Callable[[Path, tuple[object, ...]], StreamedResultStore] = (
             StreamedResultStore
         ),
@@ -313,8 +311,6 @@ class PartitionPipelineScheduler:
                                     partition,
                                     acq_out,
                                     store,
-                                    retain_memory=retain_partition_memory
-                                    and len(partitions) == 1,
                                     should_cancel=check_cancellation,
                                 )
                             except Exception as exc:
@@ -492,8 +488,6 @@ class PartitionPipelineScheduler:
                                             partition,
                                             acq_out,
                                             store,
-                                            retain_memory=retain_partition_memory
-                                            and len(partitions) == 1,
                                             should_cancel=is_stopped,
                                         )
                                         comp_end = time.perf_counter()

@@ -42,7 +42,6 @@ from tests.untargeted_cid_nl_bounded_runtime_fixtures import (
     entry_scenario,
 )
 from tests.untargeted_partition_fixtures import (
-    children_of,
     physical_peak_keys,
     project_composed_child,
 )
@@ -1613,7 +1612,6 @@ def test_formal_partition_reuses_prepared_group_ids_with_ms1_only_members(
         partition,
         acquisition,
         store,
-        retain_memory=True,
     )
     assert composed.result.child_count == 1
     assert len(calls) == calls_before_composition
@@ -1763,91 +1761,31 @@ def _spool_dirs(output_dir):
     return sorted(output_dir.glob(".partition_spool-*"))
 
 
-def _run_for_spool(tmp_path, monkeypatch, *, retain):
-    from xic_extractor.untargeted_execution.execution import (
-        execute_untargeted_plan,
-    )
+def test_released_spool_is_deleted_when_the_workflow_result_closes(
+    tmp_path, monkeypatch
+):
+    from xic_extractor.untargeted_execution.execution import execute_untargeted_plan
 
     plan, reference = _plan(tmp_path, monkeypatch)
-    output_dir = tmp_path / ("retained" if retain else "released")
+    output_dir = tmp_path / "released"
     result = execute_untargeted_plan(
         plan,
         output_dir=output_dir,
         alignment_config=AlignmentConfig(),
         known_istd_reference=reference,
         max_partition_jobs=len(plan.context.samples),
-        retain_partition_spool=retain,
         project_child=project_composed_child,
         execution=in_process_execution(),
     )
-    spools = _spool_dirs(output_dir)
-    assert len(spools) == 1
-    child_ids = tuple(
-        tuple(
-            observation.key for observation in child.scientific_core.cell_observations
-        )
-        for child in children_of(result.application_result)
-    )
+    (spool,) = _spool_dirs(output_dir)
     alias = replace(result)
     result.close()
     alias.close()
     result.close()
-    return spools[0], child_ids
-
-
-def test_released_spool_is_deleted_when_the_workflow_result_closes(
-    tmp_path, monkeypatch
-):
-    """The default still owns the spool and removes it; nothing is left behind."""
-    spool, _ = _run_for_spool(tmp_path, monkeypatch, retain=False)
     assert not spool.exists()
 
 
-def test_retained_spool_keeps_its_partitions_and_publishes_a_readable_index(
-    tmp_path, monkeypatch
-):
-    """Retention leaves an index a separate reader can restore records from."""
-    from xic_extractor.execution.result_store import (
-        PRESERVED_INDEX_NAME,
-        open_preserved_results,
-    )
-
-    spool, child_ids = _run_for_spool(tmp_path, monkeypatch, retain=True)
-    assert spool.is_dir()
-    index = spool / PRESERVED_INDEX_NAME
-    assert index.is_file()
-    assert sorted(path.name for path in spool.glob("*.pickle")) != [
-        PRESERVED_INDEX_NAME
-    ], "retention must keep the partition files, not only the index"
-
-    restored = open_preserved_results(index)
-    recovered = tuple(
-        tuple(
-            observation.key
-            for observation in output.child.scientific_core.cell_observations
-        )
-        for output in restored.sequence("child_outputs")
-    )
-    assert sorted(recovered, key=repr) == sorted(child_ids, key=repr)
-
-    first_child_partition = next(
-        position
-        for position, lengths in enumerate(restored._field_lengths)
-        if lengths["child_outputs"]
-    )
-    first = restored.read_selected(first_child_partition, "child_outputs", (0,))[
-        0
-    ].child
-    assert (
-        tuple(
-            observation.key for observation in first.scientific_core.cell_observations
-        )
-        == recovered[0]
-    )
-
-
-@pytest.mark.parametrize("retain", (False, True))
-def test_result_store_close_failure_is_reported_once(tmp_path, monkeypatch, retain):
+def test_result_store_close_failure_is_reported_once(tmp_path, monkeypatch):
 
     from xic_extractor.execution.result_store import StreamedResultStore
     from xic_extractor.untargeted_execution.execution import execute_untargeted_plan
@@ -1858,20 +1796,18 @@ def test_result_store_close_failure_is_reported_once(tmp_path, monkeypatch, reta
         output_dir=tmp_path / "runtime",
         alignment_config=AlignmentConfig(),
         max_partition_jobs=len(plan.context.samples),
-        retain_partition_spool=retain,
         project_child=project_composed_child,
         execution=in_process_execution(),
     )
     alias = replace(result)
-    operation = "preserve_results" if retain else "cleanup"
-    original_close = getattr(StreamedResultStore, operation)
+    original_close = StreamedResultStore.cleanup
     calls = []
 
     def fail_close(store):
         calls.append(store)
         raise OSError("result store close failed")
 
-    monkeypatch.setattr(StreamedResultStore, operation, fail_close)
+    monkeypatch.setattr(StreamedResultStore, "cleanup", fail_close)
     try:
         with pytest.raises(OSError, match="result store close failed"):
             result.close()
@@ -1879,10 +1815,7 @@ def test_result_store_close_failure_is_reported_once(tmp_path, monkeypatch, reta
         result.close()
         assert len(calls) == 1
     finally:
-        if retain:
-            StreamedResultStore.cleanup(calls[0])
-        else:
-            original_close(calls[0])
+        original_close(calls[0])
 
 
 def test_a_failed_attempt_leaves_no_partition_spool(tmp_path, monkeypatch):

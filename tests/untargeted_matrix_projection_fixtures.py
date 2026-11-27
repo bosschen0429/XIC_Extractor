@@ -9,6 +9,7 @@ import pytest
 import xic_extractor.alignment.result.scientific_alignment as finalizer_owner
 from tests.cell_observations_fixtures import (
     _coverage_for_groups,
+    _group_and_predecessor_cells,
     _receipt_fixture,
 )
 from tests.cid_nl_peak_support_no_raw_fixture import (
@@ -28,9 +29,6 @@ from tests.untargeted_cid_nl_no_raw_fixture import (
 )
 from xic_extractor.alignment.cell_decision.owner import (
     decide_group_cell_population,
-)
-from xic_extractor.alignment.cid_nl_evidence_spine import (
-    build_cid_nl_reference_spine,
 )
 from xic_extractor.alignment.cid_nl_inputs import UntargetedCidNlAssessmentInput
 from xic_extractor.alignment.cross_sample.association import (
@@ -75,9 +73,8 @@ def _untarget_projection_inputs(
         scope_path,
         sample_roles={"sample-b": "qc", "sample-c": "sample"},
     )
-    spine = build_cid_nl_reference_spine(
-        method_subject=fixture.method_subject,
-        sample_assessments=(
+    predecessor, predecessor_cells = _group_and_predecessor_cells(
+        (
             (
                 fixture.samples[0],
                 _support_input(
@@ -89,14 +86,11 @@ def _untarget_projection_inputs(
             ),
         ),
     )
-    predecessor = spine.group
     predecessor_groups = (predecessor,)
-    predecessor_cells = spine.cells
     successors = predecessor_groups
     if group_mode in {"two", "merged"}:
-        right_spine = build_cid_nl_reference_spine(
-            method_subject=fixture.method_subject,
-            sample_assessments=(
+        right, right_cells = _group_and_predecessor_cells(
+            (
                 (
                     fixture.samples[1],
                     _support_input(
@@ -108,14 +102,13 @@ def _untarget_projection_inputs(
                 ),
             ),
         )
-        right = right_spine.group
         predecessor_groups = tuple(
             sorted(
                 (predecessor, right),
                 key=lambda group: group.group_hypothesis_id,
             )
         )
-        predecessor_cells = spine.cells + right_spine.cells
+        predecessor_cells += right_cells
         if group_mode == "two":
             successors = predecessor_groups
         else:
