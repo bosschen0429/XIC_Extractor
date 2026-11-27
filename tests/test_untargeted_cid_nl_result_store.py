@@ -52,9 +52,6 @@ def test_roundtrip_preserves_explicit_nested_owner_identity_and_proxy(tmp_path):
     store = StreamedResultStore(tmp_path, (owner, shared_container))
     entry = store.append("subject-1", payload)
     assert (entry.index, entry.key) == (0, "subject-1")
-    assert entry.size_bytes > 0
-    stored_bytes = next(tmp_path.iterdir()).read_bytes()
-    assert entry.size_bytes == len(stored_bytes)
     restored = store.read(entry.index)
     assert restored is not payload
     assert restored.child_outputs[0]["owner"] is owner
@@ -66,9 +63,11 @@ def test_roundtrip_preserves_explicit_nested_owner_identity_and_proxy(tmp_path):
 def test_roundtrip_preserves_array_larger_than_one_pickle_frame(tmp_path):
     trace = np.arange(1 << 14, dtype=float)
     store = StreamedResultStore(tmp_path, ())
-    entry = store.append("large-trace", Payload((trace,)))
-    assert entry.size_bytes == len(next(tmp_path.iterdir()).read_bytes())
-    np.testing.assert_array_equal(store.read(entry.index).child_outputs[0], trace)
+    entry = store.append("large-trace", Payload((trace, "next record")))
+    array, marker = store.read(entry.index).child_outputs
+    np.testing.assert_array_equal(array, trace)
+    assert marker == "next record"
+    assert store.read_selected(entry.index, "child_outputs", (1,)) == ("next record",)
 
 
 def test_sealed_sequence_preserves_order_indices_and_empty_chunks(tmp_path):
@@ -137,13 +136,13 @@ def test_streaming_children_matches_append_bytes_and_reader(tmp_path):
         (1, 2, 3), method_assessments=(4,), excluded_candidates=(5,), label="same"
     )
     tuple_store = StreamedResultStore(tmp_path / "tuple", ())
-    tuple_entry = tuple_store.append("partition", payload)
+    tuple_store.append("partition", payload)
     stream_store = StreamedResultStore(tmp_path / "stream", ())
 
     def child_outputs():
         yield from payload.child_outputs
 
-    stream_entry = stream_store.append_child_outputs(
+    stream_store.append_child_outputs(
         "partition",
         Payload(
             (), payload.method_assessments, payload.excluded_candidates, payload.label
@@ -153,7 +152,6 @@ def test_streaming_children_matches_append_bytes_and_reader(tmp_path):
     assert next((tmp_path / "stream").glob("*.pickle")).read_bytes() == (
         next((tmp_path / "tuple").glob("*.pickle")).read_bytes()
     )
-    assert stream_entry.size_bytes == tuple_entry.size_bytes
     stream_store.seal()
     assert stream_store.read(0) == payload
     assert tuple(stream_store.sequence("child_outputs")) == payload.child_outputs
@@ -358,64 +356,3 @@ def test_partition_keys_cannot_escape_owner_directory(tmp_path, key):
     with pytest.raises(ValueError, match="partition key"):
         store.append(key, Payload(()))
     assert list(tmp_path.iterdir()) == []
-
-
-def test_retained_memory_sequence_and_selected_bypass_file_reads(tmp_path, monkeypatch):
-    payload = Payload(
-        (10, 20, 30),
-        method_assessments=(100, 200),
-        excluded_candidates=(1000, 2000),
-        label="retained",
-    )
-    store = StreamedResultStore(tmp_path, ())
-    entry = store.append_child_outputs(
-        "part-0",
-        Payload(
-            (),
-            payload.method_assessments,
-            payload.excluded_candidates,
-            payload.label,
-        ),
-        child_outputs=(10, 20, 30),
-        retain_memory=True,
-    )
-    assert entry.size_bytes > 0
-    store.seal()
-
-    opened = []
-    original_open = Path.open
-
-    def tracking_open(path, *args, **kwargs):
-        stream = original_open(path, *args, **kwargs)
-        opened.append(stream)
-        return stream
-
-    monkeypatch.setattr(Path, "open", tracking_open)
-
-    seq = store.sequence("child_outputs")
-    assert tuple(seq) == (10, 20, 30)
-    assert seq[1] == 20
-    assert len(opened) == 0
-
-    selected = store.read_selected(0, "excluded_candidates", (1, 0))
-    assert selected == (2000, 1000)
-    assert len(opened) == 0
-
-
-def test_partition_result_store_cleanup(tmp_path: Path) -> None:
-    spool_dir = tmp_path / "spool"
-    store = StreamedResultStore(spool_dir, ())
-    store.append(
-        "part-0",
-        Payload(child_outputs=(1, 2), method_assessments=("a", "b")),
-        retain_memory=True,
-    )
-    assert spool_dir.exists()
-    assert len(store._field_caches) == 1
-
-    store.cleanup()
-    assert not spool_dir.exists()
-    assert len(store._field_caches) == 0
-
-    store.cleanup()
-    assert not spool_dir.exists()

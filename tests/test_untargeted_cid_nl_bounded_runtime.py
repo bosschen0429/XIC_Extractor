@@ -1612,7 +1612,6 @@ def test_formal_partition_reuses_prepared_group_ids_with_ms1_only_members(
         partition,
         acquisition,
         store,
-        retain_memory=True,
     )
     assert composed.result.child_count == 1
     assert len(calls) == calls_before_composition

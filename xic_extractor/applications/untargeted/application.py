@@ -209,7 +209,6 @@ def run_untargeted_application(
                     execution=request.execution.profile,
                     should_cancel=context.should_cancel,
                     progress_callback=context.progress_callback,
-                    retain_partition_memory=False,
                     max_partition_jobs=request.execution.max_partition_jobs,
                     mass_recalibration_by_sample=(
                         _batch_mass_recalibration(

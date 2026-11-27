@@ -619,7 +619,6 @@ class UntargetedPartitionPipelineAdapter:
         ],
         store: StreamedResultStore,
         *,
-        retain_memory: bool = False,
         should_cancel: Callable[[], bool] | Callable[[], None] | None = None,
     ) -> PartitionCompositionOutput[PersistedUntargetedPartition]:
         batch, leaf = acquisition_output.result
@@ -656,7 +655,6 @@ class UntargetedPartitionPipelineAdapter:
             sample_rt_frame=self._batch_preparation.frozen_rt_frame,
             known_istd_reference=self._known_istd_reference,
             should_cancel=cancel_check,
-            retain_memory=retain_memory,
         )
         return PartitionCompositionOutput(result=persisted, sealed=persisted.sealed)
 
@@ -735,7 +733,6 @@ def execute_untargeted_plan(
     execution: ExecutionProfile,
     max_partition_jobs: int = 100_000,
     should_cancel: Callable[[], bool] | None = None,
-    retain_partition_memory: bool = False,
     grouping_only: bool = False,
     capture_grouping: Callable[[PreparedGroupingExperiment], None] | None = None,
     capture_backfill: Callable[[FrozenBackfillPartition], None] | None = None,
@@ -774,7 +771,6 @@ def execute_untargeted_plan(
             output_dir=output_dir,
             progress_callback=progress_callback,
             should_cancel=should_cancel,
-            retain_partition_memory=retain_partition_memory,
             pipeline_overlap=execution.overlap_partitions,
             acquisition_workers=adapter.acquisition_workers,
             store_factory=StreamedResultStore,
