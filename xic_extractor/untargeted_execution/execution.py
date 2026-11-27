@@ -12,6 +12,7 @@ from functools import partial
 from pathlib import Path
 from typing import cast
 
+from xic_extractor.alignment.backfill.cid_nl_planning import CidNlBackfillQuestion
 from xic_extractor.alignment.cid_nl_initial_grouping import (
     CidNlBatchGrouping,
     CidNlGrouping,
@@ -62,6 +63,9 @@ from xic_extractor.untargeted_execution.partition.models import (
     UntargetedPartitionResult,
     build_sample_jobs,
 )
+from xic_extractor.untargeted_execution.partition.workers import (
+    plan_partition_backfills,
+)
 from xic_extractor.untargeted_execution.partition_composition import (
     ChildOutputProjection,
     PersistedUntargetedPartition,
@@ -76,6 +80,7 @@ from xic_extractor.untargeted_execution.partition_composition import (
 class _GroupingInputs:
     batch: UntargetedPartitionInputs
     prepared: CidNlGrouping
+    backfill_questions: tuple[CidNlBackfillQuestion, ...] = ()
 
 
 def _direct_evidence_partition_rows(
@@ -87,24 +92,32 @@ def _direct_evidence_partition_rows(
 
 
 def _finalize_partition_grouping(
-    task: tuple[_GroupingInputs, SampleRtFrame],
+    task: tuple[_GroupingInputs, SampleRtFrame, bool],
 ) -> tuple[_GroupingInputs, tuple[Mapping[str, object], ...]]:
-    """One partition's final grouping and the progress it reported."""
-    initial, rt_frame = task
+    """One partition's final grouping, its Backfill questions when a Backfill
+    follows, and the progress it reported."""
+    initial, rt_frame, plan_backfill = task
     events: list[Mapping[str, object]] = []
     prepared = regroup_cid_nl_grouping(
         initial.prepared, rt_frame=rt_frame, progress_callback=events.append
     )
-    return _GroupingInputs(initial.batch, prepared), tuple(events)
+    questions = (
+        plan_partition_backfills(initial.batch.jobs, prepared)
+        if plan_backfill and prepared.alignment_config.backfill_enabled
+        else ()
+    )
+    return _GroupingInputs(initial.batch, prepared, questions), tuple(events)
 
 
 @dataclass(frozen=True, slots=True)
 class FrozenBackfillPartition:
-    """A complete set of competing groups and its already acquired assessments."""
+    """A complete set of competing groups, its already acquired assessments and
+    the Backfill questions planned with its final grouping."""
 
     batch: UntargetedPartitionInputs
     grouping: CidNlGrouping
     initial_results: tuple[UntargetedInitialSampleResult, ...]
+    questions: tuple[CidNlBackfillQuestion, ...]
 
     def execute(
         self,
@@ -122,6 +135,7 @@ class FrozenBackfillPartition:
             prepare_grouping=lambda _: self.grouping,
             initial_results=self.initial_results,
             initial_only=False,
+            backfill_questions=self.questions,
             progress_callback=progress_callback,
             should_cancel=should_cancel,
         )
@@ -419,7 +433,9 @@ class UntargetedPartitionPipelineAdapter:
 
         Partitions regroup independently on the RAW workers, so at most one
         grouping per worker is resident. Both full execution and snapshots
-        consume these answers; neither regroups in the Backfill lane.
+        consume these answers; neither regroups in the Backfill lane. The
+        same worker plans the partition's Backfill questions, which a
+        Backfill partition would otherwise compute before it could dispatch.
         """
         if len(self._initial_partitions) != self._bootstrap_count:
             raise RuntimeError("initial acquisition phase is incomplete")
@@ -433,6 +449,7 @@ class UntargetedPartitionPipelineAdapter:
         assert frozen is not None
         rt_frame: SampleRtFrame = frozen
         partitions = tuple(self.bootstrap_partitions)
+        plan_backfill = not self._grouping_only or self._capture_backfill is not None
 
         def task(
             partition: WorkPartition[tuple[CidNlMethodSubject, ...]],
@@ -445,6 +462,11 @@ class UntargetedPartitionPipelineAdapter:
                 ),
             )
             return initial, rt_frame
+
+        def finalize_task(
+            partition: WorkPartition[tuple[CidNlMethodSubject, ...]],
+        ) -> tuple[_GroupingInputs, SampleRtFrame, bool]:
+            return (*task(partition), plan_backfill)
 
         def seal(
             completed: int,
@@ -501,7 +523,7 @@ class UntargetedPartitionPipelineAdapter:
             pool.run_windowed(
                 partitions,
                 _finalize_partition_grouping,
-                task_arg_fn=task,
+                task_arg_fn=finalize_task,
                 on_completed=seal,
             )
             if pool.first_error is not None:
@@ -530,6 +552,7 @@ class UntargetedPartitionPipelineAdapter:
                     self._initial_partitions[index].index, "initial_results"
                 ),
             ),
+            final.backfill_questions,
         )
 
     def execute_acquisition(

@@ -6,6 +6,7 @@ import importlib
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
+from xic_extractor.alignment.backfill.cid_nl_planning import CidNlBackfillQuestion
 from xic_extractor.alignment.backfill.conservative import (
     is_backfill_eligible_sample,
     minimum_direct_support_count,
@@ -25,19 +26,20 @@ from xic_extractor.untargeted_execution.partition.models import (
     UntargetedSampleResult,
 )
 from xic_extractor.untargeted_execution.partition.workers import (
+    _apply_backfill_questions,
     _backfill_support_context,
     _BatchSamplePhaseState,
     _execute_backfill_sample_phase,
     _execute_initial_sample_phase,
     _execute_sample_backfill_worker,
     _execute_sample_initial_worker,
-    _prepare_group_authorized_backfills,
     _prepare_owner_authorized_backfills,
     _RuntimeJobState,
     _SampleBackfillWorkerRequest,
     _SampleBackfillWorkerResponse,
     _SampleInitialWorkerRequest,
     _SampleInitialWorkerResponse,
+    plan_partition_backfills,
 )
 
 
@@ -55,11 +57,14 @@ def execute_partition(
         [tuple[UntargetedInitialSampleResult, ...]], CidNlGrouping
     ]
     | None = None,
+    backfill_questions: tuple[CidNlBackfillQuestion, ...] | None = None,
 ) -> UntargetedPartitionResult:
     """Execute a partition, optionally split at the batch-calibration seam.
 
     The initial phase owns acquisition; a resumed phase consumes its sealed
     assessments and performs only Backfill acquisition under the same attempt.
+    A resumed phase receives the Backfill questions planned with its final
+    grouping; an unsplit run plans them here.
     """
     work = _prepare_runtime_work(
         jobs,
@@ -71,6 +76,7 @@ def execute_partition(
         prepare_grouping=prepare_grouping,
         initial_only=initial_only,
         initial_results=initial_results,
+        backfill_questions=backfill_questions,
     )
     failure = work.run()
     return UntargetedPartitionResult(
@@ -101,6 +107,7 @@ def _prepare_runtime_work(
         [tuple[UntargetedInitialSampleResult, ...]], CidNlGrouping
     ]
     | None = None,
+    backfill_questions: tuple[CidNlBackfillQuestion, ...] | None = None,
 ) -> _RuntimeWork:
 
     def report_phase(stage: str, completed: int, total: int) -> None:
@@ -347,9 +354,11 @@ def _prepare_runtime_work(
                             )
                         )
                         if not initial_only and alignment_config.backfill_enabled:
-                            _prepare_group_authorized_backfills(
+                            _apply_backfill_questions(
                                 states,
-                                prepared=work.prepared_grouping,
+                                plan_partition_backfills(jobs, work.prepared_grouping)
+                                if backfill_questions is None
+                                else backfill_questions,
                             )
                 elif not initial_only and alignment_config.backfill_enabled:
                     _prepare_owner_authorized_backfills(

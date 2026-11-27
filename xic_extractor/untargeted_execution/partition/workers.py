@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+from collections.abc import Sequence
 from dataclasses import dataclass, replace
 
 from xic_extractor.alignment.backfill.cid_nl_planning import (
@@ -242,20 +243,23 @@ def _apply_backfill_questions(
         )
 
 
-def _prepare_group_authorized_backfills(
-    states: list[_RuntimeJobState],
-    *,
+def plan_partition_backfills(
+    jobs: Sequence[UntargetedPartitionJob],
     prepared: CidNlGrouping,
-) -> None:
-    samples = {state.job.sample.sample_name: state.job.sample for state in states}
-    questions = plan_grouped_cid_nl_backfills(
+) -> tuple[CidNlBackfillQuestion, ...]:
+    """One partition's Backfill questions from its final groups.
+
+    Band RT location dominates the cost, so a split run plans these with the
+    final grouping on the workers instead of on the Backfill dispatch path.
+    """
+    samples = {job.sample.sample_name: job.sample for job in jobs}
+    return plan_grouped_cid_nl_backfills(
         prepared.worksets,
         sample_population=tuple(samples.values()),
         alignment_config=prepared.alignment_config,
         rt_frame=prepared.rt_frame,
         backfill_half_window_min=BACKFILL_HALF_WINDOW_MIN,
     )
-    _apply_backfill_questions(states, questions)
 
 
 def _prepare_owner_authorized_backfills(

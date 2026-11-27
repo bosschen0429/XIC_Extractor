@@ -1151,7 +1151,7 @@ def test_sample_parallelism_keeps_partition_and_acquisition_counts_fixed(
     original_init = _FakeThermoRaw.__init__
     original_dispose = _FakeThermoRaw.Dispose
     original_append = owner.StreamedResultStore.append_child_outputs
-    original_prepare = runtime_owner._prepare_group_authorized_backfills
+    original_apply = runtime_owner._apply_backfill_questions
 
     def materialize(*args, **kwargs):
         nonlocal live_jobs
@@ -1199,10 +1199,10 @@ def test_sample_parallelism_keeps_partition_and_acquisition_counts_fixed(
             intervals.append((start, perf_counter()))
         return original_chromatogram(handle, *args)
 
-    def prepare(*args, **kwargs):
+    def apply(*args, **kwargs):
         assert get_ident() == coordinator and not active_handles
         barrier_checks.append(len(disposed))
-        return original_prepare(*args, **kwargs)
+        return original_apply(*args, **kwargs)
 
     def append(store, partition_key, *args, **kwargs):
         assert get_ident() == coordinator and not active_handles
@@ -1216,7 +1216,7 @@ def test_sample_parallelism_keeps_partition_and_acquisition_counts_fixed(
             live_jobs = 0
 
     monkeypatch.setattr(owner, "materialize_untargeted_partition", materialize)
-    monkeypatch.setattr(runtime_owner, "_prepare_group_authorized_backfills", prepare)
+    monkeypatch.setattr(runtime_owner, "_apply_backfill_questions", apply)
     monkeypatch.setattr(_FakeThermoRaw, "__init__", initialize)
     monkeypatch.setattr(_FakeThermoRaw, "Dispose", dispose)
     monkeypatch.setattr(_FakeThermoRaw, "GetChromatogramData", chromatogram)
