@@ -967,3 +967,13 @@ def test_mixed_target_list_only_supplies_istds_to_untargeted_alignment(
             t for t in all_targets if t.is_istd and t.neutral_loss_da == loss
         )
         assert len(captured["targets"]) == count
+
+
+def test_child_projection_reaches_a_worker_process_intact(tmp_path: Path) -> None:
+    import pickle
+
+    policy = publication_module.UntargetedPublicationPolicy()
+    projection = publication_module.untargeted_child_projection(
+        policy.output_paths(tmp_path), policy
+    )
+    assert pickle.loads(pickle.dumps(projection)) == projection

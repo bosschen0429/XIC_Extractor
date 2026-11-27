@@ -1690,27 +1690,23 @@ def test_stopping_untargeted_backfill_cleans_run_scratch(
     workbench, tmp_path, monkeypatch
 ):
     from tests.untargeted_full_flow_fixtures import install_full_flow_raws
-    from xic_extractor.untargeted_execution.execution import (
-        UntargetedPartitionPipelineAdapter,
-    )
+    from xic_extractor.execution.result_store import StreamedResultStore
 
     raw_dir = tmp_path / "raw"
     output_root = tmp_path / "results"
     install_full_flow_raws(monkeypatch, raw_dir)
     backfill_written = threading.Event()
     resume = threading.Event()
-    original = UntargetedPartitionPipelineAdapter.execute_composition
+    original = StreamedResultStore.adopt_written
 
-    def pause_after_backfill(adapter, partition, *args, **kwargs):
-        result = original(adapter, partition, *args, **kwargs)
-        if partition.partition_key.endswith("-backfill"):
+    def pause_after_backfill(store, partition_key, *args, **kwargs):
+        result = original(store, partition_key, *args, **kwargs)
+        if partition_key.endswith("-backfill"):
             backfill_written.set()
             assert resume.wait(HANDSHAKE_TIMEOUT_S)
         return result
 
-    monkeypatch.setattr(
-        UntargetedPartitionPipelineAdapter, "execute_composition", pause_after_backfill
-    )
+    monkeypatch.setattr(StreamedResultStore, "adopt_written", pause_after_backfill)
     page = workbench
     _view(page, "untargeted")
     _set_reader_path(page, str(raw_dir))

@@ -39,6 +39,7 @@ from xic_extractor.execution.result_store import (
     StreamedResultStore,
     WrittenPartition,
     read_spooled_header_field,
+    read_spooled_tuple,
     write_spooled_partition,
 )
 from xic_extractor.execution.workers import WorkerAdmissionPool
@@ -74,6 +75,7 @@ from xic_extractor.untargeted_execution.partition.workers import (
 )
 from xic_extractor.untargeted_execution.partition_composition import (
     ChildOutputProjection,
+    ComposedUntargetedPartition,
     PersistedUntargetedPartition,
     UntargetedPartitionInputs,
     compose_and_persist_untargeted_partition,
@@ -162,6 +164,64 @@ class FrozenBackfillPartition:
             progress_callback=progress_callback,
             should_cancel=should_cancel,
         )
+
+
+@dataclass(frozen=True, slots=True)
+class _BackfillPartitionTask:
+    """One Backfill partition, which a worker runs whole from the spool.
+
+    The worker reads the final grouping and the sealed initial assessments
+    once, revisits each sample in turn and writes the composed partition
+    beside the spool; the parent only adopts the file.
+    """
+
+    partition_key: str
+    final: _SpooledGrouping
+    initial_results: Path
+    initial_records: tuple[tuple[int, int], ...]
+    cancel_requested: Path
+    alignment_config: AlignmentConfig
+    project_child: ChildOutputProjection
+    sample_rt_frame: SampleRtFrame | None
+    known_istd_reference: KnownIstdReference | None
+
+
+def _run_backfill_partition(
+    task: _BackfillPartitionTask,
+) -> tuple[WrittenPartition, ComposedUntargetedPartition]:
+    """Revisit one partition's samples and compose it on this worker."""
+    final = task.final.read()
+    frozen = FrozenBackfillPartition(
+        replace(final.batch, prepared_grouping=None),
+        final.prepared,
+        cast(
+            tuple[UntargetedInitialSampleResult, ...],
+            read_spooled_tuple(
+                task.initial_results, task.initial_records, task.final.shared_owners
+            ),
+        ),
+        final.backfill_questions,
+    )
+    with WorkerAdmissionPool(max_workers=1, backend="thread") as pool:
+        leaf = frozen.execute(
+            task.partition_key, pool, should_cancel=task.cancel_requested.exists
+        )
+    if leaf.failure is not None:
+        raise leaf.failure
+    return compose_and_persist_untargeted_partition(
+        replace(frozen.batch, prepared_grouping=leaf.prepared_grouping),
+        leaf.sample_results,
+        write=lambda payload, children: write_spooled_partition(
+            task.final.path.parent,
+            payload,
+            task.final.shared_owners,
+            child_outputs=children,
+        ),
+        alignment_config=task.alignment_config,
+        project_child=task.project_child,
+        sample_rt_frame=task.sample_rt_frame,
+        known_istd_reference=task.known_istd_reference,
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -334,9 +394,9 @@ class UntargetedPartitionPipelineAdapter:
         self._bootstrap_count = len(subject_partitions)
         self._initial_partitions: dict[int, SealedPartition] = {}
         self._final_groupings: dict[int, SealedPartition] = {}
+        self._backfill_partitions: list[PersistedUntargetedPartition] = []
         self._initial_job_count = 0
         self._batch_preparation = CidNlBatchGrouping(context.rt_frame)
-        self._initial_store: StreamedResultStore | None = None
         self._partition_subject_batches = {
             partition.partition_key: self._prepared_worksets.subject_batch(
                 partition.payload
@@ -399,14 +459,11 @@ class UntargetedPartitionPipelineAdapter:
             return phases
         return phases + (
             PartitionPipelinePhase(
-                "backfill", self._partitions[self._bootstrap_count :]
+                "backfill",
+                (),
+                partial(self.run_backfill, progress_callback=progress_callback),
             ),
         )
-
-    def _is_bootstrap(
-        self, partition: WorkPartition[tuple[CidNlMethodSubject, ...]]
-    ) -> bool:
-        return partition.index < self._bootstrap_count
 
     @property
     def acquisition_workers(self) -> int:
@@ -466,7 +523,6 @@ class UntargetedPartitionPipelineAdapter:
         for index in range(self._bootstrap_count):
             reference.add_anchor_observations(self._bootstrap_anchors[index])
         self._batch_preparation.freeze_calibration(reference=reference)
-        self._initial_store = store
         frozen = self._batch_preparation.frozen_rt_frame
         assert frozen is not None
         rt_frame: SampleRtFrame = frozen
@@ -587,37 +643,23 @@ class UntargetedPartitionPipelineAdapter:
             UntargetedPartitionResult,
         ]
     ]:
-        initial_only = self._is_bootstrap(partition)
-        if initial_only:
-            batch = self.materialize_partition(partition)
-            execute = partial(
-                execute_partition,
-                batch.jobs,
-                partition_key=partition.partition_key,
-                prepare_grouping=partial(
-                    group_acquired_partition,
-                    batch,
-                    alignment_config=self._alignment_config,
-                    known_istd_reference=self._known_istd_reference,
-                    progress_callback=progress_callback,
-                    bootstrap_only=True,
-                ),
+        batch = self.materialize_partition(partition)
+        execute = partial(
+            execute_partition,
+            batch.jobs,
+            partition_key=partition.partition_key,
+            prepare_grouping=partial(
+                group_acquired_partition,
+                batch,
                 alignment_config=self._alignment_config,
-                initial_only=True,
-                initial_results=None,
-            )
-        else:
-            store = self._initial_store
-            if store is None:
-                raise RuntimeError("Backfill requires frozen batch calibration")
-            index = partition.index - self._bootstrap_count
-            final = cast(
-                _GroupingInputs,
-                store.read_header_field(self._final_groupings[index].index, "grouping"),
-            )
-            frozen = self._backfill_partition(store, index, final)
-            batch = frozen.batch
-            execute = partial(frozen.execute, partition_key=partition.partition_key)
+                known_istd_reference=self._known_istd_reference,
+                progress_callback=progress_callback,
+                bootstrap_only=True,
+            ),
+            alignment_config=self._alignment_config,
+            initial_only=True,
+            initial_results=None,
+        )
 
         if self._execution.backend == "process":
             if self._process_pools_closed:
@@ -644,7 +686,7 @@ class UntargetedPartitionPipelineAdapter:
                 progress_callback=progress_callback,
                 should_cancel=should_cancel,
             )
-        if initial_only and leaf.failure is None and leaf.prepared_grouping is not None:
+        if leaf.failure is None and leaf.prepared_grouping is not None:
             self._bootstrap_anchors[partition.index] = (
                 leaf.prepared_grouping.rt_anchor_observations
             )
@@ -667,41 +709,131 @@ class UntargetedPartitionPipelineAdapter:
         should_cancel: Callable[[], bool] | Callable[[], None] | None = None,
     ) -> PartitionCompositionOutput[PersistedUntargetedPartition]:
         batch, leaf = acquisition_output.result
-        if self._is_bootstrap(partition):
-            assert leaf.prepared_grouping is not None
-            prepared = leaf.prepared_grouping
-            sealed = store.append(
-                partition.partition_key,
-                _GroupingPartition(
-                    grouping=_GroupingInputs(batch, prepared),
-                    initial_results=tuple(
-                        UntargetedInitialSampleResult(result.job, result.adapter_result)
-                        for result in leaf.sample_results
-                    ),
+        assert leaf.prepared_grouping is not None
+        prepared = leaf.prepared_grouping
+        sealed = store.append(
+            partition.partition_key,
+            _GroupingPartition(
+                grouping=_GroupingInputs(batch, prepared),
+                initial_results=tuple(
+                    UntargetedInitialSampleResult(result.job, result.adapter_result)
+                    for result in leaf.sample_results
                 ),
-            )
-            self._batch_preparation.add_initial(prepared)
-            self._initial_job_count += len(batch.jobs)
-            self._initial_partitions[partition.index] = sealed
-            persisted = PersistedUntargetedPartition(sealed, 0, ())
-            return PartitionCompositionOutput(result=persisted, sealed=sealed)
-
-        def cancel_check() -> None:
-            if should_cancel is not None and should_cancel():
-                raise InterruptedError("CID-NL batch cancelled")
-
-        persisted = compose_and_persist_untargeted_partition(
-            batch,
-            leaf.sample_results,
-            store=store,
-            partition_key=partition.partition_key,
-            alignment_config=self._alignment_config,
-            project_child=cast(ChildOutputProjection, self._project_child),
-            sample_rt_frame=self._batch_preparation.frozen_rt_frame,
-            known_istd_reference=self._known_istd_reference,
-            should_cancel=cancel_check,
+            ),
         )
-        return PartitionCompositionOutput(result=persisted, sealed=persisted.sealed)
+        self._batch_preparation.add_initial(prepared)
+        self._initial_job_count += len(batch.jobs)
+        self._initial_partitions[partition.index] = sealed
+        return PartitionCompositionOutput(
+            result=PersistedUntargetedPartition(sealed), sealed=sealed
+        )
+
+    def run_backfill(
+        self,
+        store: StreamedResultStore,
+        check_cancellation: Callable[[], None],
+        *,
+        progress_callback: Callable[[Mapping[str, object]], None] | None = None,
+    ) -> None:
+        """Run each Backfill partition whole on a worker; adopt them in order.
+
+        A worker reads its partition's final grouping and initial assessments
+        from the spool once, revisits every sample and composes, so nothing of
+        the partition passes through this process. Cancellation reaches the
+        workers through a marker in the spool, checked between samples.
+        """
+        partitions = tuple(self._partitions[self._bootstrap_count :])
+        shared_owners = store.shared_owners_path()
+        cancel_requested = store.directory / "cancel-requested"
+        cancelled = False
+        started = 0
+        finished: dict[int, tuple[WrittenPartition, ComposedUntargetedPartition]] = {}
+
+        def report(stage: str, completed: int) -> None:
+            if progress_callback is not None:
+                progress_callback(
+                    {
+                        "event": "partition_progress",
+                        "stage": stage,
+                        "completed": completed,
+                        "total": len(partitions),
+                    }
+                )
+
+        def should_cancel() -> bool:
+            nonlocal cancelled
+            if not cancelled:
+                try:
+                    check_cancellation()
+                except InterruptedError:
+                    cancelled = True
+                    cancel_requested.touch()
+            return cancelled
+
+        def task(
+            partition: WorkPartition[tuple[CidNlMethodSubject, ...]],
+        ) -> _BackfillPartitionTask:
+            nonlocal started
+            index = partition.index - self._bootstrap_count
+            initial = self._initial_partitions[index].index
+            report("partition_start", started)
+            started += 1
+            return _BackfillPartitionTask(
+                partition_key=partition.partition_key,
+                final=_SpooledGrouping(
+                    store.partition_path(self._final_groupings[index].index),
+                    shared_owners,
+                ),
+                initial_results=store.partition_path(initial),
+                initial_records=store.field_records(initial, "initial_results"),
+                cancel_requested=cancel_requested,
+                alignment_config=self._alignment_config,
+                project_child=cast(ChildOutputProjection, self._project_child),
+                sample_rt_frame=self._batch_preparation.frozen_rt_frame,
+                known_istd_reference=self._known_istd_reference,
+            )
+
+        def adopt(
+            completed: int,
+            total: int,
+            partition: WorkPartition[tuple[CidNlMethodSubject, ...]],
+            result: tuple[WrittenPartition, ComposedUntargetedPartition],
+        ) -> None:
+            finished[partition.index] = result
+            while len(self._backfill_partitions) < len(partitions):
+                following = partitions[len(self._backfill_partitions)]
+                if following.index not in finished:
+                    return
+                written, composed = finished.pop(following.index)
+                sealed = store.adopt_written(following.partition_key, written)
+                self._backfill_partitions.append(
+                    PersistedUntargetedPartition(sealed, composed)
+                )
+                report("partition_released", len(self._backfill_partitions))
+
+        pool_context: nullcontext[WorkerAdmissionPool] | WorkerAdmissionPool
+        if self._execution.backend == "process":
+            if self._process_pools_closed:
+                raise RuntimeError("process worker pools are already closed")
+            pool_context = nullcontext(self._process_pools[0])
+        else:
+            pool_context = WorkerAdmissionPool(
+                max_workers=self._partition_raw_workers,
+                backend=self._execution.backend,
+                thread_name_prefix="cid-nl-backfill",
+            )
+        with pool_context as pool:
+            pool.run_windowed(
+                partitions,
+                _run_backfill_partition,
+                task_arg_fn=task,
+                on_completed=adopt,
+                should_cancel=should_cancel,
+            )
+            if pool.first_error is not None:
+                raise pool.first_error
+        if len(self._backfill_partitions) != len(partitions):
+            raise RuntimeError("Backfill left a partition unadopted")
 
     def finalize_application(
         self,
@@ -749,7 +881,10 @@ class UntargetedPartitionPipelineAdapter:
         return compose_untargeted_batch(
             self._plan,
             store=store,
-            partitions=tuple(output.result for output in composition_outputs),
+            partitions=(
+                *(output.result for output in composition_outputs),
+                *self._backfill_partitions,
+            ),
         )
 
     def build_workflow_result(

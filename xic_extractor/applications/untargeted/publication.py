@@ -79,6 +79,31 @@ class UntargetedPublicationPolicy:
         )
 
 
+@dataclass(frozen=True, slots=True)
+class _ChildProjection:
+    """The requested rows and review writes of each composed child.
+
+    A value, so the worker that composes a partition receives it intact.
+    """
+
+    row_names: tuple[str, ...]
+
+    def __call__(
+        self, child: FinalizedUntargetApplicationResult, context: ChildProjectionContext
+    ) -> UntargetChildOutputs:
+        return UntargetChildOutputs(
+            groups=project_untarget_child_rows(
+                child,
+                outputs=self.row_names,
+                sample_order=untarget_sample_order(context.samples),
+            ),
+            explanation=project_alignment_explanation_child(
+                child,
+                sample_rt_frame=context.sample_rt_frame,
+            ),
+        )
+
+
 def untargeted_child_projection(
     outputs: AlignmentRunOutputs,
     policy: UntargetedPublicationPolicy,
@@ -89,24 +114,7 @@ def untargeted_child_projection(
     Whether the database is written is known only once every Backfill risk
     is, so every child records its writes; publication drops them otherwise.
     """
-    row_names = tuple(row_output_paths(outputs))
-
-    def project(
-        child: FinalizedUntargetApplicationResult, context: ChildProjectionContext
-    ) -> UntargetChildOutputs:
-        return UntargetChildOutputs(
-            groups=project_untarget_child_rows(
-                child,
-                outputs=row_names,
-                sample_order=untarget_sample_order(context.samples),
-            ),
-            explanation=project_alignment_explanation_child(
-                child,
-                sample_rt_frame=context.sample_rt_frame,
-            ),
-        )
-
-    return project
+    return _ChildProjection(tuple(row_output_paths(outputs)))
 
 
 def publish_untargeted_outputs(

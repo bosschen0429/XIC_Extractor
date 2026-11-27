@@ -5,11 +5,11 @@ from __future__ import annotations
 import os
 import re
 import shutil
-from collections.abc import Buffer, Callable, Iterable
+from collections.abc import Buffer, Iterable
 from dataclasses import dataclass, fields
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, BinaryIO, Protocol
+from typing import Any, BinaryIO
 from uuid import uuid4
 
 from xic_extractor.execution._serialization import _OwnerPickler, _OwnerUnpickler
@@ -17,13 +17,6 @@ from xic_extractor.immutable_sequence import ImmutableSequence
 
 SHARED_OWNERS_NAME = "shared-owners.pickle"
 INDIVIDUALLY_ADDRESSABLE_FIELDS = frozenset({"child_outputs", "excluded_candidates"})
-
-
-class StreamingPartitionPayload(Protocol):
-    """Dataclass metadata whose ``child_outputs`` are streamed beside it."""
-
-    @property
-    def child_outputs(self) -> object: ...
 
 
 class _PartitionWriter:
@@ -72,20 +65,52 @@ def read_spooled_header_field(path: Path, field_name: str, shared_owners: Path) 
     return values[field_name]
 
 
+def read_spooled_tuple(
+    path: Path, records: tuple[tuple[int, int], ...], shared_owners: Path
+) -> tuple[Any, ...]:
+    """Restore one tuple field of a sealed partition file in any process."""
+    shared = load_shared_owners(shared_owners)
+    with path.open("rb") as stream:
+        return tuple(
+            item
+            for offset, length in records
+            for item in _read_spool_record(stream, offset, length, shared)
+        )
+
+
 def write_spooled_partition(
-    directory: Path, payload: Any, shared_owners: Path
+    directory: Path,
+    payload: Any,
+    shared_owners: Path,
+    *,
+    child_outputs: Iterable[object] | None = None,
 ) -> WrittenPartition:
-    """Write one partition file beside the spool for its store to adopt."""
+    """Write one partition file beside the spool for its store to adopt.
+
+    Streamed child outputs are written one at a time beside a payload whose
+    own ``child_outputs`` is empty.
+    """
+    if child_outputs is not None and payload.child_outputs != ():
+        raise ValueError("streaming metadata payload must have empty child outputs")
     path = directory / f"written-{uuid4().hex}.pickle"
     records = _write_partition_payload(
         path,
         payload,
         shared_objects=load_shared_owners(shared_owners),
-        child_outputs=None,
+        child_outputs=child_outputs,
         individually_addressable_fields=INDIVIDUALLY_ADDRESSABLE_FIELDS,
-        before_publish=None,
     )
     return WrittenPartition(path, records)
+
+
+def _read_spool_record(
+    stream: BinaryIO, offset: int, length: int, shared_objects: tuple[object, ...]
+) -> tuple:
+    stream.seek(offset)
+    values = _OwnerUnpickler(stream, shared_objects).load()
+    if type(values) is not tuple or len(values) != length:
+        raise ValueError("stored result record changed its sealed cardinality")
+    return values
 
 
 def _write_partition_payload(
@@ -95,7 +120,6 @@ def _write_partition_payload(
     shared_objects: tuple[object, ...],
     child_outputs: Iterable[object] | None,
     individually_addressable_fields: frozenset[str],
-    before_publish: Callable[[], None] | None,
 ) -> dict[str, tuple[tuple[int, int], ...]]:
     """Write a sealed partition and return its tuple-record offsets.
 
@@ -150,8 +174,6 @@ def _write_partition_payload(
                     entries.append((writer.size_bytes, len(chunk)))
                     _OwnerPickler(writer, shared_objects).dump(chunk)
                 records[name] = tuple(entries)
-            if before_publish is not None:
-                before_publish()
         if path.exists():
             raise FileExistsError(f"partition artifact already exists: {path}")
         os.replace(temporary, path)
@@ -217,41 +239,15 @@ class StreamedResultStore:
     def append(self, partition_key: str, payload: object) -> SealedPartition:
         return self._append_payload(partition_key, payload)
 
-    def append_child_outputs(
-        self,
-        partition_key: str,
-        metadata_payload: StreamingPartitionPayload,
-        child_outputs: Iterable[object],
-        before_publish: Callable[[], None] | None = None,
-    ) -> SealedPartition:
-        """Atomically append child outputs while composing them one at a time."""
-
-        if metadata_payload.child_outputs != ():
-            raise ValueError("streaming metadata payload must have empty child outputs")
-        return self._append_payload(
-            partition_key,
-            metadata_payload,
-            child_outputs=child_outputs,
-            before_publish=before_publish,
-        )
-
-    def _append_payload(
-        self,
-        partition_key: str,
-        payload: Any,
-        *,
-        child_outputs: Iterable[object] | None = None,
-        before_publish: Callable[[], None] | None = None,
-    ) -> SealedPartition:
+    def _append_payload(self, partition_key: str, payload: Any) -> SealedPartition:
         self._require_writable_key(partition_key)
         index = len(self._field_records)
         records = _write_partition_payload(
             self._path(index),
             payload,
             shared_objects=self._shared_objects,
-            child_outputs=child_outputs,
+            child_outputs=None,
             individually_addressable_fields=self._individually_addressable_fields,
-            before_publish=before_publish,
         )
         self._field_records.append(records)
         self._keys.add(partition_key)
@@ -349,11 +345,15 @@ class StreamedResultStore:
         )
 
     def _read_record(self, stream: BinaryIO, offset: int, length: int) -> tuple:
-        stream.seek(offset)
-        values = _OwnerUnpickler(stream, self._shared_objects).load()
-        if type(values) is not tuple or len(values) != length:
-            raise ValueError("stored result record changed its sealed cardinality")
-        return values
+        return _read_spool_record(stream, offset, length, self._shared_objects)
+
+    def field_records(self, index: int, field_name: str) -> tuple[tuple[int, int], ...]:
+        """A tuple field's record offsets, for a worker reading the sealed file."""
+        if isinstance(index, bool) or not 0 <= index < len(self._field_records):
+            raise IndexError("partition index out of range")
+        if field_name not in self._field_records[index]:
+            raise ValueError("field_records requires a stored tuple field")
+        return self._field_records[index][field_name]
 
     def read_selected(
         self, index: int, field_name: str, positions: tuple[int, ...]
