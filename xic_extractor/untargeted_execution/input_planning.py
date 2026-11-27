@@ -34,6 +34,11 @@ from xic_extractor.untargeted_execution.partition.request import (
     compose_partition_context,
 )
 
+PARTITION_CANDIDATE_BUDGET = 2048
+"""Discovery candidates per partition. Every partition reopens each RAW once
+per phase, so fewer partitions remove reopens; the largest partition's
+grouping is held whole in one worker and in the parent."""
+
 
 @dataclass(frozen=True, slots=True)
 class UntargetedInputPlan:
@@ -116,7 +121,7 @@ def pack_subject_partitions(
         if current and (
             len(current) + len(unit) > subjects_per_partition
             or current_mass_bin != mass_bin
-            or current_candidate_count + candidate_count > 1024
+            or current_candidate_count + candidate_count > PARTITION_CANDIDATE_BUDGET
         ):
             packed.append(by_id(current))
             current = []

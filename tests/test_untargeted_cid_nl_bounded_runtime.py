@@ -430,6 +430,9 @@ def test_indexed_mass_partition_keeps_closed_worksets_and_budgets_neighbors(
         mint_untargeted_cid_nl_method_subject_batch,
     )
     from xic_extractor.untargeted_execution import execution as bounded_owner
+    from xic_extractor.untargeted_execution.input_planning import (
+        PARTITION_CANDIDATE_BUDGET,
+    )
 
     plan, _reference = _plan(tmp_path, monkeypatch)
     subjects = tuple(
@@ -458,7 +461,9 @@ def test_indexed_mass_partition_keeps_closed_worksets_and_budgets_neighbors(
     assert {subject.precursor_mz for subject in closed} == {99.0, 201.0}
     membership_counts = {
         subject.method_subject_id: (
-            600 if subject.precursor_mz in {250.0, 251.0} else 1
+            PARTITION_CANDIDATE_BUDGET // 2 + 1
+            if subject.precursor_mz in {250.0, 251.0}
+            else 1
         )
         for subject in subjects
     }
