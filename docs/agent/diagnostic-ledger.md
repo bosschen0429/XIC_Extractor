@@ -379,8 +379,24 @@ of the removed Targeted paths ran: its credibility gate, elution-order check,
 cross-sample recovery and error on a failed RAW. A sample whose standard DDA
 never sampled now has no coordinate for that label.
 
+The parent process then gated grouping, Backfill and publication. Its stack
+samples are biased toward code that gives up the GIL (zlib, file writes, the
+dataclass state hooks the pickler calls), so costs below come from timed
+spans. Grouping read each partition's initial grouping from the spool and
+pickled it to a worker twice (2.72 GB), then unpickled the final groupings
+(1.39 GB) and pickled them back. With workers reading and writing the spool
+themselves, grouping took 53.3 s instead of 114.2 s and peaked at 8.15 GB
+instead of 9.43 GB, outputs unchanged. Publication read every initial group
+back twice for an RT drift count (18.5 s) and a membership-risk flag (11.6 s);
+composition now records both. Backfill stayed at 194 s, gated by in-order
+composition in the parent: writing the partition took 113 s of span wall, 70 s
+of it composing and projecting children, and building composition inputs 57 s
+on 7.7 s of thread CPU. Two producer threads spent 76 s reading spool records
+meanwhile. Wall far above CPU there points at GIL contention, not compute.
+Review-curve encoding alone costs 8.4 s on the 39,487 curves.
+
 Rerun when partition packing, worker scheduling, Backfill planning, the ISTD
-reference or the RAW reader changes. Artifacts: `output/1306/` in the `research-1306-raw-time-46fb42`
+reference, the RAW reader or where composition runs changes. Artifacts: `output/1306/` in the `research-1306-raw-time-46fb42`
 worktree.
 
 ### Drift grouping reuses prepared numerical evidence
