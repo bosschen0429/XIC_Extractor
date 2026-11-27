@@ -52,144 +52,6 @@ def _fields(value: Any, *names: str) -> dict[str, Any]:
     return {name: getattr(value, name) for name in names}
 
 
-def _cell_observation_content_payload(content: Any) -> dict[str, Any]:
-    return {
-        "sample_key": content.sample_key,
-        "technical_state": content.technical_state,
-        "method_result": content.method_result,
-        "physical_peak_key": content.physical_peak_key,
-        "peak_hypothesis_id": content.peak_hypothesis_id,
-        "reason_codes": list(content.reason_codes),
-        "outside_group": (
-            asdict(content.outside_group) if content.outside_group is not None else None
-        ),
-    }
-
-
-def _final_cell_observation_payload(observation: Any) -> dict[str, Any]:
-    return {
-        "evidence_states": observation.evidence_states,
-        "sample_key": (observation.canonical_sample.sample_name),
-        "predecessor_cells": [
-            {"content": _cell_observation_content_payload(ref)}
-            for ref in observation.predecessor_cells
-        ],
-        "backfill_cell": (
-            None
-            if observation.backfill_cell is None
-            else {
-                "content": _cell_observation_content_payload(observation.backfill_cell)
-            }
-        ),
-    }
-
-
-def _emit_curve_payload(
-    sink: ExplanationReportWriter | _CurvesUnlessCaptureEvidence,
-    ref: Any,
-    sample_id: str,
-    *,
-    candidate_id: str | None = None,
-    kind: str = "initial_capture",
-    trace: Any = None,
-    evaluation: Any = None,
-    provenance: Mapping[str, Any] | None = None,
-) -> None:
-    """Serialize retained owner values; missing processing remains unavailable."""
-    content = ref
-    mz = trace.mz if trace is not None else content.mz if content is not None else None
-    if sink.review_only and not any(
-        lower <= mz <= upper for lower, upper in sink.curve_mz_ranges if mz is not None
-    ):
-        return
-    if evaluation is None and ref is not None:
-        evaluation = ref.physical_evaluation
-    prepared = evaluation.retained_prepared_signal if evaluation is not None else None
-    if trace is None and content is None:
-        return
-    generation = ref.generation_provenance if ref is not None else None
-    actual = {
-        "profile_version": None,
-        "acquisition_source_id": None,
-        "processing_attempt_id": None,
-        "selected_trace_indices": None,
-        "proposal_sources": None,
-        "method_subject_id": None,
-        "profile": None,
-        "physical_state": None,
-        "physical_reason": None,
-        **(provenance or {}),
-    }
-    if evaluation is not None:
-        actual.update(
-            profile=asdict(evaluation.prepared.profile),
-            physical_state=evaluation.state,
-            physical_reason=evaluation.reason,
-        )
-    if prepared is not None:
-        actual.update(
-            profile_version=prepared.profile.schema_version,
-            profile=asdict(prepared.profile),
-        )
-    if generation is not None:
-        actual.update(
-            _fields(
-                generation,
-                "acquisition_source_id",
-                "selected_trace_indices",
-                "proposal_sources",
-            )
-        )
-    elif trace is not None:
-        actual["acquisition_source_id"] = trace.acquisition_source_id
-    obs_id = content.physical_peak_key if content is not None else None
-    record_id = obs_id or candidate_id or actual.get("method_subject_id")
-    if record_id is None:
-        raise ValueError("retained curve lacks an actual owner binding")
-    if trace is not None:
-        rt, raw = trace.rt, trace.intensity
-        coordinate = _fields(trace, "mz", "rt_min", "rt_max", "ppm_tol")
-    else:
-        assert content is not None and generation is not None
-        rt, raw = content.rt, content.intensity
-        coordinate = {
-            "mz": content.mz,
-            "rt_min": generation.query_rt_min,
-            "rt_max": generation.query_rt_max,
-            "ppm_tol": generation.query_ppm_tol,
-        }
-    integration = (
-        content.integration
-        if content is not None
-        else (evaluation.integration if evaluation is not None else None)
-    )
-    envelope = {
-        "schema_version": "curve_payload",
-        "kind": kind,
-        "sample_id": sample_id,
-        "candidate_id": candidate_id,
-        "physical_peak_key": obs_id,
-        "trace_coordinate": {name: float(value) for name, value in coordinate.items()},
-        "curves": {
-            "rt": [float(x) for x in rt],
-            "raw": [float(y) for y in raw],
-            "baseline": list(prepared.baseline) if prepared is not None else None,
-            "smoothed": list(prepared.smoothed) if prepared is not None else None,
-            "positive": list(prepared.positive_signal)
-            if prepared is not None
-            else None,
-        },
-        "integration": asdict(integration) if integration is not None else None,
-        "provenance": actual,
-    }
-    sink.add_curve_payload(
-        sample_id=sample_id,
-        kind=kind,
-        record_id=record_id,
-        payload=envelope,
-    )
-
-
 def _signal_digest(content: Any) -> str:
     """Digest of the selected raw signal that identifies one physical peak."""
     return hashlib.blake2b(
@@ -219,11 +81,8 @@ class _RecordedWrites:
     instead of being written while each child composes.
     """
 
-    def __init__(self, *, review_only: bool, curve_mz_ranges: Sequence[Any]):
-        self.review_only = review_only
-        self.curve_mz_ranges = tuple(curve_mz_ranges)
+    def __init__(self):
         self.writes: list[_Write] = []
-        self.unless_capture_evidence = _CurvesUnlessCaptureEvidence(self)
 
     def __getattr__(self, name: str) -> Callable[..., None]:
         if name not in _RECORDED_WRITER_METHODS:
@@ -233,18 +92,6 @@ class _RecordedWrites:
             self.writes.append((name, args, kwargs))
 
         return record
-
-
-class _CurvesUnlessCaptureEvidence:
-    """Curves written only when the batch retained no capture evidence."""
-
-    def __init__(self, recorded: _RecordedWrites):
-        self._recorded = recorded
-        self.review_only = recorded.review_only
-        self.curve_mz_ranges = recorded.curve_mz_ranges
-
-    def add_curve_payload(self, **kwargs: Any) -> None:
-        self._recorded.writes.append(("curve_unless_capture_evidence", (), kwargs))
 
 
 _RECORDED_WRITER_METHODS = frozenset(
@@ -263,18 +110,13 @@ def project_alignment_explanation_child(
     child: FinalizedUntargetApplicationResult,
     *,
     sample_rt_frame: SampleRtFrame | None,
-    capture_evidence_retained: bool,
-    full_audit: bool = False,
-    curve_mz_ranges: Sequence[tuple[float, float]] = (),
 ) -> tuple[_Write, ...]:
     """Record the report writes of one finalized child without batch numbering.
 
     A final group's ``feature_id`` is recorded as its position among the
-    child's written groups; replay turns it into the batch label. Terminal
-    curves are written only when the batch retained no capture evidence, so
-    a child whose partition retained some records none.
+    child's written groups; replay turns it into the batch label.
     """
-    sink = _RecordedWrites(review_only=not full_audit, curve_mz_ranges=curve_mz_ranges)
+    sink = _RecordedWrites()
     core = child.scientific_core
 
     def locate(content: PeakObservation) -> str:
@@ -301,14 +143,6 @@ def project_alignment_explanation_child(
             hypothesis_id=hypothesis.hypothesis_id,
             physical_peak_key=locate(ref),
         )
-        if not capture_evidence_retained:
-            _emit_curve_payload(
-                sink.unless_capture_evidence,
-                ref,
-                sample_id=key[1],
-                kind=ref.capture_stage,
-            )
-
     feature_offsets = {
         group.group_hypothesis_id: offset
         for offset, (group, _cells) in enumerate(child.group_cells)
@@ -423,9 +257,6 @@ def project_alignment_explanation_child(
             for decision in group_cells
         ]
         sink.set_row_destination(group_id, group.destination)
-        if full_audit:
-            for decision, cell in zip(group_cells, cells, strict=True):
-                cell["observation"] = _final_cell_observation_payload(decision.evidence)
         sink.add_cells(group_id, cells)
         for decision in group_cells:
             if decision.value is None:
@@ -463,8 +294,6 @@ def write_alignment_explanation(
     neutral_loss_by_tag: Mapping[str, float],
     ms1_apex_mz_by_candidate: Mapping[str, float] | None = None,
     progress_callback: Callable[[Mapping[str, object]], None] | None = None,
-    full_audit: bool = False,
-    curve_mz_ranges: Sequence[tuple[float, float]] = (),
 ) -> Path:
     """Persist in-memory composed children with Matrix publication provenance.
 
@@ -479,8 +308,6 @@ def write_alignment_explanation(
         neutral_loss_by_tag=neutral_loss_by_tag,
         ms1_apex_mz_by_candidate=ms1_apex_mz_by_candidate,
         progress_callback=progress_callback,
-        full_audit=full_audit,
-        curve_mz_ranges=curve_mz_ranges,
     ) as explanation:
         first_group = 0
         for child in children:
@@ -490,9 +317,6 @@ def write_alignment_explanation(
                     explanation=project_alignment_explanation_child(
                         child,
                         sample_rt_frame=completed.sample_rt_frame,
-                        capture_evidence_retained=bool(completed.capture_evidence),
-                        full_audit=full_audit,
-                        curve_mz_ranges=curve_mz_ranges,
                     ),
                 ),
                 first_group,
@@ -516,15 +340,15 @@ class ExplanationBatch:
 class BatchExplanationReplay:
     """Replay independently aligned batches' children into one report.
 
-    ``consume(child, batch, label, merge_into)`` replays one child of the
-    batch at index ``batch``. ``label(offset)`` is the feature ID of the
+    ``consume(child, label, merge_into)`` replays one child.
+    ``label(offset)`` is the feature ID of the
     child's written group at ``offset``; ``merge_into`` maps an offset to an
     already replayed final group whose result row the group joins. It returns
     each offset's final group ID.
     """
 
     consume: Callable[
-        [UntargetChildOutputs, int, Callable[[int], str], Mapping[int, str]],
+        [UntargetChildOutputs, Callable[[int], str], Mapping[int, str]],
         dict[int, str],
     ]
     finalize: Callable[[Path], Path]
@@ -541,14 +365,8 @@ def prepare_alignment_explanation(
     neutral_loss_by_tag: Mapping[str, float],
     ms1_apex_mz_by_candidate: Mapping[str, float] | None = None,
     progress_callback: Callable[[Mapping[str, object]], None] | None = None,
-    full_audit: bool = False,
-    curve_mz_ranges: Sequence[tuple[float, float]] = (),
 ) -> Iterator[PreparedAlignmentExplanation]:
-    """Keep one bounded transaction while the TSV pass replays each child.
-
-    The children were projected with the same ``full_audit`` and
-    ``curve_mz_ranges``.
-    """
+    """Keep one bounded transaction while the TSV pass replays each child."""
     frame = completed.sample_rt_frame
     with prepare_batch_alignment_explanation(
         path,
@@ -564,14 +382,11 @@ def prepare_alignment_explanation(
         alignment_config=alignment_config,
         calibration=frame.calibration_for_snapshot if frame is not None else None,
         progress_callback=progress_callback,
-        full_audit=full_audit,
-        curve_mz_ranges=curve_mz_ranges,
     ) as replay:
 
         def consume_child(child: UntargetChildOutputs, first_group: int) -> None:
             replay.consume(
                 child,
-                0,
                 lambda offset: feature_id_label(first_group + offset + 1),
                 {},
             )
@@ -587,19 +402,13 @@ def prepare_batch_alignment_explanation(
     alignment_config: AlignmentConfig,
     calibration: BatchRtCalibration | None,
     progress_callback: Callable[[Mapping[str, object]], None] | None = None,
-    full_audit: bool = False,
-    curve_mz_ranges: Sequence[tuple[float, float]] = (),
 ) -> Iterator[BatchExplanationReplay]:
     """One report for independently aligned batches; the first is the reference.
 
     Each batch declares its own samples, candidates, subjects, assessments and
     initial groups; ``calibration`` is the run's replay calibration.
     """
-    with ExplanationReportWriter(
-        path,
-        review_only=not full_audit,
-        curve_mz_ranges=curve_mz_ranges,
-    ) as sink:
+    with ExplanationReportWriter(path) as sink:
         samples = {
             sample.raw_stem: sample
             for batch in batches
@@ -669,27 +478,15 @@ def prepare_batch_alignment_explanation(
             if completed_count % 256:
                 report_progress(stage, completed_count, total)
 
-        def emit_assessment(
-            assessment: CidNlMethodAssessment, capture_evidence: bool
-        ) -> None:
+        def emit_assessment(assessment: CidNlMethodAssessment) -> None:
             content = assessment
             if content in emitted_assessments:
                 return
-            if content.group_backfill and content.method_result == "SUPPORT":
-                if not capture_evidence:
-                    for peak in assessment.candidate_peaks:
-                        _emit_curve_payload(
-                            sink,
-                            peak,
-                            content.sample_key,
-                            kind="backfill_observation",
-                        )
             sink.add_assessment(
                 {
                     **_fields(
                         content,
                         "sample_key",
-                        "acquisition_source_id",
                         "provider_id",
                         "method_id",
                         "method_version",
@@ -699,11 +496,6 @@ def prepare_batch_alignment_explanation(
                         "reason_codes",
                     ),
                     "method_subject_id": content.method_subject.method_subject_id,
-                    **(
-                        {"evaluation_receipt": asdict(content.evaluation_receipt)}
-                        if full_audit
-                        else {}
-                    ),
                 },
                 candidate_physical_peak_keys=tuple(
                     locate(peak) for peak in assessment.candidate_peaks
@@ -731,32 +523,6 @@ def prepare_batch_alignment_explanation(
                         method_subject_id=subject_id,
                     )
 
-            capture_evidence = completed.capture_evidence
-            for evidence in phase_items(
-                "capture_evidence",
-                capture_evidence if full_audit or curve_mz_ranges else (),
-            ):
-                sid = evidence.sample_key
-                stage = (
-                    "backfill_observation"
-                    if evidence.capture_stage == "method_backfill"
-                    else evidence.capture_stage
-                )
-                _emit_curve_payload(
-                    sink,
-                    evidence.observation_ref,
-                    sid,
-                    candidate_id=evidence.candidate_id,
-                    kind=stage,
-                    trace=evidence.trace,
-                    evaluation=evidence.physical_evaluation,
-                    provenance=_fields(
-                        evidence,
-                        "processing_attempt_id",
-                        "method_subject_id",
-                    ),
-                )
-
             for subject in phase_items("method_subjects", subjects.subjects):
                 sink.add_method_subject(
                     {
@@ -777,14 +543,14 @@ def prepare_batch_alignment_explanation(
             for assessment in phase_items(
                 "method_assessments", completed.method_assessments
             ):
-                emit_assessment(assessment, bool(capture_evidence))
+                emit_assessment(assessment)
 
             for excluded in phase_items("exclusions", application.excluded_candidates):
                 key = excluded.candidate_id, excluded.sample_key
                 refs = (*excluded.method_assessments, *excluded.composite_assessments)
                 sink.add_exclusion(*key, excluded.reason_code)
                 for assessment in refs:
-                    emit_assessment(assessment, bool(capture_evidence))
+                    emit_assessment(assessment)
 
         child_count = 0
         matrix_row_count = 0
@@ -795,12 +561,10 @@ def prepare_batch_alignment_explanation(
 
         def consume(
             child: UntargetChildOutputs,
-            batch: int,
             label: Callable[[int], str],
             merge_into: Mapping[int, str],
         ) -> dict[int, str]:
             nonlocal child_count, matrix_row_count
-            capture_evidence = bool(batches[batch].completed.capture_evidence)
             merged: dict[str, str] = {}
             final_groups: dict[int, str] = {}
             for name, args, kwargs in cast(
@@ -808,9 +572,6 @@ def prepare_batch_alignment_explanation(
             ):
                 if name == "locate":
                     add_located_peak(*args, **kwargs)
-                elif name == "curve_unless_capture_evidence":
-                    if not capture_evidence:
-                        sink.add_curve_payload(**kwargs)
                 elif name == "add_final_group":
                     offset = kwargs["feature_id"]
                     if offset in merge_into:
@@ -917,14 +678,7 @@ def prepare_batch_alignment_explanation(
                         for tag, loss in batch.neutral_loss_by_tag.items()
                     )
                 ),
-                "retention": "full_audit" if full_audit else "review",
                 "selection_evidence_capability": "recorded_decisions",
-                "curve_retention": "all"
-                if full_audit
-                else "selected"
-                if curve_mz_ranges
-                else "none",
-                "curve_mz_ranges": list(curve_mz_ranges),
                 "audit_availability": {
                     name: "recorded"
                     if all(getattr(batch.completed, name) for batch in batches)

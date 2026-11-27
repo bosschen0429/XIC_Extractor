@@ -137,7 +137,6 @@ class _GroupingPartition:
     excluded_candidates: tuple[()] = ()
     method_assessments: tuple[()] = ()
     initial_groups: tuple[()] = ()
-    capture_evidence: tuple[()] = ()
 
 
 def _initialize_sample_process(dll_dir: Path) -> None:

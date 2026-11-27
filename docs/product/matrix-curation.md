@@ -94,7 +94,7 @@ it to exactly one parent. An unresolved element or parent does not rescue a
 supported derivative; an unclassified feature is not assumed to be an artifact.
 It has no parameters; its thresholds are fixed
 and recorded in the summary. It needs the run's `alignment_explanation.sqlite` in
-the current table layout (compact review or full audit) and is unavailable
+the current Alignment evidence layout and is unavailable
 without its published cell values.
 
 Evidence uses each published cell's recorded apex. Directly detected cells

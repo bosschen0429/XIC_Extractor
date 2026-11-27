@@ -342,7 +342,6 @@ def _execute_backfill_batch(phase: _BatchSamplePhaseState) -> None:
             assert ctx is not None
             for target in state.backfill_targets:
                 backfill = backfill_untargeted_cid_nl_sample_subject(
-                    processing_attempt_id=state.job.processing_attempt_id,
                     sample=state.job.sample,
                     acquisition_source=state.job.acquisition_source_expectation.source,
                     method_subject=state.job.method_subject,

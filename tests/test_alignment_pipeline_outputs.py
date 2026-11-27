@@ -214,14 +214,14 @@ def test_outer_transaction_restores_prior_outputs_without_leaking_temp_files(
 ) -> None:
     output_dir = tmp_path / "out"
     matrix_path = output_dir / "alignment_matrix.tsv"
-    review_path = output_dir / "alignment_review.tsv"
+    cells_path = output_dir / "alignment_cells.tsv"
     outputs = pipeline_outputs_module.AlignmentRunOutputs(
         matrix_tsv=matrix_path,
-        review_tsv=review_path,
+        cells_tsv=cells_path,
     )
     output_dir.mkdir(parents=True)
     matrix_path.write_bytes(b"prior matrix")
-    review_path.write_bytes(b"prior review")
+    cells_path.write_bytes(b"prior cells")
 
     write_tsvs = pipeline_outputs_module.write_alignment_tsvs
 
@@ -244,7 +244,7 @@ def test_outer_transaction_restores_prior_outputs_without_leaking_temp_files(
         )
 
     assert matrix_path.read_bytes() == b"prior matrix"
-    assert review_path.read_bytes() == b"prior review"
+    assert cells_path.read_bytes() == b"prior cells"
     leftovers = tuple(
         path
         for path in output_dir.iterdir()

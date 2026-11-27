@@ -14,10 +14,6 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from xic_inspector.sources.cid_nl import Card, CardRef, ItemEvidence
 
-_STAGE_LABELS = {
-    "initial_capture": "detect 曲線",
-    "backfill_observation": "backfill 曲線",
-}
 _SUPPORT_ORIGIN_LABELS = {
     "backfilled": "backfill",
     "detected": "detect",
@@ -235,7 +231,6 @@ def build_render_item(
     view: ItemEvidence,
     *,
     samples: list[dict[str, Any]],
-    projected_curves: list[dict[str, Any]],
     readable_records: list[dict[str, Any]],
     measured_mz_by_candidate: Mapping[tuple[str, str], float | None],
     relationship_members: list[dict[str, Any]],
@@ -272,12 +267,8 @@ def build_render_item(
         },
         "review_summary": view.review_summary,
         "relationship_members": relationship_members,
-        "curves": projected_curves,
+        "curves": [],
     }
-
-
-def curve_stage_label(kind: Any) -> str:
-    return _STAGE_LABELS.get(kind, "保留曲線")
 
 
 def support_origin_label(kind: str) -> str:

@@ -392,45 +392,6 @@ def test_review_follows_the_latest_curation_unless_one_is_opened(tmp_path):
         workspace.close()
 
 
-def test_full_audit_result_is_browsed_as_published_beside_a_curation(
-    tmp_path, monkeypatch
-):
-    """A full audit has no Matrix scopes, so no curation label sits over it."""
-    from unittest.mock import Mock
-
-    from tests.matrix_curation_fixtures import published_curation
-    from xic_extractor.alignment_explanation import reader
-
-    create_inspector_report(
-        tmp_path, extend=lambda writer: writer.set_row_destination("G1", "matrix")
-    )
-    published_curation(
-        tmp_path / "matrix_curation_20261101_090000",
-        tmp_path,
-        [
-            {
-                "feature_id": "G1",
-                "finite_count": "0",
-                "eligible_sample_count": "1",
-                "decision": "drop",
-                "decision_reason": "dropped_by:finite_fraction",
-            }
-        ],
-        min_finite_fraction=0.5,
-    )
-    read_summary = Mock(wraps=reader.read_completed_summary)
-    monkeypatch.setattr(reader, "read_completed_summary", read_summary)
-    workspace = review_workspace(config_dir=tmp_path / "config")
-    try:
-        page = workspace.open(str(tmp_path))
-        read_summary.assert_called_once()
-        assert page["curation"] is None
-        assert page["result_artifact"]["name"] == "alignment_matrix.tsv"
-        assert [item["group_id"] for item in page["items"]] == ["G1"]
-    finally:
-        workspace.close()
-
-
 def test_first_bundle_page_reads_the_json_once(tmp_path, monkeypatch):
     from pathlib import Path
 
@@ -1078,8 +1039,6 @@ def test_http_saved_curves_answer_in_the_same_request_without_raw(
     raw = [1000.0 * 2.718 ** (-(((x - 1.0) / 0.05) ** 2)) for x in rt]
     db, _, _ = create_inspector_report(
         tmp_path,
-        review_only=True,
-        curve=False,
         base_cell={"observation_ids": ["obs-01"], "apex_rt_min": 1.0},
         prepare=lambda writer: writer.add_peak("S1", "obs-01", (500.0, 1.0, 5.0)),
         extend=lambda writer: (

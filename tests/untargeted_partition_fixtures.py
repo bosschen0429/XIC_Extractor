@@ -135,7 +135,6 @@ def composed_child_outputs(
     *,
     samples: tuple[SampleMetadata, ...],
     sample_rt_frame: SampleRtFrame | None = None,
-    capture_evidence_retained: bool = False,
 ) -> tuple[ComposedChildOutputs, ...]:
     """Project in-memory children with the batch's samples and their
     partition's membership risks."""
@@ -143,7 +142,6 @@ def composed_child_outputs(
     context = ChildProjectionContext(
         samples=samples,
         sample_rt_frame=sample_rt_frame,
-        capture_evidence_retained=capture_evidence_retained,
     )
     return tuple(project_composed_child(child, context) for child in children)
 
@@ -265,7 +263,6 @@ def complete_dense_partition(
             partition.children,
             partition.initial_groups,
             samples=context.samples,
-            capture_evidence_retained=bool(partition.capture_evidence),
         ),
         excluded_candidates=partition.excluded_candidates,
         has_flagged_backfill_risk=has_flagged_backfill_risk(partition.children),
@@ -274,7 +271,6 @@ def complete_dense_partition(
         application_result=application_result,
         method_assessments=partition.method_assessments,
         initial_groups=partition.initial_groups,
-        capture_evidence=partition.capture_evidence,
     ).bind_publication_inputs(
         peaks_by_sample=context.peaks_by_sample,
         precursor_mz_by_candidate=representative_precursors(context.peaks_by_sample),

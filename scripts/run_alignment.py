@@ -3,7 +3,6 @@ from __future__ import annotations
 import argparse
 import cProfile
 import io
-import math
 import pstats
 import sys
 from collections.abc import Sequence
@@ -228,8 +227,6 @@ def main(argv: Sequence[str] | None = None) -> int:
                 output_level=args.output_level,
                 emit_alignment_cells=args.emit_alignment_cells,
                 emit_alignment_explanation=args.emit_alignment_explanation,
-                explanation_full_audit=args.explanation_full_audit,
-                explanation_curve_mz_ranges=tuple(args.explanation_curve_mz_range),
             ),
             replay=AlignmentReplayOptions(
                 grouping=args.save_grouping_inputs,
@@ -656,22 +653,9 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         "--emit-alignment-explanation",
         action="store_true",
         help=(
-            "write a compact decision review without full audit or curve arrays; "
+            "write Alignment decision review; "
             "debug and validation levels include it already"
         ),
-    )
-    parser.add_argument(
-        "--explanation-full-audit",
-        action="store_true",
-        help="Explicitly retain the expensive full explanation and all curves",
-    )
-    parser.add_argument(
-        "--explanation-curve-mz-range",
-        action="append",
-        default=[],
-        type=_mz_range,
-        metavar="LOWER:UPPER",
-        help="Retain curves only in this m/z range (repeatable); implies explanation",
     )
     args = parser.parse_args(argv)
     if args.save_matrix_inputs and args.stop_after == "grouping":
@@ -801,18 +785,6 @@ def _print_preflight_summary(
         "Timing live JSON: "
         f"{args.timing_live_output.resolve() if args.timing_live_output else '<none>'}"
     )
-
-
-def _mz_range(value: str) -> tuple[float, float]:
-    try:
-        lower, upper = map(float, value.split(":"))
-    except ValueError as exc:
-        raise argparse.ArgumentTypeError("Use LOWER:UPPER") from exc
-    if not math.isfinite(lower + upper) or not 0 < lower <= upper:
-        raise argparse.ArgumentTypeError(
-            "m/z bounds must be positive, finite and ordered"
-        )
-    return lower, upper
 
 
 def _positive_int(value: str) -> int:

@@ -2055,11 +2055,13 @@ def test_review_search_and_saved_results_keep_one_scroll_and_visible_evidence(
                 disposition="completed",
                 members=[witness_member("S1", f"{group}-member", "obs-01")],
             )
+            writer.set_row_destination(group, "matrix")
 
     create_inspector_report(tmp_path, extend=more_rows)
     _open_results(page)
     page.locator("#source").fill(str(tmp_path))
     page.locator("#open-form button[type=submit]").click()
+    page.get_by_role("button", name="瀏覽矩陣 feature", exact=True).click()
     expect(page.locator("#item-list button")).to_have_count(25)
     page.locator("#next").click()
     expect(page.locator("#item-list button")).to_have_count(1)
@@ -2070,6 +2072,7 @@ def test_review_search_and_saved_results_keep_one_scroll_and_visible_evidence(
     assert off_page_id not in page.locator("#item-list button").evaluate_all(
         "buttons => buttons.map(button => button.dataset.itemId)"
     )
+    page.locator("#untargeted-search-mode").select_option("exact")
     page.locator("#group-filter > summary").click()
     page.locator("#group-id").fill(off_page_group)
     page.locator("#query-form button[type=submit]").click()
@@ -2079,6 +2082,7 @@ def test_review_search_and_saved_results_keep_one_scroll_and_visible_evidence(
     )
     page.locator("#reset-query").click()
     expect(page.locator("#item-list button")).to_have_count(25)
+    page.locator("#untargeted-search-mode").select_option("exact")
     page.locator("#group-id").fill("G1")
     page.locator("#query-form button[type=submit]").click()
     expect(page.locator("#item-list button")).to_have_count(1)
@@ -2224,9 +2228,9 @@ def test_untargeted_curves_open_beside_saved_report_and_reuse_loaded_view(
     _open_results(page)
     page.locator("#source").fill(str(db))
     page.locator("#open-form button[type=submit]").click()
+    page.get_by_role("button", name="瀏覽矩陣 feature").click()
     selected_view = None
     if sample_count > 1:
-        page.get_by_role("button", name="瀏覽矩陣 feature").click()
         page.locator("#item-list button").first.click()
         _wait_for_curve_report(page, inline=True)
         expect(

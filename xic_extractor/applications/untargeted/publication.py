@@ -73,8 +73,6 @@ class UntargetedPublicationPolicy:
     output_level: AlignmentOutputLevel = "production"
     emit_alignment_cells: bool = False
     emit_alignment_explanation: bool = False
-    explanation_full_audit: bool = False
-    explanation_curve_mz_ranges: tuple[tuple[float, float], ...] = ()
 
     def output_paths(self, output_dir: Path) -> AlignmentRunOutputs:
         return output_paths(
@@ -108,9 +106,6 @@ def untargeted_child_projection(
             explanation=project_alignment_explanation_child(
                 child,
                 sample_rt_frame=context.sample_rt_frame,
-                capture_evidence_retained=context.capture_evidence_retained,
-                full_audit=policy.explanation_full_audit,
-                curve_mz_ranges=policy.explanation_curve_mz_ranges,
             ),
         )
 
@@ -155,8 +150,6 @@ def publish_untargeted_outputs(
                         precursor_mz_by_candidate=inputs.precursor_mz_by_candidate,
                         neutral_loss_by_tag=inputs.neutral_loss_by_tag,
                         progress_callback=timing_recorder.heartbeat_event,
-                        full_audit=policy.explanation_full_audit,
-                        curve_mz_ranges=policy.explanation_curve_mz_ranges,
                     )
                 )
         frame = completed.sample_rt_frame
@@ -227,8 +220,6 @@ def _explanation_required(
             for item in completed
         )
         or policy.emit_alignment_explanation
-        or policy.explanation_full_audit
-        or bool(policy.explanation_curve_mz_ranges)
         or EXPLANATION_ARTIFACT_NAME
         in (artifact_names_for_output_level(policy.output_level))
     )
@@ -442,7 +433,6 @@ def publish_batch_untargeted_outputs(
                     joins,
                     calibration=calibration,
                     matrix_path=matrix_path,
-                    policy=policy,
                     progress_callback=timing_recorder.heartbeat_event,
                 )
             if matrix_path.is_file():
@@ -462,7 +452,6 @@ def _write_batch_explanation(
     *,
     calibration: BatchRtCalibration | None,
     matrix_path: Path,
-    policy: UntargetedPublicationPolicy,
     progress_callback: Callable[[Mapping[str, object]], None] | None,
 ) -> Path:
     """Replay every batch's children, the reference batch's first.
@@ -486,14 +475,12 @@ def _write_batch_explanation(
         alignment_config=inputs[0].alignment_config,
         calibration=calibration,
         progress_callback=progress_callback,
-        full_audit=policy.explanation_full_audit,
-        curve_mz_ranges=policy.explanation_curve_mz_ranges,
     ) as replay:
         joins_by_child: dict[tuple[str, int], dict[int, tuple[str, int, int]]] = {}
         for (batch_id, child_index, offset), owner in joins.items():
             joins_by_child.setdefault((batch_id, child_index), {})[offset] = owner
         final_groups: dict[tuple[str, int, int], str] = {}
-        for index, (batch_id, completed) in enumerate(batches):
+        for batch_id, completed in batches:
             children = completed.application_result.child_outputs
             for child_index, child in enumerate(children):
 
@@ -504,7 +491,6 @@ def _write_batch_explanation(
 
                 written = replay.consume(
                     cast(UntargetChildOutputs, child),
-                    index,
                     label,
                     {
                         offset: final_groups[owner]

@@ -90,7 +90,6 @@ def test_backfill_uses_sample_pattern_location_without_claiming_method_support(
     )
     result = backfill_untargeted_cid_nl_sample_subject(
         half_window_min=BACKFILL_HALF_WINDOW_MIN,
-        processing_attempt_id=fixture.processing_attempt_id,
         sample=fixture.sample(sample),
         acquisition_source=fixture.source(fixture.sample(sample)),
         method_subject=fixture.method_subject,
@@ -118,7 +117,7 @@ def test_backfill_uses_sample_pattern_location_without_claiming_method_support(
         expected_apex, abs=0.005
     )
     if tolerance is not None:
-        evaluation = result.capture_evidence[0].physical_evaluation
+        evaluation = assessment.candidate_peaks[0].physical_evaluation
         assert evaluation.answer.selected_segment is not None
         assert evaluation.question.search_rt_window == pytest.approx((7.35, 7.75))
         assert evaluation.answer.selected_segment.apex_rt_min > 7.75
@@ -241,7 +240,6 @@ def test_recovery_revisits_one_hold_cell_without_minting_support(
 
     result = backfill_untargeted_cid_nl_sample_subject(
         half_window_min=BACKFILL_HALF_WINDOW_MIN,
-        processing_attempt_id=fixture.processing_attempt_id,
         sample=fixture.sample("S1"),
         acquisition_source=fixture.source(fixture.sample("S1")),
         method_subject=fixture.method_subject,
@@ -296,7 +294,6 @@ def test_physical_backfill_does_not_choose_among_clipped_tail_candidates(
     result = backfill_untargeted_cid_nl_sample_subject(
         group_hypothesis_id="group-1",
         half_window_min=0.5,
-        processing_attempt_id=fixture.processing_attempt_id,
         sample=fixture.sample("S1"),
         acquisition_source=fixture.source(fixture.sample("S1")),
         method_subject=fixture.method_subject,
@@ -310,10 +307,6 @@ def test_physical_backfill_does_not_choose_among_clipped_tail_candidates(
         signal_processing_profile=profile,
     )
 
-    evaluation = result.capture_evidence[0].physical_evaluation
-    assert evaluation.state == "unavailable"
-    assert evaluation.reason == "ambiguous_segment_candidates"
-    assert evaluation.answer.selected_segment is None and evaluation.integration is None
     receipt = result.assessment.evaluation_receipt
     assert (receipt.query_rt_min, receipt.query_rt_max) == (7.5, 8.5)
     assert result.assessment.candidate_peaks == ()
@@ -360,7 +353,6 @@ def test_physical_backfill_context_is_not_search_permission(
     assert batch.context_requests[0].rt_max == 9.0
     kwargs = dict(
         half_window_min=0.5,
-        processing_attempt_id=fixture.processing_attempt_id,
         sample=fixture.sample("S1"),
         acquisition_source=fixture.source("S1"),
         method_subject=fixture.method_subject,
@@ -384,8 +376,7 @@ def test_physical_backfill_context_is_not_search_permission(
         raw=raw,
     )
     assert vendor.chromatogram_request_counts == [2, 2]
-    first = batched.capture_evidence[0].physical_evaluation
-    assert first == direct.capture_evidence[0].physical_evaluation
+    assert batched.assessment == direct.assessment
     tolerance, reliable = query_gate
     gated_kwargs = kwargs | {
         "query_rt_tolerance_sec": tolerance,
@@ -400,46 +391,28 @@ def test_physical_backfill_context_is_not_search_permission(
         **gated_kwargs,
         raw=raw,
     )
-    gate_result = gated.capture_evidence[0].physical_evaluation
-    assert gate_result == gated_direct.capture_evidence[0].physical_evaluation
+    assert gated.assessment == gated_direct.assessment
     if reliable and tolerance == 12.0:
-        assert gate_result.state == "unavailable"
-        assert gate_result.answer.selected_segment is None
         assert not gated.assessment.candidate_peaks
-        assert gate_result.reason == (
-            "sample_localization_unreliable"
-            if not reliable
-            else "no_peak_in_sample_local_window"
-            if target_present
-            else "peak_not_found"
-        )
     elif target_present:
-        assert gate_result.state == "available"
-        assert (
-            gate_result.answer.selected_segment is not None
-            and first.answer.selected_segment is not None
-        )
-        assert (
-            gate_result.answer.selected_segment.area_counts_seconds
-            == first.answer.selected_segment.area_counts_seconds
-        )
-        assert (
-            gate_result.answer.selected_segment.apex_rt_min
-            == first.answer.selected_segment.apex_rt_min
-        )
+        (first_peak,) = batched.assessment.candidate_peaks
+        (gated_peak,) = gated.assessment.candidate_peaks
+        assert gated_peak.integration == first_peak.integration
     expected_window = (7.5, 8.5) if target_present and target_center == 8.45 else None
-    assert first.question.search_rt_window == expected_window
     receipt = batched.assessment.evaluation_receipt
     expected_receipt = (7.0, 9.0) if expected_window is not None else (7.5, 8.5)
     assert (receipt.query_rt_min, receipt.query_rt_max) == expected_receipt
     if target_present:
+        (peak,) = batched.assessment.candidate_peaks
+        first = peak.physical_evaluation
+        assert first.question.search_rt_window == expected_window
         assert first.state == "available" and first.answer.selected_segment is not None
         assert first.answer.selected_segment.apex_rt_min == pytest.approx(
             target_center, abs=0.02
         )
         if target_center == 8.45:
             assert first.answer.selected_segment.right_rt_min > 8.5
-            assert batched.capture_evidence[0].trace.rt_min == 7.0
+            assert peak.source_trace.rt_min == 7.0
         else:
             from xic_extractor.peak_detection.physical_peak_evaluation import (
                 evaluate_physical_peak,
@@ -449,7 +422,7 @@ def test_physical_backfill_context_is_not_search_permission(
                 PHYSICAL_PEAK_GROUP_WINDOW_POLICY,
             )
 
-            trace = batched.capture_evidence[0].trace
+            trace = peak.source_trace
             assert trace.rt_min == 7.5 and trace.rt_max == 8.5
             original = evaluate_physical_peak(
                 prepare_physical_signal(trace.rt, trace.intensity, profile=profile),
@@ -471,7 +444,6 @@ def test_physical_backfill_context_is_not_search_permission(
             )
         assert batched.assessment.method_result != "SUPPORT"
     else:
-        assert first.state == "unavailable" and first.answer.selected_segment is None
         assert not batched.assessment.candidate_peaks
 
 
@@ -540,7 +512,6 @@ def test_composite_backfill_resolves_one_event_per_scan_loss_across_references(
         result = backfill_untargeted_cid_nl_sample_subject(
             group_hypothesis_id="group-1",
             half_window_min=BACKFILL_HALF_WINDOW_MIN,
-            processing_attempt_id=fixture.processing_attempt_id,
             sample=fixture.sample("S1"),
             acquisition_source=fixture.source(fixture.sample("S1")),
             method_subject=subject,

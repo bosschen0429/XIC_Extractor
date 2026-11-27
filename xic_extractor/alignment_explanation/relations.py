@@ -1,6 +1,6 @@
 """How stored records relate to Discovery candidates, derived when a report is read.
 
-The report stores each fact once; which candidates explain a group or a curve
+The report stores each fact once; which candidates explain a group
 follows from those facts:
 
 - a member relates the candidates whose terminal hypothesis it is, and the
@@ -11,9 +11,6 @@ follows from those facts:
   ``GROUP_BACKFILL_DETECTOR``.
 - an initial group keeps only candidates of the method subjects its
   hypothesis members belong to;
-- a curve relates only its own candidate. A Backfill observation has none: it
-  was taken for one row's cell, which the stored facts do not name, and rows
-  that share its method subject must not show it.
 
 Each relation is computed into a TEMP table the first time a connection asks
 for it. Nothing is written into a report, so the rule stays with the reader.
@@ -68,11 +65,6 @@ _INITIAL_GROUP_CANDIDATES = """
     JOIN methods ON methods.group_id = m.initial_group
       AND methods.method_subject = c.method_subject"""
 
-_CURVE_CANDIDATES = """
-    SELECT cu.payload_id, c.id AS candidate FROM main.curves cu
-    JOIN main.samples s ON s.sample_key = cu.sample_id
-    JOIN {candidates} c ON c.candidate_id = cu.candidate_id AND c.sample = s.id"""
-
 _RELATIONS: dict[str, tuple[str, tuple[str, ...], tuple[str, ...]]] = {
     "peak_candidates": (_PEAK_CANDIDATES, (), ("peak",)),
     "member_candidates": (_MEMBER_CANDIDATES, ("peak_candidates",), ("member",)),
@@ -86,7 +78,6 @@ _RELATIONS: dict[str, tuple[str, tuple[str, ...], tuple[str, ...]]] = {
         ("member_candidates",),
         ("group_id", "candidate"),
     ),
-    "curve_candidates": (_CURVE_CANDIDATES, (), ("payload_id", "candidate")),
 }
 
 

@@ -316,19 +316,12 @@ def test_alignment_measurement_decides_admission_through_the_whole_run(
         ),
         project_child=project_composed_child,
     )
-    measured = {
-        evidence.candidate_id
-        for evidence in completed.capture_evidence
-        if evidence.capture_stage == "initial_capture"
-    }
     if alignment_signal == "flat":
-        assert measured == {kept.peak_id}
         (exclusion,) = completed.application_result.excluded_candidates
         assert exclusion.candidate_id == dropped.peak_id
         assert exclusion.peak_status == "admitted"
         assert exclusion.reason_code == "discovery_candidate_not_search_eligible"
     else:
-        assert measured == {kept.peak_id, dropped.peak_id}
         assert not completed.application_result.excluded_candidates
     matrix = render("matrix", tmp_path / "matrix.tsv", completed.application_result)
     loaded = load_plan_inputs(plan)
@@ -341,7 +334,6 @@ def test_alignment_measurement_decides_admission_through_the_whole_run(
         alignment_config=config,
         precursor_mz_by_candidate=representative_precursors(loaded),
         neutral_loss_by_tag=settings.neutral_loss_by_tag,
-        full_audit=True,
     )
     assert report.exists()
 
