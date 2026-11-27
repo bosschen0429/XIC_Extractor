@@ -72,7 +72,6 @@ from xic_extractor.untargeted_execution.partition.models import (
 )
 from xic_extractor.untargeted_execution.partition.workers import (
     plan_partition_backfills,
-    release_kept_raws,
 )
 from xic_extractor.untargeted_execution.partition_composition import (
     ChildOutputProjection,
@@ -417,10 +416,6 @@ class UntargetedPartitionPipelineAdapter:
         self._process_pool_lock = threading.Lock()
         self._process_pools_closed = False
         self._process_pools: tuple[WorkerAdmissionPool, ...] = ()
-        self._kept_raws_released = False
-        self._sample_lanes = {
-            sample.sample_name: ordinal for ordinal, sample in enumerate(self._samples)
-        }
         if execution.backend == "process":
             shared_objects = _sample_worker_shared_objects(
                 self._samples,
@@ -440,7 +435,6 @@ class UntargetedPartitionPipelineAdapter:
                     thread_name_prefix="cid-nl-sample",
                     initializer=partial(_initialize_sample_process, dll_dir),
                     shared_objects=shared_objects,
-                    lanes=True,
                 ),
             )
 
@@ -493,10 +487,6 @@ class UntargetedPartitionPipelineAdapter:
                 return
             self._process_pools_closed = True
         first_error: Exception | None = None
-        try:
-            self._release_kept_raws()
-        except Exception as exc:
-            first_error = exc
         for pool in self._process_pools:
             try:
                 pool.__exit__(None, None, None)
@@ -505,13 +495,6 @@ class UntargetedPartitionPipelineAdapter:
                     first_error = exc
         if first_error is not None:
             raise first_error
-
-    def _release_kept_raws(self) -> None:
-        """Close the RAW handles initial acquisition kept on the workers."""
-        if self._kept_raws_released or not self._process_pools:
-            return
-        self._kept_raws_released = True
-        self._process_pools[0].run_on_every_lane(release_kept_raws)
 
     def get_shared_objects(self) -> tuple[object, ...]:
         return _shared_objects(self._plan)
@@ -545,7 +528,6 @@ class UntargetedPartitionPipelineAdapter:
         """
         if len(self._initial_partitions) != self._bootstrap_count:
             raise RuntimeError("initial acquisition phase is incomplete")
-        self._release_kept_raws()
         check_cancellation()
         reference = CidNlBatchGrouping(self._plan.context.rt_frame)
         for index in range(self._bootstrap_count):
@@ -687,16 +669,11 @@ class UntargetedPartitionPipelineAdapter:
             alignment_config=self._alignment_config,
             initial_only=True,
             initial_results=None,
-            sample_lanes=(
-                self._sample_lanes if self._execution.backend == "process" else None
-            ),
         )
 
         if self._execution.backend == "process":
             if self._process_pools_closed:
                 raise RuntimeError("process worker pools are already closed")
-            if self._kept_raws_released:
-                raise RuntimeError("initial acquisition after its RAW handles closed")
             pool = self._process_pools[0]
             if pool.stopped:
                 cause = pool.first_error

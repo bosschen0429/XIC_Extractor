@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import os
 import threading
-from collections import deque
 from collections.abc import (
     Callable,
     Generator,
@@ -18,7 +17,6 @@ from collections.abc import (
 )
 from concurrent.futures import (
     FIRST_COMPLETED,
-    Executor,
     Future,
     ProcessPoolExecutor,
     ThreadPoolExecutor,
@@ -109,13 +107,7 @@ def iter_thread_results(
 
 
 class WorkerAdmissionPool:
-    """Manages worker concurrency budgets, admission windowing, and lifecycle.
-
-    With ``lanes`` each worker is its own single-worker executor, one item in
-    flight per lane. ``run_windowed`` with ``lane_fn`` sends every item to the
-    lane it names, so a worker can keep state for the items it owns; without
-    it, an item goes to whichever lane is free.
-    """
+    """Manages worker concurrency budgets, admission windowing, and lifecycle."""
 
     def __init__(
         self,
@@ -126,7 +118,6 @@ class WorkerAdmissionPool:
         initializer: Callable[[], None] | None = None,
         mp_context: BaseContext | None = None,
         shared_objects: tuple[object, ...] = (),
-        lanes: bool = False,
     ) -> None:
         if isinstance(max_workers, bool) or max_workers < 1:
             raise ValueError("max_workers must be a positive integer")
@@ -138,11 +129,8 @@ class WorkerAdmissionPool:
         self._initializer = initializer
         self._mp_context = mp_context
         self._shared_objects = shared_objects
-        self._laned = lanes
-        self._lanes: tuple[Executor, ...] = ()
         self._executor: ThreadPoolExecutor | ProcessPoolExecutor | None = None
         self._bootstrap_segment: shared_memory.SharedMemory | None = None
-        self._bootstrap_size = 0
         self._executor_lock = threading.Lock()
         self._metrics_lock = threading.Lock()
         self._stopped = threading.Event()
@@ -182,7 +170,7 @@ class WorkerAdmissionPool:
 
     def set_initializer(self, initializer: Callable[[], None]) -> None:
         with self._executor_lock:
-            if self._executor is not None or self._lanes:
+            if self._executor is not None:
                 raise RuntimeError("cannot set initializer after executor has started")
             self._initializer = initializer
 
@@ -215,7 +203,29 @@ class WorkerAdmissionPool:
                 return self._executor
             effective_workers = min(self._max_workers, max(1, capacity))
             if self._backend == "process":
-                self._executor = self._process_executor(self._max_workers)
+                effective_workers = self._max_workers
+                if self._shared_objects:
+                    bootstrap = owner_pickle_dumps(self._shared_objects, ())
+                    with self._metrics_lock:
+                        self._shared_bootstrap_bytes = (
+                            len(bootstrap) * effective_workers
+                        )
+                    segment = shared_memory.SharedMemory(
+                        create=True, size=max(1, len(bootstrap))
+                    )
+                    cast(memoryview, segment.buf)[: len(bootstrap)] = bootstrap
+                    self._bootstrap_segment = segment
+                    self._executor = ProcessPoolExecutor(
+                        max_workers=effective_workers,
+                        mp_context=self._mp_context or get_context("spawn"),
+                        initializer=_initialize_owner_worker,
+                        initargs=(segment.name, len(bootstrap), self._initializer),
+                    )
+                else:
+                    self._executor = ProcessPoolExecutor(
+                        max_workers=effective_workers,
+                        mp_context=self._mp_context or get_context("spawn"),
+                    )
             elif effective_workers > 1:
                 if self._initializer is not None:
                     self._initializer()
@@ -224,88 +234,6 @@ class WorkerAdmissionPool:
                     thread_name_prefix=self._thread_name_prefix,
                 )
             return self._executor
-
-    def _ensure_lanes(self) -> tuple[Executor, ...]:
-        with self._executor_lock:
-            if self._closed:
-                raise RuntimeError("worker admission pool is closed")
-            if not self._lanes:
-                if self._backend == "process":
-                    self._lanes = tuple(
-                        self._process_executor(1) for _ in range(self._max_workers)
-                    )
-                else:
-                    if self._initializer is not None:
-                        self._initializer()
-                    self._lanes = tuple(
-                        ThreadPoolExecutor(
-                            max_workers=1,
-                            thread_name_prefix=f"{self._thread_name_prefix}-{lane}",
-                        )
-                        for lane in range(self._max_workers)
-                    )
-            return self._lanes
-
-    def _process_executor(self, workers: int) -> ProcessPoolExecutor:
-        """A spawned executor; every lane reads the same shared-owner bootstrap."""
-        context = self._mp_context or get_context("spawn")
-        if not self._shared_objects:
-            return ProcessPoolExecutor(max_workers=workers, mp_context=context)
-        segment = self._bootstrap_segment
-        if segment is None:
-            bootstrap = owner_pickle_dumps(self._shared_objects, ())
-            with self._metrics_lock:
-                self._shared_bootstrap_bytes = len(bootstrap) * self._max_workers
-            segment = shared_memory.SharedMemory(
-                create=True, size=max(1, len(bootstrap))
-            )
-            cast(memoryview, segment.buf)[: len(bootstrap)] = bootstrap
-            self._bootstrap_segment = segment
-            self._bootstrap_size = len(bootstrap)
-        return ProcessPoolExecutor(
-            max_workers=workers,
-            mp_context=context,
-            initializer=_initialize_owner_worker,
-            initargs=(segment.name, self._bootstrap_size, self._initializer),
-        )
-
-    def _submit(
-        self, executor: Executor, worker_fn: Callable[..., object], arg: object
-    ) -> Future[object]:
-        if self._backend == "process" and self._shared_objects:
-            request_payload = owner_pickle_dumps(arg, self._shared_objects)
-            with self._metrics_lock:
-                self._task_request_bytes += len(request_payload)
-            return cast(
-                Future[object],
-                executor.submit(_execute_owner_task, worker_fn, request_payload),
-            )
-        return cast(Future[object], executor.submit(worker_fn, arg))
-
-    def _result(self, future: Future[object]) -> object:
-        raw_result = future.result()
-        if self._backend == "process" and self._shared_objects:
-            if not isinstance(raw_result, _OwnerProcessResult):
-                raise TypeError("shared process worker returned an invalid envelope")
-            with self._metrics_lock:
-                self._task_response_bytes += len(raw_result.payload)
-                self._worker_pids.add(raw_result.worker_pid)
-            return owner_pickle_loads(raw_result.payload, self._shared_objects)
-        return raw_result
-
-    def run_on_every_lane(self, worker_fn: Callable[[None], object]) -> None:
-        """Run ``worker_fn(None)`` once on each started lane; raise the first error."""
-        with self._executor_lock:
-            lanes = self._lanes
-        futures = [self._submit(lane, worker_fn, None) for lane in lanes]
-        first: Exception | None = None
-        for future in futures:
-            try:
-                self._result(future)
-            except Exception as exc:
-                first = first or exc
-        if first is not None:
-            raise first
 
     def run_windowed(
         self,
@@ -318,78 +246,73 @@ class WorkerAdmissionPool:
         on_error: Callable[[TItem, Exception], None] | None = None,
         should_cancel: Callable[[], bool] | None = None,
         stop_on_error: bool = True,
-        lane_fn: Callable[[TItem], int] | None = None,
     ) -> None:
         """Execute items using bounded windowed admission."""
-        if lane_fn is not None and not self._laned:
-            raise ValueError("lane_fn needs a laned pool")
         if not items:
             return
         if self.observe_cancellation(should_cancel):
             return
 
+        executor = self._ensure_executor(len(items))
         total = len(items)
         completed = 0
-        executors: tuple[Executor, ...]
-        queues: list[deque[TItem]]
-        if self._laned:
-            executors = self._ensure_lanes()
-            if lane_fn is None:
-                queues = [deque(items)]
-            else:
-                queues = [deque() for _ in executors]
-                for item in items:
-                    queues[lane_fn(item) % len(executors)].append(item)
-            capacity = 1
-        else:
-            executor = self._ensure_executor(len(items))
-            if executor is None:
-                for item in items:
-                    if self.observe_cancellation(should_cancel):
+
+        if executor is None:
+            for item in items:
+                if self.observe_cancellation(should_cancel):
+                    break
+                if skip_fn is not None and skip_fn(item):
+                    completed += 1
+                    if on_completed is not None:
+                        on_completed(completed, total, item, None)  # type: ignore[arg-type]
+                    continue
+                try:
+                    arg = task_arg_fn(item) if task_arg_fn is not None else item
+                    res = worker_fn(arg)
+                    completed += 1
+                    if on_completed is not None:
+                        on_completed(completed, total, item, res)
+                except Exception as exc:
+                    if on_error is not None:
+                        on_error(item, exc)
+                    if stop_on_error:
+                        self.stop(exc)
                         break
-                    if skip_fn is not None and skip_fn(item):
-                        completed += 1
-                        if on_completed is not None:
-                            on_completed(completed, total, item, None)  # type: ignore[arg-type]
-                        continue
-                    try:
-                        arg = task_arg_fn(item) if task_arg_fn is not None else item
-                        res = worker_fn(arg)
-                        completed += 1
-                        if on_completed is not None:
-                            on_completed(completed, total, item, res)
-                    except Exception as exc:
-                        if on_error is not None:
-                            on_error(item, exc)
-                        if stop_on_error:
-                            self.stop(exc)
-                            break
-                return
-            executors = (executor,)
-            queues = [deque(items)]
-            capacity = min(self._max_workers, len(items))
-        in_flight = [0] * len(executors)
-        pending: dict[Future[object], tuple[int, TItem]] = {}
+            return
+
+        effective_workers = min(self._max_workers, len(items))
+        pending: dict[Future[object], TItem] = {}
+        remaining = iter(items)
 
         def fill_window() -> None:
             nonlocal completed
-            for lane in range(len(executors)):
-                queue = queues[lane if len(queues) > 1 else 0]
-                while (
-                    in_flight[lane] < capacity
-                    and queue
-                    and not self.observe_cancellation(should_cancel)
-                ):
-                    item = queue.popleft()
-                    if skip_fn is not None and skip_fn(item):
-                        completed += 1
-                        if on_completed is not None:
-                            on_completed(completed, total, item, None)  # type: ignore[arg-type]
-                        continue
-                    arg = task_arg_fn(item) if task_arg_fn is not None else item
-                    submitted = self._submit(executors[lane], worker_fn, arg)
-                    pending[submitted] = (lane, item)
-                    in_flight[lane] += 1
+            while len(pending) < effective_workers and not self.observe_cancellation(
+                should_cancel
+            ):
+                item = next(remaining, None)
+                if item is None:
+                    break
+                if skip_fn is not None and skip_fn(item):
+                    completed += 1
+                    if on_completed is not None:
+                        on_completed(completed, total, item, None)  # type: ignore[arg-type]
+                    continue
+                arg = task_arg_fn(item) if task_arg_fn is not None else item
+                if self._backend == "process" and self._shared_objects:
+                    request_payload = owner_pickle_dumps(arg, self._shared_objects)
+                    with self._metrics_lock:
+                        self._task_request_bytes += len(request_payload)
+                    submitted = cast(
+                        Future[object],
+                        executor.submit(
+                            _execute_owner_task,
+                            worker_fn,
+                            request_payload,
+                        ),
+                    )
+                else:
+                    submitted = cast(Future[object], executor.submit(worker_fn, arg))
+                pending[submitted] = item
 
         try:
             fill_window()
@@ -401,10 +324,21 @@ class WorkerAdmissionPool:
                     return_when=FIRST_COMPLETED,
                 )
                 for future in done:
-                    lane, item = pending.pop(future)
-                    in_flight[lane] -= 1
+                    item = pending.pop(future)
                     try:
-                        res = cast(TResult, self._result(future))
+                        raw_result = future.result()
+                        if self._backend == "process" and self._shared_objects:
+                            if not isinstance(raw_result, _OwnerProcessResult):
+                                raise TypeError(
+                                    "shared process worker returned an invalid envelope"
+                                )
+                            with self._metrics_lock:
+                                self._task_response_bytes += len(raw_result.payload)
+                                self._worker_pids.add(raw_result.worker_pid)
+                            raw_result = owner_pickle_loads(
+                                raw_result.payload, self._shared_objects
+                            )
+                        res = cast(TResult, raw_result)
                         completed += 1
                         if on_completed is not None:
                             on_completed(completed, total, item, res)
@@ -429,14 +363,10 @@ class WorkerAdmissionPool:
             self._closed = True
             executor = self._executor
             self._executor = None
-            lanes = self._lanes
-            self._lanes = ()
             segment = self._bootstrap_segment
             self._bootstrap_segment = None
         if executor is not None:
             executor.shutdown(wait=True)
-        for lane in lanes:
-            lane.shutdown(wait=True)
         if segment is not None:
             segment.close()
             segment.unlink()

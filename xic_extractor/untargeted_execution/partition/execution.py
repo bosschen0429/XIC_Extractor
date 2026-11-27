@@ -55,15 +55,13 @@ def execute_partition(
     ]
     | None = None,
     backfill_questions: tuple[CidNlBackfillQuestion, ...] | None = None,
-    sample_lanes: Mapping[str, int] | None = None,
 ) -> UntargetedPartitionResult:
     """Execute a partition, optionally split at the batch-calibration seam.
 
     The initial phase owns acquisition; a resumed phase consumes its sealed
     assessments and performs only Backfill acquisition under the same attempt.
     A resumed phase receives the Backfill questions planned with its final
-    grouping; an unsplit run plans them here. With ``sample_lanes`` a process
-    pool's lanes own their samples and keep each one's RAW open.
+    grouping; an unsplit run plans them here.
     """
     work = _prepare_runtime_work(
         jobs,
@@ -76,7 +74,6 @@ def execute_partition(
         initial_only=initial_only,
         initial_results=initial_results,
         backfill_questions=backfill_questions,
-        sample_lanes=sample_lanes,
     )
     failure = work.run()
     return UntargetedPartitionResult(
@@ -108,7 +105,6 @@ def _prepare_runtime_work(
     ]
     | None = None,
     backfill_questions: tuple[CidNlBackfillQuestion, ...] | None = None,
-    sample_lanes: Mapping[str, int] | None = None,
 ) -> _RuntimeWork:
 
     def report_phase(stage: str, completed: int, total: int) -> None:
@@ -263,7 +259,6 @@ def _prepare_runtime_work(
                 jobs=tuple(s.job for s in sample_states),
                 initial_resource_key=phase.initial_resource_key,
                 regions=phase.regions,
-                keep_raw=sample_lanes is not None,
             )
 
         def handle_initial_response(
@@ -299,13 +294,6 @@ def _prepare_runtime_work(
                         on_error=on_sample_error,
                         should_cancel=should_cancel,
                         stop_on_error=True,
-                        lane_fn=(
-                            None
-                            if sample_lanes is None
-                            else lambda group: sample_lanes[
-                                group[0].job.sample.sample_name
-                            ]
-                        ),
                     )
                 else:
                     pool.run_windowed(
