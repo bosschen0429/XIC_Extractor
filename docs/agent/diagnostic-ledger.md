@@ -388,15 +388,23 @@ pickled it to a worker twice (2.72 GB), then unpickled the final groupings
 themselves, grouping took 53.3 s instead of 114.2 s and peaked at 8.15 GB
 instead of 9.43 GB, outputs unchanged. Publication read every initial group
 back twice for an RT drift count (18.5 s) and a membership-risk flag (11.6 s);
-composition now records both. Backfill stayed at 194 s, gated by in-order
-composition in the parent: writing the partition took 113 s of span wall, 70 s
-of it composing and projecting children, and building composition inputs 57 s
-on 7.7 s of thread CPU. Two producer threads spent 76 s reading spool records
-meanwhile, and composition steps overlapping those reads ran at 7.9 (inputs),
-19 (explanation projection) and 62 (curve encoding) times their thread CPU,
-against 2.4-3.7 times when no read overlapped: the parent's own spool reads
-slow its composition through the GIL. Review-curve encoding alone costs about
-8.4 s (timed on 3,000 of the 39,487 curves).
+composition now records both, and the phase after Backfill took 57.6 s instead
+of 84.5 s (measured in the run below, which also composed on workers). Backfill
+stayed at 194 s, gated by in-order composition in the parent: writing the
+partition took 113 s of span wall, 70 s of it composing and projecting
+children, and building composition inputs 57 s on 7.7 s of thread CPU. Two
+producer threads spent 76 s reading spool records meanwhile, and composition
+steps overlapping those reads ran at 7.9 (inputs), 19 (explanation projection)
+and 62 (curve encoding) times their thread CPU, against 2.4-3.7 times when no
+read overlapped. That contention was not the main cost. Composing on a worker
+instead, one partition at a time (local branch
+`wip/backfill-compose-on-worker`, outputs equal), took 153 s of task wall and
+left Backfill at 195.7 s, with 1.1 GB more in each composing worker; about a
+third of the task re-reads the final grouping and initial results the producer
+already read (8RAW proportions). Overlapping compositions within the three
+admission credits simulates to ~170 s; more credits keep more partitions in
+the parent. Review-curve encoding alone costs about 8.4 s (timed on 3,000 of
+the 39,487 curves).
 
 Rerun when partition packing, worker scheduling, Backfill planning, the ISTD
 reference, the RAW reader or where composition runs changes. Artifacts: `output/1306/` in the `research-1306-raw-time-46fb42`
