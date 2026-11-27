@@ -228,7 +228,6 @@ class UntargetedPartitionPipelineAdapter:
         known_istd_reference: KnownIstdReference | None = None,
         execution: ExecutionProfile,
         max_partition_jobs: int = 100_000,
-        retain_partition_spool: bool = False,
         grouping_only: bool = False,
         capture_grouping: Callable[[PreparedGroupingExperiment], None] | None = None,
         capture_backfill: Callable[[FrozenBackfillPartition], None] | None = None,
@@ -238,7 +237,6 @@ class UntargetedPartitionPipelineAdapter:
     ) -> None:
         if project_child is None and not grouping_only:
             raise ValueError("composing children requires an output projection")
-        self._retain_partition_spool = bool(retain_partition_spool)
         self._grouping_only = grouping_only
         self._bootstrap_anchors: dict[int, tuple[RtAnchorObservation, ...]] = {}
         self._capture_grouping = capture_grouping
@@ -723,7 +721,6 @@ class UntargetedPartitionPipelineAdapter:
         return CompletedUntargetBatchWorkflowResult.from_runtime(
             application_result=application_result,
             store=store,
-            retain_partition_spool=self._retain_partition_spool,
             sample_rt_frame=self._batch_preparation.frozen_rt_frame,
         )
 
@@ -739,7 +736,6 @@ def execute_untargeted_plan(
     max_partition_jobs: int = 100_000,
     should_cancel: Callable[[], bool] | None = None,
     retain_partition_memory: bool = False,
-    retain_partition_spool: bool = False,
     grouping_only: bool = False,
     capture_grouping: Callable[[PreparedGroupingExperiment], None] | None = None,
     capture_backfill: Callable[[FrozenBackfillPartition], None] | None = None,
@@ -765,7 +761,6 @@ def execute_untargeted_plan(
         known_istd_reference=known_istd_reference,
         execution=execution,
         max_partition_jobs=max_partition_jobs,
-        retain_partition_spool=retain_partition_spool,
         grouping_only=grouping_only,
         capture_grouping=capture_grouping,
         capture_backfill=capture_backfill,

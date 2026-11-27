@@ -27,7 +27,6 @@ from xic_extractor.execution.partitions import (
 from xic_extractor.execution.result_store import (
     StreamedResultStore,
     _OwnerUnpickler,
-    open_preserved_results,
 )
 from xic_extractor.execution.workers import WorkerAdmissionPool
 
@@ -168,15 +167,6 @@ def test_streamed_result_store_shared_objects_identity(
     assert restored.ref is shared_config
     assert restored.child_outputs[0][0] is shared_config
     assert restored.child_outputs[0][1] is shared_ref
-    store.seal()
-    checkpoint = store.preserve_results()
-    retained = open_preserved_results(checkpoint)
-    replay = retained.read(0)
-    assert replay.ref == shared_config
-    assert replay.child_outputs[0][1] == shared_ref
-    assert replay.ref is retained._shared_objects[0]
-    assert replay.child_outputs[0][0] is replay.ref
-    assert replay.child_outputs[0][1] is retained._shared_objects[1]
 
 
 def test_streamed_result_store_unknown_shared_identity_rejected() -> None:

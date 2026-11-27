@@ -13,8 +13,6 @@ from typing import Any, BinaryIO, Protocol
 from xic_extractor.execution._serialization import _OwnerPickler, _OwnerUnpickler
 from xic_extractor.immutable_sequence import ImmutableSequence
 
-PRESERVED_INDEX_NAME = "partition-index.pickle"
-
 
 class StreamingPartitionPayload(Protocol):
     """Dataclass metadata whose ``child_outputs`` are streamed beside it."""
@@ -458,79 +456,8 @@ class StreamedResultStore:
             tuple(length for _, _, length in chunks), load_chunk, load_chunks
         )
 
-    def preserve_results(self) -> Path:
-        """Publish the sealed record index beside the partitions it addresses.
-
-        The index carries the per-field record offsets and the shared owner
-        references a reader needs, so another process can restore one record by
-        position instead of receiving a copy of every record. It is read-only
-        and private: it neither resumes a runtime attempt nor grants
-        publication authority.
-        """
-        snapshot = {
-            "shared_objects": self._shared_objects,
-            "individually_addressable_fields": self._individually_addressable_fields,
-            "partitions": self._partitions,
-            "field_lengths": self._field_lengths,
-            "field_records": self._field_records,
-        }
-        destination = self._directory / PRESERVED_INDEX_NAME
-        temporary = destination.with_suffix(".tmp")
-        if destination.exists():
-            raise FileExistsError(destination)
-        stream = temporary.open("xb")
-        try:
-            with stream:
-                _OwnerPickler(stream, ()).dump(snapshot)
-            os.replace(temporary, destination)
-        finally:
-            temporary.unlink(missing_ok=True)
-        self._field_caches.clear()
-        return destination
-
     def cleanup(self) -> None:
         """Remove private spool directory and release in-memory caches."""
         self._field_caches.clear()
         if self._directory.exists():
             shutil.rmtree(self._directory, ignore_errors=True)
-
-
-def open_preserved_results(path: Path) -> StreamedResultStore:
-    """Restore a preserved index for read-only record access in any process.
-
-    The directory is rebound to the index's own location, so a preserved spool
-    stays readable after it is moved. The restored store is sealed: it reads
-    records, and it never writes, adopts or cleans up.
-    """
-    resolved = Path(path).resolve()
-    with resolved.open("rb") as stream:
-        index = _OwnerUnpickler(stream, ()).load()
-    if not isinstance(index, dict) or set(index) != {
-        "shared_objects",
-        "individually_addressable_fields",
-        "partitions",
-        "field_lengths",
-        "field_records",
-    }:
-        raise ValueError(
-            "unsupported preserved partition structure; rerun the analysis"
-        )
-    if any(
-        type(length) is not int or length < 0
-        for lengths in index["field_lengths"]
-        for length in lengths.values()
-    ):
-        raise ValueError("chunk lengths must be non-negative integers")
-    store = object.__new__(StreamedResultStore)
-    store._directory = resolved.parent
-    store._shared_objects = index["shared_objects"]
-    store._individually_addressable_fields = index["individually_addressable_fields"]
-    store._partitions = index["partitions"]
-    store._field_lengths = index["field_lengths"]
-    store._field_records = index["field_records"]
-    store._field_caches = []
-    store._keys = {partition.key for partition in store._partitions}
-    store._reserved_keys = set()
-    store._reservations = {}
-    store._sealed = True
-    return store
