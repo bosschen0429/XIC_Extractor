@@ -766,7 +766,7 @@ def test_marker_intersection_without_owned_expression_keeps_caller_markers(
             "tools/testing/pytest_temp.py",
             {"packaging_build", "browser_e2e", "ci_workflow"},
         ),
-        ("tools/diagnostics/targeted_istd_benchmark_loaders.py", {"packaging_build"}),
+        ("tools/diagnostics/duplicate_quantification.py", {"packaging_build"}),
         ("xic_extractor/presets/data/dna_dr.toml", {"packaging_build"}),
         ("docs/product/backfill.md", set()),
         ("MANIFEST.in", {"packaging_build"}),

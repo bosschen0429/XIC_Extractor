@@ -1,4 +1,3 @@
-import csv
 import math
 from dataclasses import replace
 from pathlib import Path
@@ -44,104 +43,6 @@ REVIEW_COLUMNS = [
 ]
 
 
-def test_write_alignment_review_tsv_columns_and_counts(tmp_path: Path):
-    matrix = _matrix(
-        ("sample-a", "sample-b", "sample-c", "sample-d"),
-        _row(
-            owner_cell(area=10.0),
-            owner_cell("backfilled", area=20.0),
-            owner_cell(None),
-            owner_cell(area=30.0),
-            member_count=1,
-        ),
-    )
-
-    path = render("review", tmp_path / "alignment_review.tsv", matrix)
-    rows = _read_tsv(path)
-
-    assert list(rows[0]) == REVIEW_COLUMNS
-    assert rows[0] == {
-        "membership_risk_flags": "",
-        "rt_time_coefficient": "0",
-        "rt_sample_shift_coefficient": "0",
-        "feature_id": "F000001",
-        "matrix_row_index": "1",
-        "neutral_loss_tag": "DNA_dR",
-        "group_center_mz": "500.123",
-        "group_center_rt": "8.49",
-        "group_product_mz": "384.076",
-        "group_observed_neutral_loss_da": "116.047",
-        "detected_count": "2",
-        "not_searched_count": "0",
-        "unresolved_count": "0",
-        "identity_reason": "test_route",
-        "accepted_cell_count": "3",
-        "accepted_backfill_count": "1",
-        "warning": "",
-    }
-
-
-def test_write_alignment_review_tsv_warning_precedence(tmp_path: Path):
-    not_searched = owner_cell(None, no_write="not_searched")
-    matrix = _matrix(
-        ("sample-a", "sample-b", "sample-c"),
-        _row(owner_cell(area=1.0), not_searched, owner_cell(None), has_anchor=False),
-        _row(owner_cell(area=1.0), not_searched, not_searched),
-        _row(owner_cell("backfilled", area=1.0), owner_cell(None), owner_cell(None)),
-        _row(owner_cell(area=1.0), owner_cell(None), owner_cell(None)),
-        _row(
-            owner_cell(area=1.0),
-            owner_cell("backfilled", area=1.0),
-            owner_cell(None),
-        ),
-    )
-
-    rows = _read_tsv(render("review", tmp_path / "review.tsv", matrix))
-
-    assert [row["warning"] for row in rows] == [
-        "no_anchor",
-        "high_not_searched",
-        "high_backfill_dependency",
-        "",
-        "",
-    ]
-    assert [row["not_searched_count"] for row in rows] == ["1", "2", "0", "0", "0"]
-
-
-def test_review_counts_owner_cells_across_physical_members(tmp_path):
-    matrix = _matrix(
-        ("direct", "backfill-a", "backfill-b"),
-        _row(
-            owner_cell(area=10.0),
-            owner_cell("backfilled", area=20.0),
-            owner_cell("backfilled", area=30.0),
-            member_count=3,
-        ),
-    )
-    (row,) = _read_tsv(render("review", tmp_path / "review.tsv", matrix))
-    assert row["detected_count"] == "1"
-    assert row["accepted_cell_count"] == "3"
-    assert row["accepted_backfill_count"] == "2"
-    assert row["warning"] == ""
-
-
-def test_write_alignment_review_tsv_reports_unresolved_cells(tmp_path: Path):
-    matrix = _matrix(
-        ("sample-a", "sample-b", "sample-c"),
-        _row(
-            owner_cell(area=100.0),
-            owner_cell(None, no_write="unresolved"),
-            owner_cell(None),
-        ),
-    )
-
-    (row,) = _read_tsv(render("review", tmp_path / "review.tsv", matrix))
-
-    assert row["detected_count"] == "1"
-    assert row["unresolved_count"] == "1"
-    assert row["accepted_cell_count"] == "1"
-
-
 def test_write_alignment_matrix_tsv_writes_owner_values_and_blanks_no_write_cells(
     tmp_path: Path,
 ):
@@ -180,124 +81,6 @@ def test_write_alignment_matrix_tsv_writes_owner_values_and_blanks_no_write_cell
     assert row["backfilled"] == "2.50000e+01"
     assert float(row["small"]) == float(f"{0.00123456:.6g}")
     assert [row[sample] for sample in samples[4:]] == ["", "", "", ""]
-
-
-def test_alignment_matrix_mz_format_preserves_identity_coordinate_contract(
-    tmp_path: Path,
-) -> None:
-    from xic_extractor.output.alignment.matrix_output_contract import (
-        matrix_review_rows,
-    )
-
-    matrix = _two_sample_matrix(center_mz=500.123456)
-
-    matrix_row = _read_tsv(render("matrix", tmp_path / "alignment_matrix.tsv", matrix))[
-        0
-    ]
-    review_row = _read_tsv(render("review", tmp_path / "alignment_review.tsv", matrix))[
-        0
-    ]
-
-    assert matrix_row["Mz"] == "500.1235"
-    assert review_row["group_center_mz"] == "500.123456"
-    matrix_review_rows(
-        matrix_header=tuple(matrix_row),
-        matrix_rows=(matrix_row,),
-        review_columns=tuple(review_row),
-        review_rows=(review_row,),
-    )
-
-
-def test_alignment_matrix_mz_format_is_display_only_for_small_mz(
-    tmp_path: Path,
-) -> None:
-    matrix = _two_sample_matrix(center_mz=5.123456)
-
-    matrix_row = _read_tsv(render("matrix", tmp_path / "alignment_matrix.tsv", matrix))[
-        0
-    ]
-    identity_row = _read_tsv(
-        render("review", tmp_path / "alignment_review.tsv", matrix)
-    )[0]
-
-    assert matrix_row["Mz"] == "5.1235"
-    assert identity_row["group_center_mz"] == "5.123456"
-
-
-def test_alignment_matrix_display_collision_does_not_merge_identity_rows(
-    tmp_path: Path,
-) -> None:
-    matrix = _display_collision_matrix()
-
-    matrix_rows = _read_tsv(render("matrix", tmp_path / "alignment_matrix.tsv", matrix))
-    identity_rows = _read_tsv(
-        render("review", tmp_path / "alignment_review.tsv", matrix)
-    )
-
-    assert [row["Mz"] for row in matrix_rows] == ["500.1234", "500.1234"]
-    assert [row["group_center_mz"] for row in identity_rows] == [
-        "500.123441",
-        "500.123449",
-    ]
-    assert [row["feature_id"] for row in identity_rows] == [
-        "F000001",
-        "F000002",
-    ]
-
-
-@pytest.mark.parametrize(
-    "mutation",
-    (
-        "duplicate",
-        "missing",
-        "extra",
-        "missing_column",
-        "unknown_column",
-    ),
-)
-def test_alignment_matrix_identity_rejects_review_census_and_schema_mismatch(
-    tmp_path: Path,
-    mutation: str,
-) -> None:
-    from xic_extractor.output.alignment.matrix_output_contract import (
-        matrix_review_rows,
-    )
-
-    matrix = _display_collision_matrix()
-    matrix_rows = _read_tsv(render("matrix", tmp_path / "alignment_matrix.tsv", matrix))
-    identity_rows = _read_tsv(
-        render("review", tmp_path / "alignment_review.tsv", matrix)
-    )
-    matrix_header = tuple(matrix_rows[0])
-    identity_columns = tuple(identity_rows[0])
-
-    matrix_review_rows(
-        matrix_header=matrix_header,
-        matrix_rows=matrix_rows,
-        review_columns=identity_columns,
-        review_rows=identity_rows,
-    )
-
-    if mutation == "duplicate":
-        identity_rows[1] = dict(identity_rows[0])
-    elif mutation == "missing":
-        identity_rows.pop()
-    elif mutation == "extra":
-        identity_rows.append(dict(identity_rows[-1]))
-    elif mutation == "missing_column":
-        identity_columns = tuple(
-            column for column in identity_columns if column != "group_center_rt"
-        )
-    else:
-        identity_columns = (*identity_columns, "unknown_identity_field")
-
-    with pytest.raises(ValueError, match="Review"):
-        matrix_review_rows(
-            matrix_header=matrix_header,
-            matrix_rows=matrix_rows,
-            review_columns=identity_columns,
-            review_rows=identity_rows,
-        )
 
 
 def test_alignment_matrix_identity_requires_current_schema() -> None:
@@ -388,39 +171,6 @@ def test_alignment_matrix_identity_rejects_malformed_serialized_row_shapes(
         )
 
 
-def test_alignment_matrix_binding_uses_exact_persisted_rt_and_header_tokens(
-    tmp_path: Path,
-) -> None:
-    from xic_extractor.output.alignment.matrix_output_contract import (
-        matrix_review_rows,
-    )
-
-    matrix = _matrix(
-        ("+sample", "safe"),
-        _row(owner_cell(area=100.0), owner_cell(area=110.0), center_rt=8.49123456),
-    )
-    matrix_path = render("matrix", tmp_path / "matrix.tsv", matrix)
-    identity_path = render("review", tmp_path / "identity.tsv", matrix)
-
-    with matrix_path.open(encoding="utf-8", newline="") as handle:
-        matrix_reader = csv.DictReader(handle, delimiter="\t")
-        matrix_header = tuple(matrix_reader.fieldnames or ())
-        matrix_rows = list(matrix_reader)
-    with identity_path.open(encoding="utf-8", newline="") as handle:
-        identity_reader = csv.DictReader(handle, delimiter="\t")
-        identity_header = tuple(identity_reader.fieldnames or ())
-        identity_rows = list(identity_reader)
-
-    assert matrix_header == ("Mz", "RT", "'+sample", "safe")
-    assert matrix_rows[0]["RT"] == identity_rows[0]["group_center_rt"] == "8.49123"
-    matrix_review_rows(
-        matrix_header=matrix_header,
-        matrix_rows=matrix_rows,
-        review_columns=identity_header,
-        review_rows=identity_rows,
-    )
-
-
 @pytest.mark.parametrize("center_mz", [math.nan, math.inf, -math.inf])
 def test_written_center_requires_finite_group_center(
     tmp_path: Path,
@@ -491,30 +241,6 @@ def test_write_alignment_matrix_tsv_excludes_archived_rows(
     assert rows[0]["sample-b"] == "1.10000e+02"
 
 
-def test_write_alignment_review_tsv_maps_product_rows(
-    tmp_path: Path,
-) -> None:
-    from xic_extractor.output.alignment.matrix_output_contract import (
-        MATRIX_REVIEW_COLUMNS,
-    )
-
-    matrix = _two_sample_matrix()
-
-    matrix_rows = _read_tsv(render("matrix", tmp_path / "matrix.tsv", matrix))
-    identity_rows = _read_tsv(
-        render("review", tmp_path / "alignment_review.tsv", matrix)
-    )
-
-    assert list(identity_rows[0]) == REVIEW_COLUMNS
-    assert len(identity_rows) == len(matrix_rows) == 1
-    assert {key: identity_rows[0][key] for key in MATRIX_REVIEW_COLUMNS} == {
-        "feature_id": "F000001",
-        "matrix_row_index": "1",
-        "group_center_mz": "500.123",
-        "group_center_rt": matrix_rows[0]["RT"],
-    }
-
-
 def test_write_alignment_matrix_rejects_duplicate_source_candidate_writes(
     tmp_path: Path,
 ) -> None:
@@ -554,28 +280,9 @@ def test_write_alignment_tsvs_rejects_one_physical_peak_in_two_rows(
 
     if same_signal:
         with pytest.raises(ValueError, match="reused physical observations"):
-            write_alignment_tsvs({"review": tmp_path / "review.tsv"}, batch)
+            write_alignment_tsvs({"matrix": tmp_path / "matrix.tsv"}, batch)
     else:
-        assert write_alignment_tsvs({"review": tmp_path / "review.tsv"}, batch) == 2
-
-
-def test_write_alignment_review_tsv_reports_archived_row_route(tmp_path: Path):
-    matrix = _matrix(
-        ("sample-a",),
-        _row(
-            owner_cell("backfilled", area=200.0),
-            has_anchor=False,
-            destination="archive",
-        ),
-    )
-
-    (row,) = _read_tsv(render("review", tmp_path / "review.tsv", matrix))
-
-    assert row["matrix_row_index"] == ""
-    assert row["group_center_mz"] == "500.123"
-    assert row["identity_reason"] == "test_route"
-    assert row["accepted_cell_count"] == "1"
-    assert row["accepted_backfill_count"] == "1"
+        assert write_alignment_tsvs({"matrix": tmp_path / "matrix.tsv"}, batch) == 2
 
 
 def test_cells_tsv_preserves_sample_states_and_selected_source(tmp_path: Path):
@@ -659,11 +366,9 @@ def test_tsv_writers_escape_formula_like_text(tmp_path: Path):
         ),
     )
 
-    review = _read_tsv(render("review", tmp_path / "review.tsv", matrix))
     matrix_rows = _read_tsv(render("matrix", tmp_path / "matrix.tsv", matrix))
     cells = _read_tsv(render("cells", tmp_path / "cells.tsv", matrix))
 
-    assert review[0]["neutral_loss_tag"] == "'+NL"
     assert [row["source_candidate_id"] for row in cells] == [
         "'@candidate",
         "'@candidate-2",

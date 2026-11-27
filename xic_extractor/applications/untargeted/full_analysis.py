@@ -356,7 +356,6 @@ def _alignment_summary(outputs: AlignmentRunOutputs) -> dict[str, Any]:
     alignment_outputs = {
         name: str(path)
         for name, path in (
-            ("review_tsv", outputs.review_tsv),
             ("matrix_tsv", outputs.matrix_tsv),
             ("cells_tsv", outputs.cells_tsv),
             ("run_metadata_json", outputs.run_metadata_json),
@@ -375,7 +374,6 @@ def _alignment_available_outputs(
     outputs: AlignmentRunOutputs,
 ) -> tuple[tuple[str, Path], ...]:
     published = (
-        ("review_tsv", outputs.review_tsv),
         ("matrix_tsv", outputs.matrix_tsv),
         ("backfill_cell_evidence_tsv", outputs.backfill_cell_evidence_tsv),
         ("cells_tsv", outputs.cells_tsv),

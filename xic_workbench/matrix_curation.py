@@ -94,7 +94,7 @@ def describe_source(config_dir: Path, values: dict[str, Any]) -> dict[str, Any]:
     return {
         "source_dir": str(source.source_dir),
         "matrix_path": str(source.matrix_path),
-        "review_path": str(source.review_path),
+        "identity_path": str(source.identity_path),
         "sample_source": sample_source,
         "sample_count": len(metadata or ()),
         "study_sample_count": sum(

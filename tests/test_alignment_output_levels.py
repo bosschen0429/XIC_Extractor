@@ -13,11 +13,11 @@ def test_production_output_level_is_matrix_and_rt_anchors_only():
     )
 
 
-def test_machine_output_level_adds_review_and_matrix_tsv():
+def test_machine_output_level_adds_run_metadata():
     assert artifact_names_for_output_level("machine") == (
         "alignment_matrix.tsv",
         "alignment_rt_anchors.tsv",
-        "alignment_review.tsv",
+        "alignment_run_metadata.json",
     )
 
 
@@ -25,7 +25,7 @@ def test_debug_output_level_adds_cell_status_and_owner_debug_tsvs():
     assert artifact_names_for_output_level("debug") == (
         "alignment_matrix.tsv",
         "alignment_rt_anchors.tsv",
-        "alignment_review.tsv",
+        "alignment_run_metadata.json",
         "alignment_cells.tsv",
         "alignment_explanation.sqlite",
     )
@@ -35,7 +35,7 @@ def test_validation_minimal_output_level_is_machine_gate_surface_only():
     assert artifact_names_for_output_level("validation-minimal") == (
         "alignment_matrix.tsv",
         "alignment_rt_anchors.tsv",
-        "alignment_review.tsv",
+        "alignment_run_metadata.json",
         "alignment_backfill_cell_evidence.tsv",
         EXPLANATION_ARTIFACT_NAME,
     )

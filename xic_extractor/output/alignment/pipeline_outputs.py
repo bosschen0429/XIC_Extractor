@@ -23,6 +23,10 @@ from xic_extractor.configuration.signal_processing_profile import (
     serialize_signal_processing_profile,
 )
 from xic_extractor.execution.timing import TimingRecorder
+from xic_extractor.output.alignment.matrix_output_contract import (
+    RUN_METADATA_NAME,
+    MatrixRowIdentity,
+)
 from xic_extractor.output.alignment.output_levels import (
     AlignmentOutputLevel,
     artifact_names_for_output_level,
@@ -32,11 +36,11 @@ from xic_extractor.output.alignment.tsv_writer import (
     UntargetChildOutputs,
     write_alignment_tsvs,
 )
+from xic_extractor.tabular_io import file_sha256
 
 
 @dataclass(frozen=True)
 class AlignmentRunOutputs:
-    review_tsv: Path | None = None
     matrix_tsv: Path | None = None
     backfill_cell_evidence_tsv: Path | None = None
     cells_tsv: Path | None = None
@@ -57,11 +61,6 @@ def output_paths(
     if emit_alignment_cells:
         artifacts.add("alignment_cells.tsv")
     return AlignmentRunOutputs(
-        review_tsv=(
-            output_dir / "alignment_review.tsv"
-            if "alignment_review.tsv" in artifacts
-            else None
-        ),
         matrix_tsv=(
             output_dir / "alignment_matrix.tsv"
             if "alignment_matrix.tsv" in artifacts
@@ -78,8 +77,8 @@ def output_paths(
             else None
         ),
         run_metadata_json=(
-            output_dir / "alignment_run_metadata.json"
-            if emit_target_snapshot_metadata or "alignment_review.tsv" in artifacts
+            output_dir / RUN_METADATA_NAME
+            if emit_target_snapshot_metadata or RUN_METADATA_NAME in artifacts
             else None
         ),
         rt_anchors_tsv=(
@@ -119,7 +118,6 @@ def row_output_paths(outputs: AlignmentRunOutputs) -> dict[str, Path]:
         name: path
         for name, path in (
             ("matrix", outputs.matrix_tsv),
-            ("review", outputs.review_tsv),
             ("backfill", outputs.backfill_cell_evidence_tsv),
             ("cells", outputs.cells_tsv),
         )
@@ -136,7 +134,8 @@ def write_completed_untargeted_outputs_atomic(
     timing_recorder: TimingRecorder,
     consume_child: Callable[[UntargetChildOutputs, int], None] | None = None,
     before_write: Callable[[], None] | None = None,
-    render_rows: Callable[[Mapping[str, Path]], int] | None = None,
+    render_rows: Callable[[Mapping[str, Path], list[MatrixRowIdentity] | None], int]
+    | None = None,
     extra_tables: Mapping[Path, Callable[[Path], None]] | None = None,
 ) -> int:
     """Render every requested TSV in one pass, then publish them atomically.
@@ -163,17 +162,29 @@ def write_completed_untargeted_outputs_atomic(
         _staged_alignment_artifacts(paths, recorder) as temp_paths,
     ):
         row_temp_paths = {name: temp_paths[path] for name, path in row_paths.items()}
+        identities: list[MatrixRowIdentity] | None = (
+            [] if outputs.run_metadata_json and outputs.matrix_tsv else None
+        )
         if render_rows is not None:
-            row_count = render_rows(row_temp_paths)
+            row_count = render_rows(row_temp_paths, identities)
         else:
             assert completed is not None
             row_count = write_alignment_tsvs(
-                row_temp_paths, completed, consume_child=consume_child
+                row_temp_paths,
+                completed,
+                consume_child=consume_child,
+                matrix_identities=identities,
             )
         for path, write_table in (extra_tables or {}).items():
             write_table(temp_paths[path])
         if outputs.run_metadata_json is not None:
-            _write_metadata_json(temp_paths[outputs.run_metadata_json], metadata)
+            run_metadata: dict[str, object] = dict(metadata)
+            if identities is not None and outputs.matrix_tsv is not None:
+                run_metadata["matrix_identity"] = {
+                    "matrix_sha256": file_sha256(temp_paths[outputs.matrix_tsv]),
+                    "rows": identities,
+                }
+            _write_metadata_json(temp_paths[outputs.run_metadata_json], run_metadata)
         if outputs.rt_anchors_tsv is not None:
             write_rt_anchor_table(temp_paths[outputs.rt_anchors_tsv], rt_calibration)
     return row_count
@@ -313,7 +324,7 @@ def _temp_path(final_path: Path) -> Path:
     return final_path.with_name(f"{final_path.name}.tmp")
 
 
-def _write_metadata_json(path: Path, metadata: dict[str, str]) -> Path:
+def _write_metadata_json(path: Path, metadata: Mapping[str, object]) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         json.dumps(metadata, indent=2, sort_keys=True) + "\n",

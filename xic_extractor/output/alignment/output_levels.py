@@ -16,19 +16,19 @@ _ARTIFACTS: dict[AlignmentOutputLevel, tuple[str, ...]] = {
     "machine": (
         "alignment_matrix.tsv",
         "alignment_rt_anchors.tsv",
-        "alignment_review.tsv",
+        "alignment_run_metadata.json",
     ),
     "debug": (
         "alignment_matrix.tsv",
         "alignment_rt_anchors.tsv",
-        "alignment_review.tsv",
+        "alignment_run_metadata.json",
         "alignment_cells.tsv",
         EXPLANATION_ARTIFACT_NAME,
     ),
     "validation-minimal": (
         "alignment_matrix.tsv",
         "alignment_rt_anchors.tsv",
-        "alignment_review.tsv",
+        "alignment_run_metadata.json",
         "alignment_backfill_cell_evidence.tsv",
         EXPLANATION_ARTIFACT_NAME,
     ),

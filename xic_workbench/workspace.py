@@ -405,9 +405,8 @@ class ReviewWorkspace:
             item = self._item(item_id)
             assert self._page is not None and self._report is not None
             self._replace_job()
-            payload = copy.deepcopy(self._page.payload)
-            payload["items"] = [copy.deepcopy(item)]
-            payload["selection"]["limit"] = 1
+            payload = dict(self._page.payload, items=[item])
+            payload["selection"] = dict(payload["selection"], limit=1)
             prepared = replace(self._page, payload=payload, selected_count=1)
             view_id = uuid.uuid4().hex
             self._store_view(view_id, prepared)
@@ -664,18 +663,16 @@ class ReviewWorkspace:
             raise
         self._views[view_id] = path
 
-    def _view_snapshot(self, view_id: str) -> dict[str, Any]:
+    def _view_path(self, view_id: str) -> Path:
         try:
-            path = self._views[view_id]
+            return self._views[view_id]
         except KeyError:
             raise FileNotFoundError("檢閱頁已不存在，請重新開啟選取項目。") from None
-        with path.open(encoding="utf-8") as stream:
-            return json.load(stream)
 
     def view_payload(self, view_id: str) -> dict[str, Any]:
         """Read captured owner facts with the interactive view's display groups."""
-        with self._lock:
-            snapshot = self._view_snapshot(view_id)
+        with self._lock, self._view_path(view_id).open(encoding="utf-8") as stream:
+            snapshot = json.load(stream)
             payload = snapshot["payload_data"]
             if "sample_groups" in snapshot:
                 payload["sample_groups"] = snapshot["sample_groups"]
@@ -684,10 +681,12 @@ class ReviewWorkspace:
     def report_path(self, view_id: str) -> Path:
         """Package an immutable view as offline HTML only when requested."""
         with self._lock:
-            snapshot = self._view_snapshot(view_id)
-            snapshot.pop("sample_groups", None)
+            snapshot_path = self._view_path(view_id)
             path = self._folder / f"{view_id}.html"
             if not path.is_file():
+                with snapshot_path.open(encoding="utf-8") as stream:
+                    snapshot = json.load(stream)
+                snapshot.pop("sample_groups", None)
                 write_report_atomically(build_report_html(**snapshot), path)
             return path
 

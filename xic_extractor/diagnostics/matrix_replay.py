@@ -161,10 +161,6 @@ def replay_matrix(
                     (item.batch_id, item.key): item.partners
                     for item in correspondence.features
                 },
-                states={
-                    (item.batch_id, item.key): item.state
-                    for item in correspondence.features
-                },
                 to_reference_rt=correspondence.to_reference_rt,
             )
     return output

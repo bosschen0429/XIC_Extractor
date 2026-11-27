@@ -2,12 +2,19 @@
 
 from __future__ import annotations
 
+import json
 import math
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
+from pathlib import Path
 
 from xic_extractor.output.alignment.output_rows import format_value
-from xic_extractor.tabular_io import escape_excel_formula
+from xic_extractor.tabular_io import escape_excel_formula, read_tsv_with_header
+
+MATRIX_NAME = "alignment_matrix.tsv"
+RUN_METADATA_NAME = "alignment_run_metadata.json"
+_LEGACY_REVIEW_NAME = "alignment_review.tsv"
+MatrixRowIdentity = tuple[str, float]
 
 MATRIX_REVIEW_COLUMNS = (
     "feature_id",
@@ -93,6 +100,56 @@ def serialize_public_matrix_table(
         header=persisted_header,
         rows=serialized_rows,
     )
+
+
+def locate_matrix_identity(directory: Path, run: Mapping[str, object]) -> Path:
+    """New outputs bind the Matrix in run metadata; admit existing exports too."""
+    if "matrix_identity" in run:
+        return directory / RUN_METADATA_NAME
+    legacy = directory / _LEGACY_REVIEW_NAME
+    if legacy.is_file():
+        return legacy
+    raise ValueError("找不到矩陣列身分；請使用包含發布資訊的 Alignment 結果。")
+
+
+def read_matrix_identities(
+    path: Path,
+    *,
+    matrix_header: Sequence[str],
+    matrix_rows: Sequence[Mapping[str, object]],
+    matrix_digest: str,
+) -> tuple[MatrixRowIdentity, ...]:
+    """Read full-precision mass and writer-assigned IDs in Matrix row order."""
+    if path.name == _LEGACY_REVIEW_NAME:
+        columns, review_rows = read_tsv_with_header(path, encoding="utf-8-sig")
+        return tuple(
+            (str(row["feature_id"]), float(str(row["group_center_mz"])))
+            for row in matrix_review_rows(
+                matrix_header=matrix_header,
+                matrix_rows=matrix_rows,
+                review_columns=columns,
+                review_rows=review_rows,
+            )
+        )
+    run = json.loads(path.read_text(encoding="utf-8"))
+    identity = run.get("matrix_identity") if isinstance(run, dict) else None
+    if not isinstance(identity, dict) or identity.get("matrix_sha256") != matrix_digest:
+        raise ValueError("矩陣列身分的 SHA-256 與目前的 Matrix 不符。")
+    rows = identity.get("rows")
+    if not isinstance(rows, list) or len(rows) != len(matrix_rows):
+        raise ValueError("矩陣列身分與 Matrix 的列數不符。")
+    features: dict[str, float] = {}
+    for row in rows:
+        if not isinstance(row, list) or len(row) != 2:
+            raise ValueError("無效的矩陣列身分。")
+        feature, mz = row
+        if not isinstance(feature, str) or not feature.strip() or feature in features:
+            raise ValueError("矩陣 feature ID 必須非空且不可重複。")
+        exact_mz = _finite_float(mz, field_name="matrix_identity.mz")
+        if exact_mz is None:
+            raise ValueError("矩陣列身分缺少全精度 m/z。")
+        features[feature] = exact_mz
+    return tuple(features.items())
 
 
 def matrix_review_rows(

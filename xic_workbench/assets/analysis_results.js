@@ -181,7 +181,7 @@ export function renderResults() {
         ),
       );
     }
-    if (result.matrix_tsv && result.alignment_outputs?.review_tsv)
+    if (result.matrix_tsv && result.alignment_outputs?.run_metadata_json)
       actions.append(
         button(
           "整理矩陣",

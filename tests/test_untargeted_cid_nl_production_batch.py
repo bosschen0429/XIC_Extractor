@@ -23,6 +23,7 @@ from tests.untargeted_alignment_entry_fixtures import (
     discover,
     publish_alignment,
     published_cells,
+    published_matrix,
     raw_paths,
     read_tsv,
     tsv_header,
@@ -81,12 +82,9 @@ def test_completed_empty_recovery_preserves_each_compatible_source_subject(
     support_areas = [float(row[stem]) for stem in stems[:4]]
     assert min(support_areas) > 0
     assert support_areas == pytest.approx([support_areas[0]] * 4, rel=1e-6)
-    (review,) = read_tsv(output / "alignment_review.tsv")
-    assert float(review["group_center_mz"]) == pytest.approx(
-        sum(precursors) / 4, abs=1e-3
-    )
+    (feature,) = published_matrix(output)
+    assert float(row["Mz"]) == pytest.approx(sum(precursors) / 4, abs=1e-3)
     cells = published_cells(output)
-    feature = review["feature_id"]
     assert {
         stem: cells[(feature, stem)]["source_candidate_id"] for stem in stems[:4]
     } == {stem: peaks[stem][0].peak_id for stem in stems[:4]}
@@ -147,33 +145,18 @@ def test_one_raw_serves_two_nearby_subjects_as_separate_rows(
 
     assert {path.name for path in output.iterdir() if path.is_file()} == {
         "alignment_matrix.tsv",
-        "alignment_review.tsv",
         "alignment_cells.tsv",
         "alignment_rt_anchors.tsv",
         "alignment_run_metadata.json",
         "alignment_explanation.sqlite",
     }
     assert read_tsv(output / "alignment_matrix.tsv") == []
-    review = {
-        row["feature_id"]: row for row in read_tsv(output / "alignment_review.tsv")
-    }
-    assert sorted(
-        float(row["group_center_mz"]) for row in review.values()
-    ) == pytest.approx(sorted(candidate.peak_mz for candidate in candidates), abs=1e-4)
-    candidate_by_mz = {round(c.peak_mz, 4): c.peak_id for c in candidates}
     cells = published_cells(output)
-    assert {
-        feature: cell["source_candidate_id"] for (feature, _stem), cell in cells.items()
-    } == {
-        feature: candidate_by_mz[round(float(row["group_center_mz"]), 4)]
-        for feature, row in review.items()
-    }
-    lower, higher = (
-        float(cells[(feature, "S1")]["area"])
-        for feature in sorted(
-            review, key=lambda key: float(review[key]["group_center_mz"])
-        )
-    )
+    expected = sorted(candidates, key=lambda candidate: candidate.peak_mz)
+    by_candidate = {cell["source_candidate_id"]: cell for cell in cells.values()}
+    assert len({feature for feature, _ in cells}) == 2
+    assert set(by_candidate) == {candidate.peak_id for candidate in expected}
+    lower, higher = (float(by_candidate[c.peak_id]["area"]) for c in expected)
     assert lower > 0
     assert higher == pytest.approx(0.7 * lower, rel=1e-5)
 
@@ -374,7 +357,6 @@ def test_discovery_review_rows_cannot_become_alignment_roots(
     assert bool(written) == bool(admitted)
     if not admitted:
         assert not read_tsv(output / "alignment_matrix.tsv")
-        assert not read_tsv(output / "alignment_review.tsv")
 
 
 @pytest.mark.parametrize("supported_samples", [2, 3])
@@ -402,16 +384,14 @@ def test_owners_from_every_supported_sample_join_one_row(
     )
 
     (row,) = read_tsv(output / "alignment_matrix.tsv")
-    (review,) = read_tsv(output / "alignment_review.tsv")
-    assert review["identity_reason"] == "established"
-    assert review["detected_count"] == str(supported_samples)
-    assert float(review["group_center_rt"]) == pytest.approx(
+    (feature,) = published_matrix(output)
+    assert float(row["RT"]) == pytest.approx(
         sum(apexes[:supported_samples]) / supported_samples, abs=1e-3
     )
     cells = published_cells(output)
     for stem in stems[:supported_samples]:
         assert float(row[stem]) > 0
-        cell = cells[(review["feature_id"], stem)]
+        cell = cells[(feature, stem)]
         assert cell["status"] == "detected"
         assert cell["source_candidate_id"] == peaks[stem][0].peak_id
     for stem in stems[supported_samples:]:
@@ -489,7 +469,7 @@ def test_known_istd_reference_joins_drifting_samples_in_one_row(
         **common,
     )
 
-    assert len(read_tsv(plain / "alignment_review.tsv")) == 2
+    assert len({feature for feature, _ in published_cells(plain)}) == 2
     assert read_tsv(plain / "alignment_matrix.tsv") == []
     plain_values = {
         stem: float(cell["area"])
@@ -497,7 +477,6 @@ def test_known_istd_reference_joins_drifting_samples_in_one_row(
         if cell["area"]
     }
     assert set(plain_values) == set(stems)
-    assert len(read_tsv(corrected / "alignment_review.tsv")) == 1
     (row,) = read_tsv(corrected / "alignment_matrix.tsv")
     assert {stem: float(row[stem]) for stem in stems} == pytest.approx(plain_values)
     assert plain_values["S1"] / plain_values["S0"] == pytest.approx(1.4, rel=1e-3)
@@ -542,9 +521,8 @@ def test_backfill_recovers_sample_without_discovery_peak(
     )
 
     matrix = read_tsv(output / "alignment_matrix.tsv")
-    (review,) = read_tsv(output / "alignment_review.tsv")
     cells = published_cells(output)
-    feature = review["feature_id"]
+    (feature,) = {feature for feature, _ in cells}
     hold = cells[(feature, "Hold")]
     supports = stems[:-1]
     assert {
@@ -577,9 +555,8 @@ def test_backfill_recovers_sample_without_discovery_peak(
         float(cells[(feature, stem)]["apex_rt"]) * areas[stem] for stem in stems
     ) / sum(areas.values())
     assert abs(weighted_rt - owner_mean_rt) > 0.01
-    assert float(review["group_center_rt"]) == pytest.approx(owner_mean_rt, abs=1e-3)
-    assert float(row["RT"]) == pytest.approx(owner_mean_rt, abs=0.005)
-    assert float(review["group_center_mz"]) == pytest.approx(500.0, abs=1e-3)
+    assert float(row["RT"]) == pytest.approx(owner_mean_rt, abs=1e-3)
+    assert float(row["Mz"]) == pytest.approx(500.0, abs=1e-3)
     assert {stem: float(cells[(feature, stem)]["apex_rt"]) for stem in stems} == (
         pytest.approx(dict(zip(stems, apexes, strict=True)), abs=0.005)
     )
@@ -626,7 +603,6 @@ def test_atomic_publication_preserves_ms1_peak_and_no_peak(
     )
 
     (matrix_row,) = read_tsv(output / "alignment_matrix.tsv")
-    (review_row,) = read_tsv(output / "alignment_review.tsv")
     cells = {stem: cell for (_f, stem), cell in published_cells(output).items()}
     assert set(cells) == set(stems)
     areas = [float(matrix_row[stem]) for stem in stems[:4]]
@@ -636,9 +612,6 @@ def test_atomic_publication_preserves_ms1_peak_and_no_peak(
             float(matrix_row[stem]), rel=5e-6
         )
     assert matrix_row["NoPeak"] == cells["NoPeak"]["area"] == ""
-    assert review_row["detected_count"] == "3"
-    assert review_row["accepted_backfill_count"] == "1"
-    assert review_row["accepted_cell_count"] == "4"
     for stem in stems[:3]:
         assert cells[stem]["status"] == "detected"
         assert cells[stem]["source_candidate_id"] == peaks[stem][0].peak_id
@@ -726,22 +699,19 @@ def test_paired_batch_publication_binds_matrix_review_and_sqlite(tmp_path, monke
         sample_metadata=metadata,
     )
     (matrix,) = read_tsv(output / "alignment_matrix.tsv")
-    (review,) = read_tsv(output / "alignment_review.tsv")
-    assert review["matrix_row_index"] == "1"
-    assert review["batch_pairing"] == "paired"
-    assert set(review["batch_ids"].split(";")) == {"Old", "New"}
+    (feature,) = published_matrix(output)
     areas = [float(matrix[stem]) for stem in stems]
     assert areas == pytest.approx(
         [areas[0] * i for i in range(1, len(stems) + 1)], rel=5e-6
     )
     cells = read_published_cells(output)
     assert {(cell.row, cell.feature_id, cell.origin) for cell in cells} == {
-        (1, review["feature_id"], "detected")
+        (1, feature, "detected")
     }
     assert {cell.sample: cell.value for cell in cells} == pytest.approx(
         dict(zip(stems, areas, strict=True)), rel=5e-6
     )
     stored = read_review_evidence(output / "alignment_explanation.sqlite")
-    row = stored.groups[review["feature_id"]]
+    row = stored.groups[feature]
     assert row.disposition == "established"
     assert {member["sample_key"] for member in row.members} == set(stems)

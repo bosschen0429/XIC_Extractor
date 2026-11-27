@@ -622,6 +622,7 @@ def _group_batch(
 
 
 _RETIRED_ALIGNMENT_ARTIFACT_NAMES = (
+    "alignment_review.tsv",
     "alignment_results.xlsx",
     "review_report.html",
     "event_to_ms1_owner.tsv",

@@ -83,7 +83,7 @@ unresolved and rejected groups remain AuditTrail facts.
 
 A Matrix row's m/z is its group's centre: the mean of the members' m/z,
 decided once when the group is built. Backfill searches
-that same centre, and Matrix, Review and the explanation report write it. A
+that same centre. Matrix displays it; run metadata keeps its full precision. A
 member's m/z is its peak's own mass (`peak_mz`): the apex MS1 reading for an
 inferred precursor, whose product + loss can sit up to 10 ppm from the MS1 ion,
 else the XIC centre. Review XICs replay each
@@ -92,7 +92,7 @@ observation's saved extraction mass and ppm tolerance, not its MS2 evidence key.
 `feature_id` is a report-scoped group label, not canonical group identity;
 the Matrix itself carries no ID column. A change to public keys, filenames,
 ordering, columns or schema versions is a public-contract change, with the
-existing expected-diff and downstream checks. Review tokens and diagnostic
+existing expected-diff and downstream checks. Diagnostic
 risk flags do not independently authorize a value or row.
 
 ## Surfaces
@@ -102,9 +102,9 @@ risk flags do not independently authorize a value or row.
 | `alignment_matrix.tsv` / workbook `Matrix` | Primary product-facing numeric matrix |
 | `ProductionCellDecision` | Published value/no-write decision retaining the selected integration and workflow-specific subject |
 
-Alignment additionally exposes `alignment_review.tsv` for group review and
-bound Matrix row references,
-`alignment_backfill_cell_evidence.tsv` for Backfill evidence,
+Workbench shows group review from the explanation report. The Matrix SHA-256
+and row-ordered feature IDs and full-precision masses are stored together in
+run metadata. Diagnostic outputs include `alignment_backfill_cell_evidence.tsv` for Backfill evidence,
 `alignment_rt_anchors.tsv` for the frozen RT calibration knots (see
 [RT anchor table](rt-calibration.md#rt-anchor-table)), conditional
 `alignment_run_metadata.json`, and versioned `alignment-results` metadata.

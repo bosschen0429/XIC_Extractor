@@ -25,10 +25,8 @@ from xic_extractor.alignment.completion import (
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSamplePeakGroupHypothesis,
-    accepted_membership_risks,
 )
 from xic_extractor.alignment.drift_evidence import KnownIstdReference
-from xic_extractor.alignment.membership_risk import AcceptedMembershipRisk
 from xic_extractor.alignment.result.application_result import (
     FinalizedUntargetApplicationResult,
     FinalizedUntargetBatchApplicationResult,
@@ -104,7 +102,6 @@ class ChildProjectionContext:
     child: the batch's samples, which order every row's sample columns."""
 
     samples: tuple[SampleMetadata, ...]
-    membership_risks_by_owner: Mapping[str, AcceptedMembershipRisk]
     sample_rt_frame: SampleRtFrame | None
     capture_evidence_retained: bool
 
@@ -275,7 +272,6 @@ def compose_and_persist_untargeted_partition(
     has_flagged_backfill_risk = False
     projection_context = ChildProjectionContext(
         samples=batch.context.samples,
-        membership_risks_by_owner=accepted_membership_risks(inputs.initial_groups),
         sample_rt_frame=sample_rt_frame,
         capture_evidence_retained=bool(inputs.capture_evidence),
     )

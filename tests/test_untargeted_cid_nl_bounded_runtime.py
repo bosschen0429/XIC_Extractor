@@ -33,6 +33,7 @@ from tests.untargeted_alignment_entry_fixtures import (
     discover,
     publish_alignment,
     published_cells,
+    published_matrix,
     published_tables,
     raw_paths,
     read_tsv,
@@ -218,10 +219,11 @@ def test_batch_ms1_only_members_are_partition_invariant_and_do_not_supply_cid(
     )
 
     assert published_tables(separate) == published_tables(together)
-    review = {
-        row["feature_id"]: row for row in read_tsv(together / "alignment_review.tsv")
-    }
-    (heavy,) = (f for f, row in review.items() if float(row["group_center_mz"]) > 500.5)
+    (heavy,) = (
+        feature
+        for feature, row in published_matrix(together).items()
+        if float(row["Mz"]) > 500.5
+    )
     cells = published_cells(together)
     for stem, apex in (("S20", 8.1), ("S21", 7.9)):
         cell = cells[(heavy, stem)]
@@ -318,12 +320,12 @@ def test_bounded_runtime_skips_subjects_without_ms1_features(
     )
 
     assert opened == admitted
-    review = read_tsv(output / "alignment_review.tsv")
+    features = {feature for feature, _ in published_cells(output)}
     if scenario == "ineligible":
-        assert review == []
+        assert features == set()
         assert read_tsv(output / "alignment_matrix.tsv") == []
     else:
-        assert len(review) == 2
+        assert len(features) == 2
 
 
 @pytest.mark.parametrize("overlap", [False, True])
