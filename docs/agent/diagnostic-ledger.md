@@ -308,6 +308,12 @@ was 44% faster with identical outputs. Full85's 43,652 memberships make the
 budget, not the bin, dominant (49 vs 45 partitions at 1024). A default change
 needs a full85 candidate with peak RSS and output parity.
 
+That candidate exists for the 2048 default (#1306): the tissue 85RAW worksets
+pack into 17 partitions instead of 30 (8 bins is the floor; 3072 and 4096 give
+14 and 11, predicted to reach 18 and 22 GB of tree memory while grouping).
+8RAW stays at its 8 bins, so it cannot test the budget. See
+[where the RAW phases spend time](#where-the-raw-phases-spend-time).
+
 ### Four or eight workers
 
 `diagnostic_only`; `f30d42ac` (#699). On a 12-CPU, 34 GB host, eight workers
@@ -329,13 +335,13 @@ un-probed `713a72b3e` run byte for byte.
   overlapping partition producers, so it does not measure the workers. Worker
   utilization was 93% in initial acquisition (398 s, worker-bound) and 33% in
   Backfill (432 s with the probe; 350–397 s in four un-probed runs).
-- Backfill waits on the parent. Before dispatching a partition, its producer
-  computes band RT locations (393 s: target `locate` 54%, leave-one-out
+- Backfill waited on the parent. Before dispatching a partition, its producer
+  computed band RT locations (393 s: target `locate` 54%, leave-one-out
   `_empirical_tolerances` 41%). In two un-probed timelines, 13 and 15 of 28
   Backfill partitions also waited for in-order composition to return an
-  admission credit. Replaying the measured spans reproduces the wall (431 vs
-  432 s) and predicts 267 s without the location step on the dispatch path
-  (#1315).
+  admission credit. Planning with the final grouping on the workers (#1315)
+  took un-probed Backfill from 353 to 241 s with identical outputs; final
+  grouping rose 96 to 110 s.
 - Every (partition, sample) task reopens its RAW: open 15 ms, dispose 10 ms,
   and about 0.13 s on the handle's first chromatogram call while the vendor
   builds its scan structure, with or without the `ms` filter. That is 2,550
@@ -350,6 +356,19 @@ un-probed `713a72b3e` run byte for byte.
 - Separate RawFileReader processes do not wait on one another: per-task time is
   flat from one to four processes, and task throughput at six and eight is 1.26
   and 1.46 times that of four.
+
+After #1315, reading each ion's contrast neighbourhood with its region XIC
+(no whole-run pass, no repeated mass window in one call) and the 2048 partition
+budget, one 85RAW run (worker-side probe only) matched the master Matrix,
+review, Backfill evidence and RT anchors byte for byte. Its explanation
+database differed only in internal integer peak ids, renumbered by the new
+partition order; every table matched once peak references were resolved to
+`physical_peak_key`. Initial acquisition took 278 s (opens 2,550 to 1,445,
+vendor calls 6,844 to 2,142, worker time 1,474 to 1,034 s), Backfill 190 s
+(166 s of it in-order composition) and the runtime 586 s. Tree peak private
+memory stayed 12.2 GB, set by the 11-process ISTD reference stage before
+acquisition; the RAW phases peaked at 6.2 (initial), 9.2 (grouping) and
+9.8 GB (Backfill).
 
 Rerun when partition packing, worker scheduling, Backfill planning or the RAW
 reader changes. Artifacts: `output/1306/` in the `research-1306-raw-time-46fb42`
