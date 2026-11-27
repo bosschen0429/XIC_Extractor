@@ -5,11 +5,12 @@ from typing import Literal
 from tests.alignment_pipeline_helpers import (
     WriterGroup,
     owner_cell,
-    render,
+    projected,
     writer_batch,
     writer_group,
 )
 from xic_extractor.alignment.cell_decision.owner import ProductionCellDecision
+from xic_extractor.output.alignment.tsv_writer import write_alignment_tsvs
 
 FORBIDDEN_PRIMARY_STATUSES = {
     "detected",
@@ -55,7 +56,12 @@ def test_primary_outputs_hide_status_strings_and_keep_audit_reasons(
         ),
     )
 
-    tsv_rows = _read_tsv(render("matrix", tmp_path / "alignment_matrix.tsv", matrix))
+    identities = []
+    matrix_path = tmp_path / "alignment_matrix.tsv"
+    write_alignment_tsvs(
+        {"matrix": matrix_path}, projected(matrix), matrix_identities=identities
+    )
+    tsv_rows = _read_tsv(matrix_path)
     assert list(tsv_rows[0]) == ["Mz", "RT", "s1", "s2", "s3"]
     assert [(row["Mz"], row["RT"]) for row in tsv_rows] == [("500.1230", "8.49")]
     assert tsv_rows[0]["s1"] == "1.00000e+02"
@@ -65,14 +71,7 @@ def test_primary_outputs_hide_status_strings_and_keep_audit_reasons(
         value for row in tsv_rows for value in row.values()
     )
 
-    identity_rows = _read_tsv(
-        render("review", tmp_path / "alignment_review.tsv", matrix)
-    )
-    matrix_projection = [row for row in identity_rows if row["matrix_row_index"]]
-    assert len(matrix_projection) == len(tsv_rows)
-    assert matrix_projection[0]["matrix_row_index"] == "1"
-    assert matrix_projection[0]["feature_id"] == "F000001"
-    assert len(identity_rows) == 4
+    assert identities == [("F000001", 500.123)]
 
 
 def _feature(

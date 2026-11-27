@@ -7,7 +7,6 @@ import pytest
 from xic_extractor.discovery.csv_reader import DiscoveryBatchInput
 from xic_extractor.output.alignment.tsv_writer import (
     ALIGNMENT_CELLS_COLUMNS,
-    ALIGNMENT_REVIEW_COLUMNS,
     BatchRowSource,
     FinalMatrixValues,
     UntargetGroupRows,
@@ -65,20 +64,6 @@ def test_declared_batches_split_in_batch_id_order():
 def _group(batch_id, key, rt, *, destination="matrix", detected=None):
     stems = SAMPLES[batch_id]
     detected = stems if detected is None else detected
-    review = dict.fromkeys(ALIGNMENT_REVIEW_COLUMNS, "")
-    review.update(
-        feature_id="",
-        matrix_row_index="",
-        neutral_loss_tag="dR",
-        group_center_mz="300",
-        group_center_rt=str(rt),
-        detected_count=str(len(detected)),
-        not_searched_count="0",
-        unresolved_count="0",
-        identity_reason=f"{batch_id}_reason",
-        accepted_cell_count=str(len(detected)),
-        accepted_backfill_count="0",
-    )
     areas = {s: 10 * int(key[1:]) + ORDER[s] for s in detected}
     cells = tuple(
         (
@@ -100,7 +85,6 @@ def _group(batch_id, key, rt, *, destination="matrix", detected=None):
         rows=(
             ("cells", cells),
             ("status", (("", "dR", "300", str(rt), *("detected" for _ in stems)),)),
-            ("review", (tuple(review[column] for column in ALIGNMENT_REVIEW_COLUMNS),)),
         ),
     )
 
@@ -125,26 +109,21 @@ def _source(batch_id, groups):
 
 
 def _write(tmp_path, sources, partners):
-    paths = {
-        name: tmp_path / f"{name}.tsv"
-        for name in ("matrix", "cells", "status", "review")
-    }
-    states = {key: "paired" for key in partners}
-    for members in partners.values():
-        states.update(dict.fromkeys(members, "paired"))
+    paths = {name: tmp_path / f"{name}.tsv" for name in ("matrix", "cells", "status")}
+    identities = []
     count = write_batch_alignment_tsvs(
         paths,
         sources,
         reference_batch="new",
         partners=partners,
-        states=states,
+        matrix_identities=identities,
         to_reference_rt=lambda batch_id, rt: rt - 0.5,
     )
     tables = {}
     for name, path in paths.items():
         with path.open(encoding="utf-8", newline="") as handle:
             tables[name] = list(csv.reader(handle, delimiter="\t"))
-    return count, tables
+    return count, tables, identities
 
 
 def test_paired_rows_share_one_row_and_single_batch_rows_keep_their_batch(tmp_path):
@@ -153,7 +132,9 @@ def test_paired_rows_share_one_row_and_single_batch_rows_keep_their_batch(tmp_pa
         _source("new", [_group("new", "N1", 10.0), _group("new", "N2", 30.0)]),
     ]
 
-    count, tables = _write(tmp_path, sources, {("new", "N1"): (("old", "O1"),)})
+    count, tables, identities = _write(
+        tmp_path, sources, {("new", "N1"): (("old", "O1"),)}
+    )
 
     assert count == 3
     matrix = tables["matrix"]
@@ -175,18 +156,7 @@ def test_paired_rows_share_one_row_and_single_batch_rows_keep_their_batch(tmp_pa
         ("n3", "detected"),
     ]
 
-    review = {
-        row[0]: dict(zip(tables["review"][0], row, strict=True))
-        for row in tables["review"][1:]
-    }
-    paired = review["F000001"]
-    assert paired["detected_count"] == "5"
-    assert paired["not_searched_count"] == "0"
-    assert paired["identity_reason"] == "new_reason;old_reason"
-    assert (paired["batch_ids"], paired["batch_pairing"]) == ("new;old", "paired")
-    single = review["F000003"]
-    assert single["not_searched_count"] == "3"
-    assert single["batch_ids"] == "old"
+    assert identities == [("F000001", 300.0), ("F000002", 300.0), ("F000003", 300.0)]
 
 
 def test_a_partner_without_its_reference_row_is_not_dropped(tmp_path):

@@ -280,7 +280,7 @@ def projected(batch: Any, **inputs: Any) -> Any:
             ComposedChildOutputs(
                 project_untarget_child_rows(
                     child,
-                    outputs=("matrix", "review", "backfill", "cells", "status"),
+                    outputs=("matrix", "backfill", "cells", "status"),
                     sample_order=sample_order,
                     **inputs,
                 ),
@@ -449,7 +449,7 @@ def written_rows(
     directory.mkdir(parents=True, exist_ok=True)
     paths = {
         kind: directory / f"{kind}.tsv"
-        for kind in ("matrix", "review", "backfill", "cells", "status")
+        for kind in ("matrix", "backfill", "cells", "status")
     }
     write_alignment_tsvs(paths, projected(completed, **inputs))
     return {kind: read_tsv(path) for kind, path in paths.items()}

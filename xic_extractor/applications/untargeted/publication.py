@@ -31,6 +31,7 @@ from xic_extractor.output.alignment.batch_correspondence_table import (
     batch_correspondence_summary,
     write_batch_correspondence_table,
 )
+from xic_extractor.output.alignment.matrix_output_contract import MatrixRowIdentity
 from xic_extractor.output.alignment.output_levels import (
     EXPLANATION_ARTIFACT_NAME,
     AlignmentOutputLevel,
@@ -105,7 +106,6 @@ def untargeted_child_projection(
                 child,
                 outputs=row_names,
                 sample_order=untarget_sample_order(context.samples),
-                membership_risks_by_owner=context.membership_risks_by_owner,
             ),
             explanation=project_alignment_explanation_child(
                 child,
@@ -393,13 +393,15 @@ def publish_batch_untargeted_outputs(
             for place in places[1:]:
                 joins[place] = places[0]
 
-        def render_rows(paths: Mapping[str, Path]) -> int:
+        def render_rows(
+            paths: Mapping[str, Path], identities: list[MatrixRowIdentity] | None
+        ) -> int:
             return write_batch_alignment_tsvs(
                 paths,
                 sources,
                 reference_batch=reference_batch,
                 partners={key: item.partners for key, item in decisions.items()},
-                states={key: item.state for key, item in decisions.items()},
+                matrix_identities=identities,
                 to_reference_rt=correspondence.to_reference_rt,
                 consume_row=record_row if write_explanation else None,
             )

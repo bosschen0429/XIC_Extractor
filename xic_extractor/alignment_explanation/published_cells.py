@@ -2,9 +2,17 @@
 
 from __future__ import annotations
 
-import csv
+import json
 from dataclasses import dataclass
 from pathlib import Path
+
+from xic_extractor.output.alignment.matrix_output_contract import (
+    MATRIX_NAME,
+    RUN_METADATA_NAME,
+    locate_matrix_identity,
+    read_matrix_identities,
+)
+from xic_extractor.tabular_io import read_tsv_with_header_snapshot
 
 from .reader import (
     read_explanation_metadata,
@@ -30,15 +38,18 @@ def read_published_cells(alignment_dir: Path) -> tuple[PublishedCell, ...]:
     Values and selected apices come directly from the explanation's saved cell
     decisions, independently of optional ledgers and observation ordering.
     """
-    identity = _read_tsv(alignment_dir / "alignment_review.tsv")
-    rows = {
-        record["feature_id"]: (
-            int(record["matrix_row_index"]),
-            float(record["group_center_mz"]),
-        )
-        for record in identity
-        if record["matrix_row_index"]
-    }
+    run_path = alignment_dir / RUN_METADATA_NAME
+    run = json.loads(run_path.read_text(encoding="utf-8")) if run_path.is_file() else {}
+    header, matrix, digest = read_tsv_with_header_snapshot(
+        alignment_dir / MATRIX_NAME, required_columns=("Mz", "RT"), encoding="utf-8-sig"
+    )
+    identities = read_matrix_identities(
+        locate_matrix_identity(alignment_dir, run),
+        matrix_header=header,
+        matrix_rows=matrix,
+        matrix_digest=digest,
+    )
+    rows = {key: (index, mz) for index, (key, mz) in enumerate(identities, 1)}
     explanation = alignment_dir / EXPLANATION_ARTIFACT_NAME
     summary = read_explanation_metadata(explanation)
     samples = {
@@ -64,8 +75,3 @@ def read_published_cells(alignment_dir: Path) -> tuple[PublishedCell, ...]:
             )
         )
     return tuple(cells)
-
-
-def _read_tsv(path: Path) -> list[dict[str, str]]:
-    with path.open(encoding="utf-8-sig", newline="") as stream:
-        return list(csv.DictReader(stream, delimiter="\t"))
