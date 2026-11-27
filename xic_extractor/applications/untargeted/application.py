@@ -149,7 +149,7 @@ def run_untargeted_application(
     if context.progress_callback:
         context.progress_callback({"stage": "known_istd_reference"})
     resolved_known_istd_reference = _resolve_known_istd_reference(
-        request, peaks_by_sample, recorder
+        request, lambda: peaks_by_sample, recorder
     )
 
     metadata = alignment_metadata(
@@ -353,9 +353,11 @@ def _bind_discovery_mass_recalibration(
 
 def _resolve_known_istd_reference(
     request: UntargetedRequest,
-    source: DiscoveryInputSource,
+    source: Callable[[], DiscoveryInputSource],
     recorder: TimingRecorder,
 ) -> KnownIstdReference | None:
+    """``source`` indexes the whole batch's Discovery peaks only when an ISTD
+    list needs them."""
     if request.known_istd_reference is not None:
         return request.known_istd_reference
     if request.targets_csv is not None:
@@ -370,7 +372,7 @@ def _resolve_known_istd_reference(
             stage.metrics["istd_target_count"] = len(selection.targets)
             return known_istd_reference_from_discovery(
                 selection.targets,
-                source,
+                source(),
                 neutral_loss_by_tag=request.discovery_settings.neutral_loss_by_tag,
                 source_identifier=str(request.targets_csv.resolve()),
                 source_sha256=hashlib.sha256(
@@ -410,8 +412,12 @@ def run_untargeted_grouping(
     if save_pairing_inputs and any(not batch_id for batch_id, _ in batches):
         raise ValueError("Saving pairing inputs requires a batch_id in sample metadata")
     mass_recalibration_by_sample = _prepare_mass_recalibration(request, batch)
-    source = DiscoveryInputSource(batch)
-    known_istd_reference = _resolve_known_istd_reference(request, source, recorder)
+    source = DiscoveryInputSource(batch) if len(batches) == 1 else None
+    known_istd_reference = _resolve_known_istd_reference(
+        request,
+        lambda: DiscoveryInputSource(batch) if source is None else source,
+        recorder,
+    )
     with (
         _backfill_capture(request.output_dir, save_backfill_inputs) as capture,
         recorder.stage("alignment.grouping") as stage,
@@ -422,7 +428,7 @@ def run_untargeted_grouping(
                 context,
                 recorder,
                 batch_input,
-                source if len(batches) == 1 else DiscoveryInputSource(batch_input),
+                DiscoveryInputSource(batch_input) if source is None else source,
                 mass_recalibration_by_sample,
                 known_istd_reference,
                 capture,

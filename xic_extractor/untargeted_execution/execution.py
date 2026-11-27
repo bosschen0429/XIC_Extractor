@@ -188,8 +188,14 @@ class _BackfillPartitionTask:
 
 def _run_backfill_partition(
     task: _BackfillPartitionTask,
+    should_cancel: Callable[[], bool] | None = None,
 ) -> tuple[WrittenPartition, ComposedUntargetedPartition]:
-    """Revisit one partition's samples and compose it on this worker."""
+    """Revisit one partition's samples and compose it on this worker.
+
+    Between samples it stops on the spool marker, and on ``should_cancel``
+    when it runs in the caller's process: a single thread worker runs the
+    partition on the caller's thread, which then cannot write the marker.
+    """
     final = task.final.read()
     frozen = FrozenBackfillPartition(
         replace(final.batch, prepared_grouping=None),
@@ -202,10 +208,14 @@ def _run_backfill_partition(
         ),
         final.backfill_questions,
     )
-    with WorkerAdmissionPool(max_workers=1, backend="thread") as pool:
-        leaf = frozen.execute(
-            task.partition_key, pool, should_cancel=task.cancel_requested.exists
+
+    def cancelled() -> bool:
+        return task.cancel_requested.exists() or (
+            should_cancel is not None and should_cancel()
         )
+
+    with WorkerAdmissionPool(max_workers=1, backend="thread") as pool:
+        leaf = frozen.execute(task.partition_key, pool, should_cancel=cancelled)
     if leaf.failure is not None:
         raise leaf.failure
     return compose_and_persist_untargeted_partition(
@@ -741,7 +751,8 @@ class UntargetedPartitionPipelineAdapter:
         from the spool once, revisits every sample and composes, so nothing of
         the partition passes through this process. Cancellation, or a failed
         partition, reaches the other workers through a marker in the spool,
-        checked between samples.
+        checked between samples; a thread worker also checks the caller's
+        cancellation itself.
         """
         partitions = tuple(self._partitions[self._bootstrap_count :])
         shared_owners = store.shared_owners_path()
@@ -813,20 +824,26 @@ class UntargetedPartitionPipelineAdapter:
                 report("partition_released", len(self._backfill_partitions))
 
         pool_context: nullcontext[WorkerAdmissionPool] | WorkerAdmissionPool
+        worker: Callable[
+            [_BackfillPartitionTask],
+            tuple[WrittenPartition, ComposedUntargetedPartition],
+        ]
         if self._execution.backend == "process":
             if self._process_pools_closed:
                 raise RuntimeError("process worker pools are already closed")
             pool_context = nullcontext(self._process_pools[0])
+            worker = _run_backfill_partition
         else:
             pool_context = WorkerAdmissionPool(
                 max_workers=self._partition_raw_workers,
                 backend=self._execution.backend,
                 thread_name_prefix="cid-nl-backfill",
             )
+            worker = partial(_run_backfill_partition, should_cancel=should_cancel)
         with pool_context as pool:
             pool.run_windowed(
                 partitions,
-                _run_backfill_partition,
+                worker,
                 task_arg_fn=task,
                 on_completed=adopt,
                 on_error=lambda _partition, _error: cancel_requested.touch(),

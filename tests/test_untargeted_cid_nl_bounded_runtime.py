@@ -766,8 +766,8 @@ def test_backfill_partition_request_crosses_the_process_boundary_unchanged(
 def test_cancellation_reaches_a_backfill_partition_before_its_samples(
     tmp_path: Path, monkeypatch
 ) -> None:
-    """A worker cannot see the caller; the spool marker stops its partition
-    before the next sample, and the batch ends cancelled."""
+    """Cancellation while a partition runs on a worker reaches the spool, stops
+    the partition before its next sample, and ends the batch cancelled."""
     import xic_extractor.untargeted_execution.execution as owner
     import xic_extractor.untargeted_execution.partition.execution as runtime_owner
 
@@ -809,48 +809,63 @@ def test_cancellation_reaches_a_backfill_partition_before_its_samples(
     assert not any(samples_after_cancel)
 
 
-def test_a_failed_backfill_partition_stops_its_siblings_before_their_next_sample(
+def test_cancellation_stops_a_single_worker_backfill_before_its_next_sample(
     tmp_path: Path, monkeypatch
 ) -> None:
-    """The failure, not the siblings' interruption, ends the batch; a sibling
-    learns of it through the spool marker before its next sample."""
+    """One thread worker runs the partition on the caller's thread, where
+    nothing else writes the spool marker; the partition asks the caller."""
     import xic_extractor.untargeted_execution.execution as owner
     import xic_extractor.untargeted_execution.partition.execution as runtime_owner
 
     plan, _ = _plan(tmp_path, monkeypatch)
-    output_dir = tmp_path / "failed"
+    cancel = Event()
+    samples = []
     original_sample = runtime_owner._execute_backfill_sample_phase
-    lock = Lock()
-    failed = Event()
-    marker_missing = Event()
-    sibling_samples_after_marker = []
 
-    def marker_exists():
-        return bool(list(output_dir.glob(".partition_spool-*/cancel-requested")))
-
-    def fail_one_partition(phase):
-        partition = phase.backfill_resource_key.split(":")[1]
-        if partition == "partition-00000-backfill":
-            with lock:
-                first = not failed.is_set()
-                failed.set()
-            if first:
-                raise OSError("injected Backfill sample failure")
-        else:
-            sibling_samples_after_marker.append(marker_exists())
-            deadline = perf_counter() + 10
-            while failed.is_set() and not marker_exists():
-                if perf_counter() > deadline:
-                    marker_missing.set()
-                    break
-                sleep(0.01)
-        return original_sample(phase)
+    def cancel_after_the_first_sample(phase):
+        samples.append(phase.backfill_resource_key)
+        response = original_sample(phase)
+        cancel.set()
+        return response
 
     monkeypatch.setattr(
-        runtime_owner, "_execute_backfill_sample_phase", fail_one_partition
+        runtime_owner, "_execute_backfill_sample_phase", cancel_after_the_first_sample
     )
-    with pytest.raises(RuntimeError, match="failed before batch publication") as error:
+    with pytest.raises(InterruptedError, match="cancel"):
         owner.execute_untargeted_plan(
+            plan,
+            output_dir=tmp_path / "cancelled",
+            alignment_config=AlignmentConfig(),
+            max_partition_jobs=len(plan.context.samples),
+            execution=ExecutionProfile(
+                alignment_workers=1, backend="thread", overlap_partitions=False
+            ),
+            should_cancel=cancel.is_set,
+            project_child=project_composed_child,
+        )
+    assert len(samples) == 1
+
+
+def test_a_failed_backfill_partition_stops_its_siblings_before_their_next_sample(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """The failure, not the siblings' interruption, ends the batch. A sibling
+    sample already running when the failure lands finishes; the sibling's
+    next sample never starts."""
+    import xic_extractor.untargeted_execution.execution as owner
+    import xic_extractor.untargeted_execution.partition.execution as runtime_owner
+
+    failing = "partition-00000-backfill"
+    original_sample = runtime_owner._execute_backfill_sample_phase
+    lock = Lock()
+    started: dict[str, int] = {}
+
+    def run(output_dir: Path, sample_phase):
+        plan, _ = _plan(tmp_path, monkeypatch)
+        monkeypatch.setattr(
+            runtime_owner, "_execute_backfill_sample_phase", sample_phase
+        )
+        return owner.execute_untargeted_plan(
             plan,
             output_dir=output_dir,
             alignment_config=AlignmentConfig(),
@@ -860,6 +875,45 @@ def test_a_failed_backfill_partition_stops_its_siblings_before_their_next_sample
             ),
             project_child=project_composed_child,
         )
+
+    def counted(phase):
+        partition = phase.backfill_resource_key.split(":")[1]
+        with lock:
+            started[partition] = started.get(partition, 0) + 1
+        return partition
+
+    def passthrough(phase):
+        counted(phase)
+        return original_sample(phase)
+
+    sibling = "partition-00001-backfill"
+    run(tmp_path / "complete", passthrough)
+    assert failing in started
+    assert started[sibling] >= 2
+
+    output_dir = tmp_path / "failed"
+    started.clear()
+    sibling_running = Event()
+    marker_missing = Event()
+
+    def marker_exists():
+        return bool(list(output_dir.glob(".partition_spool-*/cancel-requested")))
+
+    def fail_one_partition(phase):
+        if counted(phase) == failing:
+            sibling_running.wait(10)
+            raise OSError("injected Backfill sample failure")
+        sibling_running.set()
+        deadline = perf_counter() + 10
+        while not marker_exists():
+            if perf_counter() > deadline:
+                marker_missing.set()
+                break
+            sleep(0.01)
+        return original_sample(phase)
+
+    with pytest.raises(RuntimeError, match="failed before batch publication") as error:
+        run(output_dir, fail_one_partition)
     causes = []
     cause = error.value
     while cause is not None:
@@ -867,9 +921,8 @@ def test_a_failed_backfill_partition_stops_its_siblings_before_their_next_sample
         cause = cause.__cause__
     assert any("injected Backfill sample failure" in str(item) for item in causes)
     assert not any(isinstance(item, InterruptedError) for item in causes)
-    assert failed.is_set()
     assert not marker_missing.is_set(), "the failure never reached the spool"
-    assert not any(sibling_samples_after_marker)
+    assert started == {failing: 1, sibling: 1}
     assert not _spool_dirs(output_dir)
 
 

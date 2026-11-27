@@ -5,7 +5,6 @@ from __future__ import annotations
 import csv
 from dataclasses import replace
 from pathlib import Path
-from typing import cast
 
 from xic_extractor.configuration.execution_profile import ExecutionProfile
 from xic_extractor.diagnostics.matrix_replay import CompletedMatrixCells
@@ -63,7 +62,7 @@ def _replay_partition(
     """Run one captured partition the way a Backfill worker runs it: its
     samples in turn on an in-process pool, then its composition."""
     path, index, keep_composition = task
-    frozen = cast(FrozenBackfillPartition, load_snapshot(path))
+    frozen: FrozenBackfillPartition = load_snapshot(path, FrozenBackfillPartition)
     with WorkerAdmissionPool(max_workers=1, backend="thread") as pool:
         result = frozen.execute(f"partition-{index:05d}-backfill", pool)
     if result.failure is not None:
@@ -124,7 +123,27 @@ def replay_backfill(
                     "status",
                 )
             )
-            replayed: dict[int, tuple[tuple[_CellRow, ...], _MatrixInput | None]] = {}
+            waiting: dict[int, tuple[_CellRow, ...]] = {}
+            written = 0
+
+            def project(
+                _done: int,
+                _total: int,
+                index: int,
+                result: tuple[tuple[_CellRow, ...], _MatrixInput | None],
+            ) -> None:
+                """Project a partition as it completes; only its rows wait for
+                the earlier partitions, since the Matrix sorts its children."""
+                nonlocal written
+                cell_rows, matrix_input = result
+                if matrix is not None:
+                    assert matrix_input is not None
+                    matrix.append(*matrix_input)
+                waiting[index] = cell_rows
+                while written in waiting:
+                    rows.writerows(waiting.pop(written))
+                    written += 1
+
             with WorkerAdmissionPool(
                 max_workers=execution.alignment_workers,
                 backend=execution.backend,
@@ -137,18 +156,10 @@ def replay_backfill(
                         index,
                         matrix is not None,
                     ),
-                    on_completed=lambda _done, _total, index, result: (
-                        replayed.__setitem__(index, result)
-                    ),
+                    on_completed=project,
                 )
                 if pool.first_error is not None:
                     raise pool.first_error
-            for index in range(count):
-                cell_rows, matrix_input = replayed[index]
-                if matrix is not None:
-                    assert matrix_input is not None
-                    matrix.append(*matrix_input)
-                rows.writerows(cell_rows)
         if matrix is not None:
             matrix.write(staged[matrix_path])
     return output
