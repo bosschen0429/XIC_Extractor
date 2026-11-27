@@ -187,8 +187,10 @@ def write_partition_payload(
 class StreamedResultStore:
     """Spool private payloads while retaining only explicit shared authorities.
 
-    This object owns every readable path and its metadata. Reads reuse the
-    owned paths and record offsets without rescanning unchanged files.
+    This object decides every readable path and owns its metadata. A worker
+    may read a sealed path or write a file here for the store to adopt; the
+    store still assigns its slot. Reads reuse the owned paths and record
+    offsets without rescanning unchanged files.
     """
 
     def __init__(

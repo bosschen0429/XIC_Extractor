@@ -392,8 +392,11 @@ composition now records both. Backfill stayed at 194 s, gated by in-order
 composition in the parent: writing the partition took 113 s of span wall, 70 s
 of it composing and projecting children, and building composition inputs 57 s
 on 7.7 s of thread CPU. Two producer threads spent 76 s reading spool records
-meanwhile. Wall far above CPU there points at GIL contention, not compute.
-Review-curve encoding alone costs 8.4 s on the 39,487 curves.
+meanwhile, and composition steps overlapping those reads ran at 7.9 (inputs),
+19 (explanation projection) and 62 (curve encoding) times their thread CPU,
+against 2.4-3.7 times when no read overlapped: the parent's own spool reads
+slow its composition through the GIL. Review-curve encoding alone costs about
+8.4 s (timed on 3,000 of the 39,487 curves).
 
 Rerun when partition packing, worker scheduling, Backfill planning, the ISTD
 reference, the RAW reader or where composition runs changes. Artifacts: `output/1306/` in the `research-1306-raw-time-46fb42`
