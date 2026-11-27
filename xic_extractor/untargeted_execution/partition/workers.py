@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
+from pathlib import Path
 
 from xic_extractor.alignment.backfill.cid_nl_planning import (
     CidNlBackfillDecision,
@@ -122,6 +123,7 @@ class _BatchSamplePhaseState:
     initial_resource_key: str | None
     backfill_resource_key: str | None
     regions: tuple[DiscoveryMassRegion, ...] = ()
+    keep_raw: bool = False
 
     @property
     def job(self) -> UntargetedPartitionJob:
@@ -151,12 +153,58 @@ def _open_job_raw(job: UntargetedPartitionJob) -> RawFileHandle:
     )
 
 
+_KEPT_RAWS: dict[Path, tuple[tuple[object, ...], RawFileHandle]] = {}
+"""RAW handles an initial-acquisition lane keeps open across partitions."""
+
+
+def _kept_job_raw(job: UntargetedPartitionJob) -> RawFileHandle:
+    """This worker's handle on the job's RAW, opened with the same arguments.
+
+    The vendor builds a handle's scan structure on its first chromatogram read;
+    a lane owns its samples, so each RAW is opened once per lane.
+    """
+    expectation = job.acquisition_source_expectation
+    arguments = (
+        job.dll_dir,
+        job.settings.mass_recalibration,
+        expectation.source,
+        expectation.path_identity,
+        job.prepared_mass_recalibration,
+    )
+    kept = _KEPT_RAWS.get(job.raw_path)
+    if kept is not None and kept[0] == arguments:
+        return kept[1]
+    if kept is not None:
+        _close_kept_raw(job.raw_path)
+    raw = _open_job_raw(job)
+    _KEPT_RAWS[job.raw_path] = (arguments, raw)
+    return raw
+
+
+def _close_kept_raw(path: Path) -> None:
+    _, raw = _KEPT_RAWS.pop(path)
+    raw.__exit__(None, None, None)
+
+
+def release_kept_raws(_request: None = None) -> None:
+    """Close every handle this worker kept; raise the first close error."""
+    first: Exception | None = None
+    for path in tuple(_KEPT_RAWS):
+        try:
+            _close_kept_raw(path)
+        except Exception as exc:
+            first = first or exc
+    if first is not None:
+        raise first
+
+
 def _execute_initial_assessment_batch(
     phase: _BatchSamplePhaseState,
 ) -> None:
     states = phase.states
     job = phase.job
     raw = None
+    failed = False
     try:
         regions: tuple[CidNlSampleRegion, ...] = ()
         if phase.regions and any(state.error is None for state in states):
@@ -164,7 +212,7 @@ def _execute_initial_assessment_batch(
                 raise UntargetedPartitionError(
                     "sample batch is missing its acquisition reservation"
                 )
-            raw = _open_job_raw(job)
+            raw = _kept_job_raw(job) if phase.keep_raw else _open_job_raw(job)
             regions = acquire_cid_nl_sample_regions(
                 raw,
                 sample=job.sample,
@@ -204,13 +252,17 @@ def _execute_initial_assessment_batch(
                     state.job.method_subject.method_subject_id
                 ]
     except Exception as exc:
+        failed = True
         for state in states:
             if state.error is None:
                 state.error = exc
     finally:
-        if raw is not None:
+        if raw is not None and (failed or not phase.keep_raw):
             try:
-                raw.__exit__(None, None, None)
+                if phase.keep_raw:
+                    _close_kept_raw(job.raw_path)
+                else:
+                    raw.__exit__(None, None, None)
             except Exception as exc:
                 for state in states:
                     if state.error is None:
@@ -376,6 +428,7 @@ class _SampleInitialWorkerRequest:
     jobs: tuple[UntargetedPartitionJob, ...]
     initial_resource_key: str | None
     regions: tuple[DiscoveryMassRegion, ...]
+    keep_raw: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -448,6 +501,7 @@ def _execute_sample_initial_worker(
         initial_resource_key=request.initial_resource_key,
         backfill_resource_key=None,
         regions=request.regions,
+        keep_raw=request.keep_raw,
     )
     return _execute_initial_sample_phase(phase)
 

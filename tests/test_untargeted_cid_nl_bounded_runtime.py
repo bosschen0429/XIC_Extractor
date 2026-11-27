@@ -1813,10 +1813,12 @@ def test_completed_partition_retains_only_light_parent_capture_metadata(
     assert child_after.group_cells[0][1][0].value == child_decision.value
 
 
-def test_process_backend_reuses_one_shared_pool_and_closes_once(
+def test_process_backend_pools_share_one_owner_set_and_close_once(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
+    """One laned pool serves every phase: it carries the batch's owners,
+    releases the RAW handles initial acquisition kept, and closes once."""
     import xic_extractor.untargeted_execution.execution as owner
 
     created = []
@@ -1827,10 +1829,12 @@ def test_process_backend_reuses_one_shared_pool_and_closes_once(
             self.backend = kwargs["backend"]
             self.initializer = kwargs["initializer"]
             self.shared_objects = kwargs["shared_objects"]
+            self.lanes = kwargs.get("lanes", False)
             self.stopped = False
             self.first_error = None
             self.transport_metrics = None
             self.exit_calls = 0
+            self.released = 0
             created.append(self)
 
         def __exit__(self, *_args):
@@ -1839,6 +1843,10 @@ def test_process_backend_reuses_one_shared_pool_and_closes_once(
         def stop(self, error):
             self.first_error = error
             self.stopped = True
+
+        def run_on_every_lane(self, worker_fn):
+            assert worker_fn is owner.release_kept_raws
+            self.released += 1
 
     monkeypatch.setattr(owner, "WorkerAdmissionPool", RecordingPool)
     plan, _reference = _plan(tmp_path, monkeypatch)
@@ -1853,19 +1861,15 @@ def test_process_backend_reuses_one_shared_pool_and_closes_once(
     )
 
     assert adapter.acquisition_workers == 2
-    assert len(created) == 1
-    assert created[0].max_workers == 8
-    assert sum(pool.max_workers for pool in created) == 8
-    assert {id(pool.shared_objects) for pool in created} == {
-        id(created[0].shared_objects)
-    }
-    shared = created[0].shared_objects
+    (pool,) = created
+    assert (pool.lanes, pool.max_workers) == (True, 8)
+    shared = pool.shared_objects
     for partition in adapter.partitions:
         subject_batch = adapter._partition_subject_batches[partition.partition_key]
         assert any(value is subject_batch for value in shared)
 
     worker_failure = OSError("RAW reader failed for QC_sample_3")
-    created[0].stop(worker_failure)
+    pool.stop(worker_failure)
     with pytest.raises(
         RuntimeError,
         match="stopped admission: OSError: RAW reader failed for QC_sample_3",
@@ -1875,10 +1879,86 @@ def test_process_backend_reuses_one_shared_pool_and_closes_once(
 
     adapter.close_process_worker_pools()
     adapter.close_process_worker_pools()
-    assert [pool.exit_calls for pool in created] == [1]
+    assert (pool.released, pool.exit_calls) == (1, 1)
 
     with pytest.raises(RuntimeError, match="already closed"):
         adapter.execute_acquisition(adapter.partitions[0])
+
+
+def test_initial_lanes_open_each_raw_once_and_close_it_before_grouping(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """A lane owns its samples, so initial acquisition opens each RAW once
+    for every partition and closes it before final grouping starts. The
+    rows equal those of the path that reopens the RAW for each task."""
+    import xic_extractor.untargeted_execution.execution as owner
+    import xic_extractor.untargeted_execution.partition.workers as workers
+    from xic_extractor.execution.workers import WorkerAdmissionPool
+
+    class InProcessPool(WorkerAdmissionPool):
+        """Process messages and lanes on threads, which see the fake RAWs."""
+
+        def __init__(self, **kwargs):
+            super().__init__(**{**kwargs, "backend": "thread", "shared_objects": ()})
+
+        @property
+        def backend(self):
+            return "process"
+
+    def run(output_dir: Path, backend: str):
+        plan, _ = _plan(tmp_path, monkeypatch)
+        result = owner.execute_untargeted_plan(
+            plan,
+            output_dir=output_dir,
+            alignment_config=AlignmentConfig(),
+            max_partition_jobs=len(plan.context.samples),
+            execution=ExecutionProfile(
+                alignment_workers=2, backend=backend, overlap_partitions=True
+            ),
+            project_child=project_composed_child,
+        )
+        return plan, result
+
+    original_open = workers._open_job_raw
+    original_grouping = owner._finalize_partition_grouping
+    opened = []
+    at_grouping = []
+
+    def recorded_open(job):
+        raw = original_open(job)
+        opened.append((job.raw_path, raw))
+        return raw
+
+    def recorded_grouping(task):
+        if not at_grouping:
+            at_grouping.append(
+                (
+                    len(opened),
+                    len({path for path, _raw in opened}),
+                    sum(not raw._raw_file.disposed for _path, raw in opened),
+                )
+            )
+        return original_grouping(task)
+
+    monkeypatch.setattr(workers, "ensure_assemblies_loaded", lambda *_: None)
+    monkeypatch.setattr(owner, "ensure_assemblies_loaded", lambda *_: None)
+    monkeypatch.setattr(workers, "_open_job_raw", recorded_open)
+    monkeypatch.setattr(owner, "_finalize_partition_grouping", recorded_grouping)
+    _, reopened = run(tmp_path / "reopened", "thread")
+    ((reopened_opens, samples, _still_open),) = at_grouping
+    assert reopened_opens > samples
+    opened.clear()
+    at_grouping.clear()
+
+    monkeypatch.setattr(owner, "WorkerAdmissionPool", InProcessPool)
+    plan, laned = run(tmp_path / "laned", "process")
+    assert at_grouping == [(samples, samples, 0)]
+    assert samples == len(plan.context.samples)
+    assert not workers._KEPT_RAWS
+    assert all(raw._raw_file.disposed for _path, raw in opened)
+    assert written_rows(tmp_path / "laned-rows", laned.application_result) == (
+        written_rows(tmp_path / "reopened-rows", reopened.application_result)
+    )
 
 
 def _spool_dirs(output_dir):

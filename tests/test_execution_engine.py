@@ -83,6 +83,18 @@ def _execute_shared_process_task(task: SharedProcessTask) -> SharedProcessResult
     )
 
 
+_LANE_ITEMS: list[int] = []
+
+
+def _remember_lane_item(task: SharedProcessTask) -> tuple[int, int, tuple[int, ...]]:
+    _LANE_ITEMS.append(task.value)
+    return os.getpid(), task.value, tuple(_LANE_ITEMS)
+
+
+def _forget_lane_items(_request: None) -> None:
+    _LANE_ITEMS.clear()
+
+
 def test_streamed_result_store_basic_roundtrip(tmp_path: Path) -> None:
     store = StreamedResultStore(tmp_path / "spool", ())
     payload = MockPayload(
@@ -875,6 +887,60 @@ def test_worker_admission_pool_process_shares_owner_once_and_restores_identity(
     assert metrics.worker_pids == tuple(
         sorted({result.worker_pid for result in results})
     )
+
+
+def test_worker_admission_pool_lanes_keep_each_item_on_its_worker() -> None:
+    """A laned pool sends each item to the worker ``lane_fn`` names, across
+    calls, so state a worker keeps belongs to its own items; a task sent to
+    every lane reaches each of them; without ``lane_fn`` any free lane runs
+    the item."""
+    owner = {"global_request": "x"}
+    results: list[tuple[int, int, tuple[int, ...]]] = []
+
+    def run(pool: WorkerAdmissionPool, values: tuple[int, ...]) -> None:
+        pool.run_windowed(
+            values,
+            _remember_lane_item,
+            task_arg_fn=lambda value: SharedProcessTask(owner, value),
+            lane_fn=lambda value: value,
+            on_completed=lambda _c, _t, _item, result: results.append(result),
+        )
+
+    with WorkerAdmissionPool(
+        max_workers=2,
+        backend="process",
+        shared_objects=(owner,),
+        initializer=_initialize_shared_process_test,
+        lanes=True,
+    ) as pool:
+        run(pool, (0, 1, 2, 3))
+        run(pool, (4, 5, 6, 7))
+        pool.run_on_every_lane(_forget_lane_items)
+        run(pool, (8, 9))
+        unrouted: list[int] = []
+        pool.run_windowed(
+            (10, 11, 12),
+            _remember_lane_item,
+            task_arg_fn=lambda value: SharedProcessTask(owner, value),
+            on_completed=lambda _c, _t, item, _result: unrouted.append(item),
+        )
+    with WorkerAdmissionPool(max_workers=2, backend="thread") as unlaned:
+        with pytest.raises(ValueError, match="lane_fn"):
+            unlaned.run_windowed((1,), str, lane_fn=lambda value: value)
+
+    pids = {
+        lane: {pid for pid, value, _seen in results if value % 2 == lane}
+        for lane in (0, 1)
+    }
+    assert all(len(lane_pids) == 1 for lane_pids in pids.values())
+    assert pids[0] != pids[1]
+    for _pid, value, seen in results:
+        assert all(item % 2 == value % 2 for item in seen)
+    assert {value: seen for _pid, value, seen in results if value >= 8} == {
+        8: (8,),
+        9: (9,),
+    }
+    assert sorted(unrouted) == [10, 11, 12]
 
 
 def test_worker_admission_pool_thread_multi_worker_bounded() -> None:
