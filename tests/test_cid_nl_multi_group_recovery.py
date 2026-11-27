@@ -11,6 +11,7 @@ batch RT warp, which the formal entry learns only from data, to show that a
 Backfill query follows each sample's own RT rather than the group centre.
 """
 
+import shutil
 from dataclasses import replace
 from pathlib import Path
 
@@ -938,7 +939,7 @@ def _backfill_request(tmp_path, options, config):
 
 
 def test_full_alignment_captures_competing_rows_and_single_batch_matrix(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, capsys
 ):
     """Capturing replay inputs does not repeat any stage. A single batch captures no
     pairing input. S1 and S2 each own one peak of both groups. The cells TSV
@@ -1067,6 +1068,29 @@ def test_full_alignment_captures_competing_rows_and_single_batch_matrix(
     assert sorted(status for status, _area in missing) == ["backfilled", "unresolved"]
     assert sum(area > 0 for _status, area in missing) == 1
 
+    from xic_extractor.diagnostics.stage_snapshot import save_snapshot
+    from xic_extractor.untargeted_execution.execution import FrozenBackfillPartition
+
+    before_questions = tmp_path / "capture-before-questions"
+    shutil.copytree(directory, before_questions)
+    partition = load_snapshot(before_questions / "0.pickle.gz")
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            FrozenBackfillPartition,
+            "__getstate__",
+            lambda frozen: [frozen.batch, frozen.grouping, frozen.initial_results],
+        )
+        save_snapshot(before_questions / "0.pickle.gz", partition)
+    capsys.readouterr()
+    output = tmp_path / "rejected-before-questions"
+    assert (
+        main(
+            ["backfill", "--inputs", str(before_questions), "--output-dir", str(output)]
+        )
+        == 2
+    )
+    assert "capture it again" in capsys.readouterr().err
+
     (directory / "0.pickle.gz").write_bytes(b"not the captured partition")
     rejected = tmp_path / "rejected"
     assert (
@@ -1082,6 +1106,53 @@ def test_full_alignment_captures_competing_rows_and_single_batch_matrix(
         main(["backfill", "--inputs", str(earlier), "--output-dir", str(rejected)]) == 2
     )
     assert not (rejected / "backfill-cells.tsv").exists()
+
+
+def test_backfill_replay_projects_each_partition_before_the_next(tmp_path, monkeypatch):
+    """A replayed partition's composition goes into the Matrix input as soon as
+    it completes; only its cell rows wait for the partitions before it."""
+    from datetime import datetime
+
+    from xic_extractor.applications.untargeted import application
+    from xic_extractor.diagnostics import backfill_replay
+    from xic_extractor.diagnostics.matrix_replay import CompletedMatrixCells
+
+    options = _shared_peak_inputs(
+        tmp_path, monkeypatch, 0.0, observed=("S1", "S2", "S3", "S4")
+    )
+    options["sample_metadata"] = tuple(
+        replace(sample, batch_id="B" if sample.raw_stem in {"S3", "S4"} else "A")
+        for sample in options["sample_metadata"]
+    )
+    request = _backfill_request(tmp_path, options, AlignmentConfig())
+    monkeypatch.setattr(
+        application,
+        "latest_acquisition_reader",
+        lambda *a, **kw: lambda batch: datetime(2026, 1, 1),
+    )
+    application.run_untargeted_grouping(request, save_backfill_inputs=True)
+    events = []
+    replay_partition = backfill_replay._replay_partition
+    append = CompletedMatrixCells.append
+
+    def replayed(task):
+        events.append("replay")
+        return replay_partition(task)
+
+    def projected(cells, *args):
+        events.append("project")
+        return append(cells, *args)
+
+    monkeypatch.setattr(backfill_replay, "_replay_partition", replayed)
+    monkeypatch.setattr(CompletedMatrixCells, "append", projected)
+    backfill_replay.replay_backfill(
+        request.output_dir / "backfill-inputs",
+        tmp_path / "replayed",
+        execution=ExecutionProfile(alignment_workers=1, backend="thread"),
+        save_matrix_inputs=True,
+    )
+    assert len(events) >= 4
+    assert events == ["replay", "project"] * (len(events) // 2)
 
 
 def test_matrix_preserves_empty_batch_sample_column(tmp_path, monkeypatch):

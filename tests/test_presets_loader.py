@@ -127,6 +127,28 @@ preferred_ppm = 10.0
         load_preset(preset_path)
 
 
+def test_tag_name_that_discovery_tables_would_split_is_rejected(
+    tmp_path: Path,
+) -> None:
+    preset_path = tmp_path / "preset.toml"
+    preset_path.write_text(
+        """
+name = "Heavy"
+description = "Heavy"
+combine_mode = "single"
+
+[[tag]]
+strategy = "neutral_loss"
+name = "dR;heavy"
+value = 116.0474
+""".strip(),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(PresetError, match="must not contain ';'"):
+        load_preset(preset_path)
+
+
 def test_missing_builtin_error_lists_available_presets() -> None:
     with pytest.raises(PresetError, match="dna_dr"):
         load_preset("missing")

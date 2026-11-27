@@ -193,7 +193,7 @@ def test_recovery_batch_canonicalizes_shared_group_queries_without_merging_cente
     assert len(set(batch.requests)) == 3
     assert len(set(batch.context_requests)) == 3
     assert batch.acquisition.logical_xic_request_count == 6
-    assert vendor_raw.chromatogram_request_counts == [6]
+    assert vendor_raw.chromatogram_request_counts == [2]
     first = batch.acquired_trace(
         group_hypothesis_id="group-a",
         request=batch.requests[0],
@@ -270,7 +270,7 @@ def test_recovery_revisits_one_hold_cell_without_minting_support(
     assert result.assessment.evidence_observations == ()
     assert result.backfill_input is not None
     assert result.acquisition.logical_xic_request_count == 2
-    assert vendor_raw.chromatogram_request_counts == [2]
+    assert vendor_raw.chromatogram_request_counts == [1]
 
 
 def test_physical_backfill_does_not_choose_among_clipped_tail_candidates(
@@ -347,7 +347,7 @@ def test_physical_backfill_context_is_not_search_permission(
         backfill_requests=(target, replace(target, group_hypothesis_id="same-query")),
         raw=raw,
     )
-    assert vendor.chromatogram_request_counts == [2]
+    assert vendor.chromatogram_request_counts == [1]
     assert batch.requests[0].rt_min == 7.5 and batch.requests[0].rt_max == 8.5
     assert batch.context_requests[0].rt_min == 7.0
     assert batch.context_requests[0].rt_max == 9.0
@@ -370,12 +370,12 @@ def test_physical_backfill_context_is_not_search_permission(
         raw=None,
         _preacquired_traces=batch,
     )
-    assert vendor.chromatogram_request_counts == [2]
+    assert vendor.chromatogram_request_counts == [1]
     direct = backfill_untargeted_cid_nl_sample_subject(
         **kwargs,
         raw=raw,
     )
-    assert vendor.chromatogram_request_counts == [2, 2]
+    assert vendor.chromatogram_request_counts == [1, 1]
     assert batched.assessment == direct.assessment
     tolerance, reliable = query_gate
     gated_kwargs = kwargs | {

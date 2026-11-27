@@ -6,6 +6,7 @@ import importlib
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
+from xic_extractor.alignment.backfill.cid_nl_planning import CidNlBackfillQuestion
 from xic_extractor.alignment.backfill.conservative import (
     is_backfill_eligible_sample,
     minimum_direct_support_count,
@@ -25,19 +26,17 @@ from xic_extractor.untargeted_execution.partition.models import (
     UntargetedSampleResult,
 )
 from xic_extractor.untargeted_execution.partition.workers import (
-    _backfill_support_context,
+    _apply_backfill_questions,
     _BatchSamplePhaseState,
     _execute_backfill_sample_phase,
     _execute_initial_sample_phase,
-    _execute_sample_backfill_worker,
     _execute_sample_initial_worker,
-    _prepare_group_authorized_backfills,
     _prepare_owner_authorized_backfills,
     _RuntimeJobState,
-    _SampleBackfillWorkerRequest,
     _SampleBackfillWorkerResponse,
     _SampleInitialWorkerRequest,
     _SampleInitialWorkerResponse,
+    plan_partition_backfills,
 )
 
 
@@ -55,11 +54,14 @@ def execute_partition(
         [tuple[UntargetedInitialSampleResult, ...]], CidNlGrouping
     ]
     | None = None,
+    backfill_questions: tuple[CidNlBackfillQuestion, ...] | None = None,
 ) -> UntargetedPartitionResult:
     """Execute a partition, optionally split at the batch-calibration seam.
 
     The initial phase owns acquisition; a resumed phase consumes its sealed
     assessments and performs only Backfill acquisition under the same attempt.
+    A resumed phase receives the Backfill questions planned with its final
+    grouping; an unsplit run plans them here.
     """
     work = _prepare_runtime_work(
         jobs,
@@ -71,6 +73,7 @@ def execute_partition(
         prepare_grouping=prepare_grouping,
         initial_only=initial_only,
         initial_results=initial_results,
+        backfill_questions=backfill_questions,
     )
     failure = work.run()
     return UntargetedPartitionResult(
@@ -101,6 +104,7 @@ def _prepare_runtime_work(
         [tuple[UntargetedInitialSampleResult, ...]], CidNlGrouping
     ]
     | None = None,
+    backfill_questions: tuple[CidNlBackfillQuestion, ...] | None = None,
 ) -> _RuntimeWork:
 
     def report_phase(stage: str, completed: int, total: int) -> None:
@@ -268,37 +272,6 @@ def _prepare_runtime_work(
                 resp.apply_to(phases_by_sample[sample_id])
             on_sample_completed("partition_initial", comp, tot, sample_states)
 
-        def skip_backfill(sample_states: tuple[_RuntimeJobState, ...]) -> bool:
-            return not any(
-                state.error is None and state.backfill_targets
-                for state in sample_states
-            )
-
-        def make_process_backfill_req(
-            sample_states: tuple[_RuntimeJobState, ...],
-        ) -> _SampleBackfillWorkerRequest:
-            sample_id = sample_states[0].job.sample.sample_name
-            phase = phases_by_sample[sample_id]
-            pending = tuple(
-                state
-                for state in sample_states
-                if state.error is None and state.backfill_targets
-            )
-            return _SampleBackfillWorkerRequest(
-                jobs=tuple(s.job for s in pending),
-                backfill_targets_by_key={
-                    s.job.work_unit_key: s.backfill_targets
-                    for s in pending
-                    if s.backfill_targets
-                },
-                backfill_support_by_key={
-                    s.job.work_unit_key: _backfill_support_context(s.adapter_result)
-                    for s in pending
-                    if s.adapter_result is not None
-                },
-                backfill_resource_key=phase.backfill_resource_key,
-            )
-
         def handle_backfill_response(
             comp: int,
             tot: int,
@@ -347,9 +320,11 @@ def _prepare_runtime_work(
                             )
                         )
                         if not initial_only and alignment_config.backfill_enabled:
-                            _prepare_group_authorized_backfills(
+                            _apply_backfill_questions(
                                 states,
-                                prepared=work.prepared_grouping,
+                                plan_partition_backfills(jobs, work.prepared_grouping)
+                                if backfill_questions is None
+                                else backfill_questions,
                             )
                 elif not initial_only and alignment_config.backfill_enabled:
                     _prepare_owner_authorized_backfills(
@@ -357,27 +332,14 @@ def _prepare_runtime_work(
                         alignment_config=alignment_config,
                     )
                 if not initial_only and alignment_config.backfill_enabled:
-                    backfill_groups = _runtime_sample_groups(states)
-                    if pool.backend == "process":
-                        pool.run_windowed(
-                            backfill_groups,
-                            _execute_sample_backfill_worker,
-                            task_arg_fn=make_process_backfill_req,
-                            skip_fn=skip_backfill,
-                            on_completed=handle_backfill_response,
-                            on_error=on_sample_error,
-                            should_cancel=should_cancel,
-                            stop_on_error=True,
-                        )
-                    else:
-                        pool.run_windowed(
-                            backfill_groups,
-                            backfill,
-                            on_completed=handle_backfill_response,
-                            on_error=on_sample_error,
-                            should_cancel=should_cancel,
-                            stop_on_error=True,
-                        )
+                    pool.run_windowed(
+                        _runtime_sample_groups(states),
+                        backfill,
+                        on_completed=handle_backfill_response,
+                        on_error=on_sample_error,
+                        should_cancel=should_cancel,
+                        stop_on_error=True,
+                    )
         except Exception as exc:
             stop(exc)
         apply_stop()

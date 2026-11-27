@@ -308,6 +308,12 @@ was 44% faster with identical outputs. Full85's 43,652 memberships make the
 budget, not the bin, dominant (49 vs 45 partitions at 1024). A default change
 needs a full85 candidate with peak RSS and output parity.
 
+That candidate exists for the 2048 default (#1306): the tissue 85RAW worksets
+pack into 17 partitions instead of 30 (8 bins is the floor; 3072 and 4096 give
+14 and 11, predicted to reach 18 and 22 GB of tree memory while grouping).
+8RAW stays at its 8 bins, so it cannot test the budget. See
+[where the RAW phases spend time](#where-the-raw-phases-spend-time).
+
 ### Four or eight workers
 
 `diagnostic_only`; `f30d42ac` (#699). On a 12-CPU, 34 GB host, eight workers
@@ -316,7 +322,102 @@ private bytes rising 6.3 to 10.6 GB. The shared default stays at four; use
 `--raw-workers 8` locally. A one-entry prepared-signal memo gained less than
 baseline noise and was removed.
 
-Rerun for changed host resources, workload or locality.
+Rerun for changed host resources, workload or locality. On 85RAW the initial
+acquisition is worker-bound; see [where the RAW phases spend time](#where-the-raw-phases-spend-time).
+
+### Where the RAW phases spend time
+
+`diagnostic_only`; `78cf27ceb` (#1306), 85RAW `dna_dr`, four process workers.
+One probed run; its Matrix, review, Backfill evidence and RT anchors match an
+un-probed `713a72b3e` run byte for byte.
+
+- Summed partition acquisition over wall is capped at two by the two
+  overlapping partition producers, so it does not measure the workers. Worker
+  utilization was 93% in initial acquisition (398 s, worker-bound) and 33% in
+  Backfill (432 s with the probe; 350–397 s in four un-probed runs).
+- Backfill waited on the parent. Before dispatching a partition, its producer
+  computed band RT locations (393 s: target `locate` 54%, leave-one-out
+  `_empirical_tolerances` 41%). In two un-probed timelines, 13 and 15 of 28
+  Backfill partitions also waited for in-order composition to return an
+  admission credit. Planning with the final grouping on the workers (#1315)
+  took un-probed Backfill from 353 to 241 s with identical outputs; final
+  grouping rose 96 to 110 s.
+- Every (partition, sample) task reopens its RAW: open 15 ms, dispose 10 ms,
+  and about 0.13 s on the handle's first chromatogram call while the vendor
+  builds its scan structure, with or without the `ms` filter. That is 2,550
+  tasks per phase and about 22% of initial worker time. This is the per-handle
+  cost the scan-list entry under
+  [Rejected Alignment designs](#rejected-alignment-designs) could not share.
+- RAW reads stayed warm: per-task read time did not rise with revisits, and
+  RAW calls were no slower during physical-read bursts.
+- Discovery's windows would fully answer at most 0.06% of initial and 0.84% of
+  Backfill XIC requests. Initial region reads answer 98.8% of Backfill requests
+  within 2 ppm, but 0.66% at the same mass centre.
+- Separate RawFileReader processes do not wait on one another: per-task time is
+  flat from one to four processes, and task throughput at six and eight is 1.26
+  and 1.46 times that of four.
+
+After #1315, reading each ion's contrast neighbourhood with its region XIC
+(no whole-run pass, no repeated mass window in one call) and the 2048 partition
+budget, one 85RAW run (worker-side probe only) matched the master Matrix,
+review, Backfill evidence and RT anchors byte for byte. Its explanation
+database differed only in internal integer peak ids, renumbered by the new
+partition order; every table matched once peak references were resolved to
+`physical_peak_key`. Initial acquisition took 278 s (opens 2,550 to 1,445,
+vendor calls 6,844 to 2,142, worker time 1,474 to 1,034 s), Backfill 190 s
+(166 s of it in-order composition) and the runtime 586 s. The ISTD reference
+stage then set the tree's private-memory peak at 12.2 GB, with 11 Targeted
+processes before acquisition. Taking each sample's ISTD apex from its Discovery
+peaks instead, without RAW (`expected_diff`), reproduced that run's reference
+(510 coordinates, every provenance key; 8RAW's 48 likewise). The 85RAW Matrix,
+review, Backfill evidence and RT anchors matched byte for byte, and every
+explanation table and run-metadata key by content, attempt id and output path
+aside. The stage took 0.07 s instead of 38 s, and the run peaked at 10.1 GB in
+Backfill with 6 processes instead of 17; one run each, Backfill read 9.8 to
+10.1 GB and grouping 9.2 to 9.4 GB. All 510 pairs exist on both sides, so none
+of the removed Targeted paths ran: its credibility gate, elution-order check,
+cross-sample recovery and error on a failed RAW. A sample whose standard DDA
+never sampled now has no coordinate for that label.
+
+The parent process then gated grouping, Backfill and publication. Its stack
+samples are biased toward code that gives up the GIL (zlib, file writes, the
+dataclass state hooks the pickler calls), so costs below come from timed
+spans. Grouping read each partition's initial grouping from the spool and
+pickled it to a worker twice (2.72 GB), then unpickled the final groupings
+(1.39 GB) and pickled them back. With workers reading and writing the spool
+themselves, grouping took 53.3 s instead of 114.2 s and peaked at 8.15 GB
+instead of 9.43 GB, outputs unchanged. Publication read every initial group
+back twice for an RT drift count (18.5 s) and a membership-risk flag (11.6 s);
+composition now records both, and the phase after Backfill took 57.6 s instead
+of 84.5 s (measured in the run below, which also composed on workers). Backfill
+stayed at 194 s, gated by in-order composition in the parent: writing the
+partition took 113 s of span wall, 70 s of it composing and projecting
+children, and building composition inputs 57 s on 7.7 s of thread CPU. Two
+producer threads spent 76 s reading spool records meanwhile, and composition
+steps overlapping those reads ran at 7.9 (inputs), 19 (explanation projection)
+and 62 (curve encoding) times their thread CPU, against 2.4-3.7 times when no
+read overlapped. That contention was not the main cost. Composing on a worker
+instead, one partition at a time (an experiment not kept, outputs equal), took
+153 s of task wall and left Backfill at 195.7 s, with 1.1 GB more in each
+composing worker; about a third of the task re-read the final grouping and
+initial results the producer had already read (8RAW proportions), and
+overlapping compositions within the three admission credits simulated to
+~170 s. Review-curve encoding alone costs about 8.4 s (timed on 3,000 of the
+39,487 curves).
+
+After the branch merged master (8RAW outputs equal to master's but for the
+ISTD source path), an 85RAW run gave Backfill 180.1 s, runtime 543.2 s, CLI
+605 s and a 10.0 GB tree peak. Running each Backfill partition whole on one
+worker, which reads its final grouping and initial results once, revisits its
+samples one RAW at a time and composes, left every output identical: Backfill
+126.9 s, runtime 482.9 s, CLI 543 s, tree peak 10.7 GB with 7.7 GB available.
+Its bound is the larger of partition work over workers (492 s / 4 here) and the
+largest partition (38 s); a batch with fewer partitions than workers loses the
+sample parallelism within a partition.
+
+Rerun when partition packing, worker scheduling, Backfill planning, the ISTD
+reference, the RAW reader or where composition runs changes. Artifacts: `output/1306/` in the `research-1306-raw-time-46fb42`
+worktree.
 
 ### Drift grouping reuses prepared numerical evidence
 
@@ -481,6 +582,8 @@ model.
   order, so identical partitions differ in bytes across processes.
 - **Evidence caching or sample-affinity scheduling:** 11,420 cache reads hit
   11,260 unique keys; reusing every repeat saves 3.3% of payload bytes.
+  Reusing open RAW handles is a different cost, measured in
+  [where the RAW phases spend time](#where-the-raw-phases-spend-time).
 - **Sample-major replay:** three paired replays (9.07 vs 8.80 s median) fall
   inside measurement noise; no scheduler change.
 - **Identity memoization:** at most 0.85 s of 2.65 s total.
@@ -505,6 +608,10 @@ Eight identical four-partition cache-only runs at `005fd18f` produced
 byte-identical output but wall times from 49.5 to 70.5 s, a 42% spread. A 5 ms
 stack sampler ran at an effective 18.8 ms and overstated CPU hot spots about
 fourfold; use its ordering, not its percentages.
+
+On this host, `time.process_time()` and psutil process CPU report 56–79% of a
+pure CPU loop's wall time with one to eight processes (#1306); do not infer a
+worker's CPU share from them.
 
 ## Discovery And Acquisition
 

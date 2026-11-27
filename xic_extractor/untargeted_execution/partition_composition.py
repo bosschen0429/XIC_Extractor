@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
-from typing import cast
+from typing import TypeVar, cast
 
 from xic_extractor.alignment.backfill.completion_evidence import (
     BackfillCompletionProjection,
@@ -25,11 +25,13 @@ from xic_extractor.alignment.completion import (
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSamplePeakGroupHypothesis,
+    accepted_membership_risks,
 )
 from xic_extractor.alignment.drift_evidence import KnownIstdReference
 from xic_extractor.alignment.result.application_result import (
     FinalizedUntargetApplicationResult,
     FinalizedUntargetBatchApplicationResult,
+    RtDriftGroupCounts,
     UntargetedCandidateExclusion,
 )
 from xic_extractor.alignment.rt_frame import SampleRtFrame
@@ -118,15 +120,27 @@ class _PersistedPartitionComposition:
     initial_groups: tuple[CrossSamplePeakGroupHypothesis, ...]
 
 
-@dataclass(frozen=True, slots=True)
-class PersistedUntargetedPartition:
-    """Lightweight positions for one persisted scientific partition."""
+TWritten = TypeVar("TWritten")
 
-    sealed: SealedPartition
-    child_count: int
-    excluded_candidate_ids: tuple[str, ...]
+
+@dataclass(frozen=True, slots=True)
+class ComposedUntargetedPartition:
+    """What one composed partition reports besides the children it stored."""
+
+    child_count: int = 0
+    excluded_candidate_ids: tuple[str, ...] = ()
     child_order_keys: tuple[str, ...] = ()
     has_flagged_backfill_risk: bool = False
+    has_flagged_membership_risk: bool = False
+    rt_drift_groups: RtDriftGroupCounts = RtDriftGroupCounts()
+
+
+@dataclass(frozen=True, slots=True)
+class PersistedUntargetedPartition:
+    """One composed partition and the stored partition holding its children."""
+
+    sealed: SealedPartition
+    composed: ComposedUntargetedPartition = ComposedUntargetedPartition()
 
 
 def compose_untargeted_batch(
@@ -146,13 +160,14 @@ def compose_untargeted_batch(
     exclusion_positions: list[tuple[str, int, int]] = []
     child_positions: list[tuple[str, int, int]] = []
     for persisted in partitions:
+        composed = persisted.composed
         child_positions.extend(
             (key, persisted.sealed.index, offset)
-            for offset, key in enumerate(persisted.child_order_keys)
+            for offset, key in enumerate(composed.child_order_keys)
         )
         exclusion_positions.extend(
             (candidate_id, persisted.sealed.index, offset)
-            for offset, candidate_id in enumerate(persisted.excluded_candidate_ids)
+            for offset, candidate_id in enumerate(composed.excluded_candidate_ids)
         )
     scope = UntargetedSearchScope(
         schema_version=SEARCH_SCOPE_SCHEMA_VERSION,
@@ -192,7 +207,14 @@ def compose_untargeted_batch(
             store, exclusion_positions, plan.excluded_candidates
         ),
         has_flagged_backfill_risk=any(
-            persisted.has_flagged_backfill_risk for persisted in partitions
+            persisted.composed.has_flagged_backfill_risk for persisted in partitions
+        ),
+        has_flagged_membership_risk=any(
+            persisted.composed.has_flagged_membership_risk for persisted in partitions
+        ),
+        rt_drift_groups=sum(
+            (persisted.composed.rt_drift_groups for persisted in partitions),
+            RtDriftGroupCounts(),
         ),
     )
 
@@ -240,21 +262,18 @@ def compose_and_persist_untargeted_partition(
     batch: UntargetedPartitionInputs,
     sample_results: tuple[UntargetedSampleResult, ...],
     *,
-    store: StreamedResultStore,
-    partition_key: str,
+    write: Callable[[_PersistedPartitionComposition, Iterator[object]], TWritten],
     alignment_config: AlignmentConfig,
     project_child: ChildOutputProjection,
     sample_rt_frame: SampleRtFrame | None = None,
     known_istd_reference: KnownIstdReference | None = None,
-    should_cancel: Callable[[], object] | None = None,
-) -> PersistedUntargetedPartition:
-    """Compose one child at a time and publish only after the full partition.
+) -> tuple[TWritten, ComposedUntargetedPartition]:
+    """Compose one child at a time and hand the writer the whole partition.
 
     Composition inputs are prepared once. Each child is projected into its
-    outputs as soon as it composes, and only the projection is stored. The
-    result store owns the trusted owner references and atomic file
-    publication while this owner controls scientific child order and
-    cancellation boundaries.
+    outputs as soon as it composes, and only the projection is written. The
+    writer owns the trusted owner references and atomic file publication while
+    this owner controls scientific child order.
     """
 
     inputs = _build_production_composition_inputs(
@@ -266,19 +285,15 @@ def compose_and_persist_untargeted_partition(
     child_count = 0
     child_order_keys: list[str] = []
     has_flagged_backfill_risk = False
+    membership_risks = accepted_membership_risks(inputs.initial_groups)
     projection_context = ChildProjectionContext(
         samples=batch.context.samples,
         sample_rt_frame=sample_rt_frame,
     )
 
-    def check_cancellation() -> None:
-        if should_cancel is not None and should_cancel():
-            raise InterruptedError("CID-NL partition cancelled")
-
-    def child_outputs():
+    def child_outputs() -> Iterator[object]:
         nonlocal child_count, has_flagged_backfill_risk
         for completion, receipts in inputs.completions:
-            check_cancellation()
             child = completion.complete(receipts)
             child_count += 1
             child_order_keys.append(child.first_method_subject_id)
@@ -291,26 +306,26 @@ def compose_and_persist_untargeted_partition(
             yield project_child(child, projection_context)
             del child
 
-    metadata_payload = _PersistedPartitionComposition(
-        child_outputs=(),
-        excluded_candidates=inputs.request.excluded_candidates,
-        method_assessments=inputs.method_assessments,
-        initial_groups=inputs.initial_groups,
+    written = write(
+        _PersistedPartitionComposition(
+            child_outputs=(),
+            excluded_candidates=inputs.request.excluded_candidates,
+            method_assessments=inputs.method_assessments,
+            initial_groups=inputs.initial_groups,
+        ),
+        child_outputs(),
     )
-    sealed = store.append_child_outputs(
-        partition_key,
-        child_outputs=child_outputs(),
-        before_publish=check_cancellation,
-        metadata_payload=metadata_payload,
-    )
-    return PersistedUntargetedPartition(
-        sealed=sealed,
+    return written, ComposedUntargetedPartition(
         child_count=child_count,
         excluded_candidate_ids=tuple(
             item.candidate_id for item in inputs.request.excluded_candidates
         ),
         child_order_keys=tuple(child_order_keys),
         has_flagged_backfill_risk=has_flagged_backfill_risk,
+        has_flagged_membership_risk=any(
+            risk.risk_flags for risk in membership_risks.values()
+        ),
+        rt_drift_groups=RtDriftGroupCounts.of(inputs.initial_groups),
     )
 
 

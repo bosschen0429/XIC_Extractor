@@ -281,6 +281,21 @@ def test_method_adapter_rejects_unknown_override_without_writing(tmp_path) -> No
     assert not destination.exists()
 
 
+def test_method_adapter_rejects_a_tag_name_discovery_would_split(
+    tmp_path,
+) -> None:
+    draft = method_details("dna_dr")["draft"]
+    draft["tags"].append(
+        {"enabled": True, "name": "dR;heavy", "neutral_loss_da": 100.25}
+    )
+    destination = tmp_path / "split-tag.toml"
+
+    with pytest.raises(ValueError, match="must not contain ';'"):
+        save_method(draft, destination)
+
+    assert not destination.exists()
+
+
 def test_method_adapter_preserves_long_rt_windows(tmp_path) -> None:
     draft = method_details("dna_dr")["draft"]
     draft["overrides"].update(rt_min=65.0, rt_max=120.0)

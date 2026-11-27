@@ -335,7 +335,8 @@ def apply_blank_qualification_to_peaks(
     A peak whose representative precursor matches a blank ion within ppm_tol
     and whose height is below fold_change_threshold times the blank intensity
     is system background and is not admitted. A higher peak keeps its
-    admission.
+    admission. A doubly charged reading is another ion, not background, and
+    keeps its status.
     """
     if library is None or not library.ions:
         return tuple(bindings)
@@ -343,6 +344,9 @@ def apply_blank_qualification_to_peaks(
     updated: list[DiscoveryPeakPhysicalBinding] = []
     for binding in bindings:
         candidate = binding.peak
+        if candidate.status == "doubly_charged":
+            updated.append(binding)
+            continue
         matches = library.match(
             binding.representative_event.precursor_mz, ppm_tol=ppm_tol
         )

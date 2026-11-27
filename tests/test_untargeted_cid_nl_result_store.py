@@ -12,6 +12,7 @@ import pytest
 
 from xic_extractor.execution.result_store import (
     StreamedResultStore,
+    write_spooled_partition,
 )
 from xic_extractor.immutable_sequence import ImmutableSequence
 
@@ -131,7 +132,7 @@ def test_header_field_read_skips_acquired_records(tmp_path):
         store.read_header_field(0, "child_outputs")
 
 
-def test_streaming_children_matches_append_bytes_and_reader(tmp_path):
+def test_streamed_children_written_beside_the_spool_match_append(tmp_path):
     payload = Payload(
         (1, 2, 3), method_assessments=(4,), excluded_candidates=(5,), label="same"
     )
@@ -142,22 +143,24 @@ def test_streaming_children_matches_append_bytes_and_reader(tmp_path):
     def child_outputs():
         yield from payload.child_outputs
 
-    stream_store.append_child_outputs(
-        "partition",
+    written = write_spooled_partition(
+        stream_store.directory,
         Payload(
             (), payload.method_assessments, payload.excluded_candidates, payload.label
         ),
+        stream_store.shared_owners_path(),
         child_outputs=child_outputs(),
     )
-    assert next((tmp_path / "stream").glob("*.pickle")).read_bytes() == (
-        next((tmp_path / "tuple").glob("*.pickle")).read_bytes()
+    stream_store.adopt_written("partition", written)
+    assert stream_store.partition_path(0).read_bytes() == (
+        tuple_store.partition_path(0).read_bytes()
     )
     stream_store.seal()
     assert stream_store.read(0) == payload
     assert tuple(stream_store.sequence("child_outputs")) == payload.child_outputs
 
 
-def test_streaming_children_failure_does_not_publish_or_seal(tmp_path):
+def test_failed_streamed_children_leave_no_written_partition(tmp_path):
     store = StreamedResultStore(tmp_path, ())
 
     def failing_children():
@@ -165,33 +168,17 @@ def test_streaming_children_failure_does_not_publish_or_seal(tmp_path):
         raise OSError("injected child failure")
 
     with pytest.raises(OSError, match="injected child failure"):
-        store.append_child_outputs(
-            "partition",
+        write_spooled_partition(
+            store.directory,
             Payload((), (), (), "partition"),
+            store.shared_owners_path(),
             child_outputs=failing_children(),
         )
-    assert not (tmp_path / "00000000.pickle").exists()
+    assert not list(tmp_path.glob("written-*"))
     store.append("partition", Payload((2,)))
 
 
-def test_streaming_children_checks_cancellation_before_publication(tmp_path):
-    store = StreamedResultStore(tmp_path, ())
-
-    def cancel():
-        raise InterruptedError("cancel before publication")
-
-    with pytest.raises(InterruptedError, match="cancel before publication"):
-        store.append_child_outputs(
-            "partition",
-            Payload((), (), (), "partition"),
-            child_outputs=(1,),
-            before_publish=cancel,
-        )
-    assert not (tmp_path / "00000000.pickle").exists()
-    store.append("partition", Payload((2,)))
-
-
-def test_streaming_children_releases_previous_value_before_next_child(tmp_path):
+def test_streamed_children_release_previous_value_before_next_child(tmp_path):
     store = StreamedResultStore(tmp_path, ())
     references = []
 
@@ -204,9 +191,10 @@ def test_streaming_children_releases_previous_value_before_next_child(tmp_path):
         assert references[0]() is None
         yield "second"
 
-    store.append_child_outputs(
-        "partition",
+    write_spooled_partition(
+        store.directory,
         Payload((), (), (), "partition"),
+        store.shared_owners_path(),
         child_outputs=child_outputs(),
     )
     gc.collect()

@@ -53,6 +53,7 @@ ISTD 清單直接用 Targeted 的[目標清單](targeted.md#目標清單)檔案�
 
 - 只讀 `role` 為 `istd` 的列，其他列略過。
 - 只用中性丟失和目前方法相符的 ISTD。例如 dR 方法不用 R 的 ISTD；不相符的列標為不適用，不是 ND。
+- 每個樣本的 ISTD 峰位置直接取自 Discovery 結果，不另外讀 RAW：m/z 與中性丟失相符、峰頂落在 `expected_rt_min` 前後 2 分鐘內的峰，有多支時取 MS2 事件最多的那支。某個樣本的 ISTD 沒有觸發 MS2、Discovery 沒有這支峰時，這個樣本就不用該 ISTD 校正 RT。
 - 整理矩陣時，ISTD 對應的列一律保留。
 
 ## 執行一批

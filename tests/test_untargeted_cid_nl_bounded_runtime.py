@@ -63,6 +63,9 @@ from xic_extractor.untargeted_execution.execution_result import (
 from xic_extractor.untargeted_execution.input_planning import (
     PreparedUntargetedAlignmentWorksets,
 )
+from xic_extractor.untargeted_execution.partition_composition import (
+    ComposedUntargetedPartition,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -431,6 +434,9 @@ def test_indexed_mass_partition_keeps_closed_worksets_and_budgets_neighbors(
         mint_untargeted_cid_nl_method_subject_batch,
     )
     from xic_extractor.untargeted_execution import execution as bounded_owner
+    from xic_extractor.untargeted_execution.input_planning import (
+        PARTITION_CANDIDATE_BUDGET,
+    )
 
     plan, _reference = _plan(tmp_path, monkeypatch)
     subjects = tuple(
@@ -459,7 +465,9 @@ def test_indexed_mass_partition_keeps_closed_worksets_and_budgets_neighbors(
     assert {subject.precursor_mz for subject in closed} == {99.0, 201.0}
     membership_counts = {
         subject.method_subject_id: (
-            600 if subject.precursor_mz in {250.0, 251.0} else 1
+            PARTITION_CANDIDATE_BUDGET // 2 + 1
+            if subject.precursor_mz in {250.0, 251.0}
+            else 1
         )
         for subject in subjects
     }
@@ -569,10 +577,8 @@ def test_indexed_finalization_orders_children_by_canonical_subject(
     outputs = tuple(
         SimpleNamespace(
             result=SimpleNamespace(
-                excluded_candidate_ids=(),
-                child_order_keys=(subject_id,),
-                has_flagged_backfill_risk=False,
                 sealed=SimpleNamespace(index=index),
+                composed=ComposedUntargetedPartition(child_order_keys=(subject_id,)),
             )
         )
         for index, subject_id in enumerate(mass_execution_ids)
@@ -716,6 +722,212 @@ def test_bounded_partition_real_entry_mints_interleaved_worksets_canonically(
     } == {subject.method_subject_id for subject in subjects}
 
 
+def test_backfill_partition_request_crosses_the_process_boundary_unchanged(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """A worker process receives a Backfill partition's request by value;
+    running the partition from that copy writes the same rows. A process
+    worker has no caller to ask about cancellation, so the copy runs without
+    the thread worker's ``should_cancel``."""
+    import xic_extractor.untargeted_execution.execution as owner
+    from xic_extractor.execution._serialization import (
+        owner_pickle_dumps,
+        owner_pickle_loads,
+    )
+
+    def run(output_dir: Path):
+        plan, _ = _plan(tmp_path, monkeypatch)
+        return owner.execute_untargeted_plan(
+            plan,
+            output_dir=output_dir,
+            alignment_config=AlignmentConfig(),
+            max_partition_jobs=len(plan.context.samples),
+            execution=ExecutionProfile(
+                alignment_workers=4, backend="thread", overlap_partitions=False
+            ),
+            project_child=project_composed_child,
+        )
+
+    in_process = run(tmp_path / "in-process")
+    original = owner._run_backfill_partition
+    requests = []
+
+    def across_processes(task, **_in_process_only):
+        requests.append(task)
+        return original(owner_pickle_loads(owner_pickle_dumps(task, ()), ()))
+
+    monkeypatch.setattr(owner, "_run_backfill_partition", across_processes)
+    crossed = run(tmp_path / "crossed")
+
+    assert requests
+    assert written_rows(tmp_path / "crossed-rows", crossed.application_result) == (
+        written_rows(tmp_path / "in-process-rows", in_process.application_result)
+    )
+
+
+def test_cancellation_reaches_a_backfill_partition_before_its_samples(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Cancellation while a partition runs on a worker reaches the spool, stops
+    the partition before its next sample, and ends the batch cancelled."""
+    import xic_extractor.untargeted_execution.execution as owner
+    import xic_extractor.untargeted_execution.partition.execution as runtime_owner
+
+    plan, _ = _plan(tmp_path, monkeypatch)
+    output_dir = tmp_path / "cancelled"
+    cancel = Event()
+    samples_after_cancel = []
+    original_apply = runtime_owner._apply_backfill_questions
+    original_sample = runtime_owner._execute_backfill_sample_phase
+
+    def apply_then_cancel(*args, **kwargs):
+        cancel.set()
+        deadline = perf_counter() + 10
+        while not list(output_dir.glob(".partition_spool-*/cancel-requested")):
+            assert perf_counter() < deadline, "cancellation never reached the spool"
+            sleep(0.01)
+        return original_apply(*args, **kwargs)
+
+    def observed_sample(*args, **kwargs):
+        samples_after_cancel.append(cancel.is_set())
+        return original_sample(*args, **kwargs)
+
+    monkeypatch.setattr(runtime_owner, "_apply_backfill_questions", apply_then_cancel)
+    monkeypatch.setattr(
+        runtime_owner, "_execute_backfill_sample_phase", observed_sample
+    )
+    with pytest.raises(InterruptedError, match="cancel"):
+        owner.execute_untargeted_plan(
+            plan,
+            output_dir=output_dir,
+            alignment_config=AlignmentConfig(),
+            max_partition_jobs=len(plan.context.samples),
+            execution=ExecutionProfile(
+                alignment_workers=2, backend="thread", overlap_partitions=False
+            ),
+            should_cancel=cancel.is_set,
+            project_child=project_composed_child,
+        )
+    assert not any(samples_after_cancel)
+
+
+def test_cancellation_stops_a_single_worker_backfill_before_its_next_sample(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """One thread worker runs the partition on the caller's thread, where
+    nothing else writes the spool marker; the partition asks the caller."""
+    import xic_extractor.untargeted_execution.execution as owner
+    import xic_extractor.untargeted_execution.partition.execution as runtime_owner
+
+    plan, _ = _plan(tmp_path, monkeypatch)
+    cancel = Event()
+    samples = []
+    original_sample = runtime_owner._execute_backfill_sample_phase
+
+    def cancel_after_the_first_sample(phase):
+        samples.append(phase.backfill_resource_key)
+        response = original_sample(phase)
+        cancel.set()
+        return response
+
+    monkeypatch.setattr(
+        runtime_owner, "_execute_backfill_sample_phase", cancel_after_the_first_sample
+    )
+    with pytest.raises(InterruptedError, match="cancel"):
+        owner.execute_untargeted_plan(
+            plan,
+            output_dir=tmp_path / "cancelled",
+            alignment_config=AlignmentConfig(),
+            max_partition_jobs=len(plan.context.samples),
+            execution=ExecutionProfile(
+                alignment_workers=1, backend="thread", overlap_partitions=False
+            ),
+            should_cancel=cancel.is_set,
+            project_child=project_composed_child,
+        )
+    assert len(samples) == 1
+
+
+def test_a_failed_backfill_partition_stops_its_siblings_before_their_next_sample(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """The failure, not the siblings' interruption, ends the batch. A sibling
+    sample already running when the failure lands finishes; the sibling's
+    next sample never starts."""
+    import xic_extractor.untargeted_execution.execution as owner
+    import xic_extractor.untargeted_execution.partition.execution as runtime_owner
+
+    failing = "partition-00000-backfill"
+    original_sample = runtime_owner._execute_backfill_sample_phase
+    lock = Lock()
+    started: dict[str, int] = {}
+
+    def run(output_dir: Path, sample_phase):
+        plan, _ = _plan(tmp_path, monkeypatch)
+        monkeypatch.setattr(
+            runtime_owner, "_execute_backfill_sample_phase", sample_phase
+        )
+        return owner.execute_untargeted_plan(
+            plan,
+            output_dir=output_dir,
+            alignment_config=AlignmentConfig(),
+            max_partition_jobs=len(plan.context.samples),
+            execution=ExecutionProfile(
+                alignment_workers=2, backend="thread", overlap_partitions=False
+            ),
+            project_child=project_composed_child,
+        )
+
+    def counted(phase):
+        partition = phase.backfill_resource_key.split(":")[1]
+        with lock:
+            started[partition] = started.get(partition, 0) + 1
+        return partition
+
+    def passthrough(phase):
+        counted(phase)
+        return original_sample(phase)
+
+    sibling = "partition-00001-backfill"
+    run(tmp_path / "complete", passthrough)
+    assert failing in started
+    assert started[sibling] >= 2
+
+    output_dir = tmp_path / "failed"
+    started.clear()
+    sibling_running = Event()
+    marker_missing = Event()
+
+    def marker_exists():
+        return bool(list(output_dir.glob(".partition_spool-*/cancel-requested")))
+
+    def fail_one_partition(phase):
+        if counted(phase) == failing:
+            sibling_running.wait(10)
+            raise OSError("injected Backfill sample failure")
+        sibling_running.set()
+        deadline = perf_counter() + 10
+        while not marker_exists():
+            if perf_counter() > deadline:
+                marker_missing.set()
+                break
+            sleep(0.01)
+        return original_sample(phase)
+
+    with pytest.raises(RuntimeError, match="failed before batch publication") as error:
+        run(output_dir, fail_one_partition)
+    causes = []
+    cause = error.value
+    while cause is not None:
+        causes.append(cause)
+        cause = cause.__cause__
+    assert any("injected Backfill sample failure" in str(item) for item in causes)
+    assert not any(isinstance(item, InterruptedError) for item in causes)
+    assert not marker_missing.is_set(), "the failure never reached the spool"
+    assert started == {failing: 1, sibling: 1}
+    assert not _spool_dirs(output_dir)
+
+
 def test_failed_attempt_retry_recomposes_the_same_result(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -735,17 +947,17 @@ def test_failed_attempt_retry_recomposes_the_same_result(
     baseline_writer = baseline.application_result
     plan, _ = _plan(tmp_path, monkeypatch)
     output_dir = tmp_path / "retry-output"
-    original_append = owner.StreamedResultStore.append_child_outputs
+    original_append = owner.StreamedResultStore.adopt_written
     append_calls = 0
 
-    def fail_second(store, *args, **kwargs):
+    def fail_second(store, partition_key, *args, **kwargs):
         nonlocal append_calls
-        append_calls += 1
+        append_calls += partition_key.endswith("-backfill")
         if append_calls == 2:
             raise OSError("second partition storage unavailable")
-        return original_append(store, *args, **kwargs)
+        return original_append(store, partition_key, *args, **kwargs)
 
-    monkeypatch.setattr(owner.StreamedResultStore, "append_child_outputs", fail_second)
+    monkeypatch.setattr(owner.StreamedResultStore, "adopt_written", fail_second)
     with pytest.raises(RuntimeError, match="failed before batch publication"):
         owner.execute_untargeted_plan(
             plan,
@@ -759,9 +971,7 @@ def test_failed_attempt_retry_recomposes_the_same_result(
         )
     failed_attempt_id = plan.context.processing_attempt_id
 
-    monkeypatch.setattr(
-        owner.StreamedResultStore, "append_child_outputs", original_append
-    )
+    monkeypatch.setattr(owner.StreamedResultStore, "adopt_written", original_append)
     retry_plan, _ = _plan(tmp_path, monkeypatch)
     completed = owner.execute_untargeted_plan(
         retry_plan,
@@ -826,7 +1036,7 @@ def test_partition_acquisitions_overlap_with_shared_worker_budget_and_ordered_ou
     )
 
     original_leaf = owner.execute_partition
-    original_append = owner.StreamedResultStore.append_child_outputs
+    original_append = owner.StreamedResultStore.adopt_written
     first_two = {"partition-00000-initial", "partition-00001-initial"}
     barrier = Barrier(2)
     second_completed = Event()
@@ -869,14 +1079,15 @@ def test_partition_acquisitions_overlap_with_shared_worker_budget_and_ordered_ou
         try:
             sleep(0.01)
             result = original_append(store, partition_key, *args, **kwargs)
-            append_order.append(partition_key)
+            if partition_key.endswith("-backfill"):
+                append_order.append(partition_key)
             return result
         finally:
             with lock:
                 composition_active = 0
 
     monkeypatch.setattr(owner, "execute_partition", leaf)
-    monkeypatch.setattr(owner.StreamedResultStore, "append_child_outputs", append)
+    monkeypatch.setattr(owner.StreamedResultStore, "adopt_written", append)
     overlapped = owner.execute_untargeted_plan(
         plan,
         output_dir=tmp_path / "overlapped-partitions",
@@ -891,10 +1102,16 @@ def test_partition_acquisitions_overlap_with_shared_worker_budget_and_ordered_ou
     assert completion_order.index("partition-00001-initial") < completion_order.index(
         "partition-00000-initial"
     )
+    initial_budgets = {
+        key: budget for key, budget in observed_budgets.items() if "-initial" in key
+    }
     assert append_order == [
-        f"partition-{index:05d}-backfill" for index in range(len(observed_budgets) // 2)
+        f"partition-{index:05d}-backfill" for index in range(len(initial_budgets))
     ]
-    assert set(observed_budgets.values()) == {2}
+    assert set(initial_budgets.values()) == {2}
+    assert {
+        budget for key, budget in observed_budgets.items() if "-backfill" in key
+    } == {1}
     assert peak_budget == 4
     assert composition_active == 0 and not active_budgets
     assert written_rows(
@@ -1011,30 +1228,24 @@ def test_final_grouping_failure_stops_before_any_backfill(
     timeline_events = []
     lock = Lock()
     finalized = []
-    admitted = []
-    acquire = owner.UntargetedPartitionPipelineAdapter.execute_acquisition
+    started = []
+    run_backfill_partition = owner._run_backfill_partition
     finalize = owner.regroup_cid_nl_grouping
 
-    def subject_ids(subjects):
-        return frozenset(subject.method_subject_id for subject in subjects)
-
-    def observed_acquire(adapter, partition, **kwargs):
-        if partition.partition_key.endswith("-backfill"):
-            with lock:
-                admitted.append(subject_ids(partition.payload))
-        return acquire(adapter, partition, **kwargs)
+    def observed_backfill(task):
+        with lock:
+            started.append(task.partition_key)
+        return run_backfill_partition(task)
 
     def finalize_or_abort(prepared, **kwargs):
-        subjects = subject_ids(
-            tuple(
-                subject for workset in prepared.worksets for subject in workset.subjects
-            )
+        subjects = frozenset(
+            subject.method_subject_id
+            for workset in prepared.worksets
+            for subject in workset.subjects
         )
-        with lock:
-            admitted_first = subjects in admitted
         result = finalize(prepared, **kwargs)
         with lock:
-            finalized.append((subjects, admitted_first))
+            finalized.append(subjects)
             count = len(finalized)
         if count == 2:
             if cancel_during_grouping:
@@ -1046,11 +1257,7 @@ def test_final_grouping_failure_stops_before_any_backfill(
     def forbid_completed(*args, **kwargs):
         pytest.fail("A failed final grouping must not publish a batch")
 
-    monkeypatch.setattr(
-        owner.UntargetedPartitionPipelineAdapter,
-        "execute_acquisition",
-        observed_acquire,
-    )
+    monkeypatch.setattr(owner, "_run_backfill_partition", observed_backfill)
     monkeypatch.setattr(owner, "regroup_cid_nl_grouping", finalize_or_abort)
     monkeypatch.setattr(owner, "CompletedUntargetBatchWorkflowResult", forbid_completed)
     with pytest.raises(
@@ -1076,38 +1283,11 @@ def test_final_grouping_failure_stops_before_any_backfill(
             project_child=project_composed_child,
         )
     assert len(finalized) >= 2, repr(error.value.__cause__ or error.value)
-    assert not admitted
-    assert not any(admitted_first for _, admitted_first in finalized)
-    assert len({subjects for subjects, _ in finalized}) == len(finalized)
+    assert not started
+    assert len(set(finalized)) == len(finalized)
     assert len(timeline_events) == 1
-    backfill_statuses = {
-        record["status"]
-        for record in timeline_events[0]["timeline"]
-        if record["partition_key"].endswith("-backfill")
-    }
-    assert backfill_statuses == {"cancelled"}
     if not cancel_during_grouping:
         assert "grouping finalization failed" in str(error.value)
-
-
-def test_backfill_requires_frozen_batch_calibration(tmp_path, monkeypatch):
-    import xic_extractor.untargeted_execution.execution as owner
-
-    plan, _ = _plan(tmp_path, monkeypatch)
-    adapter = owner.UntargetedPartitionPipelineAdapter(
-        plan,
-        alignment_config=AlignmentConfig(),
-        max_partition_jobs=len(plan.context.samples),
-        execution=ExecutionProfile(
-            alignment_workers=1, backend="thread", overlap_partitions=False
-        ),
-        project_child=project_composed_child,
-    )
-    try:
-        with pytest.raises(RuntimeError, match="requires frozen batch calibration"):
-            adapter.execute_acquisition(adapter.partitions[-1])
-    finally:
-        adapter.close_process_worker_pools()
 
 
 @pytest.mark.parametrize("raw_workers", [1, 2, 4])
@@ -1151,8 +1331,8 @@ def test_sample_parallelism_keeps_partition_and_acquisition_counts_fixed(
     original_chromatogram = _FakeThermoRaw.GetChromatogramData
     original_init = _FakeThermoRaw.__init__
     original_dispose = _FakeThermoRaw.Dispose
-    original_append = owner.StreamedResultStore.append_child_outputs
-    original_prepare = runtime_owner._prepare_group_authorized_backfills
+    original_append = owner.StreamedResultStore.adopt_written
+    original_apply = runtime_owner._apply_backfill_questions
 
     def materialize(*args, **kwargs):
         nonlocal live_jobs
@@ -1200,14 +1380,15 @@ def test_sample_parallelism_keeps_partition_and_acquisition_counts_fixed(
             intervals.append((start, perf_counter()))
         return original_chromatogram(handle, *args)
 
-    def prepare(*args, **kwargs):
-        assert get_ident() == coordinator and not active_handles
+    def apply(*args, **kwargs):
+        assert not active_handles
         barrier_checks.append(len(disposed))
-        return original_prepare(*args, **kwargs)
+        return original_apply(*args, **kwargs)
 
     def append(store, partition_key, *args, **kwargs):
-        assert get_ident() == coordinator and not active_handles
-        append_order.append(partition_key)
+        if partition_key.endswith("-backfill"):
+            assert get_ident() == coordinator
+            append_order.append(partition_key)
         return original_append(store, partition_key, *args, **kwargs)
 
     def progress(event):
@@ -1217,11 +1398,11 @@ def test_sample_parallelism_keeps_partition_and_acquisition_counts_fixed(
             live_jobs = 0
 
     monkeypatch.setattr(owner, "materialize_untargeted_partition", materialize)
-    monkeypatch.setattr(runtime_owner, "_prepare_group_authorized_backfills", prepare)
+    monkeypatch.setattr(runtime_owner, "_apply_backfill_questions", apply)
     monkeypatch.setattr(_FakeThermoRaw, "__init__", initialize)
     monkeypatch.setattr(_FakeThermoRaw, "Dispose", dispose)
     monkeypatch.setattr(_FakeThermoRaw, "GetChromatogramData", chromatogram)
-    monkeypatch.setattr(owner.StreamedResultStore, "append_child_outputs", append)
+    monkeypatch.setattr(owner.StreamedResultStore, "adopt_written", append)
     result = owner.execute_untargeted_plan(
         plan,
         output_dir=tmp_path / "parallel",
@@ -1400,60 +1581,6 @@ def test_sample_worker_transport_references_global_request_owners(
         assert job.candidates == original.candidates
 
 
-def test_process_recovery_dispatches_only_missing_subjects(tmp_path, monkeypatch):
-    from xic_extractor.execution.workers import WorkerAdmissionPool
-    from xic_extractor.untargeted_execution.partition import execution as runtime
-    from xic_extractor.untargeted_execution.partition import workers as worker
-    from xic_extractor.untargeted_execution.partition_composition import (
-        group_acquired_partition,
-    )
-
-    class LocalProcessMessages(WorkerAdmissionPool):
-        @property
-        def backend(self):
-            return "process"
-
-    plan, _ = _plan(tmp_path, monkeypatch, scenario="partial_recovery")
-    batch = materialize_untargeted_partition(plan, plan.subject_batch)
-    monkeypatch.setattr(worker, "ensure_assemblies_loaded", lambda *_: None)
-    requests = []
-    execute_recovery = runtime._execute_sample_backfill_worker
-
-    def observe_request(request):
-        requests.append(request)
-        keys = {job.work_unit_key for job in request.jobs}
-        assert keys == set(request.backfill_targets_by_key)
-        assert set(request.backfill_support_by_key) == keys
-        assert not hasattr(request, "adapter_results_by_key")
-        assert all(
-            isinstance(ctx, worker._BackfillSupportContext)
-            for ctx in request.backfill_support_by_key.values()
-        )
-        assert len(keys) < len(plan.subject_batch.subjects)
-        return execute_recovery(request)
-
-    monkeypatch.setattr(runtime, "_execute_sample_backfill_worker", observe_request)
-    config = AlignmentConfig()
-    with LocalProcessMessages(max_workers=1, backend="thread") as pool:
-        result = runtime.execute_partition(
-            batch.jobs,
-            partition_key="sparse-recovery",
-            alignment_config=config,
-            pool=pool,
-            prepare_grouping=lambda initial: group_acquired_partition(
-                batch, initial, alignment_config=config
-            ),
-        )
-    assert result.succeeded
-    assert len(requests) == 1
-    assert len(result.sample_results) == len(batch.jobs)
-    selected = {job.work_unit_key for job in requests[0].jobs}
-    for sample_result in result.sample_results:
-        assert bool(sample_result.backfill_attempts) is (
-            sample_result.job.work_unit_key in selected
-        )
-
-
 def test_two_sample_process_messages_match_serial_results_and_attribution(
     tmp_path, monkeypatch
 ):
@@ -1487,8 +1614,11 @@ def test_two_sample_process_messages_match_serial_results_and_attribution(
 
         return execute
 
-    for entry in ("_execute_sample_initial_worker", "_execute_sample_backfill_worker"):
-        monkeypatch.setattr(runtime, entry, reordered_response(getattr(runtime, entry)))
+    monkeypatch.setattr(
+        runtime,
+        "_execute_sample_initial_worker",
+        reordered_response(runtime._execute_sample_initial_worker),
+    )
     with LocalProcessMessages(max_workers=2, backend="thread") as pool:
         process = runtime.execute_partition(
             batch.jobs,
@@ -1593,31 +1723,21 @@ def test_formal_partition_reuses_prepared_group_ids_with_ms1_only_members(
     initial = adapter.execute_acquisition(bootstrap)
     adapter.execute_composition(bootstrap, initial, store)
     adapter.prepare_batch_search(store, lambda: None)
-    partition = adapter.partitions[-1]
-    acquisition = adapter.execute_acquisition(partition)
-    assert acquisition.succeeded
-    batch, leaf = acquisition.result
-    prepared = leaf.prepared_grouping
-    assert prepared is not None
+    final = store.read_header_field(adapter._final_groupings[0].index, "grouping")
+    prepared = final.prepared
     assert len(prepared.worksets) == 1
-    assert len(batch.jobs) == len(leaf.sample_results) == 8
-    assert calls == [1]
+    assert len(final.batch.jobs) == 8
     (group,) = prepared.worksets[0].grouping_scope.groups
     assert {
         owner.sample_stem: owner.primary_identity_event is not None
         for owner in group.owners
     } == {"S0": True, "S1": True, "S2": False, "S3": False}
-    assert all(not result.backfill_attempts for result in leaf.sample_results)
+    assert not final.backfill_questions
     prepared_group_ids = {group.group_hypothesis_id}
-    calls_before_composition = len(calls)
-    composed = adapter.execute_composition(
-        partition,
-        acquisition,
-        store,
-    )
-    assert composed.result.child_count == 1
-    assert len(calls) == calls_before_composition
-    assert batch.prepared_grouping is prepared
+    adapter.run_backfill(store, lambda: None)
+    assert calls == [1]
+    (composed,) = adapter._backfill_partitions
+    assert composed.composed.child_count == 1
     persisted = store.read(composed.sealed.index)
     assert {
         group.group_hypothesis_id for group in persisted.initial_groups
@@ -1649,14 +1769,17 @@ def test_completed_partition_retains_only_light_parent_capture_metadata(
     store = StreamedResultStore(
         tmp_path / "retention-spool", adapter.get_shared_objects()
     )
+    initial_outputs = []
     for partition in _phase_partitions(adapter, store):
         acquisition = adapter.execute_acquisition(partition)
         assert acquisition.succeeded
-        composed = adapter.execute_composition(partition, acquisition, store)
-    persisted = composed.result
+        initial_outputs.append(
+            adapter.execute_composition(partition, acquisition, store)
+        )
+    persisted = adapter._backfill_partitions[-1]
 
-    stored = store.read(composed.sealed.index)
-    child_before = store.read_selected(composed.sealed.index, "child_outputs", (0,))[
+    stored = store.read(persisted.sealed.index)
+    child_before = store.read_selected(persisted.sealed.index, "child_outputs", (0,))[
         0
     ].child
     child_scope = child_before.scientific_core.scope
@@ -1667,16 +1790,16 @@ def test_completed_partition_retains_only_light_parent_capture_metadata(
         exclusion.candidate_id for exclusion in stored.excluded_candidates
     )
 
-    assert persisted.excluded_candidate_ids == expected_excluded_ids
+    assert persisted.composed.excluded_candidate_ids == expected_excluded_ids
     assert not hasattr(persisted, "excluded_candidates")
     assert not hasattr(persisted, "capture_bindings")
     assert not hasattr(stored, "capture_bindings")
 
     store.seal()
-    finalized = adapter.finalize_application(store, (composed,))
+    finalized = adapter.finalize_application(store, tuple(initial_outputs))
     assert finalized.scope.capture_bindings == ()
     assert tuple(finalized.excluded_candidates) == tuple(plan.excluded_candidates)
-    child_after = store.read_selected(composed.sealed.index, "child_outputs", (0,))[
+    child_after = store.read_selected(persisted.sealed.index, "child_outputs", (0,))[
         0
     ].child
     assert (
@@ -1824,17 +1947,16 @@ def test_a_failed_attempt_leaves_no_partition_spool(tmp_path, monkeypatch):
 
     plan, _ = _plan(tmp_path, monkeypatch)
     calls = []
-    original = bounded_owner.StreamedResultStore.append_child_outputs
+    original = bounded_owner.StreamedResultStore.adopt_written
 
-    def fail_second(*args, **kwargs):
-        calls.append(1)
+    def fail_second(store, partition_key, *args, **kwargs):
+        if partition_key.endswith("-backfill"):
+            calls.append(1)
         if len(calls) == 2:
             raise OSError("second partition storage unavailable")
-        return original(*args, **kwargs)
+        return original(store, partition_key, *args, **kwargs)
 
-    monkeypatch.setattr(
-        bounded_owner.StreamedResultStore, "append_child_outputs", fail_second
-    )
+    monkeypatch.setattr(bounded_owner.StreamedResultStore, "adopt_written", fail_second)
     output_dir = tmp_path / "failed-cache-output"
     with pytest.raises(RuntimeError, match="failed before batch publication"):
         bounded_owner.execute_untargeted_plan(
@@ -1901,7 +2023,7 @@ def test_final_grouping_uses_the_sample_shift_voted_by_direct_evidence_rows(
 
     samples = {f"S{i}" for i in range(ROW_MIN_SAMPLES)}
     assert voting_rows and all(set(row) == samples for row in voting_rows)
-    _, leaf = adapter.execute_acquisition(adapter.partitions[-1]).result
-    for workset in leaf.prepared_grouping.worksets:
+    final = store.read_header_field(adapter._final_groupings[0].index, "grouping")
+    for workset in final.prepared.worksets:
         final_shift = workset.grouping_result.rt_frame.drift_model.sample_shift_min
         assert final_shift == dict.fromkeys(samples, voted_shift)

@@ -138,9 +138,11 @@ baseline comparisons and which RT model changes replay covers.
     .venv\Scripts\python.exe -m scripts.run_alignment regroup --inputs output/baseline/grouping-inputs.json.gz --set precursor_mz_tolerance_ppm=20 --output-dir output/regroup-trial
 
 **Replay Backfill or pairing independently.** These examples use captures in
-`output/baseline`. Only Backfill may read RAW: it reuses initial assessments
-and grouping, not the measurements needed for new Backfill queries. Pairing
-accepts batches captured together or separately, in any order.
+`output/baseline`. Only Backfill may read RAW: it reuses initial assessments,
+grouping and the Backfill questions planned with it (band RT locations), not
+the measurements needed for new Backfill queries; recapture after changing how
+those questions are planned. Pairing accepts batches captured together or
+separately, in any order.
 
     .venv\Scripts\python.exe -m scripts.run_alignment backfill --inputs output/baseline/backfill-inputs --output-dir output/backfill-trial
     .venv\Scripts\python.exe -m scripts.run_alignment pair-batches --inputs output/baseline/pairing-inputs/batch-1.pickle.gz output/baseline/pairing-inputs/batch-2.pickle.gz --output-dir output/pairing-trial

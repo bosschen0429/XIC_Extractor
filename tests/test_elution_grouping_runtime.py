@@ -124,7 +124,7 @@ def test_crowded_doublet_keeps_both_physical_peaks_and_local_cid_lineage(
         tmp_path / "elution-spool", adapter.get_shared_objects()
     )
     initial_phase, grouping_phase, backfill_phase = adapter.execution_phases()
-    assert len(initial_phase.partitions) == len(backfill_phase.partitions) == 1
+    assert len(initial_phase.partitions) == 1
     initial_partition = initial_phase.partitions[0]
     initial = adapter.execute_acquisition(initial_partition)
     assert initial.succeeded
@@ -144,12 +144,8 @@ def test_crowded_doublet_keeps_both_physical_peaks_and_local_cid_lineage(
     initial_composed = adapter.execute_composition(initial_partition, initial, store)
     assert grouping_phase.prepare_before is not None
     grouping_phase.prepare_before(store, lambda: None)
-    partition = backfill_phase.partitions[0]
-    acquisition = adapter.execute_acquisition(partition)
-    assert acquisition.succeeded
-    _, leaf = acquisition.result
-    prepared = leaf.prepared_grouping
-    assert prepared is not None
+    final = store.read_header_field(adapter._final_groupings[0].index, "grouping")
+    prepared = final.prepared
     groups = tuple(
         group
         for workset in prepared.worksets
@@ -166,8 +162,10 @@ def test_crowded_doublet_keeps_both_physical_peaks_and_local_cid_lineage(
             abs=0.005,
         )
     group_ids = {group.group_hypothesis_id for group in groups}
-    assert all(not result.backfill_attempts for result in leaf.sample_results)
-    composed = adapter.execute_composition(partition, acquisition, store)
+    assert not final.backfill_questions
+    assert backfill_phase.prepare_before is not None
+    backfill_phase.prepare_before(store, lambda: None)
+    (composed,) = adapter._backfill_partitions
     persisted = store.read(composed.sealed.index)
     assert {
         group.group_hypothesis_id for group in persisted.initial_groups
@@ -178,7 +176,7 @@ def test_crowded_doublet_keeps_both_physical_peaks_and_local_cid_lineage(
         for group in output.child.scientific_core.grouping_result.final_population
     } == group_ids
     store.seal()
-    completed = adapter.finalize_application(store, (initial_composed, composed))
+    completed = adapter.finalize_application(store, (initial_composed,))
     writer = completed
     cells = tuple(written_cells(writer))
     assert len(cells) == 8
@@ -293,12 +291,8 @@ def test_review_only_input_supplies_each_physical_member_without_cid(
     initial_composed = adapter.execute_composition(initial_partition, initial, store)
     assert grouping_phase.prepare_before is not None
     grouping_phase.prepare_before(store, lambda: None)
-    partition = backfill_phase.partitions[0]
-    acquisition = adapter.execute_acquisition(partition)
-    assert acquisition.succeeded
-    _, leaf = acquisition.result
-    prepared = leaf.prepared_grouping
-    assert prepared is not None
+    final = store.read_header_field(adapter._final_groupings[0].index, "grouping")
+    prepared = final.prepared
     groups = tuple(
         group
         for workset in prepared.worksets
@@ -311,13 +305,11 @@ def test_review_only_input_supplies_each_physical_member_without_cid(
         for group in groups
     }
     assert sorted(group_apex.values()) == list(group_apices)
-    (s6,) = (
-        result for result in leaf.sample_results if result.job.sample.raw_stem == "S6"
-    )
-    assert not s6.backfill_attempts
-    composed = adapter.execute_composition(partition, acquisition, store)
+    assert not final.backfill_questions
+    assert backfill_phase.prepare_before is not None
+    backfill_phase.prepare_before(store, lambda: None)
     store.seal()
-    completed = adapter.finalize_application(store, (initial_composed, composed))
+    completed = adapter.finalize_application(store, (initial_composed,))
     writer = completed
     cells = tuple(written_cells(writer))
     sources = written_source_candidates(tmp_path / "written", writer)

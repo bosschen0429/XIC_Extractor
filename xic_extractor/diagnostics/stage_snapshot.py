@@ -18,7 +18,7 @@ import json
 import math
 import pickle
 from collections.abc import Mapping
-from dataclasses import asdict, replace
+from dataclasses import asdict, fields, replace
 from pathlib import Path
 from typing import Any, cast, get_type_hints
 
@@ -71,10 +71,12 @@ def save_snapshot(path: Path, value: object) -> None:
         stream.write(owner_pickle_dumps(value, ()))
 
 
-def load_snapshot(path: Path) -> Any:
+def load_snapshot(path: Path, kind: type | None = None) -> Any:
+    """With ``kind``, the value must be that dataclass with every field set:
+    a capture from code before a field was added loads, but lacks the field."""
     try:
         with gzip.open(path, "rb") as stream:
-            return owner_pickle_loads(stream.read(), ())
+            value = owner_pickle_loads(stream.read(), ())
     except (
         gzip.BadGzipFile,
         EOFError,
@@ -83,6 +85,12 @@ def load_snapshot(path: Path) -> Any:
         ImportError,
     ) as exc:
         raise _recapture(path) from exc
+    if kind is not None and not (
+        isinstance(value, kind)
+        and all(hasattr(value, field.name) for field in fields(kind))
+    ):
+        raise _recapture(path)
+    return value
 
 
 def write_grouping_inputs(

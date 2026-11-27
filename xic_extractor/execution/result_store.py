@@ -5,20 +5,18 @@ from __future__ import annotations
 import os
 import re
 import shutil
-from collections.abc import Buffer, Callable, Iterable
+from collections.abc import Buffer, Iterable
 from dataclasses import dataclass, fields
+from functools import lru_cache
 from pathlib import Path
-from typing import Any, BinaryIO, Protocol
+from typing import Any, BinaryIO
+from uuid import uuid4
 
 from xic_extractor.execution._serialization import _OwnerPickler, _OwnerUnpickler
 from xic_extractor.immutable_sequence import ImmutableSequence
 
-
-class StreamingPartitionPayload(Protocol):
-    """Dataclass metadata whose ``child_outputs`` are streamed beside it."""
-
-    @property
-    def child_outputs(self) -> object: ...
+SHARED_OWNERS_NAME = "shared-owners.pickle"
+INDIVIDUALLY_ADDRESSABLE_FIELDS = frozenset({"child_outputs", "excluded_candidates"})
 
 
 class _PartitionWriter:
@@ -40,6 +38,81 @@ class SealedPartition:
     key: str
 
 
+@dataclass(frozen=True, slots=True)
+class WrittenPartition:
+    """A partition file another worker wrote into the spool for adoption."""
+
+    path: Path
+    records: dict[str, tuple[tuple[int, int], ...]]
+
+
+@lru_cache(maxsize=1)
+def load_shared_owners(path: Path) -> tuple[object, ...]:
+    """The spool's shared owners, read once per process."""
+    with path.open("rb") as stream:
+        shared = _OwnerUnpickler(stream, ()).load()
+    if type(shared) is not tuple:
+        raise TypeError("spool shared owners must be a tuple")
+    return shared
+
+
+def read_spooled_header_field(path: Path, field_name: str, shared_owners: Path) -> Any:
+    """Restore one header field of a sealed partition file in any process."""
+    with path.open("rb") as stream:
+        _, values = _OwnerUnpickler(stream, load_shared_owners(shared_owners)).load()
+    if field_name not in values:
+        raise ValueError("read_spooled_header_field requires a stored non-tuple field")
+    return values[field_name]
+
+
+def read_spooled_tuple(
+    path: Path, records: tuple[tuple[int, int], ...], shared_owners: Path
+) -> tuple[Any, ...]:
+    """Restore one tuple field of a sealed partition file in any process."""
+    shared = load_shared_owners(shared_owners)
+    with path.open("rb") as stream:
+        return tuple(
+            item
+            for offset, length in records
+            for item in _read_spool_record(stream, offset, length, shared)
+        )
+
+
+def write_spooled_partition(
+    directory: Path,
+    payload: Any,
+    shared_owners: Path,
+    *,
+    child_outputs: Iterable[object] | None = None,
+) -> WrittenPartition:
+    """Write one partition file beside the spool for its store to adopt.
+
+    Streamed child outputs are written one at a time beside a payload whose
+    own ``child_outputs`` is empty.
+    """
+    if child_outputs is not None and payload.child_outputs != ():
+        raise ValueError("streaming metadata payload must have empty child outputs")
+    path = directory / f"written-{uuid4().hex}.pickle"
+    records = _write_partition_payload(
+        path,
+        payload,
+        shared_objects=load_shared_owners(shared_owners),
+        child_outputs=child_outputs,
+        individually_addressable_fields=INDIVIDUALLY_ADDRESSABLE_FIELDS,
+    )
+    return WrittenPartition(path, records)
+
+
+def _read_spool_record(
+    stream: BinaryIO, offset: int, length: int, shared_objects: tuple[object, ...]
+) -> tuple:
+    stream.seek(offset)
+    values = _OwnerUnpickler(stream, shared_objects).load()
+    if type(values) is not tuple or len(values) != length:
+        raise ValueError("stored result record changed its sealed cardinality")
+    return values
+
+
 def _write_partition_payload(
     path: Path,
     payload: Any,
@@ -47,9 +120,13 @@ def _write_partition_payload(
     shared_objects: tuple[object, ...],
     child_outputs: Iterable[object] | None,
     individually_addressable_fields: frozenset[str],
-    before_publish: Callable[[], None] | None,
 ) -> dict[str, tuple[tuple[int, int], ...]]:
-    """Write a sealed partition and return its tuple-record offsets."""
+    """Write a sealed partition and return its tuple-record offsets.
+
+    The store calls this in process; a worker writing a partition for the store
+    to adopt calls it through write_spooled_partition. One writer keeps both
+    paths byte-identical.
+    """
 
     field_names = tuple(item.name for item in fields(payload))
     tuple_fields = {
@@ -97,8 +174,6 @@ def _write_partition_payload(
                     entries.append((writer.size_bytes, len(chunk)))
                     _OwnerPickler(writer, shared_objects).dump(chunk)
                 records[name] = tuple(entries)
-            if before_publish is not None:
-                before_publish()
         if path.exists():
             raise FileExistsError(f"partition artifact already exists: {path}")
         os.replace(temporary, path)
@@ -110,8 +185,10 @@ def _write_partition_payload(
 class StreamedResultStore:
     """Spool private payloads while retaining only explicit shared authorities.
 
-    This object owns every readable path and its metadata. Reads reuse the
-    owned paths and record offsets without rescanning unchanged files.
+    This object decides every readable path and owns its metadata. A worker
+    may read a sealed path or write a file here for the store to adopt; the
+    store still assigns its slot. Reads reuse the owned paths and record
+    offsets without rescanning unchanged files.
     """
 
     def __init__(
@@ -119,8 +196,8 @@ class StreamedResultStore:
         directory: Path,
         shared_objects: tuple[object, ...],
         *,
-        individually_addressable_fields: frozenset[str] = frozenset(
-            {"child_outputs", "excluded_candidates"}
+        individually_addressable_fields: frozenset[str] = (
+            INDIVIDUALLY_ADDRESSABLE_FIELDS
         ),
     ):
         self._directory = Path(directory).resolve()
@@ -136,45 +213,74 @@ class StreamedResultStore:
     def _path(self, index: int) -> Path:
         return self._directory / f"{index:08d}.pickle"
 
+    @property
+    def directory(self) -> Path:
+        return self._directory
+
+    def partition_path(self, index: int) -> Path:
+        """The sealed file another worker may read with the shared owners."""
+        if isinstance(index, bool) or not 0 <= index < len(self._field_records):
+            raise IndexError("partition index out of range")
+        return self._path(index)
+
+    def shared_owners_path(self) -> Path:
+        """Publish the shared owners once, for workers reading or writing here."""
+        path = self._directory / SHARED_OWNERS_NAME
+        if not path.exists():
+            temporary = path.with_suffix(".tmp")
+            try:
+                with temporary.open("xb") as stream:
+                    _OwnerPickler(stream, ()).dump(self._shared_objects)
+                os.replace(temporary, path)
+            finally:
+                temporary.unlink(missing_ok=True)
+        return path
+
     def append(self, partition_key: str, payload: object) -> SealedPartition:
         return self._append_payload(partition_key, payload)
 
-    def append_child_outputs(
-        self,
-        partition_key: str,
-        metadata_payload: StreamingPartitionPayload,
-        child_outputs: Iterable[object],
-        before_publish: Callable[[], None] | None = None,
-    ) -> SealedPartition:
-        """Atomically append child outputs while composing them one at a time."""
-
-        if metadata_payload.child_outputs != ():
-            raise ValueError("streaming metadata payload must have empty child outputs")
-        return self._append_payload(
-            partition_key,
-            metadata_payload,
-            child_outputs=child_outputs,
-            before_publish=before_publish,
-        )
-
-    def _append_payload(
-        self,
-        partition_key: str,
-        payload: Any,
-        *,
-        child_outputs: Iterable[object] | None = None,
-        before_publish: Callable[[], None] | None = None,
-    ) -> SealedPartition:
+    def _append_payload(self, partition_key: str, payload: Any) -> SealedPartition:
         self._require_writable_key(partition_key)
         index = len(self._field_records)
         records = _write_partition_payload(
             self._path(index),
             payload,
             shared_objects=self._shared_objects,
-            child_outputs=child_outputs,
+            child_outputs=None,
             individually_addressable_fields=self._individually_addressable_fields,
-            before_publish=before_publish,
         )
+        self._field_records.append(records)
+        self._keys.add(partition_key)
+        return SealedPartition(index, partition_key)
+
+    def adopt_written(
+        self, partition_key: str, written: WrittenPartition
+    ) -> SealedPartition:
+        """Seal a partition file a worker wrote into this spool.
+
+        The store still decides the slot: the file moves into it here, in the
+        order partitions are adopted, so slots stay the positions reads use.
+        """
+
+        self._require_writable_key(partition_key)
+        if written.path.parent != self._directory:
+            raise ValueError("written partition is outside this spool")
+        index = len(self._field_records)
+        path = self._path(index)
+        if path.exists():
+            raise FileExistsError(f"partition artifact already exists: {path}")
+        os.replace(written.path, path)
+        size_bytes = path.stat().st_size
+        records = {
+            str(name): tuple((int(offset), int(length)) for offset, length in entries)
+            for name, entries in written.records.items()
+        }
+        if any(
+            offset < 0 or length < 0 or offset >= size_bytes
+            for entries in records.values()
+            for offset, length in entries
+        ):
+            raise ValueError("adopted partition record leaves its sealed bytes")
         self._field_records.append(records)
         self._keys.add(partition_key)
         return SealedPartition(index, partition_key)
@@ -239,11 +345,15 @@ class StreamedResultStore:
         )
 
     def _read_record(self, stream: BinaryIO, offset: int, length: int) -> tuple:
-        stream.seek(offset)
-        values = _OwnerUnpickler(stream, self._shared_objects).load()
-        if type(values) is not tuple or len(values) != length:
-            raise ValueError("stored result record changed its sealed cardinality")
-        return values
+        return _read_spool_record(stream, offset, length, self._shared_objects)
+
+    def field_records(self, index: int, field_name: str) -> tuple[tuple[int, int], ...]:
+        """A tuple field's record offsets, for a worker reading the sealed file."""
+        if isinstance(index, bool) or not 0 <= index < len(self._field_records):
+            raise IndexError("partition index out of range")
+        if field_name not in self._field_records[index]:
+            raise ValueError("field_records requires a stored tuple field")
+        return self._field_records[index][field_name]
 
     def read_selected(
         self, index: int, field_name: str, positions: tuple[int, ...]

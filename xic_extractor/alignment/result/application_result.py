@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal, TypeAlias, cast
 
@@ -23,6 +24,9 @@ from xic_extractor.processing_identity import AcquisitionSourceIdentity
 from xic_extractor.sample_metadata import SampleMetadata
 
 if TYPE_CHECKING:
+    from xic_extractor.alignment.cross_sample.peak_groups import (
+        CrossSamplePeakGroupHypothesis,
+    )
     from xic_extractor.alignment.projection.target.post_cell import (
         TargetPostCellProjection,
     )
@@ -89,6 +93,37 @@ class FinalizedUntargetApplicationResult:
 
 
 @dataclass(frozen=True, slots=True)
+class RtDriftGroupCounts:
+    """Initial groups whose fitted RT drift has a nonzero time or sample term."""
+
+    time_only: int = 0
+    sample_shift_only: int = 0
+    both: int = 0
+
+    @classmethod
+    def of(cls, groups: Iterable[CrossSamplePeakGroupHypothesis]) -> RtDriftGroupCounts:
+        coefficients = [
+            group.inference_basis.rt_drift
+            for group in groups
+            if group.inference_basis is not None
+        ]
+        return cls(
+            time_only=sum(c.time != 0 and c.sample_shift == 0 for c in coefficients),
+            sample_shift_only=sum(
+                c.time == 0 and c.sample_shift != 0 for c in coefficients
+            ),
+            both=sum(c.time != 0 and c.sample_shift != 0 for c in coefficients),
+        )
+
+    def __add__(self, other: RtDriftGroupCounts) -> RtDriftGroupCounts:
+        return RtDriftGroupCounts(
+            self.time_only + other.time_only,
+            self.sample_shift_only + other.sample_shift_only,
+            self.both + other.both,
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class FinalizedUntargetBatchApplicationResult:
     """One immutable batch handoff over exact Untarget workset results.
 
@@ -107,6 +142,8 @@ class FinalizedUntargetBatchApplicationResult:
         | ImmutableSequence[UntargetedCandidateExclusion]
     ) = ()
     has_flagged_backfill_risk: bool = False
+    has_flagged_membership_risk: bool = False
+    rt_drift_groups: RtDriftGroupCounts = RtDriftGroupCounts()
 
     @property
     def variant(self) -> Literal["untargeted_batch"]:

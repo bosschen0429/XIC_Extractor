@@ -34,6 +34,7 @@ from tests.untargeted_alignment_entry_fixtures import (
 )
 from tests.untargeted_cid_nl_bounded_runtime_fixtures import entry_scenario
 from xic_extractor.alignment import AlignmentConfig
+from xic_extractor.alignment.result.application_result import RtDriftGroupCounts
 from xic_extractor.applications.untargeted.application import (
     AlignmentProcessExecutionError,
 )
@@ -232,9 +233,11 @@ def test_pure_cid_nl_projection_failure_publishes_no_owned_outputs(
     completed = SimpleNamespace(
         close=lambda: closed.append(True),
         application_result=SimpleNamespace(
-            child_outputs=(), has_flagged_backfill_risk=False
+            child_outputs=(),
+            has_flagged_backfill_risk=False,
+            has_flagged_membership_risk=False,
+            rt_drift_groups=RtDriftGroupCounts(),
         ),
-        initial_groups=(),
         sample_rt_frame=None,
     )
     monkeypatch.setattr(
@@ -564,9 +567,11 @@ def test_pure_cid_nl_targets_csv_integration(
     closed = []
     completed = SimpleNamespace(
         application_result=SimpleNamespace(
-            child_outputs=(), has_flagged_backfill_risk=False
+            child_outputs=(),
+            has_flagged_backfill_risk=False,
+            has_flagged_membership_risk=False,
+            rt_drift_groups=RtDriftGroupCounts(),
         ),
-        initial_groups=(),
         sample_rt_frame=None,
         close=lambda: closed.append(True),
     )
@@ -575,8 +580,8 @@ def test_pure_cid_nl_targets_csv_integration(
 
     monkeypatch.setattr(
         application_module,
-        "extract_batch_known_istd_reference",
-        lambda **kwargs: fake_ref,
+        "known_istd_reference_from_discovery",
+        lambda *args, **kwargs: fake_ref,
     )
     monkeypatch.setattr(
         application_module,
@@ -912,10 +917,8 @@ def test_mixed_target_list_only_supplies_istds_to_untargeted_alignment(
     loss,
     count,
 ):
-    import xic_extractor.acquisition.raw_paths as raw_sources
     from xic_extractor.configuration.targets import read_targets
     from xic_extractor.presets import apply_to_discovery, load_preset
-    from xic_extractor.sample_metadata import SampleMetadata
 
     source = (
         Path(__file__).parents[1]
@@ -927,17 +930,15 @@ def test_mixed_target_list_only_supplies_istds_to_untargeted_alignment(
     all_targets = read_targets(source)
     batch_index = _write_batch(tmp_path, ("S1",))
     captured = {}
-    metadata = (SampleMetadata("S1", "S1", batch_id="declared-batch"),)
 
-    def extract_reference(**kwargs):
-        captured.update(kwargs)
+    def reference_from_discovery(targets, _source, **_kwargs):
+        captured["targets"] = targets
         return None
 
-    monkeypatch.setattr(raw_sources, "existing_raw_paths", lambda **kwargs: {})
     monkeypatch.setattr(
         application_module,
-        "extract_batch_known_istd_reference",
-        extract_reference,
+        "known_istd_reference_from_discovery",
+        reference_from_discovery,
     )
     monkeypatch.setattr(
         application_module,
@@ -957,7 +958,6 @@ def test_mixed_target_list_only_supplies_istds_to_untargeted_alignment(
             alignment_config=AlignmentConfig(),
             discovery_settings=apply_to_discovery(load_preset(method)),
             targets_csv=source,
-            sample_metadata=metadata,
         )
     )
     if not count:
@@ -967,4 +967,13 @@ def test_mixed_target_list_only_supplies_istds_to_untargeted_alignment(
             t for t in all_targets if t.is_istd and t.neutral_loss_da == loss
         )
         assert len(captured["targets"]) == count
-        assert captured["sample_metadata"] == metadata
+
+
+def test_child_projection_reaches_a_worker_process_intact(tmp_path: Path) -> None:
+    import pickle
+
+    policy = publication_module.UntargetedPublicationPolicy()
+    projection = publication_module.untargeted_child_projection(
+        policy.output_paths(tmp_path), policy
+    )
+    assert pickle.loads(pickle.dumps(projection)) == projection

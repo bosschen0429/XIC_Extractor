@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+from collections.abc import Sequence
 from dataclasses import dataclass, replace
 
 from xic_extractor.alignment.backfill.cid_nl_planning import (
@@ -56,7 +57,6 @@ class _RuntimeJobState:
     job: UntargetedPartitionJob
     error: Exception | None = None
     adapter_result: CidNlAcquisitionResult | None = None
-    backfill_support: _BackfillSupportContext | None = None
     backfill_attempts: tuple[UntargetedCidNlBackfillAttemptResult, ...] = ()
     backfill_targets: tuple[UntargetedCidNlBackfillTarget, ...] = ()
 
@@ -93,13 +93,9 @@ class _BackfillSupportContext:
     """Narrow backfill-only projection of initial assessment facts.
 
     Backfill execution consumes only the support policy and, when the
-    initial attempt was a missing-MS1 rejection, that initial assessment.
-    The full ``UntargetedCidNlRealDataAdapterResult`` — including
-    acquisition, captures, and capture evidence — is
-    not needed by the backfill worker and must not be transported across
-    the process boundary.  ``initial_assessment`` stays ``None`` whenever
-    backfill would not consume it, so the assessment reference graph is
-    not transported either.
+    initial attempt was a missing-MS1 rejection, that initial assessment;
+    ``initial_assessment`` stays ``None`` whenever Backfill would not
+    consume it.
     """
 
     initial_assessment: CidNlMethodAssessment | None
@@ -242,20 +238,23 @@ def _apply_backfill_questions(
         )
 
 
-def _prepare_group_authorized_backfills(
-    states: list[_RuntimeJobState],
-    *,
+def plan_partition_backfills(
+    jobs: Sequence[UntargetedPartitionJob],
     prepared: CidNlGrouping,
-) -> None:
-    samples = {state.job.sample.sample_name: state.job.sample for state in states}
-    questions = plan_grouped_cid_nl_backfills(
+) -> tuple[CidNlBackfillQuestion, ...]:
+    """One partition's Backfill questions from its final groups.
+
+    Band RT location dominates the cost, so a split run plans these with the
+    final grouping on the workers instead of on the Backfill dispatch path.
+    """
+    samples = {job.sample.sample_name: job.sample for job in jobs}
+    return plan_grouped_cid_nl_backfills(
         prepared.worksets,
         sample_population=tuple(samples.values()),
         alignment_config=prepared.alignment_config,
         rt_frame=prepared.rt_frame,
         backfill_half_window_min=BACKFILL_HALF_WINDOW_MIN,
     )
-    _apply_backfill_questions(states, questions)
 
 
 def _prepare_owner_authorized_backfills(
@@ -336,10 +335,8 @@ def _execute_backfill_batch(phase: _BatchSamplePhaseState) -> None:
             raw=raw,
         )
         for state in pending:
-            ctx = state.backfill_support
-            if ctx is None and state.adapter_result is not None:
-                ctx = _backfill_support_context(state.adapter_result)
-            assert ctx is not None
+            assert state.adapter_result is not None
+            ctx = _backfill_support_context(state.adapter_result)
             for target in state.backfill_targets:
                 backfill = backfill_untargeted_cid_nl_sample_subject(
                     sample=state.job.sample,
@@ -455,14 +452,6 @@ def _execute_sample_initial_worker(
     return _execute_initial_sample_phase(phase)
 
 
-@dataclass(slots=True)
-class _SampleBackfillWorkerRequest:
-    jobs: tuple[UntargetedPartitionJob, ...]
-    backfill_targets_by_key: dict[str, tuple[UntargetedCidNlBackfillTarget, ...]]
-    backfill_support_by_key: dict[str, _BackfillSupportContext]
-    backfill_resource_key: str | None
-
-
 @dataclass(frozen=True, slots=True)
 class _BackfillJobOutcome:
     work_unit_key: str
@@ -514,40 +503,17 @@ def _execute_backfill_sample_phase(
     )
 
 
-def _execute_sample_backfill_worker(
-    request: _SampleBackfillWorkerRequest,
-) -> _SampleBackfillWorkerResponse:
-    first_job = request.jobs[0]
-    ensure_assemblies_loaded(first_job.dll_dir, importlib.import_module)
-    states = tuple(
-        _RuntimeJobState(
-            job=job,
-            backfill_support=request.backfill_support_by_key.get(job.work_unit_key),
-            backfill_targets=request.backfill_targets_by_key.get(job.work_unit_key, ()),
-        )
-        for job in request.jobs
-    )
-    phase = _BatchSamplePhaseState(
-        states=states,
-        initial_resource_key=None,
-        backfill_resource_key=request.backfill_resource_key,
-    )
-    return _execute_backfill_sample_phase(phase)
-
-
 __all__ = [
     "_BatchSamplePhaseState",
     "_RuntimeJobState",
     "_SampleInitialWorkerRequest",
     "_SampleInitialWorkerResponse",
-    "_SampleBackfillWorkerRequest",
     "_SampleBackfillWorkerResponse",
     "_execute_initial_assessment_batch",
     "_execute_initial_sample_phase",
     "_execute_backfill_batch",
     "_execute_backfill_sample_phase",
     "_execute_sample_initial_worker",
-    "_execute_sample_backfill_worker",
     "_open_job_raw",
     "_prepare_owner_authorized_backfills",
     "_prepare_subject_authorized_backfills",

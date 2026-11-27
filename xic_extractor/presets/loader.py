@@ -14,6 +14,7 @@ from xic_extractor.presets.models import (
     Preset,
     PresetError,
     PresetTag,
+    checked_tag_name,
 )
 
 _BUILTIN_PACKAGE = "xic_extractor.presets.data"
@@ -208,7 +209,9 @@ def _parse_tags(value: Any) -> tuple[PresetTag, ...]:
         tag_table = cast(Mapping[str, Any], item)
         _reject_unknown_keys(tag_table, _TAG_KEYS, label=f"tag #{index}")
         strategy = _required_string(tag_table, "strategy")
-        tag_name = _required_string(tag_table, "name")
+        tag_name = checked_tag_name(
+            _required_string(tag_table, "name"), label="tag name"
+        )
 
         if strategy not in SUPPORTED_STRATEGIES:
             supported = ", ".join(sorted(SUPPORTED_STRATEGIES))

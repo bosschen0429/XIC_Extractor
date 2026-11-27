@@ -281,7 +281,6 @@ def test_process_file_opens_raw_with_expected_acquisition_source(
         expected_acquisition_source,
         _expected_path_identity,
         mass_recalibration,
-        prepared_mass_recalibration,
     ):
         captured["path"] = actual_path
         captured["dll_dir"] = actual_dll_dir

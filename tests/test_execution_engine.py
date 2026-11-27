@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import json
 import os
 import pickle
 import threading
@@ -25,6 +26,7 @@ from xic_extractor.execution.partitions import (
 )
 from xic_extractor.execution.result_store import (
     StreamedResultStore,
+    WrittenPartition,
     _OwnerUnpickler,
 )
 from xic_extractor.execution.workers import WorkerAdmissionPool
@@ -1140,6 +1142,73 @@ def test_worker_admission_pool_stop_on_error() -> None:
     assert pool.stopped
     assert isinstance(pool.first_error, ValueError)
     assert len(errors) >= 1
+
+
+def test_partition_written_by_another_process_is_adopted_identically(
+    tmp_path: Path,
+) -> None:
+    """A worker process writes a partition beside the spool with the published
+    shared owners; the store adopts it into its next slot, restores the shared
+    owner by reference, and holds the bytes its own write would have."""
+
+    import subprocess
+    import sys
+
+    owner = {"plan": "shared"}
+    store = StreamedResultStore(tmp_path / "spool", (owner,))
+    store.append("partition-local-first", MockPayload(child_outputs=(), label="first"))
+    script = "; ".join(
+        (
+            "import json",
+            "from pathlib import Path",
+            "from tests.test_execution_engine import MockPayload",
+            "from xic_extractor.execution.result_store import"
+            " load_shared_owners, write_spooled_partition",
+            "owners = Path(%r)" % str(store.shared_owners_path()),
+            "(owner,) = load_shared_owners(owners)",
+            "payload = MockPayload(child_outputs=(), method_assessments=(owner, 'b'),"
+            " label='remote')",
+            "written = write_spooled_partition(owners.parent, payload, owners)",
+            "print(json.dumps({'path': str(written.path),"
+            " 'records': {name: [list(item) for item in rows]"
+            " for name, rows in written.records.items()}}))",
+        )
+    )
+    completed = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+        check=True,
+        cwd=str(Path(__file__).resolve().parents[1]),
+    )
+    reported = json.loads(completed.stdout.strip())
+    sealed = store.adopt_written(
+        "partition-remote",
+        WrittenPartition(
+            Path(reported["path"]),
+            {
+                name: tuple((offset, length) for offset, length in rows)
+                for name, rows in reported["records"].items()
+            },
+        ),
+    )
+
+    assert sealed.index == 1
+    assert not Path(reported["path"]).exists()
+    restored = store.read(1)
+    assert restored.label == "remote"
+    assert restored.method_assessments == (owner, "b")
+    assert restored.method_assessments[0] is owner
+
+    local = StreamedResultStore(tmp_path / "local", (owner,))
+    local.append("partition-local-first", MockPayload(child_outputs=(), label="first"))
+    local.append(
+        "partition-local",
+        MockPayload(child_outputs=(), method_assessments=(owner, "b"), label="remote"),
+    )
+    assert (tmp_path / "local" / "00000001.pickle").read_bytes() == (
+        store.partition_path(1).read_bytes()
+    )
 
 
 @pytest.mark.parametrize("pipeline_overlap", [False, True])
