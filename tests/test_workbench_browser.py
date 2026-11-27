@@ -4449,16 +4449,39 @@ def test_sample_click_right_after_a_drag_selects_that_row(
     _wait_for_analysis_status(page, "已完成")
     page.locator("#t-samples-edit").click()
     _sample_row(page, "S1").hover()
-    first = _sample_row(page, "S1").bounding_box()
-    last = _sample_row(page, "S3").bounding_box()
-    page.mouse.move(first["x"] + 20, first["y"] + first["height"] / 2)
-    page.mouse.down()
-    page.mouse.move(last["x"] + 20, last["y"] + last["height"] / 2, steps=6)
-    page.mouse.up()
-    expect(page.locator("#sample-selection")).to_have_text("選取的 3 個 設為")
-    _sample_row(page, "S4").click()
-    _sample_row(page, "S5").click(modifiers=["Shift"])
-    expect(page.locator("#sample-selection")).to_have_text("選取的 2 個 設為")
+    selections = page.evaluate(
+        """() => {
+          const first = document.querySelector('tr[data-stem="S1"] td');
+          const last = document.querySelector('tr[data-stem="S3"] td');
+          const pointer = (node, type) => {
+            const rect = node.getBoundingClientRect();
+            node.dispatchEvent(new PointerEvent(type, {
+              bubbles: true, button: 0, clientY: rect.y + rect.height / 2,
+            }));
+          };
+          const click = () => last.dispatchEvent(
+            new MouseEvent("click", { bubbles: true, detail: 1 })
+          );
+          const selected = () => Array.from(
+            document.querySelectorAll("#sample-rows tr.selected"),
+            row => row.dataset.stem
+          );
+          pointer(first, "pointerdown");
+          pointer(last, "pointermove");
+          pointer(last, "pointerup");
+          click();
+          const dragged = selected();
+          pointer(last, "pointerdown");
+          pointer(last, "pointerup");
+          click();
+          return [dragged, selected()];
+        }"""
+    )
+    assert selections == [["S1", "S2", "S3"], ["S3"]]
+    _sample_row(page, "S4").click(modifiers=["Shift"])
+    expect(page.locator("#sample-rows tr.selected")).to_have_text(
+        [re.compile("S3"), re.compile("S4")]
+    )
 
 
 def test_an_open_sample_editor_follows_another_tabs_job(
