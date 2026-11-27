@@ -4,7 +4,7 @@ import json
 from collections import Counter
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from contextlib import ExitStack, closing
-from dataclasses import dataclass, replace
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
@@ -12,9 +12,6 @@ from xic_extractor.alignment.batch_correspondence import (
     BatchCorrespondence,
     BatchFeature,
     compose_calibrations,
-)
-from xic_extractor.alignment.cross_sample.peak_groups import (
-    accepted_membership_risks,
 )
 from xic_extractor.applications.untargeted.alignment_explanation_projection import (
     ExplanationBatch,
@@ -221,10 +218,7 @@ def _explanation_required(
     """A flagged membership or Backfill risk, or the requested outputs."""
     return (
         any(
-            any(
-                risk.risk_flags
-                for risk in accepted_membership_risks(item.initial_groups).values()
-            )
+            item.application_result.has_flagged_membership_risk
             or item.application_result.has_flagged_backfill_risk
             for item in completed
         )
@@ -255,11 +249,6 @@ def _rt_drift_summary(completed: CompletedUntargetBatchWorkflowResult) -> str:
     frame = completed.sample_rt_frame
     calibration = frame.calibration_for_snapshot if frame is not None else None
     drift = frame.drift_model if frame is not None else None
-    coefficients = [
-        group.inference_basis.rt_drift
-        for group in completed.initial_groups
-        if group.inference_basis is not None
-    ]
     knots_by_segment: Counter[str] = Counter()
     for knot in calibration.knots if calibration is not None else ():
         start = int(knot.reference_rt_min // 4) * 4
@@ -294,15 +283,9 @@ def _rt_drift_summary(completed: CompletedUntargetBatchWorkflowResult) -> str:
                 )
                 if fitted.status != "calibrated"
             },
-            "nonzero_coefficient_groups": {
-                "time_only": sum(
-                    c.time != 0 and c.sample_shift == 0 for c in coefficients
-                ),
-                "sample_shift_only": sum(
-                    c.time == 0 and c.sample_shift != 0 for c in coefficients
-                ),
-                "both": sum(c.time != 0 and c.sample_shift != 0 for c in coefficients),
-            },
+            "nonzero_coefficient_groups": asdict(
+                completed.application_result.rt_drift_groups
+            ),
         },
         sort_keys=True,
         separators=(",", ":"),

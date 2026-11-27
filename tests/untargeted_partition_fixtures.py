@@ -22,6 +22,7 @@ from xic_extractor.alignment.drift_evidence import KnownIstdReference
 from xic_extractor.alignment.result.application_result import (
     FinalizedUntargetApplicationResult,
     FinalizedUntargetBatchApplicationResult,
+    RtDriftGroupCounts,
 )
 from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.applications.untargeted.publication import (
@@ -273,6 +274,11 @@ def complete_dense_partition(
         ),
         excluded_candidates=partition.excluded_candidates,
         has_flagged_backfill_risk=has_flagged_backfill_risk(partition.children),
+        has_flagged_membership_risk=any(
+            risk.risk_flags
+            for risk in accepted_membership_risks(partition.initial_groups).values()
+        ),
+        rt_drift_groups=RtDriftGroupCounts.of(partition.initial_groups),
     )
     return CompletedUntargetBatchWorkflowResult(
         application_result=application_result,

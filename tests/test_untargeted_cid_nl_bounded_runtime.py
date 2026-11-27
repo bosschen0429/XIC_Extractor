@@ -47,6 +47,7 @@ from tests.untargeted_partition_fixtures import (
     project_composed_child,
 )
 from xic_extractor.alignment.config import AlignmentConfig
+from xic_extractor.alignment.result.application_result import RtDriftGroupCounts
 from xic_extractor.configuration.execution_profile import (
     ExecutionProfile,
     in_process_execution,
@@ -576,6 +577,8 @@ def test_indexed_finalization_orders_children_by_canonical_subject(
                 excluded_candidate_ids=(),
                 child_order_keys=(subject_id,),
                 has_flagged_backfill_risk=False,
+                has_flagged_membership_risk=False,
+                rt_drift_groups=RtDriftGroupCounts(),
                 sealed=SimpleNamespace(index=index),
             )
         )

@@ -34,6 +34,7 @@ from tests.untargeted_alignment_entry_fixtures import (
 )
 from tests.untargeted_cid_nl_bounded_runtime_fixtures import entry_scenario
 from xic_extractor.alignment import AlignmentConfig
+from xic_extractor.alignment.result.application_result import RtDriftGroupCounts
 from xic_extractor.applications.untargeted.application import (
     AlignmentProcessExecutionError,
 )
@@ -232,9 +233,11 @@ def test_pure_cid_nl_projection_failure_publishes_no_owned_outputs(
     completed = SimpleNamespace(
         close=lambda: closed.append(True),
         application_result=SimpleNamespace(
-            child_outputs=(), has_flagged_backfill_risk=False
+            child_outputs=(),
+            has_flagged_backfill_risk=False,
+            has_flagged_membership_risk=False,
+            rt_drift_groups=RtDriftGroupCounts(),
         ),
-        initial_groups=(),
         sample_rt_frame=None,
     )
     monkeypatch.setattr(
@@ -565,9 +568,11 @@ def test_pure_cid_nl_targets_csv_integration(
     closed = []
     completed = SimpleNamespace(
         application_result=SimpleNamespace(
-            child_outputs=(), has_flagged_backfill_risk=False
+            child_outputs=(),
+            has_flagged_backfill_risk=False,
+            has_flagged_membership_risk=False,
+            rt_drift_groups=RtDriftGroupCounts(),
         ),
-        initial_groups=(),
         sample_rt_frame=None,
         close=lambda: closed.append(True),
     )

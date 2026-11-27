@@ -466,6 +466,9 @@ def test_production_publication_automatically_includes_recorded_risk(
 
     from tests.owner_peak_fixtures import with_peak
     from xic_extractor.alignment.band_grouping import group_peak_bands
+    from xic_extractor.alignment.cross_sample.peak_groups import (
+        accepted_membership_risks,
+    )
     from xic_extractor.alignment.rt_frame import SampleRtFrame
 
     (group,) = completed.initial_groups
@@ -489,7 +492,18 @@ def test_production_publication_automatically_includes_recorded_risk(
     (admitted,) = tuple(band for band in bands if band.destination == "matrix")
     assert admitted.owner_ids == group.owner_ids
     assert admitted.member_risks
-    completed = replace(completed, initial_groups=(admitted,))
+    completed = replace(
+        completed,
+        initial_groups=(admitted,),
+        application_result=replace(
+            completed.application_result,
+            has_flagged_membership_risk=any(
+                risk.risk_flags
+                for risk in accepted_membership_risks((admitted,)).values()
+            ),
+        ),
+    )
+    assert completed.application_result.has_flagged_membership_risk
     completed = completed.bind_publication_inputs(
         peaks_by_sample=candidates,
         **explanation_discovery_facts(completed),

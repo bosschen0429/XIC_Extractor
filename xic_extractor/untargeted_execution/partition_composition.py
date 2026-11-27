@@ -32,6 +32,7 @@ from xic_extractor.alignment.membership_risk import AcceptedMembershipRisk
 from xic_extractor.alignment.result.application_result import (
     FinalizedUntargetApplicationResult,
     FinalizedUntargetBatchApplicationResult,
+    RtDriftGroupCounts,
     UntargetedCandidateExclusion,
 )
 from xic_extractor.alignment.rt_frame import SampleRtFrame
@@ -134,6 +135,8 @@ class PersistedUntargetedPartition:
     excluded_candidate_ids: tuple[str, ...]
     child_order_keys: tuple[str, ...] = ()
     has_flagged_backfill_risk: bool = False
+    has_flagged_membership_risk: bool = False
+    rt_drift_groups: RtDriftGroupCounts = RtDriftGroupCounts()
 
 
 def compose_untargeted_batch(
@@ -200,6 +203,13 @@ def compose_untargeted_batch(
         ),
         has_flagged_backfill_risk=any(
             persisted.has_flagged_backfill_risk for persisted in partitions
+        ),
+        has_flagged_membership_risk=any(
+            persisted.has_flagged_membership_risk for persisted in partitions
+        ),
+        rt_drift_groups=sum(
+            (persisted.rt_drift_groups for persisted in partitions),
+            RtDriftGroupCounts(),
         ),
     )
 
@@ -274,9 +284,10 @@ def compose_and_persist_untargeted_partition(
     child_count = 0
     child_order_keys: list[str] = []
     has_flagged_backfill_risk = False
+    membership_risks = accepted_membership_risks(inputs.initial_groups)
     projection_context = ChildProjectionContext(
         samples=batch.context.samples,
-        membership_risks_by_owner=accepted_membership_risks(inputs.initial_groups),
+        membership_risks_by_owner=membership_risks,
         sample_rt_frame=sample_rt_frame,
         capture_evidence_retained=bool(inputs.capture_evidence),
     )
@@ -323,6 +334,10 @@ def compose_and_persist_untargeted_partition(
         ),
         child_order_keys=tuple(child_order_keys),
         has_flagged_backfill_risk=has_flagged_backfill_risk,
+        has_flagged_membership_risk=any(
+            risk.risk_flags for risk in membership_risks.values()
+        ),
+        rt_drift_groups=RtDriftGroupCounts.of(inputs.initial_groups),
     )
 
 
