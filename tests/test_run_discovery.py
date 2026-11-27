@@ -9,7 +9,7 @@ from tests.raw_header_fakes import install_fake_raw_headers
 from xic_extractor.discovery.blank_qualification import (
     get_default_background_library_path,
 )
-from xic_extractor.discovery.models import DiscoveryBatchOutputs, DiscoveryRunOutputs
+from xic_extractor.discovery.models import DiscoveryBatchOutputs
 from xic_extractor.raw_reader_errors import RawReaderError
 
 
@@ -42,14 +42,8 @@ def test_run_discovery_cli_passes_single_raw_settings(
         captured["output_dir"] = output_dir
         captured["dll_dir"] = dll_dir
         captured["run_spec"] = run_spec
-        output_dir.mkdir(parents=True, exist_ok=True)
-        candidates_csv = output_dir / "discovery_peaks.csv"
-        review_csv = output_dir / "discovery_events.csv"
-        candidates_csv.write_text("peak_id\n", encoding="utf-8")
-        review_csv.write_text("peak_id\n", encoding="utf-8")
-        return DiscoveryRunOutputs(
-            peaks_csv=candidates_csv,
-            events_csv=review_csv,
+        return DiscoveryBatchOutputs(
+            store=output_dir / "discovery.sqlite", sample_stems=(raw_path.stem,)
         )
 
     monkeypatch.setattr(run_discovery, "run_discovery", _fake_run_discovery)
@@ -93,11 +87,9 @@ def test_run_discovery_cli_passes_single_raw_settings(
     assert tuple(item.raw_path for item in captured["run_spec"].acquisition_inputs) == (
         raw_path.resolve(),
     )
-    stdout = capsys.readouterr().out
-    assert "Discovery peaks CSV: " in stdout
-    assert "Discovery events CSV: " in stdout
-    assert "discovery_peaks.csv" in stdout
-    assert "discovery_events.csv" in stdout
+    assert f"Discovery: {output_dir.resolve() / 'discovery.sqlite'}" in (
+        capsys.readouterr().out
+    )
 
 
 def test_run_discovery_cli_passes_raw_dir_batch_settings(
@@ -128,16 +120,8 @@ def test_run_discovery_cli_passes_raw_dir_batch_settings(
         captured["output_dir"] = output_dir
         captured["dll_dir"] = dll_dir
         captured["run_spec"] = run_spec
-        output_dir.mkdir(parents=True, exist_ok=True)
-        output_path = output_dir / "discovery_batch_index.csv"
-        sample_outputs = DiscoveryRunOutputs(
-            peaks_csv=output_dir / "A" / "discovery_peaks.csv",
-            events_csv=output_dir / "A" / "discovery_events.csv",
-        )
-        output_path.write_text("sample_stem\n", encoding="utf-8")
         return DiscoveryBatchOutputs(
-            batch_index_csv=output_path,
-            per_sample=(sample_outputs,),
+            store=output_dir / "discovery.sqlite", sample_stems=("A", "B")
         )
 
     monkeypatch.setattr(
@@ -166,9 +150,9 @@ def test_run_discovery_cli_passes_raw_dir_batch_settings(
     )
     assert captured["output_dir"] == output_dir.resolve()
     assert captured["dll_dir"] == dll_dir.resolve()
-    stdout = capsys.readouterr().out
-    assert "Discovery batch index: " in stdout
-    assert "discovery_batch_index.csv" in stdout
+    assert f"Discovery: {output_dir.resolve() / 'discovery.sqlite'}" in (
+        capsys.readouterr().out
+    )
 
 
 def test_run_discovery_accepts_feature_list_selected_tags_and_union_mode() -> None:
@@ -252,18 +236,14 @@ def test_run_discovery_cli_writes_live_and_final_timing_json_for_batch(
         raw_paths = run_spec.acquisition_inputs
         assert timing_recorder is not None
         with timing_recorder.stage(
-            "discover.write_batch_index",
-            metrics={"raw_count": len(raw_paths), "row_count": len(raw_paths)},
+            "discover.publish_batch", metrics={"sample_count": len(raw_paths)}
         ):
             pass
         live_payload = json.loads(timing_path.read_text(encoding="utf-8"))
-        assert live_payload["recent_records"][-1]["stage"] == (
-            "discover.write_batch_index"
+        assert live_payload["recent_records"][-1]["stage"] == ("discover.publish_batch")
+        return DiscoveryBatchOutputs(
+            store=output_dir / "discovery.sqlite", sample_stems=("A",)
         )
-        output_dir.mkdir(parents=True, exist_ok=True)
-        output_path = output_dir / "discovery_batch_index.csv"
-        output_path.write_text("sample_stem\n", encoding="utf-8")
-        return DiscoveryBatchOutputs(batch_index_csv=output_path, per_sample=())
 
     monkeypatch.setattr(run_discovery, "run_discovery_batch", _fake_run_discovery_batch)
 
@@ -285,10 +265,10 @@ def test_run_discovery_cli_writes_live_and_final_timing_json_for_batch(
     assert payload["pipeline"] == "discovery"
     assert [record["stage"] for record in payload["records"]] == [
         "discover.compile_run_spec",
-        "discover.write_batch_index",
+        "discover.publish_batch",
     ]
     assert payload["records"][0]["metrics"] == {"raw_count": 1}
-    assert payload["records"][1]["metrics"] == {"raw_count": 1, "row_count": 1}
+    assert payload["records"][1]["metrics"] == {"sample_count": 1}
     assert fingerprinted_paths == [raw_path.resolve()]
     assert "Timing JSON:" in capsys.readouterr().out
 

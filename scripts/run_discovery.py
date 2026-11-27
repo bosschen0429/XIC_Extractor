@@ -132,8 +132,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 dll_dir=dll_dir,
                 timing_recorder=timing_recorder,
             )
-            print(f"Discovery peaks CSV: {single_outputs.peaks_csv}")
-            print(f"Discovery events CSV: {single_outputs.events_csv}")
+            print(f"Discovery: {single_outputs.store}")
         else:
             batch_outputs = run_discovery_batch(
                 run_spec,
@@ -142,7 +141,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 execution=execution_profile,
                 timing_recorder=timing_recorder,
             )
-            print(f"Discovery batch index: {batch_outputs.batch_index_csv}")
+            print(f"Discovery: {batch_outputs.store}")
     except (RawReaderError, DiscoveryProcessExecutionError) as exc:
         print(str(exc), file=sys.stderr)
         return 2
@@ -199,9 +198,8 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         type=Path,
         default=Path("output") / "discovery",
         help=(
-            "Output directory. Single RAW writes discovery_peaks.csv and "
-            "discovery_events.csv; RAW directory writes discovery_batch_index.csv "
-            "and per-sample CSVs."
+            "Output directory; Discovery writes discovery.sqlite there for a "
+            "single RAW or a RAW directory."
         ),
     )
     parser.add_argument(

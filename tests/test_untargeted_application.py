@@ -1,5 +1,6 @@
 import csv
 import json
+from collections import Counter
 from contextlib import nullcontext
 from dataclasses import replace
 from pathlib import Path
@@ -25,6 +26,12 @@ from tests.discovery_pipeline_fixtures import (
 )
 from tests.discovery_pipeline_fixtures import (
     _settings as _discovery_settings,
+)
+from tests.discovery_store_fixtures import (
+    single_peak_sample,
+    stored_events,
+    stored_peaks,
+    write_discovery,
 )
 from tests.untargeted_alignment_entry_fixtures import (
     PUBLISHED_TABLES,
@@ -55,16 +62,15 @@ from xic_extractor.configuration.execution_profile import (
 from xic_extractor.configuration.mass_recalibration import (
     MassRecalibration,
     MassRecalibrationResult,
-    serialize_mass_recalibration_result,
 )
 from xic_extractor.configuration.signal_processing_profile import (
     resolve_signal_processing_profile,
 )
 from xic_extractor.discovery import pipeline as discovery_pipeline
-from xic_extractor.discovery.csv_reader import read_discovery_batch_index
 from xic_extractor.discovery.processing_run_spec_adapter import (
     compile_discovery_processing_run_spec,
 )
+from xic_extractor.discovery.store import read_discovery_batch
 from xic_extractor.execution.timing import TimingRecorder
 from xic_extractor.sample_metadata import SampleMetadata
 from xic_extractor.xic_models import XICTrace
@@ -261,7 +267,7 @@ def test_pure_cid_nl_projection_failure_publishes_no_owned_outputs(
         application_module.run_untargeted_application(
             UntargetedRequest(
                 execution=UntargetedExecutionPolicy(profile=in_process_execution()),
-                discovery_batch_index=batch_index,
+                discovery=batch_index,
                 raw_dir=tmp_path / "raw",
                 dll_dir=tmp_path / "dll",
                 output_dir=output_dir,
@@ -444,7 +450,7 @@ def test_pipeline_publishes_projected_children_and_cleans_up(
         return application_module.run_untargeted_application(
             UntargetedRequest(
                 execution=UntargetedExecutionPolicy(profile=in_process_execution()),
-                discovery_batch_index=batch_index,
+                discovery=batch_index,
                 raw_dir=tmp_path,
                 dll_dir=tmp_path,
                 output_dir=output_dir,
@@ -512,7 +518,7 @@ def test_pipeline_rejects_unsupported_profile_before_read_or_raw(
         application_module.run_untargeted_application(
             UntargetedRequest(
                 execution=UntargetedExecutionPolicy(profile=in_process_execution()),
-                discovery_batch_index=tmp_path / "batch.csv",
+                discovery=tmp_path / "batch.csv",
                 raw_dir=tmp_path / "raw",
                 dll_dir=tmp_path / "dll",
                 output_dir=tmp_path / "out",
@@ -537,7 +543,7 @@ def test_pipeline_rejects_unsupported_discovery_before_acquisition_or_output(
         application_module.run_untargeted_application(
             UntargetedRequest(
                 execution=UntargetedExecutionPolicy(profile=in_process_execution()),
-                discovery_batch_index=tmp_path / "missing-batch.csv",
+                discovery=tmp_path / "missing-batch.csv",
                 raw_dir=tmp_path / "missing-raw",
                 dll_dir=tmp_path / "missing-dll",
                 output_dir=output_dir,
@@ -610,7 +616,7 @@ def test_pure_cid_nl_targets_csv_integration(
     application_module.run_untargeted_application(
         UntargetedRequest(
             execution=UntargetedExecutionPolicy(profile=in_process_execution()),
-            discovery_batch_index=batch_index,
+            discovery=batch_index,
             raw_dir=raw_dir,
             dll_dir=tmp_path / "dll",
             output_dir=tmp_path / "out",
@@ -630,26 +636,20 @@ def test_alignment_applies_discovery_mass_result_without_reopening_raw(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    batch_index = _write_batch(tmp_path, ("S1",))
-    raw_path = batch_index.parent / "S1" / "owner_closed_acquisition.raw"
     discovery_result = MassRecalibrationResult(
         "applied",
         policy=MassRecalibration.EASY_IC_RESTORE,
         baseline_lm=1.25,
         n_anchor=7,
     )
-    with batch_index.open(encoding="utf-8", newline="") as handle:
-        reader = csv.DictReader(handle)
-        columns = reader.fieldnames
-        rows = list(reader)
-    rows[0]["raw_file"] = str(raw_path)
-    rows[0]["mass_recalibration"] = serialize_mass_recalibration_result(
-        discovery_result
+    raw_path = tmp_path / "sources" / "S1.acquisition"
+    records = replace(
+        single_peak_sample(tmp_path, "S1"),
+        mass_recalibration_result=discovery_result,
     )
-    with batch_index.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(handle, columns)
-        writer.writeheader()
-        writer.writerows(rows)
+    batch_index = write_discovery(
+        tmp_path / "batch", [replace(records, raw_file=raw_path)]
+    )
 
     captured: dict[str, object] = {}
 
@@ -665,7 +665,7 @@ def test_alignment_applies_discovery_mass_result_without_reopening_raw(
         application_module.run_untargeted_application(
             UntargetedRequest(
                 execution=UntargetedExecutionPolicy(profile=in_process_execution()),
-                discovery_batch_index=batch_index,
+                discovery=batch_index,
                 raw_dir=raw_path.parent,
                 dll_dir=tmp_path / "dll",
                 output_dir=tmp_path / "out",
@@ -675,12 +675,13 @@ def test_alignment_applies_discovery_mass_result_without_reopening_raw(
         )
 
     prepared = captured["mass_recalibration_by_sample"]["S1"]
-    receipt = read_discovery_batch_index(batch_index).peak_receipts["S1"]
+    saved = read_discovery_batch(batch_index).samples["S1"]
     assert prepared.result == discovery_result
-    assert prepared.acquisition.source == receipt.acquisition_source
+    assert prepared.acquisition.source == saved.acquisition_source
+    assert saved.acquisition_source is not None
     assert (
         prepared.acquisition.path_identity
-        == receipt.acquisition_source.local_file_revision
+        == saved.acquisition_source.local_file_revision
     )
 
 
@@ -742,9 +743,7 @@ def test_reduced_discovery_persistence_keeps_inferred_peak_and_qualifies_alignme
         raw_opener=lambda path, _dll_dir: discovery_handles[path],
         execution=in_process_execution(),
     )
-    batch = read_discovery_batch_index(
-        discovery.batch_index_csv,
-    )
+    batch = read_discovery_batch(discovery.store)
 
     def alignment_raw(index: int) -> _FakeRaw:
         raw = _FakeRaw(
@@ -777,7 +776,7 @@ def test_reduced_discovery_persistence_keeps_inferred_peak_and_qualifies_alignme
     )
     alignment = application_module.run_untargeted_application(
         UntargetedRequest(
-            discovery_batch_index=discovery.batch_index_csv,
+            discovery=discovery.store,
             raw_dir=tmp_path,
             dll_dir=tmp_path,
             output_dir=tmp_path / "alignment",
@@ -809,8 +808,8 @@ def test_reduced_discovery_persistence_keeps_inferred_peak_and_qualifies_alignme
     assert (
         cli.main(
             [
-                "--discovery-batch-index",
-                str(discovery.batch_index_csv),
+                "--discovery",
+                str(discovery.store),
                 "--raw-dir",
                 str(tmp_path),
                 "--dll-dir",
@@ -878,32 +877,21 @@ def test_reduced_discovery_persistence_keeps_inferred_peak_and_qualifies_alignme
     areas = {row["sample_stem"]: float(row["area"]) for row in cells}
     assert areas["sample-b"] / areas["sample-a"] == pytest.approx(2.0, rel=0.01)
 
-    assert {
-        stem: batch.peak_receipts[stem].peak_count
-        for stem in batch.sample_order
-        if batch.peak_receipts[stem] is not None
-    } == {"sample-a": 2, "sample-b": 2}
-    for output in discovery.per_sample:
-        with output.events_csv.open(encoding="utf-8-sig", newline="") as handle:
-            (inferred_event,) = [
-                row
-                for row in csv.DictReader(handle)
-                if float(row["precursor_mz"]) == 700.0
-            ]
-        assert inferred_event["neutral_loss_mass_error_ppm"] == ""
-        with output.peaks_csv.open(encoding="utf-8-sig", newline="") as handle:
-            inferred = [
-                row
-                for row in csv.DictReader(handle)
-                if row["peak_id"] == inferred_event["peak_id"]
-            ]
-        assert len(inferred) == 1
-        assert inferred[0]["precursor_mz_basis"] == "product_plus_neutral_loss"
-        assert (
-            float(inferred[0]["ms1_search_rt_min"])
-            <= float(inferred[0]["query_rt_min"])
-            <= float(inferred[0]["ms1_search_rt_max"])
-        )
+    peaks = stored_peaks(batch.path)
+    assert Counter(peak.sample_stem for peak in peaks) == {
+        "sample-a": 2,
+        "sample-b": 2,
+    }
+    events = stored_events(batch.path)
+    for stem in batch.sample_order:
+        (inferred_event,) = [
+            item
+            for item in events
+            if item.sample_stem == stem and item.event.precursor_mz == 700.0
+        ]
+        assert inferred_event.event.precursor_mz_basis == "product_plus_neutral_loss"
+        assert inferred_event.event.observed_loss_error_ppm is None
+        assert [peak.peak_id for peak in peaks].count(inferred_event.peak_id) == 1
 
 
 @pytest.mark.parametrize(
@@ -951,7 +939,7 @@ def test_mixed_target_list_only_supplies_istds_to_untargeted_alignment(
     application_module.run_untargeted_application(
         UntargetedRequest(
             execution=UntargetedExecutionPolicy(profile=in_process_execution()),
-            discovery_batch_index=batch_index,
+            discovery=batch_index,
             raw_dir=tmp_path / "raw",
             dll_dir=tmp_path / "dll",
             output_dir=tmp_path / "out",

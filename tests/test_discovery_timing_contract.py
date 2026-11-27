@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from dataclasses import replace
 from pathlib import Path
 
@@ -11,15 +12,16 @@ from tests.discovery_ms1_capture_fixtures import (
 )
 from tests.discovery_physical_measurement_fixtures import _OwnerBoundBatchRaw
 from tests.discovery_pipeline_fixtures import _settings
+from tests.discovery_store_fixtures import stored_peaks
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
-from xic_extractor.discovery.csv_reader import read_discovery_peaks_csv
 from xic_extractor.discovery.ion_grouping import build_discovery_ions
 from xic_extractor.discovery.ms1_capture import (
     capture_ms1_peaks,
 )
 from xic_extractor.discovery.output_publication import (
+    publish_discovery_batch,
     publish_discovery_batch_sample,
 )
 from xic_extractor.discovery.processing_run_spec_adapter import (
@@ -64,23 +66,27 @@ def test_publication_timing_covers_the_published_tables(tmp_path: Path) -> None:
     )
     recorder = TimingRecorder("discovery", run_id="timed-publication")
 
-    outputs = publish_discovery_batch_sample(
+    sample = publish_discovery_batch_sample(
         raw_path,
         result.peaks,
         result.attachments,
-        output_dir=tmp_path,
-        sample_output_dir=tmp_path / "out",
+        output_dir=tmp_path / "out",
+        sample_index=1,
+        neutral_loss_by_tag=settings.neutral_loss_by_tag,
         acquisition_source=source,
         timing_recorder=recorder,
-    ).outputs
+    )
+    outputs = publish_discovery_batch(
+        tmp_path / "out", [sample], timing_recorder=recorder
+    )
 
-    assert len(read_discovery_peaks_csv(outputs.peaks_csv)) == 1
+    assert len(stored_peaks(outputs.store)) == 1
     by_stage = {record.stage: record for record in recorder.records}
-    assert by_stage["discover.write_peaks_csv"].metrics == {"row_count": 1}
-    assert by_stage["discover.publish_outputs"].metrics == {
-        "artifact_count": 2,
-        "replaced_existing_count": 0,
+    assert by_stage["discover.write_sample"].metrics == {
+        "peak_count": 1,
+        "event_count": len(result.attachments),
     }
+    assert by_stage["discover.publish_batch"].metrics == {"sample_count": 1}
 
 
 def test_discovery_output_timing_records_failure_boundary(
@@ -89,38 +95,30 @@ def test_discovery_output_timing_records_failure_boundary(
 ) -> None:
     raw_path = tmp_path / "sample.raw"
     raw_path.write_bytes(b"timed failure")
+    settings = _settings()
     spec = compile_discovery_processing_run_spec(
-        (raw_path,),
-        discovery_settings=_settings(),
+        (raw_path,), discovery_settings=settings
     )
     recorder = TimingRecorder("discovery", run_id="timed-publish")
     output_dir = tmp_path / "out"
-    real_replace = Path.replace
+    sample = publish_discovery_batch_sample(
+        raw_path,
+        (),
+        (),
+        output_dir=output_dir,
+        sample_index=1,
+        neutral_loss_by_tag=settings.neutral_loss_by_tag,
+        acquisition_source=spec.acquisition_inputs[0].acquisition_source,
+        timing_recorder=recorder,
+    )
 
-    def fail_publish(source: Path, target: Path) -> Path:
-        target = Path(target)
-        if source.name == "discovery_peaks.csv.tmp" and target.name == (
-            "discovery_peaks.csv"
-        ):
-            raise OSError("timed publish failure")
-        return real_replace(source, target)
+    def fail_publish(source, target):
+        raise OSError("timed publish failure")
 
-    monkeypatch.setattr(Path, "replace", fail_publish)
-
+    monkeypatch.setattr(os, "replace", fail_publish)
     with pytest.raises(OSError, match="timed publish failure"):
-        publish_discovery_batch_sample(
-            raw_path,
-            (),
-            (),
-            output_dir=tmp_path,
-            sample_output_dir=output_dir,
-            acquisition_source=spec.acquisition_inputs[0].acquisition_source,
-            timing_recorder=recorder,
-        )
+        publish_discovery_batch(output_dir, [sample], timing_recorder=recorder)
 
     stages = [record.stage for record in recorder.records]
-    assert "discover.write_events_csv" in stages
-    assert "discover.publish_outputs" in stages
-    assert not [
-        path for path in output_dir.iterdir() if path.name.endswith((".tmp", ".bak"))
-    ]
+    assert stages == ["discover.write_sample", "discover.publish_batch"]
+    assert not [path for path in output_dir.rglob("*") if path.name.endswith(".tmp")]

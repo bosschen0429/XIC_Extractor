@@ -51,15 +51,27 @@ loss fragment ranks in the top three of the spectrum have a median error of
 
 ### Ions, peaks and events
 
-CID-NL Discovery publishes two tables per sample. `discovery_peaks.csv` has one
-row per physical MS1 peak. `discovery_events.csv` has one row per strict NL
+CID-NL Discovery publishes one SQLite file per batch, `discovery.sqlite`. It is
+written for Alignment, Delta Mass and diagnostics to query, not for reading by
+hand. Its `samples` table holds each sample's RAW file, acquisition identity and
+mass-restoration result, in run order; `tags` holds the configured losses.
+`peaks` has one row per physical MS1 peak. `events` has one row per strict NL
 event, keyed by MS2 scan, tag and product; a scan matching two tags is two
-events. Locating a peak and attaching to it are two facts: `peak_id` names the
+events. Locating a peak and attaching to it are two facts: `peak` names the
 peak an event locates, and `unattached_reason` says why it does not attach
-there. `peak_id` is blank only when the ion has no measured peak at the event
-RT, and then the reason is physical. The table also carries each event's
-precursor metadata and parent-MS1 observation, so Alignment assesses the events
-without reading RAW again.
+there. `peak` is empty only when the ion has no measured peak at the event RT,
+and then the reason is physical. The table also carries each event's precursor
+metadata and parent-MS1 observation, so Alignment assesses the events without
+reading RAW again.
+
+The file keeps each fact once. A peak's attached-event count and matched tags
+are read from its events; an event's observed loss is precursor − product, or
+the configured loss when the precursor was inferred from the product, and its
+loss error is computed from that. Each sample process writes its own part file;
+the batch owner merges them in run order and replaces `discovery.sqlite` in
+one step, so a stopped run leaves the previous file unchanged. A file whose
+schema differs from the current one is refused with an instruction to rerun
+Discovery.
 
 - **Ion.** Events are grouped only by their MS1-measured ion: the recorded
   scan precursor, or the single parent-MS1 centroid of an inferred precursor.
@@ -202,8 +214,7 @@ scan within the precursor ppm window:
 
 This is method support, not proof of a unique precursor–product pairing. The
 original inferred m/z and null loss error stay unchanged. Alignment reads the
-parent-MS1 observation from the event table and assesses it again; the saved
-`precursor_verified` grants no authority.
+parent-MS1 observation from the event table and assesses it again.
 
 ### Accurate-mass reading
 
@@ -214,9 +225,7 @@ resolution, so product + loss only points at the ion. When the
 intensity-weighted reading differs from the XIC center, the peak is measured
 once more in the window centred on the reading, with the same RT context and
 tolerance, selecting the peak at its raw apex. That one measurement judges
-the peak. The peak table records its window (`peak_mz`, `ms1_search_rt_min`,
-`ms1_search_rt_max`) and the `query_rt_min` that selects the peak in it;
-Alignment measures the peak again from RAW with these and publishes its own
+the peak; Alignment measures the peak again from RAW and publishes its own
 measurement. `peak_id` keeps the ion's XIC center. A window that selects nothing
 there, or selects a peak with another raw apex because its extra signal merges
 or splits peaks, keeps the first measurement, and the reading is not taken.
@@ -384,8 +393,8 @@ The method supports two or more positions and has no built-in chemistry.
 
 The built-in Pt presets restore Easy-IC mass coordinates before constructing
 features. Matching, RAW confirmation and review use that same per-sample mass
-result. The sidecar saves it for review replay; older sidecars without a mass
-policy retain vendor coordinates. Restoration changes the measured input, not
+result. The Delta Mass file saves it per sample for review replay. Restoration
+changes the measured input, not
 the configured 20 ppm window, apex tolerance or R threshold. Pt envelope models
 remain review-only.
 
@@ -438,7 +447,13 @@ The base-support tolerance is provisional, not implied by natural abundance.
 Ratio agreement is not a calibrated Pt probability.
 
 Delta Mass output is `diagnostic_only`. It has no Alignment handoff and no
-Matrix, Backfill, counted-detection or export authority. Shape similarity never
+Matrix, Backfill, counted-detection or export authority. A run publishes only
+established candidates: `discovery.sqlite` holds the method, each sample's
+mass-restoration result, the candidates, their positions and the detected
+feature bounds the review reads; `delta_mass_candidates.csv` is the readable
+table, one row per candidate with its sample, m/z, RT, height, positions found
+and joined dR peak. A composite method reads the dR peaks from the CID-NL
+`discovery.sqlite` of the same RAW (`--cid-nl-discovery`). Shape similarity never
 establishes membership by itself. Real-sample counts are method-development
 evidence, not an accuracy threshold.
 
@@ -452,8 +467,8 @@ Choose `--nl-preset` explicitly to assess NL inside saved feature bounds.
 Without it, only XICs are acquired; there is no manual MS2 browsing mode.
 The Inspector shows unsmoothed RAW XICs on a shared intensity axis, position
 labels, configured ΔDa, m/z, saved statuses and feature bounds.
-Review XICs use the same expected m/z centers as Discovery, retained at
-round-trip precision in the position CSV. Observed partner masses remain
+Review XICs use the same expected m/z centers as Discovery, retained at full
+precision in the Delta Mass file. Observed partner masses remain
 available for feature/precursor evidence; they do not silently recenter the XICs.
 Clicking NL support opens its exact spectrum, measured product and XIC bounds;
 multiple supporting scans remain navigable without a scan search.
@@ -470,7 +485,7 @@ carbon count, core scan count and observed/expected ratios. Missing or incompati
 traces show an unavailable reason rather than a fabricated score. This comparison
 uses fixed singly charged positions, not charge/origin search, fine-structure
 attribution or RT fitting. No spread threshold is applied and no candidate status
-or Discovery CSV is changed. Older reviews without this evidence remain readable.
+or saved Delta Mass result is changed. Older reviews without this evidence remain readable.
 The comparison table expresses both observations and model expectations with
 BASE set to 100. Display names use BASE/PLUS N rather than Light/Heavy or
 internal `base`/`plus_*` identifiers; custom Heavy positions use their configured
@@ -494,8 +509,8 @@ truth. Vendor RAW-to-mzML conversion is not an implicit product dependency.
 
 ## Verification
 
-- `tests/test_discovery_ion_peaks.py`, `tests/test_discovery_csv.py`,
-  `tests/test_discovery_csv_reader.py`
+- `tests/test_discovery_ion_peaks.py`, `tests/test_discovery_store.py`,
+  `tests/test_discovery_output_publication.py`
 
 ## See Also
 

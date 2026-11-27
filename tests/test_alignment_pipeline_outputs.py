@@ -20,14 +20,14 @@ from xic_extractor.output.alignment.pipeline_outputs import (
 
 def test_alignment_metadata_records_inputs_and_settings() -> None:
     metadata = alignment_metadata(
-        discovery_batch_index=Path("batch.csv"),
+        discovery=Path("discovery.sqlite"),
         raw_dir=Path("raw"),
         dll_dir=Path("dll"),
         output_level="debug",
     )
 
     assert set(metadata) == {
-        "discovery_batch_index",
+        "discovery",
         "raw_dir",
         "dll_dir",
         "output_level",

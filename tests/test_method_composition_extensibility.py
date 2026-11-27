@@ -54,8 +54,8 @@ def test_run_alignment_script_resolves_supported_preset():
         [
             "--preset",
             "dna_dr",
-            "--discovery-batch-index",
-            "discovery_batch_index.csv",
+            "--discovery",
+            "discovery.sqlite",
             "--raw-dir",
             "raws",
             "--dll-dir",

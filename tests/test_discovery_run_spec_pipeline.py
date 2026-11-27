@@ -3,26 +3,25 @@ from __future__ import annotations
 import concurrent.futures
 import multiprocessing
 import pickle
+import sqlite3
 from concurrent.futures import Future
+from contextlib import closing
 from functools import partial
 from pathlib import Path
 
 import numpy as np
 import pytest
 
+from tests.discovery_peak_fixtures import representative_event
 from tests.discovery_pipeline_fixtures import (
     _OwnerBoundFakeRawHandle,
-    _read_csv,
     _scan_event,
     _settings,
 )
+from tests.discovery_store_fixtures import stored_events, stored_peaks
 from xic_extractor.configuration.execution_profile import (
     ExecutionProfile,
     in_process_execution,
-)
-from xic_extractor.discovery.csv_reader import (
-    read_discovery_batch_index,
-    read_owner_bound_discovery_peaks_csv,
 )
 from xic_extractor.discovery.pipeline import (
     discover_sample_for_process_job,
@@ -50,7 +49,6 @@ def test_discovery_persists_feature_facts_and_measured_review_support(
     workers: int,
 ) -> None:
     from xic_extractor.discovery import output_publication, pipeline
-    from xic_extractor.discovery.csv_writer import write_discovery_peaks_csv
 
     paths = (tmp_path / "sample-a.raw", tmp_path / "sample-b.raw")
     for path in paths:
@@ -125,40 +123,26 @@ def test_discovery_persists_feature_facts_and_measured_review_support(
         raw_opener=(lambda path, _dll: handles[path]) if workers == 1 else None,
         executor_factory=ImmediateExecutor if workers > 1 else None,
     )
-    batch = read_discovery_batch_index(
-        outputs.batch_index_csv,
-    )
-    for acquisition, output in zip(
-        spec.acquisition_inputs,
-        outputs.per_sample,
-        strict=True,
-    ):
-        candidates, _publication = captured[acquisition.raw_path.stem]
-        assert {item.precursor_mz_basis for item in candidates} == {
-            "scan_precursor",
-            "product_plus_neutral_loss",
-        }
+    peaks = stored_peaks(outputs.store)
+    events = stored_events(outputs.store)
+    for acquisition in spec.acquisition_inputs:
+        stem = acquisition.raw_path.stem
+        candidates, _publication = captured[stem]
+        assert {
+            representative_event(item).precursor_mz_basis for item in candidates
+        } == {"scan_precursor", "product_plus_neutral_loss"}
         assert len(candidates) == 2
-        expected_path = tmp_path / f"{acquisition.raw_path.stem}.csv"
-        write_discovery_peaks_csv(expected_path, candidates)
-        assert output.peaks_csv.read_bytes() == expected_path.read_bytes()
-        events = _read_csv(output.events_csv)
-        assert {row["peak_id"] for row in events if row["peak_id"]} <= {
+        assert [p for p in peaks if p.sample_stem == stem] == list(candidates)
+        sample_events = [item for item in events if item.sample_stem == stem]
+        assert {item.peak_id for item in sample_events if item.peak_id} <= {
             item.peak_id for item in candidates
         }
-        assert any(not row["peak_id"] and float(row["xic_mz"]) < 600 for row in events)
-        receipt = batch.peak_receipts[acquisition.raw_path.stem]
-        assert receipt.peak_count == 2
-        assert (
-            len(
-                read_owner_bound_discovery_peaks_csv(
-                    output.peaks_csv,
-                    receipt=receipt,
-                )
-            )
-            == 2
+        assert any(
+            not item.peak_id and item.event.precursor_mz < 600 for item in sample_events
         )
-        assert not (output.peaks_csv.parent / "discovery_physical_facts.json").exists()
+    assert sorted(path.name for path in outputs.store.parent.iterdir()) == [
+        "discovery.sqlite"
+    ]
 
 
 def test_batch_serial_and_process_share_one_run_spec_and_sample_bindings(
@@ -236,16 +220,8 @@ def test_batch_serial_and_process_share_one_run_spec_and_sample_bindings(
         spec.acquisition_inputs
     )
     assert all(pickle.loads(pickle.dumps(job)) == job for job in submitted_jobs)
-    assert _read_csv(serial.batch_index_csv) == _read_csv(process.batch_index_csv)
-    for serial_output, process_output in zip(
-        serial.per_sample, process.per_sample, strict=True
-    ):
-        assert serial_output.peaks_csv.read_bytes() == (
-            process_output.peaks_csv.read_bytes()
-        )
-        assert serial_output.events_csv.read_bytes() == (
-            process_output.events_csv.read_bytes()
-        )
+    assert serial.sample_stems == process.sample_stems
+    assert _dump(serial.store) == _dump(process.store)
 
     context = multiprocessing.get_context("spawn")
     with concurrent.futures.ProcessPoolExecutor(
@@ -257,10 +233,10 @@ def test_batch_serial_and_process_share_one_run_spec_and_sample_bindings(
             pickle.dumps(completed_worker_results[0]),
         ).result(timeout=30)
     assert restored_result.sample_index == completed_worker_results[0].sample_index
-    assert restored_result.publication.receipt == (
-        completed_worker_results[0].publication.receipt
-    )
-    assert restored_result.publication.index_row == (
-        completed_worker_results[0].publication.index_row
-    )
-    assert restored_result.publication.outputs == process.per_sample[0]
+    assert restored_result.publication == completed_worker_results[0].publication
+
+
+def _dump(store: Path) -> list[str]:
+    """The file's full content, statement by statement."""
+    with closing(sqlite3.connect(store)) as db:
+        return list(db.iterdump())

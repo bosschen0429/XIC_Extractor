@@ -45,9 +45,9 @@ from xic_extractor.configuration.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
     resolve_signal_processing_profile,
 )
-from xic_extractor.discovery.csv_reader import (
+from xic_extractor.discovery.store import (
     DiscoveryBatchInput,
-    read_discovery_batch_index,
+    read_discovery_batch,
 )
 from xic_extractor.execution.process_memory import ProcessTreeMemorySampler
 from xic_extractor.execution.timing import TimingRecorder
@@ -90,7 +90,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     except PresetError as exc:
         print(str(exc), file=sys.stderr)
         return 2
-    discovery_batch_index = args.discovery_batch_index.resolve()
+    discovery = args.discovery.resolve()
     raw_dir = args.raw_dir.resolve()
     dll_dir = args.dll_dir.resolve()
     output_dir = args.output_dir.resolve()
@@ -108,11 +108,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(str(exc), file=sys.stderr)
         return 2
 
-    if not discovery_batch_index.is_file():
-        print(
-            f"{discovery_batch_index}: discovery batch index does not exist",
-            file=sys.stderr,
-        )
+    if not discovery.is_file():
+        print(f"{discovery}: Discovery output does not exist", file=sys.stderr)
         return 2
     timing_recorder = (
         TimingRecorder("alignment", process_memory_sampler=ProcessTreeMemorySampler())
@@ -121,11 +118,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     try:
         with (
-            timing_recorder.stage("alignment.read_batch_index")
+            timing_recorder.stage("alignment.read_discovery")
             if timing_recorder
             else nullcontext()
         ):
-            discovery_batch = read_discovery_batch_index(discovery_batch_index)
+            discovery_batch = read_discovery_batch(discovery)
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2
@@ -136,8 +133,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     ):
         print(
             (
-                f"{discovery_batch_index}: expected {args.expected_sample_count} "
-                f"discovery batch samples, found {discovery_sample_count}"
+                f"{discovery}: expected {args.expected_sample_count} "
+                f"Discovery samples, found {discovery_sample_count}"
             ),
             file=sys.stderr,
         )
@@ -191,7 +188,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.preflight_only:
         _print_preflight_summary(
             args,
-            discovery_batch_index=discovery_batch_index,
+            discovery=discovery,
             discovery_batch=discovery_batch,
             resolved_raw_paths=resolved_raw_paths,
             raw_dir=raw_dir,
@@ -209,7 +206,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         timing_recorder.start_process_memory()
     try:
         request = UntargetedRequest(
-            discovery_batch_index=discovery_batch,
+            discovery=discovery_batch,
             raw_dir=raw_dir,
             dll_dir=dll_dir,
             output_dir=output_dir,
@@ -427,7 +424,7 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
             "Publish finalized pure CID-NL Alignment "
-            "from an owner-closed discovery batch index. To recompute only grouping "
+            "from a CID-NL Discovery output. To recompute only grouping "
             "from a saved snapshot, use: %(prog)s regroup --help. "
             "To rerun only Backfill, use: %(prog)s backfill --help. "
             "To match finished batches, use: %(prog)s pair-batches --help. "
@@ -435,10 +432,10 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--discovery-batch-index",
+        "--discovery",
         type=Path,
         required=True,
-        help="Path to discovery_batch_index.csv from xic-discovery-cli --raw-dir.",
+        help="Path to discovery.sqlite from xic-discovery-cli --raw-dir.",
     )
     parser.add_argument(
         "--raw-dir",
@@ -552,7 +549,7 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         "--expected-sample-count",
         type=_positive_int,
         help=(
-            "Expected discovery_batch_index sample count. This only checks the "
+            "Expected Discovery sample count. This only checks the "
             "size of the input batch; it does not select a validation tier."
         ),
     )
@@ -671,19 +668,6 @@ def _validate_launch_artifacts(
     raw_dir: Path,
     require_all_raw: bool,
 ) -> dict[str, Path]:
-    missing_peak_csvs = tuple(
-        (sample_stem, peak_csv)
-        for sample_stem, peak_csv in discovery_batch.peak_csvs.items()
-        if not peak_csv.is_file()
-    )
-    if missing_peak_csvs:
-        sample_stem, peak_csv = missing_peak_csvs[0]
-        suffix = _truncated_count_suffix(len(missing_peak_csvs))
-        raise ValueError(
-            "peak CSV does not exist for discovery sample "
-            f"{sample_stem}: {peak_csv}{suffix}"
-        )
-
     if not require_all_raw:
         return {}
 
@@ -711,7 +695,7 @@ def _resolve_preset(args: argparse.Namespace) -> tuple[Preset, BoundCidNlRecipe]
     if args.preset is None:
         raise PresetError(
             "Alignment supports only pure single-provider CID-NL; use "
-            "--preset dna_dr with an owner-closed discovery batch index"
+            "--preset dna_dr with a CID-NL Discovery output"
         )
     preset = load_preset(args.preset)
     recipe_overrides: dict[str, object] = {}
@@ -747,7 +731,7 @@ def _truncated_count_suffix(count: int) -> str:
 def _print_preflight_summary(
     args: argparse.Namespace,
     *,
-    discovery_batch_index: Path,
+    discovery: Path,
     discovery_batch: DiscoveryBatchInput,
     resolved_raw_paths: dict[str, Path],
     raw_dir: Path,
@@ -757,12 +741,11 @@ def _print_preflight_summary(
     sample_count = len(discovery_batch.sample_order)
     print("Alignment launch preflight OK (diagnostic_only; no validation completed)")
     print(
-        "Preflight scope: owner-closed discovery batch, candidate CSV existence, "
-        "RAW path existence; no candidate CSVs loaded; no RAW files opened."
+        "Preflight scope: current Discovery output and RAW path existence; "
+        "no candidates loaded; no RAW files opened."
     )
-    print(f"Discovery batch index: {discovery_batch_index}")
-    print(f"Discovery batch samples: {sample_count}")
-    print(f"Candidate CSVs found: {len(discovery_batch.peak_csvs)}")
+    print(f"Discovery: {discovery}")
+    print(f"Discovery samples: {sample_count}")
     print(f"RAW paths found: {len(resolved_raw_paths)}")
     if args.expected_sample_count is not None:
         print(f"Expected sample count: {args.expected_sample_count}")

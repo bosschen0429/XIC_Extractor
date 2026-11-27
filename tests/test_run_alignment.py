@@ -1,4 +1,3 @@
-import csv
 import json
 import os
 import pstats
@@ -10,55 +9,45 @@ from typing import Any
 import pytest
 
 from scripts import run_alignment
-from tests.alignment_pipeline_helpers import (
-    _owner_closed_receipt_fields,
-    write_csv,
+from tests.cid_nl_runtime_fixtures import raw_acquisition_source
+from tests.discovery_store_fixtures import (
+    SampleRecords,
+    acquisition_source,
+    write_discovery,
 )
 from xic_extractor.applications.untargeted.application import (
     AlignmentProcessExecutionError,
 )
 from xic_extractor.configuration.execution_profile import ExecutionProfile
-from xic_extractor.discovery.batch_contract import (
-    DISCOVERY_BATCH_INDEX_COLUMNS,
-    DISCOVERY_BATCH_INDEX_SCHEMA_VERSION,
-    discovery_receipt_index_fields,
-    mint_discovery_peak_universe_receipt,
-)
-from xic_extractor.discovery.models import DISCOVERY_PEAK_COLUMNS
+from xic_extractor.discovery.store import DISCOVERY_ARTIFACT_NAME
 from xic_extractor.execution.process_memory import ProcessMemoryPeak
 from xic_extractor.output.alignment.pipeline_outputs import (
     AlignmentRunOutputs,
 )
-from xic_extractor.processing_identity import build_local_acquisition_source_identity
 from xic_extractor.raw_reader_errors import RawReaderError
-from xic_extractor.raw_source_binding import (
-    THERMO_RAW_ACQUISITION_FORMAT,
-    THERMO_RAW_OBSERVATION_NAMESPACE,
-)
 
 
-def _write_empty_batch_index(path: Path) -> None:
-    _write_owner_closed_batch_index(path, [])
+def _write_empty_discovery(path: Path) -> None:
+    _write_discovery_samples(path, [])
 
 
-def _write_owner_closed_batch_index(
+def _write_discovery_samples(
     path: Path,
     rows: list[tuple[str, str, str]],
 ) -> None:
-    batch_rows = []
-    for sample_stem, raw_file, candidate_csv in rows:
-        candidate_path = path.parent / (candidate_csv or "empty.csv")
-        candidate_path.parent.mkdir(parents=True, exist_ok=True)
-        write_csv(candidate_path, DISCOVERY_PEAK_COLUMNS, [])
-        batch_rows.append(
-            {
-                "sample_stem": sample_stem,
-                "raw_file": raw_file,
-                "peak_csv": candidate_csv,
-                **_owner_closed_receipt_fields(sample_stem, candidate_path),
-            }
-        )
-    write_csv(path, DISCOVERY_BATCH_INDEX_COLUMNS, batch_rows)
+    """Publish samples without peaks at ``path``; the third field is unused."""
+    assert path.name == DISCOVERY_ARTIFACT_NAME
+    write_discovery(
+        path.parent,
+        [
+            SampleRecords(
+                stem,
+                Path(raw_file),
+                acquisition_source=acquisition_source(path.parent / "sources", stem),
+            )
+            for stem, raw_file, _ in rows
+        ],
+    )
 
 
 @pytest.mark.parametrize("output_level", ("production", "machine"))
@@ -68,8 +57,8 @@ def test_run_alignment_cli_rejects_nondefault_profile_before_acquisition_or_outp
     capsys: pytest.CaptureFixture[str],
     output_level: str,
 ) -> None:
-    batch_index = tmp_path / "discovery_batch_index.csv"
-    _write_empty_batch_index(batch_index)
+    batch_index = tmp_path / "discovery.sqlite"
+    _write_empty_discovery(batch_index)
     raw_dir = tmp_path / "raws"
     raw_dir.mkdir()
     dll_dir = tmp_path / "dll"
@@ -84,7 +73,7 @@ def test_run_alignment_cli_rejects_nondefault_profile_before_acquisition_or_outp
         [
             "--preset",
             "dna_dr",
-            "--discovery-batch-index",
+            "--discovery",
             str(batch_index),
             "--raw-dir",
             str(raw_dir),
@@ -111,8 +100,8 @@ def test_run_alignment_cli_rejects_invalid_signal_processing_window(
     with pytest.raises(SystemExit) as exc_info:
         run_alignment._parse_args(
             [
-                "--discovery-batch-index",
-                "batch.csv",
+                "--discovery",
+                "discovery.sqlite",
                 "--raw-dir",
                 "raw",
                 "--dll-dir",
@@ -129,8 +118,8 @@ def test_run_alignment_cli_rejects_unsupported_signal_processing_method() -> Non
     with pytest.raises(SystemExit) as exc_info:
         run_alignment._parse_args(
             [
-                "--discovery-batch-index",
-                "batch.csv",
+                "--discovery",
+                "discovery.sqlite",
                 "--raw-dir",
                 "raw",
                 "--dll-dir",
@@ -149,8 +138,8 @@ def test_run_alignment_cli_accepts_output_level_debug(
     tmp_path: Path,
     raw_workers: int,
 ) -> None:
-    batch_index = tmp_path / "discovery_batch_index.csv"
-    _write_empty_batch_index(batch_index)
+    batch_index = tmp_path / "discovery.sqlite"
+    _write_empty_discovery(batch_index)
     raw_dir = tmp_path / "raws"
     raw_dir.mkdir()
     dll_dir = tmp_path / "dll"
@@ -167,7 +156,7 @@ def test_run_alignment_cli_accepts_output_level_debug(
         [
             "--preset",
             "dna_dr",
-            "--discovery-batch-index",
+            "--discovery",
             str(batch_index),
             "--raw-dir",
             str(raw_dir),
@@ -195,8 +184,8 @@ def test_run_alignment_cli_rejects_retired_validation_output_level(
             [
                 "--preset",
                 "dna_dr",
-                "--discovery-batch-index",
-                str(tmp_path / "discovery_batch_index.csv"),
+                "--discovery",
+                str(tmp_path / "discovery.sqlite"),
                 "--raw-dir",
                 str(tmp_path),
                 "--dll-dir",
@@ -214,8 +203,8 @@ def test_run_alignment_cli_accepts_raw_worker_backend(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    batch_index = tmp_path / "discovery_batch_index.csv"
-    _write_empty_batch_index(batch_index)
+    batch_index = tmp_path / "discovery.sqlite"
+    _write_empty_discovery(batch_index)
     raw_dir = tmp_path / "raws"
     raw_dir.mkdir()
     dll_dir = tmp_path / "dll"
@@ -232,7 +221,7 @@ def test_run_alignment_cli_accepts_raw_worker_backend(
         [
             "--preset",
             "dna_dr",
-            "--discovery-batch-index",
+            "--discovery",
             str(batch_index),
             "--raw-dir",
             str(raw_dir),
@@ -255,8 +244,8 @@ def test_run_alignment_cli_accepts_validation_minimal_output_level(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    batch_index = tmp_path / "discovery_batch_index.csv"
-    _write_empty_batch_index(batch_index)
+    batch_index = tmp_path / "discovery.sqlite"
+    _write_empty_discovery(batch_index)
     raw_dir = tmp_path / "raws"
     raw_dir.mkdir()
     dll_dir = tmp_path / "dll"
@@ -273,7 +262,7 @@ def test_run_alignment_cli_accepts_validation_minimal_output_level(
         [
             "--preset",
             "dna_dr",
-            "--discovery-batch-index",
+            "--discovery",
             str(batch_index),
             "--raw-dir",
             str(raw_dir),
@@ -294,8 +283,8 @@ def test_run_alignment_cli_dna_dr_preset_binds_retained_recipe(
     tmp_path: Path,
     backfill_enabled: bool,
 ) -> None:
-    batch_index = tmp_path / "discovery_batch_index.csv"
-    _write_empty_batch_index(batch_index)
+    batch_index = tmp_path / "discovery.sqlite"
+    _write_empty_discovery(batch_index)
     raw_dir = tmp_path / "raws"
     raw_dir.mkdir()
     dll_dir = tmp_path / "dll"
@@ -329,7 +318,7 @@ def test_run_alignment_cli_dna_dr_preset_binds_retained_recipe(
 
     code = run_alignment.main(
         [
-            "--discovery-batch-index",
+            "--discovery",
             str(batch_index),
             "--raw-dir",
             str(raw_dir),
@@ -375,8 +364,8 @@ nl_min_intensity_ratio = 0.37
 """.strip(),
         encoding="utf-8",
     )
-    batch_index = tmp_path / "discovery_batch_index.csv"
-    _write_empty_batch_index(batch_index)
+    batch_index = tmp_path / "discovery.sqlite"
+    _write_empty_discovery(batch_index)
     raw_dir = tmp_path / "raws"
     raw_dir.mkdir()
     dll_dir = tmp_path / "dll"
@@ -391,7 +380,7 @@ nl_min_intensity_ratio = 0.37
 
     code = run_alignment.main(
         [
-            "--discovery-batch-index",
+            "--discovery",
             str(batch_index),
             "--raw-dir",
             str(raw_dir),
@@ -433,8 +422,8 @@ backfill_expansion_productization = "clean-target-selective"
 """.strip(),
         encoding="utf-8",
     )
-    batch_index = tmp_path / "discovery_batch_index.csv"
-    _write_empty_batch_index(batch_index)
+    batch_index = tmp_path / "discovery.sqlite"
+    _write_empty_discovery(batch_index)
     raw_dir = tmp_path / "raws"
     raw_dir.mkdir()
     dll_dir = tmp_path / "dll"
@@ -488,7 +477,7 @@ backfill_expansion_productization = "clean-target-selective"
 
     code = run_alignment.main(
         [
-            "--discovery-batch-index",
+            "--discovery",
             str(batch_index),
             "--raw-dir",
             str(raw_dir),
@@ -513,8 +502,8 @@ def test_run_alignment_cli_dna_dr_preset_uses_light_cells_for_validation_minimal
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    batch_index = tmp_path / "discovery_batch_index.csv"
-    _write_empty_batch_index(batch_index)
+    batch_index = tmp_path / "discovery.sqlite"
+    _write_empty_discovery(batch_index)
     raw_dir = tmp_path / "raws"
     raw_dir.mkdir()
     dll_dir = tmp_path / "dll"
@@ -540,7 +529,7 @@ def test_run_alignment_cli_dna_dr_preset_uses_light_cells_for_validation_minimal
 
     code = run_alignment.main(
         [
-            "--discovery-batch-index",
+            "--discovery",
             str(batch_index),
             "--raw-dir",
             str(raw_dir),
@@ -564,8 +553,8 @@ def test_run_alignment_cli_writes_timing_json(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    batch_index = tmp_path / "discovery_batch_index.csv"
-    _write_empty_batch_index(batch_index)
+    batch_index = tmp_path / "discovery.sqlite"
+    _write_empty_discovery(batch_index)
     raw_dir = tmp_path / "raws"
     raw_dir.mkdir()
     dll_dir = tmp_path / "dll"
@@ -587,7 +576,7 @@ def test_run_alignment_cli_writes_timing_json(
         [
             "--preset",
             "dna_dr",
-            "--discovery-batch-index",
+            "--discovery",
             str(batch_index),
             "--raw-dir",
             str(raw_dir),
@@ -602,7 +591,7 @@ def test_run_alignment_cli_writes_timing_json(
     payload = json.loads(timing_path.read_text(encoding="utf-8"))
     assert payload["pipeline"] == "alignment"
     assert [row["stage"] for row in payload["records"]] == [
-        "alignment.read_batch_index",
+        "alignment.read_discovery",
         "alignment.read_candidates",
     ]
     assert payload["records"][-1]["metrics"] == {"candidate_count": 0}
@@ -613,8 +602,8 @@ def test_run_alignment_cli_records_foreground_memory_and_stops_sampler(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    batch_index = tmp_path / "discovery_batch_index.csv"
-    _write_empty_batch_index(batch_index)
+    batch_index = tmp_path / "discovery.sqlite"
+    _write_empty_discovery(batch_index)
     raw_dir = tmp_path / "raws"
     raw_dir.mkdir()
     dll_dir = tmp_path / "dll"
@@ -634,7 +623,7 @@ def test_run_alignment_cli_records_foreground_memory_and_stops_sampler(
         [
             "--preset",
             "dna_dr",
-            "--discovery-batch-index",
+            "--discovery",
             str(batch_index),
             "--raw-dir",
             str(raw_dir),
@@ -662,8 +651,8 @@ def test_run_alignment_cli_stops_memory_sampler_on_failure(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    batch_index = tmp_path / "discovery_batch_index.csv"
-    _write_empty_batch_index(batch_index)
+    batch_index = tmp_path / "discovery.sqlite"
+    _write_empty_discovery(batch_index)
     raw_dir = tmp_path / "raws"
     raw_dir.mkdir()
     dll_dir = tmp_path / "dll"
@@ -684,7 +673,7 @@ def test_run_alignment_cli_stops_memory_sampler_on_failure(
         [
             "--preset",
             "dna_dr",
-            "--discovery-batch-index",
+            "--discovery",
             str(batch_index),
             "--raw-dir",
             str(raw_dir),
@@ -735,8 +724,8 @@ def test_run_alignment_cli_writes_live_timing_json(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    batch_index = tmp_path / "discovery_batch_index.csv"
-    _write_empty_batch_index(batch_index)
+    batch_index = tmp_path / "discovery.sqlite"
+    _write_empty_discovery(batch_index)
     raw_dir = tmp_path / "raws"
     raw_dir.mkdir()
     dll_dir = tmp_path / "dll"
@@ -754,7 +743,7 @@ def test_run_alignment_cli_writes_live_timing_json(
         [
             "--preset",
             "dna_dr",
-            "--discovery-batch-index",
+            "--discovery",
             str(batch_index),
             "--raw-dir",
             str(raw_dir),
@@ -777,8 +766,8 @@ def test_run_alignment_cli_writes_cprofile_outputs(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    batch_index = tmp_path / "discovery_batch_index.csv"
-    _write_empty_batch_index(batch_index)
+    batch_index = tmp_path / "discovery.sqlite"
+    _write_empty_discovery(batch_index)
     raw_dir = tmp_path / "raws"
     raw_dir.mkdir()
     dll_dir = tmp_path / "dll"
@@ -795,7 +784,7 @@ def test_run_alignment_cli_writes_cprofile_outputs(
         [
             "--preset",
             "dna_dr",
-            "--discovery-batch-index",
+            "--discovery",
             str(batch_index),
             "--raw-dir",
             str(raw_dir),
@@ -826,7 +815,7 @@ def test_run_alignment_cli_rejects_missing_batch_index(
         [
             "--preset",
             "dna_dr",
-            "--discovery-batch-index",
+            "--discovery",
             str(tmp_path / "missing.csv"),
             "--raw-dir",
             str(raw_dir),
@@ -836,15 +825,15 @@ def test_run_alignment_cli_rejects_missing_batch_index(
     )
 
     assert code == 2
-    assert "discovery batch index does not exist" in capsys.readouterr().err
+    assert "Discovery output does not exist" in capsys.readouterr().err
 
 
 def test_run_alignment_cli_rejects_missing_raw_dir(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    batch_index = tmp_path / "discovery_batch_index.csv"
-    _write_empty_batch_index(batch_index)
+    batch_index = tmp_path / "discovery.sqlite"
+    _write_empty_discovery(batch_index)
     dll_dir = tmp_path / "dll"
     dll_dir.mkdir()
 
@@ -852,7 +841,7 @@ def test_run_alignment_cli_rejects_missing_raw_dir(
         [
             "--preset",
             "dna_dr",
-            "--discovery-batch-index",
+            "--discovery",
             str(batch_index),
             "--raw-dir",
             str(tmp_path / "missing-raws"),
@@ -869,8 +858,8 @@ def test_run_alignment_cli_rejects_missing_dll_dir(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    batch_index = tmp_path / "discovery_batch_index.csv"
-    _write_empty_batch_index(batch_index)
+    batch_index = tmp_path / "discovery.sqlite"
+    _write_empty_discovery(batch_index)
     raw_dir = tmp_path / "raws"
     raw_dir.mkdir()
 
@@ -878,7 +867,7 @@ def test_run_alignment_cli_rejects_missing_dll_dir(
         [
             "--preset",
             "dna_dr",
-            "--discovery-batch-index",
+            "--discovery",
             str(batch_index),
             "--raw-dir",
             str(raw_dir),
@@ -898,8 +887,8 @@ def test_run_alignment_cli_rejects_expected_sample_count_mismatch(
     monkeypatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    batch_index = tmp_path / "discovery_batch_index.csv"
-    _write_owner_closed_batch_index(
+    batch_index = tmp_path / "discovery.sqlite"
+    _write_discovery_samples(
         batch_index, [("S1", "S1.raw", "s1.csv"), ("S2", "S2.raw", "s2.csv")]
     )
     raw_dir = tmp_path / "raws"
@@ -916,7 +905,7 @@ def test_run_alignment_cli_rejects_expected_sample_count_mismatch(
         [
             "--preset",
             "dna_dr",
-            "--discovery-batch-index",
+            "--discovery",
             str(batch_index),
             "--raw-dir",
             str(raw_dir),
@@ -930,52 +919,15 @@ def test_run_alignment_cli_rejects_expected_sample_count_mismatch(
     )
 
     assert code == 2
-    assert (
-        f"expected {expected} discovery batch samples, found 2"
-        in capsys.readouterr().err
-    )
-
-
-def test_run_alignment_cli_rejects_duplicate_sample_stems(
-    tmp_path: Path,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    batch_index = tmp_path / "discovery_batch_index.csv"
-    _write_owner_closed_batch_index(
-        batch_index, [("S1", "S1.raw", "s1.csv"), ("S1", "S1.raw", "s1_again.csv")]
-    )
-    raw_dir = tmp_path / "raws"
-    raw_dir.mkdir()
-    dll_dir = tmp_path / "dll"
-    dll_dir.mkdir()
-
-    code = run_alignment.main(
-        [
-            "--preset",
-            "dna_dr",
-            "--discovery-batch-index",
-            str(batch_index),
-            "--raw-dir",
-            str(raw_dir),
-            "--dll-dir",
-            str(dll_dir),
-            "--expected-sample-count",
-            "2",
-        ]
-    )
-
-    assert code == 2
-    stderr = capsys.readouterr().err
-    assert "duplicate sample_stem values are not supported" in stderr
-    assert "S1" in stderr
+    assert f"expected {expected} Discovery samples, found 2" in capsys.readouterr().err
 
 
 def test_expected_count_alone_does_not_require_all_raw_paths(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    batch_index = tmp_path / "discovery_batch_index.csv"
-    _write_owner_closed_batch_index(
+    batch_index = tmp_path / "discovery.sqlite"
+    _write_discovery_samples(
         batch_index, [(f"S{i}", f"S{i}.raw", f"s{i}.csv") for i in range(85)]
     )
     raw_dir = tmp_path / "raws"
@@ -992,7 +944,7 @@ def test_expected_count_alone_does_not_require_all_raw_paths(
         [
             "--preset",
             "dna_dr",
-            "--discovery-batch-index",
+            "--discovery",
             str(batch_index),
             "--raw-dir",
             str(raw_dir),
@@ -1006,46 +958,24 @@ def test_expected_count_alone_does_not_require_all_raw_paths(
     assert code == 0
 
 
-def _write_owner_closed_preflight_batch(
+def _write_preflight_discovery(
     tmp_path: Path,
     sample_stems: tuple[str, ...],
 ) -> tuple[Path, Path]:
     raw_dir = tmp_path / "raws"
     raw_dir.mkdir()
-    batch_index = tmp_path / "discovery_batch_index.csv"
-    fieldnames = DISCOVERY_BATCH_INDEX_COLUMNS
-    rows: list[dict[str, str]] = []
+    samples = []
     for sample_stem in sample_stems:
         raw_path = raw_dir / f"{sample_stem}.raw"
         raw_path.write_bytes(b"")
-        candidate_csv = tmp_path / f"{sample_stem.lower()}.csv"
-        candidate_csv.write_bytes(b"")
-        acquisition_source = build_local_acquisition_source_identity(
-            raw_path,
-            acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
-            observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
+        samples.append(
+            SampleRecords(
+                sample_stem,
+                Path(raw_path.name),
+                acquisition_source=raw_acquisition_source(raw_path),
+            )
         )
-        receipt = mint_discovery_peak_universe_receipt(
-            sample_stem=sample_stem,
-            acquisition_source=acquisition_source,
-            peak_csv=candidate_csv,
-            peaks=(),
-        )
-        rows.append(
-            {
-                "schema_version": DISCOVERY_BATCH_INDEX_SCHEMA_VERSION,
-                "sample_stem": sample_stem,
-                "raw_file": raw_path.name,
-                "peak_csv": candidate_csv.name,
-                "peak_count": "0",
-                **discovery_receipt_index_fields(receipt),
-            }
-        )
-    with batch_index.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(rows)
-    return batch_index, raw_dir
+    return write_discovery(tmp_path, samples), raw_dir
 
 
 @pytest.mark.parametrize(
@@ -1057,7 +987,7 @@ def test_run_alignment_cli_preflight_only_prints_launch_contract(
     capsys: pytest.CaptureFixture[str],
     reference_kind: str | None,
 ) -> None:
-    batch_index, raw_dir = _write_owner_closed_preflight_batch(
+    batch_index, raw_dir = _write_preflight_discovery(
         tmp_path,
         ("S1", "S2"),
     )
@@ -1089,7 +1019,7 @@ def test_run_alignment_cli_preflight_only_prints_launch_contract(
         [
             "--preset",
             "dna_dr",
-            "--discovery-batch-index",
+            "--discovery",
             str(batch_index),
             "--raw-dir",
             str(raw_dir),
@@ -1142,10 +1072,9 @@ def test_run_alignment_cli_preflight_only_prints_launch_contract(
         "Alignment launch preflight OK (diagnostic_only; no validation completed)"
         in stdout
     )
-    assert "Preflight scope: owner-closed discovery batch" in stdout
-    assert "no candidate CSVs loaded; no RAW files opened" in stdout
-    assert "Discovery batch samples: 2" in stdout
-    assert "Candidate CSVs found: 2" in stdout
+    assert "Preflight scope: current Discovery output" in stdout
+    assert "no candidates loaded; no RAW files opened" in stdout
+    assert "Discovery samples: 2" in stdout
     assert "RAW paths found: 2" in stdout
     assert "Output level: validation-minimal" in stdout
     assert "Alignment worker budget: 4" in stdout
@@ -1159,40 +1088,11 @@ def test_run_alignment_cli_preflight_only_prints_launch_contract(
     assert "Timing live JSON:" in stdout
 
 
-def test_run_alignment_cli_preflight_only_uses_shared_batch_parser(
+def test_run_alignment_cli_preflight_only_rejects_a_file_that_is_not_discovery(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    batch_index = tmp_path / "discovery_batch_index.csv"
-    _write_owner_closed_batch_index(batch_index, [("S1", "S1.raw", "")])
-    raw_dir = tmp_path / "raws"
-    raw_dir.mkdir()
-    dll_dir = tmp_path / "dll"
-    dll_dir.mkdir()
-
-    code = run_alignment.main(
-        [
-            "--preset",
-            "dna_dr",
-            "--discovery-batch-index",
-            str(batch_index),
-            "--raw-dir",
-            str(raw_dir),
-            "--dll-dir",
-            str(dll_dir),
-            "--preflight-only",
-        ]
-    )
-
-    assert code == 2
-    assert "peak_csv is required" in capsys.readouterr().err
-
-
-def test_run_alignment_cli_preflight_only_requires_discovery_owner_closure(
-    tmp_path: Path,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    batch_index = tmp_path / "discovery_batch_index.csv"
+    batch_index = tmp_path / "discovery.sqlite"
     batch_index.write_text(
         "sample_stem,raw_file,peak_csv\nS1,S1.raw,s1.csv\n",
         encoding="utf-8",
@@ -1208,7 +1108,7 @@ def test_run_alignment_cli_preflight_only_requires_discovery_owner_closure(
         [
             "--preset",
             "dna_dr",
-            "--discovery-batch-index",
+            "--discovery",
             str(batch_index),
             "--raw-dir",
             str(raw_dir),
@@ -1219,40 +1119,7 @@ def test_run_alignment_cli_preflight_only_requires_discovery_owner_closure(
     )
 
     assert code == 2
-    assert "regenerate Discovery" in capsys.readouterr().err
-
-
-def test_run_alignment_cli_preflight_only_rejects_missing_candidate_csv(
-    tmp_path: Path,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    batch_index = tmp_path / "discovery_batch_index.csv"
-    _write_owner_closed_batch_index(batch_index, [("S1", "S1.raw", "missing.csv")])
-    (batch_index.parent / "missing.csv").unlink()
-    raw_dir = tmp_path / "raws"
-    raw_dir.mkdir()
-    (raw_dir / "S1.raw").write_text("", encoding="utf-8")
-    dll_dir = tmp_path / "dll"
-    dll_dir.mkdir()
-
-    code = run_alignment.main(
-        [
-            "--preset",
-            "dna_dr",
-            "--discovery-batch-index",
-            str(batch_index),
-            "--raw-dir",
-            str(raw_dir),
-            "--dll-dir",
-            str(dll_dir),
-            "--preflight-only",
-        ]
-    )
-
-    assert code == 2
-    stderr = capsys.readouterr().err
-    assert "peak CSV does not exist" in stderr
-    assert "missing.csv" in stderr
+    assert "rerun Discovery" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize(
@@ -1263,8 +1130,8 @@ def test_missing_raw_stops_before_acquisition(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    batch_index = tmp_path / "discovery_batch_index.csv"
-    _write_owner_closed_batch_index(batch_index, [("S1", "S1.raw", "s1.csv")])
+    batch_index = tmp_path / "discovery.sqlite"
+    _write_discovery_samples(batch_index, [("S1", "S1.raw", "s1.csv")])
     raw_dir = tmp_path / "raws"
     raw_dir.mkdir()
     dll_dir = tmp_path / "dll"
@@ -1274,7 +1141,7 @@ def test_missing_raw_stops_before_acquisition(
         [
             "--preset",
             "dna_dr",
-            "--discovery-batch-index",
+            "--discovery",
             str(batch_index),
             "--raw-dir",
             str(raw_dir),
@@ -1291,16 +1158,16 @@ def test_missing_raw_stops_before_acquisition(
 
 
 def test_grouping_count_is_not_a_full_cohort_launch(tmp_path, monkeypatch):
-    index = tmp_path / "index.csv"
+    index = tmp_path / "discovery.sqlite"
     rows = [(f"S{i}", f"S{i}.raw", f"s{i}.csv") for i in range(85)]
-    _write_owner_closed_batch_index(index, rows)
+    _write_discovery_samples(index, rows)
     for _, raw, _ in rows:
         (tmp_path / raw).touch()
     monkeypatch.setattr(run_alignment.sys, "executable", str(tmp_path / "other-python"))
     reached = []
 
     def group(request, context, **_capture):
-        reached.append(request.discovery_batch_index.path)
+        reached.append(request.discovery.path)
         return tmp_path
 
     monkeypatch.setattr(run_alignment, "run_untargeted_grouping", group)
@@ -1309,7 +1176,7 @@ def test_grouping_count_is_not_a_full_cohort_launch(tmp_path, monkeypatch):
             [
                 "--preset",
                 "dna_dr",
-                "--discovery-batch-index",
+                "--discovery",
                 str(index),
                 "--raw-dir",
                 str(tmp_path),
@@ -1342,8 +1209,8 @@ def test_run_alignment_cli_returns_2_for_user_visible_errors(
     capsys: pytest.CaptureFixture[str],
     exc: Exception,
 ) -> None:
-    batch_index = tmp_path / "discovery_batch_index.csv"
-    _write_empty_batch_index(batch_index)
+    batch_index = tmp_path / "discovery.sqlite"
+    _write_empty_discovery(batch_index)
     raw_dir = tmp_path / "raws"
     raw_dir.mkdir()
     dll_dir = tmp_path / "dll"
@@ -1358,7 +1225,7 @@ def test_run_alignment_cli_returns_2_for_user_visible_errors(
         [
             "--preset",
             "dna_dr",
-            "--discovery-batch-index",
+            "--discovery",
             str(batch_index),
             "--raw-dir",
             str(raw_dir),
@@ -1369,40 +1236,6 @@ def test_run_alignment_cli_returns_2_for_user_visible_errors(
 
     assert code == 2
     assert str(exc) in capsys.readouterr().err
-
-
-def test_run_alignment_cli_returns_2_for_missing_candidate_csv(
-    tmp_path: Path,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    batch_index = tmp_path / "discovery_batch_index.csv"
-    _write_owner_closed_batch_index(
-        batch_index,
-        [("Sample_A", "C:/stale/Sample_A.raw", "missing/discovery_peaks.csv")],
-    )
-    (batch_index.parent / "missing/discovery_peaks.csv").unlink()
-    raw_dir = tmp_path / "raws"
-    raw_dir.mkdir()
-    dll_dir = tmp_path / "dll"
-    dll_dir.mkdir()
-
-    code = run_alignment.main(
-        [
-            "--preset",
-            "dna_dr",
-            "--discovery-batch-index",
-            str(batch_index),
-            "--raw-dir",
-            str(raw_dir),
-            "--dll-dir",
-            str(dll_dir),
-        ]
-    )
-
-    assert code == 2
-    stderr = capsys.readouterr().err
-    assert "missing" in stderr
-    assert "discovery_peaks.csv" in stderr
 
 
 def test_pyproject_registers_alignment_cli_script() -> None:
@@ -1417,8 +1250,8 @@ def test_run_alignment_cli_targets_csv_and_workbook_mutually_exclusive(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    batch_index = tmp_path / "batch.csv"
-    _write_empty_batch_index(batch_index)
+    batch_index = tmp_path / "discovery.sqlite"
+    _write_empty_discovery(batch_index)
     raw_dir = tmp_path / "raw"
     raw_dir.mkdir()
     dll_dir = tmp_path / "dll"
@@ -1432,7 +1265,7 @@ def test_run_alignment_cli_targets_csv_and_workbook_mutually_exclusive(
         [
             "--preset",
             "dna_dr",
-            "--discovery-batch-index",
+            "--discovery",
             str(batch_index),
             "--raw-dir",
             str(raw_dir),
@@ -1465,7 +1298,7 @@ def test_run_alignment_cli_istd_input_is_explicit_or_validated_before_raw(
     capsys: pytest.CaptureFixture[str],
     mode: str,
 ) -> None:
-    batch_index, raw_dir = _write_owner_closed_preflight_batch(tmp_path, ("S1",))
+    batch_index, raw_dir = _write_preflight_discovery(tmp_path, ("S1",))
     dll_dir = tmp_path / "dll"
     dll_dir.mkdir()
     template = (
@@ -1505,7 +1338,7 @@ def test_run_alignment_cli_istd_input_is_explicit_or_validated_before_raw(
         [
             "--preset",
             "dna_dr",
-            "--discovery-batch-index",
+            "--discovery",
             str(batch_index),
             "--raw-dir",
             str(raw_dir),
@@ -1538,8 +1371,8 @@ def test_run_alignment_cli_targets_csv_must_exist(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    batch_index = tmp_path / "batch.csv"
-    _write_empty_batch_index(batch_index)
+    batch_index = tmp_path / "discovery.sqlite"
+    _write_empty_discovery(batch_index)
     raw_dir = tmp_path / "raw"
     raw_dir.mkdir()
     dll_dir = tmp_path / "dll"
@@ -1549,7 +1382,7 @@ def test_run_alignment_cli_targets_csv_must_exist(
         [
             "--preset",
             "dna_dr",
-            "--discovery-batch-index",
+            "--discovery",
             str(batch_index),
             "--raw-dir",
             str(raw_dir),
@@ -1574,8 +1407,8 @@ def test_run_alignment_cli_routes_sample_metadata_without_losing_cohorts(
     from xic_extractor.sample_metadata import SampleMetadata
 
     install_fake_raw_headers(monkeypatch)
-    batch_index = tmp_path / "discovery_batch_index.csv"
-    _write_owner_closed_batch_index(
+    batch_index = tmp_path / "discovery.sqlite"
+    _write_discovery_samples(
         batch_index, [("S1", "S1.raw", "S1.csv"), ("S2", "S2.raw", "S2.csv")]
     )
     raw_dir = tmp_path / "raws"
@@ -1609,7 +1442,7 @@ def test_run_alignment_cli_routes_sample_metadata_without_losing_cohorts(
     argv = [
         "--preset",
         "dna_dr",
-        "--discovery-batch-index",
+        "--discovery",
         str(batch_index),
         "--raw-dir",
         str(raw_dir),
@@ -1660,8 +1493,8 @@ def test_run_alignment_cli_rejects_invalid_sample_metadata_before_application(
     capsys: pytest.CaptureFixture[str],
     invalid_kind: str,
 ) -> None:
-    batch_index = tmp_path / "discovery_batch_index.csv"
-    _write_empty_batch_index(batch_index)
+    batch_index = tmp_path / "discovery.sqlite"
+    _write_empty_discovery(batch_index)
     raw_dir = tmp_path / "raws"
     raw_dir.mkdir()
     dll_dir = tmp_path / "dll"
@@ -1690,7 +1523,7 @@ def test_run_alignment_cli_rejects_invalid_sample_metadata_before_application(
             [
                 "--preset",
                 "dna_dr",
-                "--discovery-batch-index",
+                "--discovery",
                 str(batch_index),
                 "--raw-dir",
                 str(raw_dir),
@@ -1714,8 +1547,8 @@ def test_run_alignment_stop_after_grouping_outputs_results_without_publication(
     profile: str,
     save_inputs: bool,
 ) -> None:
-    batch_index = tmp_path / "discovery_batch_index.csv"
-    _write_empty_batch_index(batch_index)
+    batch_index = tmp_path / "discovery.sqlite"
+    _write_empty_discovery(batch_index)
     raw_dir = tmp_path / "raws"
     raw_dir.mkdir()
     dll_dir = tmp_path / "dll"
@@ -1751,7 +1584,7 @@ def test_run_alignment_stop_after_grouping_outputs_results_without_publication(
         [
             "--preset",
             "dna_dr",
-            "--discovery-batch-index",
+            "--discovery",
             str(batch_index),
             "--raw-dir",
             str(raw_dir),
@@ -1798,7 +1631,7 @@ def test_saved_matrix_inputs_require_completed_cells(capsys):
             [
                 "--preset",
                 "dna_dr",
-                "--discovery-batch-index",
+                "--discovery",
                 "unused.csv",
                 "--raw-dir",
                 "unused",

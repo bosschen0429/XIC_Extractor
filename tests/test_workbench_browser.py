@@ -1680,10 +1680,9 @@ def test_untargeted_browser_executes_application_owners_and_downloads(
     expect(
         result.get_by_role("link", name="alignment_matrix.tsv", exact=True)
     ).to_have_count(0)
-    if preset == "pt_pattern_cid_nl_dr":
-        expect(
-            result.get_by_role("link", name="discovery_peaks.csv", exact=True)
-        ).to_have_count(3)
+    expect(
+        result.get_by_role("link", name="discovery.sqlite", exact=True)
+    ).to_have_count(2 if preset == "pt_pattern_cid_nl_dr" else 1)
 
 
 def test_stopping_untargeted_backfill_cleans_run_scratch(
@@ -1732,7 +1731,7 @@ def test_stopping_untargeted_backfill_cleans_run_scratch(
         "工作已停止；已發布的結果保留。"
     )
     assert not list(output_root.rglob(".partition_spool-*"))
-    assert list(output_root.rglob("discovery_peaks.csv"))
+    assert list(output_root.rglob("discovery.sqlite"))
     assert not list(output_root.rglob("alignment_matrix.tsv"))
 
 
@@ -1790,10 +1789,11 @@ def test_untargeted_result_shows_one_matrix_and_groups_technical_files(
     page, state = analysis_feedback
     folder = "C:/runs/validation"
     matrix = f"{folder}/alignment_matrix.tsv"
-    paths = [matrix, f"{folder}/sample_metadata.tsv"] + [
-        f"{folder}/{sample}/{name}"
-        for sample in ("A", "B")
-        for name in ("discovery_peaks.csv", "discovery_events.csv")
+    paths = [
+        matrix,
+        f"{folder}/sample_metadata.tsv",
+        f"{folder}/discovery.sqlite",
+        f"{folder}/alignment_run_metadata.json",
     ]
     state["job"].update(kind="untargeted", job_id="untargeted-result")
     state["results"] = {
@@ -1833,11 +1833,12 @@ def test_untargeted_result_shows_one_matrix_and_groups_technical_files(
     files = card.locator(".artifact-details")
     expect(files).not_to_have_attribute("open", "")
     files.locator("summary").click()
-    for sample in ("A", "B"):
-        expect(files.get_by_role("heading", name=sample, exact=True)).to_be_visible()
     expect(
-        files.get_by_role("link", name="discovery_peaks.csv", exact=True)
-    ).to_have_count(2)
+        files.get_by_role("heading", name="整批分析紀錄", exact=True)
+    ).to_be_visible()
+    expect(
+        files.get_by_role("link", name="discovery.sqlite", exact=True)
+    ).to_have_count(1)
     expect(
         card.get_by_role("button", name="自訂 Inspector 匯出", exact=True)
     ).to_be_visible()

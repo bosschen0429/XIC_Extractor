@@ -275,9 +275,6 @@ def test_scan_shared_by_isotope_and_monoisotope_binds_only_the_subject_ion():
         best_ms2_scan_id=151,
         attached_event_count=1,
         ms1_apex_rt=3.0,
-        ms1_search_rt_min=2.5,
-        ms1_search_rt_max=3.5,
-        query_rt_min=3.0,
         status="admitted",
     )
     for ordered in (events, tuple(reversed(events))):

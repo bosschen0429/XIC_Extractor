@@ -13,24 +13,18 @@ from tests.cid_nl_raw_fixture import (
     _FakeThermoRaw,
     _working_imports,
 )
+from tests.discovery_store_fixtures import SampleRecords, write_discovery
 from tests.raw_header_fakes import install_fake_raw_headers
 from xic_extractor.configuration.execution_profile import ExecutionProfile
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
-from xic_extractor.discovery.batch_contract import (
-    DiscoveryPeakUniverseReceipt,
-    mint_discovery_peak_universe_receipt,
-)
-from xic_extractor.discovery.csv_reader import DiscoveryBatchInput
-from xic_extractor.discovery.csv_writer import (
-    write_discovery_events_csv,
-    write_discovery_peaks_csv,
-)
 from xic_extractor.discovery.input_source import DiscoveryInputSource
 from xic_extractor.discovery.models import DiscoveryPeak, EventAttachment
 from xic_extractor.discovery.settings import DiscoverySettings
+from xic_extractor.discovery.store import DiscoveryBatchInput, read_discovery_batch
 from xic_extractor.processing_identity import (
+    AcquisitionSourceIdentity,
     build_local_acquisition_source_identity,
 )
 from xic_extractor.raw_reader import EXPECTED_THERMO_DLLS, open_raw
@@ -47,28 +41,34 @@ from xic_extractor.untargeted_execution.partition import execution as runtime_mo
 from xic_extractor.untargeted_execution.partition import workers as partition_workers
 
 
-def build_discovery_receipts(
-    root: Path,
-    raw_paths: tuple[Path, ...],
-    peaks_by_sample: dict[str, tuple[DiscoveryPeak, ...]],
-) -> dict[str, DiscoveryPeakUniverseReceipt]:
-    receipts: dict[str, DiscoveryPeakUniverseReceipt] = {}
-    for raw_path in raw_paths:
-        candidates = peaks_by_sample[raw_path.stem]
-        candidate_csv = root / f"{raw_path.stem}.owner-candidates.csv"
-        write_discovery_peaks_csv(candidate_csv, candidates)
-        source = build_local_acquisition_source_identity(
-            raw_path,
-            acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
-            observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
-        )
-        receipts[raw_path.stem] = mint_discovery_peak_universe_receipt(
-            sample_stem=raw_path.stem,
-            acquisition_source=source,
-            peak_csv=candidate_csv,
-            peaks=candidates,
-        )
-    return receipts
+def raw_acquisition_source(raw_path: Path) -> AcquisitionSourceIdentity:
+    """The acquisition identity Alignment expects for a fixture RAW file."""
+    return build_local_acquisition_source_identity(
+        raw_path,
+        acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
+        observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
+    )
+
+
+def persisted_sample(
+    raw_path: Path,
+    peaks: tuple[DiscoveryPeak, ...],
+    *,
+    unattached: tuple[EventAttachment, ...] = (),
+) -> SampleRecords:
+    """One sample whose peaks' located events all attach, plus ``unattached``."""
+    return SampleRecords(
+        raw_path.stem,
+        raw_path,
+        peaks=peaks,
+        attachments=[
+            EventAttachment(event=event, peak_id=peak.peak_id)
+            for peak in peaks
+            for event in peak.located_events
+        ]
+        + list(unattached),
+        acquisition_source=raw_acquisition_source(raw_path),
+    )
 
 
 def persist_discovery_batch(
@@ -78,40 +78,16 @@ def persist_discovery_batch(
     peaks_by_sample: Mapping[str, tuple[DiscoveryPeak, ...]],
     root: Path,
 ) -> DiscoveryBatchInput:
-    """Write in-memory Discovery results as the batch Discovery publishes.
-
-    Each sample gets its peak table and event table, bound by an owner-closed
-    receipt.
-    """
-    peak_csvs: dict[str, Path] = {}
-    event_csvs: dict[str, Path | None] = {}
-    receipts: dict[str, DiscoveryPeakUniverseReceipt] = {}
-    for raw_path in raw_paths:
-        stem = raw_path.stem
-        peaks = tuple(peaks_by_sample.get(stem, ()))
-        folder = root / stem
-        folder.mkdir(parents=True, exist_ok=True)
-        receipts.update(build_discovery_receipts(folder, (raw_path,), {stem: peaks}))
-        peak_csvs[stem] = folder / f"{stem}.owner-candidates.csv"
-        event_csvs[stem] = write_discovery_events_csv(
-            folder / "discovery_events.csv",
+    """Write in-memory Discovery results as the Discovery file it publishes."""
+    return read_discovery_batch(
+        write_discovery(
+            root,
             [
-                EventAttachment(
-                    event=event,
-                    xic_mz=peak.peak_mz,
-                    precursor_verified=True,
-                    peak_id=peak.peak_id,
-                )
-                for peak in peaks
-                for event in peak.located_events
+                persisted_sample(path, tuple(peaks_by_sample.get(path.stem, ())))
+                for path in raw_paths
             ],
+            neutral_loss_by_tag=settings.neutral_loss_by_tag,
         )
-    return DiscoveryBatchInput(
-        sample_order=tuple(path.stem for path in raw_paths),
-        peak_csvs=peak_csvs,
-        raw_files={path.stem: path for path in raw_paths},
-        event_csvs=event_csvs,
-        peak_receipts=receipts,
     )
 
 

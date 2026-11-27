@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from tests.discovery_csv_fixtures import _peak
+from tests.discovery_peak_fixtures import _peak
 from xic_extractor.discovery.blank_qualification import (
     BlankBackgroundIon,
     BlankBackgroundLibrary,
@@ -492,7 +492,7 @@ def test_run_discovery_explicit_disable_skips_blank_directory(
 
     def discover(run_spec, **kwargs):
         settings_seen.append(run_spec.settings)
-        return SimpleNamespace(peaks_csv="candidates.csv", events_csv="review.csv")
+        return SimpleNamespace(store="discovery.sqlite")
 
     monkeypatch.setattr(
         "scripts.run_discovery.extract_blank_background_library",

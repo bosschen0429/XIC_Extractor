@@ -63,7 +63,7 @@ Regression checks do not establish method-wide scientific readiness.
 | --- | --- | --- |
 | `full` | You want discovery plus cross-sample alignment | RAW directory |
 | `discovery_only` | You want to inspect candidates from one RAW file | Single RAW file |
-| `align_only` | Discovery was already run and you want to align existing outputs | RAW directory plus `discovery_batch_index.csv` |
+| `align_only` | Discovery was already run and you want to align existing outputs | RAW directory plus `discovery.sqlite` |
 
 These partial workflows are CLI uses. The GUI always runs the complete analysis
 from a RAW directory, including Backfill; it has no mode selector.
@@ -108,12 +108,13 @@ Pass the same TOML to both stages:
 
 ```powershell
 .venv/Scripts/python.exe -m scripts.run_discovery --raw-dir RAW_DIR --dll-dir DLL_DIR --preset method.toml --output-dir output/discovery
-.venv/Scripts/python.exe -m scripts.run_alignment --discovery-batch-index output/discovery/discovery_batch_index.csv --raw-dir RAW_DIR --dll-dir DLL_DIR --preset method.toml --output-dir output/alignment --output-level production
+.venv/Scripts/python.exe -m scripts.run_alignment --discovery output/discovery/discovery.sqlite --raw-dir RAW_DIR --dll-dir DLL_DIR --preset method.toml --output-dir output/alignment --output-level production
 ```
 
-Keep the complete Discovery output directory together when moving or reusing
-results. Alignment needs its accompanying physical-fact and receipt files to
-verify the method and exact peak inputs; the candidate CSV alone is insufficient.
+`discovery.sqlite` is the whole Discovery result and can be moved on its own.
+It records each sample's RAW file and acquisition identity; Alignment refuses a
+RAW that changed after Discovery, and a file from an older Discovery must be
+regenerated.
 
 Discovery tuning flags override only explicitly supplied values. `--preset`
 cannot be combined with separate tag selectors such as `--feature-list` or

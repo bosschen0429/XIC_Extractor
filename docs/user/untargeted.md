@@ -78,7 +78,7 @@ ISTD 清單直接用 Targeted 的[目標清單](targeted.md#目標清單)檔案�
 | 拿原始面積矩陣 | **下載 Alignment 矩陣**（`alignment_matrix.tsv`） |
 | 確認某個 feature 的峰形與每格來源 | **檢閱結果** |
 | 收斂成統計用的矩陣 | **整理矩陣**，見下一節 |
-| 各樣本候選表、結果資料夾、自訂匯出 | **其他檔案**（含 **開啟結果資料夾**、**自訂 Inspector 匯出**） |
+| 探索結果、結果資料夾、自訂匯出 | **其他檔案**（含 **開啟結果資料夾**、**自訂 Inspector 匯出**） |
 
 按 **檢閱結果** 後：
 
@@ -114,9 +114,7 @@ ISTD 清單直接用 Targeted 的[目標清單](targeted.md#目標清單)檔案�
 | `alignment_explanation.sqlite` | 檢閱畫面用的判定與曲線，不需要自己開 |
 | `alignment_run_metadata.json` | 本次的輸入、設定和整理矩陣用的列身分 |
 | `sample_metadata.tsv` | 本次使用的樣本角色、注射順序與排除 |
-| `<樣本>/discovery_peaks.csv` | 該樣本找到的 MS1 峰，以及哪些進入對齊 |
-| `<樣本>/discovery_events.csv` | 該樣本的每個中性丟失 MS2 事件，以及它落在哪個峰 |
-| `discovery_batch_index.csv` | 各樣本候選表的索引 |
+| `discovery.sqlite` | 探索結果：各樣本找到的 MS1 峰、每個中性丟失 MS2 事件與它落在哪個峰。給對齊與診斷工具讀，不需要自己開 |
 | `matrix_curation_<日期>_<時間>/` | 整理矩陣的結果，見下方 |
 
 ### `alignment_matrix.tsv`
@@ -143,7 +141,14 @@ ISTD 清單直接用 Targeted 的[目標清單](targeted.md#目標清單)檔案�
 
 ### Delta Mass 方法
 
-結果是 `delta_mass_candidates.csv` 等候選表，沒有矩陣。Pt pattern ＋ CID-NL dR 另有 `cid_nl_dR/` 資料夾，放同一批樣本的 dR 候選。
+結果只列成立的候選，沒有矩陣：
+
+| 檔案 | 內容 |
+| --- | --- |
+| `delta_mass_candidates.csv` | 每個候選一列：樣本、m/z、RT、強度、找到幾個位置、哪些位置，以及配到的 dR 峰 |
+| `discovery.sqlite` | 方法設定、各樣本的質量校正結果、候選的每個位置與峰界，給候選檢閱讀取 |
+
+Pt pattern ＋ CID-NL dR 另有 `cid_nl_dR/discovery.sqlite`，是同一批樣本的 dR 探索結果。
 
 ## 下一批與重開結果
 

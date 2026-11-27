@@ -4,7 +4,6 @@ import numpy as np
 import pytest
 
 from tests.cid_nl_raw_fixture import TEST_PROFILE
-from tests.discovery_csv_fixtures import located_scan_ids
 from tests.discovery_ms1_capture_fixtures import (
     _channel,
     _FakeRaw,
@@ -12,8 +11,12 @@ from tests.discovery_ms1_capture_fixtures import (
     _seed,
     _settings,
 )
-from xic_extractor.discovery.csv_reader import read_discovery_peaks_csv
-from xic_extractor.discovery.csv_writer import write_discovery_peaks_csv
+from tests.discovery_peak_fixtures import located_scan_ids
+from tests.discovery_store_fixtures import (
+    SampleRecords,
+    stored_peaks,
+    write_discovery,
+)
 from xic_extractor.discovery.ms1_capture import capture_ms1_peaks
 from xic_extractor.precursor_evidence import Ms1PrecursorObservation
 from xic_extractor.xic_models import XICTrace
@@ -80,8 +83,19 @@ def test_post_measurement_centroids_do_not_decide_peak_identity(
     )
     assert len(result.peaks) == expected
     assert batches == []
-    published = read_discovery_peaks_csv(
-        write_discovery_peaks_csv(tmp_path / "candidates.csv", result.peaks)
+    published = stored_peaks(
+        write_discovery(
+            tmp_path,
+            [
+                SampleRecords(
+                    result.peaks[0].sample_stem if result.peaks else "sample",
+                    Path("sample.raw"),
+                    peaks=result.peaks,
+                    attachments=result.attachments,
+                )
+            ],
+            neutral_loss_by_tag=settings.neutral_loss_by_tag,
+        )
     )
     assert len(published) == expected
     assert tuple(published) == result.peaks

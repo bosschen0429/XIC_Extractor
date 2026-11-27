@@ -238,7 +238,7 @@ this section states the shape and does not restate the contracts.
 | `configuration/` | settings, target/config loading, validation, typed runtime settings | extraction or rendering |
 | `applications/targeted/` | Targeted composition, request/result interface, input binding and publication | peak selection, cell decisions, RAW acquisition or workbook formatting |
 | `applications/untargeted/` | complete method routing, frozen run inputs, Discovery-to-Matrix CID-NL composition or Delta Mass diagnostics, stage outputs and cancellation; Alignment from existing Discovery remains a separate intent | grouping, cell decisions, a second runtime owner or writer algorithm |
-| `discovery/` | candidate discovery, seed generation, workflow-neutral discovery facts and receipt-bound candidate reading | matrix decisions or target-list policy |
+| `discovery/` | candidate discovery, seed generation, workflow-neutral discovery facts and the published Discovery file | matrix decisions or target-list policy |
 | `execution/` | generic attempt lifecycle, scheduling, workers, cancellation, cleanup, result storage and runtime metrics | method-specific science, subject splitting, or writer authority |
 | `extraction/` | Targeted acquisition, result models, product projection, input binding and capture population | application composition, UI, or Alignment decisions |
 | `untargeted_execution/` | retained Untargeted planning, partition execution and private result lifetime | Targeted policy, application composition, Matrix writing or a second runtime owner |

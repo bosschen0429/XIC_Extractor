@@ -6,6 +6,7 @@ from typing import cast
 
 import pytest
 
+from tests.discovery_store_fixtures import write_discovery
 from tests.discovery_worker_fixtures import _alignment_outputs
 from xic_extractor.applications.untargeted.full_analysis import (
     FullAnalysisRequest,
@@ -34,18 +35,13 @@ def test_actual_workbench_full_and_cli_main_reach_equal_final_run_spec(
     dll_dir = tmp_path / "dll"
     dll_dir.mkdir()
     output_dir = tmp_path / "out"
-    index_path = output_dir / "discovery_batch_index.csv"
-    index_path.parent.mkdir()
-    index_path.write_text(
-        "sample_stem,peak_count,admitted_peak_count\n",
-        encoding="utf-8",
-    )
+    store = write_discovery(output_dir, [])
     captured: dict[str, object] = {}
 
     def worker_batch(*_args, **kwargs):
         captured["workbench"] = _args[0]
         captured["workbench_workers"] = kwargs["execution"].parallel_workers
-        return SimpleNamespace(batch_index_csv=index_path, per_sample=())
+        return SimpleNamespace(store=store)
 
     monkeypatch.setattr(workbench_module, "run_discovery_batch", worker_batch)
     monkeypatch.setattr(
@@ -73,7 +69,7 @@ def test_actual_workbench_full_and_cli_main_reach_equal_final_run_spec(
     def cli_batch(*_args, **kwargs):
         captured["cli"] = _args[0]
         captured["cli_workers"] = kwargs["execution"].parallel_workers
-        return SimpleNamespace(batch_index_csv=index_path, per_sample=())
+        return SimpleNamespace(store=store)
 
     monkeypatch.setattr(cli_module, "run_discovery_batch", cli_batch)
     assert (

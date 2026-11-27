@@ -13,7 +13,7 @@ from tests.alignment_pipeline_helpers import (
     written_groups,
     written_source_candidates,
 )
-from tests.discovery_csv_fixtures import representative_event
+from tests.discovery_peak_fixtures import representative_event
 from tests.untargeted_cid_nl_production_batch_fixtures import (
     _assert_composite_no_input_exclusion_coverage,
     _assert_jobs_match_direct_construction,

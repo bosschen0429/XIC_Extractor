@@ -574,9 +574,9 @@ def test_cancelled_delta_mass_run_is_not_reported_as_completed(tmp_path, monkeyp
     def delta_mass(*, should_cancel, **_kwargs):
         cancelled.append(True)
         return SimpleNamespace(
+            store=tmp_path / "discovery.sqlite",
             candidates_csv=tmp_path / "c.csv",
-            positions_csv=tmp_path / "p.csv",
-            sidecar_json=tmp_path / "s.json",
+            candidate_count=0,
         )
 
     monkeypatch.setattr(module, "run_delta_mass_discovery", delta_mass)

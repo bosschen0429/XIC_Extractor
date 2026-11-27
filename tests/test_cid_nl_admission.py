@@ -10,25 +10,25 @@ from tests.cid_nl_raw_fixture import (
     _FakeRaw,
     _settings,
 )
-from tests.cid_nl_runtime_fixtures import build_discovery_receipts, install_runtime_raws
+from tests.cid_nl_runtime_fixtures import install_runtime_raws, persisted_sample
+from tests.discovery_store_fixtures import SampleRecords, write_discovery
 from tests.physical_peak_evaluation_fixtures import (
     _overlapping_triplet_trace,
 )
 from tests.untargeted_partition_fixtures import children_of, project_composed_child
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.configuration.execution_profile import ExecutionProfile
-from xic_extractor.discovery.csv_reader import (
-    DiscoveryBatchInput,
-    read_owner_bound_discovery_peaks_csv,
-)
-from xic_extractor.discovery.csv_writer import write_discovery_events_csv
-from xic_extractor.discovery.delta_mass_pipeline import _load_cid_nl_peak_rows
 from xic_extractor.discovery.input_source import DiscoveryInputSource
 from xic_extractor.discovery.ion_grouping import build_discovery_ions
 from xic_extractor.discovery.ms1_capture import capture_ms1_peaks
 from xic_extractor.discovery.ms2_events import collect_strict_nl_events
 from xic_extractor.discovery.processing_run_spec_adapter import (
     compile_discovery_processing_run_spec,
+)
+from xic_extractor.discovery.store import (
+    open_discovery,
+    read_discovery_batch,
+    read_peaks,
 )
 from xic_extractor.peak_detection.traces import Trace
 from xic_extractor.sample_metadata import SampleMetadata
@@ -59,16 +59,10 @@ def test_alignment_and_delta_mass_read_one_peak_mass(tmp_path, apex_mz):
         status="admitted",
         matched_tag_names=("DNA_dR",),
     )
-    receipts = build_discovery_receipts(tmp_path, (raw_path,), {"sample": (peak,)})
-    batch = DiscoveryBatchInput(
-        sample_order=("sample",),
-        peak_csvs={"sample": tmp_path / "sample.owner-candidates.csv"},
-        raw_files={"sample": raw_path},
-        event_csvs={"sample": None},
-        peak_receipts=receipts,
-    )
-    source = DiscoveryInputSource(batch)
-    (delta_mass_row,) = _load_cid_nl_peak_rows((batch.peak_csvs["sample"],))
+    store = write_discovery(tmp_path, [persisted_sample(raw_path, (peak,))])
+    source = DiscoveryInputSource(read_discovery_batch(store))
+    with open_discovery(store) as db:
+        ((_row_id, delta_mass_row),) = read_peaks(db)
     assert source.locations[peak.peak_id].peak_mz == peak_mz
     assert source["sample"][0].peak_mz == peak_mz
     assert delta_mass_row.peak_mz == peak_mz
@@ -90,7 +84,7 @@ def test_held_rows_never_become_alignment_roots(tmp_path, monkeypatch, with_supp
     spec = compile_discovery_processing_run_spec(
         paths, discovery_settings=settings, signal_processing_profile=TEST_PROFILE
     )
-    raws, candidates, csvs, receipts, event_csvs = {}, {}, {}, {}, {}
+    raws, candidates, persisted = {}, {}, []
     expected_ids, rejected_ids = set(), set()
     for path, source in zip(paths, spec.acquisition_inputs, strict=True):
         raw = _FakeRaw(
@@ -133,24 +127,22 @@ def test_held_rows_never_become_alignment_roots(tmp_path, monkeypatch, with_supp
                 }[path.stem]
             )
             (expected_ids if peak.admitted else rejected_ids).add(peak.peak_id)
-        folder = tmp_path / path.stem
-        folder.mkdir()
-        receipts.update(
-            build_discovery_receipts(folder, (path,), {path.stem: capture.peaks})
+        persisted.append(
+            SampleRecords(
+                path.stem,
+                path,
+                peaks=capture.peaks,
+                attachments=capture.attachments,
+                acquisition_source=source.acquisition_source,
+            )
         )
-        csvs[path.stem] = folder / f"{path.stem}.owner-candidates.csv"
-        event_csvs[path.stem] = write_discovery_events_csv(
-            folder / "discovery_events.csv", capture.attachments
+        candidates[path.stem] = capture.peaks
+    batch = read_discovery_batch(
+        write_discovery(
+            tmp_path / "discovery",
+            persisted,
+            neutral_loss_by_tag=settings.neutral_loss_by_tag,
         )
-        candidates[path.stem] = read_owner_bound_discovery_peaks_csv(
-            csvs[path.stem], receipt=receipts[path.stem]
-        )
-    batch = DiscoveryBatchInput(
-        sample_order=stems,
-        peak_csvs=csvs,
-        raw_files={p.stem: p for p in paths},
-        event_csvs=event_csvs,
-        peak_receipts=receipts,
     )
     opened = install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
     source = DiscoveryInputSource(batch)
@@ -389,13 +381,10 @@ def test_alignment_rejects_raw_replaced_after_discovery_without_recalibration(
         )
 
 
-@pytest.mark.parametrize("damage", ["event_rows_missing", "event_table_missing"])
 def test_peak_without_its_representative_event_row_fails_at_alignment_input(
-    tmp_path, monkeypatch, damage
+    tmp_path, monkeypatch
 ):
     """A peak names its representative MS2 scan; the event table must hold it."""
-    import csv
-
     stems = ("Clean1", "Clean2")
     paths = tuple(tmp_path / f"{stem}.raw" for stem in stems)
     for path in paths:
@@ -404,7 +393,7 @@ def test_peak_without_its_representative_event_row_fails_at_alignment_input(
     spec = compile_discovery_processing_run_spec(
         paths, discovery_settings=settings, signal_processing_profile=TEST_PROFILE
     )
-    raws, csvs, receipts, event_csvs = {}, {}, {}, {}
+    raws, persisted = {}, []
     for path, source in zip(paths, spec.acquisition_inputs, strict=True):
         raw = _FakeRaw((8.0,), acquisition_source=source.acquisition_source)
         raws[path] = raw
@@ -419,28 +408,21 @@ def test_peak_without_its_representative_event_row_fails_at_alignment_input(
             signal_processing_profile=TEST_PROFILE,
             ms1_centroid=lambda *_: None,
         )
-        folder = tmp_path / path.stem
-        folder.mkdir()
-        receipts.update(
-            build_discovery_receipts(folder, (path,), {path.stem: capture.peaks})
+        persisted.append(
+            SampleRecords(
+                path.stem,
+                path,
+                peaks=capture.peaks,
+                attachments=() if path.stem == "Clean1" else capture.attachments,
+                acquisition_source=source.acquisition_source,
+            )
         )
-        csvs[path.stem] = folder / f"{path.stem}.owner-candidates.csv"
-        event_csvs[path.stem] = write_discovery_events_csv(
-            folder / "discovery_events.csv", capture.attachments
+    batch = read_discovery_batch(
+        write_discovery(
+            tmp_path / "discovery",
+            persisted,
+            neutral_loss_by_tag=settings.neutral_loss_by_tag,
         )
-    if damage == "event_table_missing":
-        event_csvs["Clean1"] = None
-    else:
-        with event_csvs["Clean1"].open(encoding="utf-8", newline="") as stream:
-            header = next(csv.reader(stream))
-        with event_csvs["Clean1"].open("w", encoding="utf-8", newline="") as stream:
-            csv.writer(stream).writerow(header)
-    batch = DiscoveryBatchInput(
-        sample_order=stems,
-        peak_csvs=csvs,
-        raw_files={p.stem: p for p in paths},
-        event_csvs=event_csvs,
-        peak_receipts=receipts,
     )
     install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
     plan = prepare_untargeted_alignment_inputs(

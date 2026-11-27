@@ -23,7 +23,7 @@ def resolve_delta_mass_discovery(
     """Resolve a preset into the method and detector settings for one run.
 
     ``preset`` is a built-in name, a TOML path, or an already admitted preset
-    (for example a Workbench method draft); ``label`` names it in the sidecar.
+    (for example a Workbench method draft); ``label`` is the method label it publishes.
     """
     from xic_extractor.discovery.delta_mass_strategy import DeltaMassDiscoveryStrategy
 

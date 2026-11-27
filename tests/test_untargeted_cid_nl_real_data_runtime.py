@@ -16,7 +16,6 @@ from tests.cid_nl_raw_fixture import (
     _source_for,
 )
 from tests.cid_nl_runtime_fixtures import (
-    build_discovery_receipts,
     install_runtime_raws,
 )
 from tests.processing_identity_no_raw_fixture import (
@@ -145,11 +144,6 @@ def test_runtime_delivers_one_real_subject_cohort(
         method_subject=subject,
         settings=settings,
         peaks_by_sample={"S1": candidates, "S2": (), "S3": second_candidates},
-        discovery_receipts_by_sample=build_discovery_receipts(
-            tmp_path,
-            raw_paths,
-            {"S1": candidates, "S2": (), "S3": second_candidates},
-        ),
         signal_processing_profile=TEST_PROFILE,
     )
     source_without_cid = _FakeRaw((8.1,))
@@ -170,7 +164,6 @@ def test_runtime_delivers_one_real_subject_cohort(
             sample=sample,
             method_subject=context.method_subject,
             candidates=context.peaks_by_sample[sample.raw_stem],
-            discovery_receipt=context.discovery_receipts_by_sample[sample.raw_stem],
             settings=context.settings,
             raw_path=context.raw_paths_by_sample[sample.raw_stem],
             dll_dir=tmp_path,
@@ -418,7 +411,6 @@ def test_batch_candidate_selection_preserves_order_and_request_sample_membership
         source.scans = tuple(scans)
         sources_by_path[path] = source
         peaks_by_sample[path.stem] = tuple(candidates)
-    receipts = build_discovery_receipts(tmp_path, raw_paths, peaks_by_sample)
     subjects = tuple(
         sorted(
             (
@@ -463,7 +455,6 @@ def test_batch_candidate_selection_preserves_order_and_request_sample_membership
             method_subject=subject_batch,
             settings=settings,
             peaks_by_sample=peaks_by_sample,
-            discovery_receipts_by_sample=receipts,
             signal_processing_profile=TEST_PROFILE,
         )
         jobs = tuple(
@@ -478,7 +469,6 @@ def test_batch_candidate_selection_preserves_order_and_request_sample_membership
                     for subject in subjects
                 ),
                 candidates=tuple(reversed(context.peaks_by_sample[sample.raw_stem])),
-                discovery_receipt=receipts[sample.raw_stem],
                 settings=settings,
                 raw_path=context.raw_paths_by_sample[sample.raw_stem],
                 dll_dir=tmp_path,
@@ -559,11 +549,6 @@ def test_runtime_reads_a_region_only_where_its_events_are_when_below_quorum(
         method_subject=subject,
         settings=settings,
         peaks_by_sample=peaks_by_sample,
-        discovery_receipts_by_sample=build_discovery_receipts(
-            tmp_path,
-            raw_paths,
-            peaks_by_sample,
-        ),
         signal_processing_profile=TEST_PROFILE,
     )
     opened = install_runtime_raws(
@@ -581,7 +566,6 @@ def test_runtime_reads_a_region_only_where_its_events_are_when_below_quorum(
             ],
             method_subject=context.method_subject,
             candidates=context.peaks_by_sample[sample.raw_stem],
-            discovery_receipt=context.discovery_receipts_by_sample[sample.raw_stem],
             settings=context.settings,
             raw_path=context.raw_paths_by_sample[sample.raw_stem],
             dll_dir=tmp_path,

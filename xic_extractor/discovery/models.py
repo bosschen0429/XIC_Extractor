@@ -30,49 +30,6 @@ PEAK_STATUSES: tuple[PeakStatus, ...] = (
     "no_nl_event",
 )
 
-DISCOVERY_PEAK_COLUMNS = (
-    "status",
-    "evidence_score",
-    "attached_event_count",
-    "peak_id",
-    "sample_stem",
-    "peak_mz",
-    "precursor_mz_basis",
-    "ms1_apex_mz",
-    "ms1_apex_rt",
-    "ms1_search_rt_min",
-    "ms1_search_rt_max",
-    "query_rt_min",
-    "best_ms2_scan_id",
-    "neutral_loss_tag",
-    "matched_tag_names",
-)
-
-DISCOVERY_EVENT_COLUMNS = (
-    "ms2_scan_number",
-    "ms2_rt",
-    "neutral_loss_tag",
-    "product_mz",
-    "product_intensity",
-    "precursor_mz",
-    "precursor_mz_basis",
-    "scan_precursor_mz",
-    "precursor_monoisotopic_mz",
-    "precursor_charge",
-    "isolation_width_da",
-    "isolation_offset_da",
-    "master_scan_number",
-    "parent_ms1_scan_number",
-    "parent_ms1_rt",
-    "parent_ms1_centroid_mzs",
-    "observed_neutral_loss_da",
-    "neutral_loss_mass_error_ppm",
-    "precursor_verified",
-    "xic_mz",
-    "peak_id",
-    "unattached_reason",
-)
-
 
 @dataclass(frozen=True)
 class DiscoveryEvent:
@@ -137,14 +94,12 @@ class DiscoveryPeak:
 
     ``peak_mz`` is the peak's ion mass: the apex reading of an inferred
     precursor, else the XIC center. Every consumer reads it.
-    ``ms1_apex_rt`` is the apex Discovery judged the peak at. The XIC window
-    ``ms1_search_rt_min``..``ms1_search_rt_max`` at ``peak_mz`` and
-    ``query_rt_min`` are the capture conditions of that measurement; Alignment
-    measures the peak again from RAW with them and publishes its own
-    measurement. ``best_ms2_scan_id`` names the
-    representative event, whose values live in the event table;
-    ``attached_event_count`` counts the located events that attach and admit
-    the peak. The representative event is attached when any event attaches.
+    ``ms1_apex_rt`` is the apex Discovery judged the peak at; Alignment measures
+    the peak again from RAW and publishes its own measurement.
+    ``best_ms2_scan_id`` names the representative event, whose values live in
+    the event table; ``attached_event_count`` counts the located events that
+    attach and admit the peak. The representative event is attached when any
+    event attaches.
     """
 
     peak_id: str
@@ -154,13 +109,9 @@ class DiscoveryPeak:
     best_ms2_scan_id: int
     attached_event_count: int
     ms1_apex_rt: float
-    ms1_search_rt_min: float
-    ms1_search_rt_max: float
-    query_rt_min: float
     status: PeakStatus
     ms1_apex_mz: float | None = None
     evidence_score: int = 0
-    precursor_mz_basis: GroupPrecursorMzBasis = "scan_precursor"
     matched_tag_names: tuple[str, ...] = ()
     located_events: tuple[DiscoveryEvent, ...] = dataclass_field(
         default=(), compare=False
@@ -199,8 +150,6 @@ class EventAttachment:
     """
 
     event: DiscoveryEvent
-    xic_mz: float
-    precursor_verified: bool
     peak_id: str = ""
     unattached_reason: UnattachedReason = ""
 
@@ -212,86 +161,6 @@ class EventAttachment:
     def sample_stem(self) -> str:
         return self.event.sample_stem
 
-    @property
-    def ms2_scan_number(self) -> int:
-        return self.event.scan_number
-
-    @property
-    def ms2_rt(self) -> float:
-        return self.event.rt
-
-    @property
-    def neutral_loss_tag(self) -> str:
-        return self.event.neutral_loss_tag
-
-    @property
-    def product_mz(self) -> float:
-        return self.event.product_mz
-
-    @property
-    def product_intensity(self) -> float:
-        return self.event.product_intensity
-
-    @property
-    def precursor_mz(self) -> float:
-        return self.event.precursor_mz
-
-    @property
-    def precursor_mz_basis(self) -> str:
-        return self.event.precursor_mz_basis
-
-    @property
-    def scan_precursor_mz(self) -> float | None:
-        return self.event.scan_precursor_mz
-
-    @property
-    def precursor_monoisotopic_mz(self) -> float | None:
-        metadata = self.event.precursor_metadata
-        return None if metadata is None else metadata.monoisotopic_mz
-
-    @property
-    def precursor_charge(self) -> int | None:
-        metadata = self.event.precursor_metadata
-        return None if metadata is None else metadata.charge
-
-    @property
-    def isolation_width_da(self) -> float | None:
-        metadata = self.event.precursor_metadata
-        return None if metadata is None else metadata.isolation_width_da
-
-    @property
-    def isolation_offset_da(self) -> float | None:
-        metadata = self.event.precursor_metadata
-        return None if metadata is None else metadata.isolation_offset_da
-
-    @property
-    def master_scan_number(self) -> int | None:
-        metadata = self.event.precursor_metadata
-        return None if metadata is None else metadata.master_scan_number
-
-    @property
-    def parent_ms1_scan_number(self) -> int | None:
-        observation = self.event.ms1_precursor_observation
-        return None if observation is None else observation.scan_number
-
-    @property
-    def parent_ms1_rt(self) -> float | None:
-        observation = self.event.ms1_precursor_observation
-        return None if observation is None else observation.rt_min
-
-    @property
-    def parent_ms1_centroid_mzs(self) -> tuple[float, ...] | None:
-        observation = self.event.ms1_precursor_observation
-        return None if observation is None else observation.centroid_mzs
-
-    @property
-    def observed_neutral_loss_da(self) -> float:
-        return self.event.observed_neutral_loss_da
-
-    @property
-    def neutral_loss_mass_error_ppm(self) -> float | None:
-        return self.event.observed_loss_error_ppm
-
 
 def representative_event_rt(peak: DiscoveryPeak) -> float:
     """RT of the MS2 scan ``best_ms2_scan_id`` among the peak's located events."""
@@ -300,15 +169,6 @@ def representative_event_rt(peak: DiscoveryPeak) -> float:
         if event.scan_number == peak.best_ms2_scan_id:
             return event.rt
     raise ValueError(f"{peak.peak_id}: located events lack the representative scan")
-
-
-def discovery_event_output_sort_key(event: EventAttachment) -> tuple[object, ...]:
-    return (
-        event.ms2_rt,
-        event.ms2_scan_number,
-        event.neutral_loss_tag,
-        event.product_mz,
-    )
 
 
 def located_event_order(
@@ -331,16 +191,11 @@ def located_event_order(
 
 
 @dataclass(frozen=True)
-class DiscoveryRunOutputs:
-    peaks_csv: Path
-    events_csv: Path
-    batch_index_csv: Path | None = None
-
-
-@dataclass(frozen=True)
 class DiscoveryBatchOutputs:
-    batch_index_csv: Path
-    per_sample: tuple[DiscoveryRunOutputs, ...]
+    """The published Discovery file and the samples it holds, in run order."""
+
+    store: Path
+    sample_stems: tuple[str, ...]
 
 
 def build_discovery_peak_id(

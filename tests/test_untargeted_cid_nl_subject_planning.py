@@ -13,7 +13,7 @@ from tests.cid_nl_raw_fixture import (
     _FakeRaw,
     _settings,
 )
-from tests.discovery_csv_fixtures import representative_event
+from tests.discovery_peak_fixtures import representative_event
 from tests.untargeted_cid_nl_production_batch_fixtures import (
     _assert_jobs_match_direct_construction,
 )

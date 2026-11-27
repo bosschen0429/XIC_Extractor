@@ -11,9 +11,6 @@ from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
-from xic_extractor.discovery.batch_contract import (
-    DiscoveryPeakUniverseReceipt,
-)
 from xic_extractor.discovery.models import DiscoveryPeak
 from xic_extractor.discovery.settings import (
     DiscoverySettings,
@@ -34,7 +31,7 @@ from xic_extractor.sample_metadata import (
 
 @dataclass(frozen=True, slots=True)
 class UntargetedPartitionContext:
-    """One run's cohort, subjects, peak receipts, and RAW paths."""
+    """One run's cohort, subjects, peaks, and RAW paths."""
 
     processing_attempt_id: str
     samples: tuple[SampleMetadata, ...]
@@ -42,10 +39,6 @@ class UntargetedPartitionContext:
     settings: DiscoverySettings
     raw_paths_by_sample: Mapping[str, Path]
     peaks_by_sample: Mapping[str, tuple[DiscoveryPeak, ...]]
-    discovery_receipts_by_sample: Mapping[
-        str,
-        DiscoveryPeakUniverseReceipt,
-    ]
     signal_processing_profile: SignalProcessingProfile
     acquisition_sources_by_sample: Mapping[str, AcquisitionSourceExpectation] = field(
         default_factory=dict, repr=False, compare=False
@@ -81,7 +74,6 @@ def compose_partition_context(
     metadata_by_stem: Mapping[str, SampleMetadata],
     source_expectations: dict[str, AcquisitionSourceExpectation],
     peak_map: Mapping[str, tuple[DiscoveryPeak, ...]],
-    receipt_map: Mapping[str, DiscoveryPeakUniverseReceipt],
     signal_processing_profile: SignalProcessingProfile,
     injections: InjectionSequence | None = None,
 ) -> UntargetedPartitionContext:
@@ -100,7 +92,6 @@ def compose_partition_context(
         settings=settings,
         raw_paths_by_sample=dict(paths_by_stem),
         peaks_by_sample=dict(peak_map),
-        discovery_receipts_by_sample=dict(receipt_map),
         signal_processing_profile=signal_processing_profile,
         acquisition_sources_by_sample=source_expectations,
         injections=injections,

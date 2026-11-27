@@ -276,9 +276,9 @@ def test_bound_blank_snapshot_controls_each_sample_after_library_mutation(
 
     from tests.discovery_pipeline_fixtures import (
         _OwnerBoundFakeRawHandle,
-        _read_csv,
         _scan_event,
     )
+    from tests.discovery_store_fixtures import stored_peaks
     from xic_extractor.discovery.pipeline import run_discovery_batch
 
     paths = []
@@ -312,8 +312,5 @@ def test_bound_blank_snapshot_controls_each_sample_after_library_mutation(
         raw_opener=lambda path, _dll: handles[path],
         execution=in_process_execution(),
     )
-    states = {
-        output.peaks_csv.parent.name: _read_csv(output.peaks_csv)[0]["status"]
-        for output in result.per_sample
-    }
+    states = {peak.sample_stem: peak.status for peak in stored_peaks(result.store)}
     assert states == {"A": "blank", "B": "admitted"}

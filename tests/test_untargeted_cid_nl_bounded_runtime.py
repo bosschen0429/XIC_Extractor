@@ -26,7 +26,7 @@ from tests.cid_nl_raw_fixture import (
     _FakeRaw,
     _FakeThermoRaw,
 )
-from tests.discovery_csv_fixtures import representative_event
+from tests.discovery_peak_fixtures import representative_event
 from tests.untargeted_alignment_entry_fixtures import (
     PUBLISHED_TABLES,
     SETTINGS,

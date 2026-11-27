@@ -40,7 +40,6 @@ from xic_extractor.configuration.execution_profile import (
     UntargetedExecutionPolicy,
 )
 from xic_extractor.configuration.mass_recalibration import MassRecalibration
-from xic_extractor.discovery.csv_reader import DiscoveryBatchIndex
 from xic_extractor.execution.timing import TimingRecorder
 from xic_extractor.sample_metadata import SampleMetadata
 
@@ -122,14 +121,7 @@ def publish_alignment(
     try:
         run_untargeted_application(
             UntargetedRequest(
-                discovery_batch_index=DiscoveryBatchIndex(
-                    path=tmp_path / f"{name}-discovery" / "discovery_batch_index.csv",
-                    sample_order=discovery.sample_order,
-                    peak_csvs=discovery.peak_csvs,
-                    raw_files=discovery.raw_files,
-                    event_csvs=discovery.event_csvs,
-                    peak_receipts=discovery.peak_receipts,
-                ),
+                discovery=discovery,
                 raw_dir=raw_dir,
                 dll_dir=tmp_path,
                 output_dir=output_dir,

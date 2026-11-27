@@ -24,7 +24,6 @@ from xic_extractor.alignment.cid_nl_inputs import (
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
-from xic_extractor.discovery.batch_contract import DiscoveryPeakUniverseReceipt
 from xic_extractor.discovery.models import DiscoveryPeak
 from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
@@ -78,7 +77,6 @@ class UntargetedPartitionJob:
     sample: SampleMetadata
     method_subject: CidNlMethodSubject
     candidates: tuple[DiscoveryPeak, ...]
-    discovery_receipt: DiscoveryPeakUniverseReceipt
     settings: DiscoverySettings
     raw_path: Path
     dll_dir: Path
@@ -130,7 +128,6 @@ def build_sample_jobs(
     sample: SampleMetadata,
     subject_work_units: tuple[tuple[CidNlMethodSubject, str], ...],
     candidates: tuple[DiscoveryPeak, ...],
-    discovery_receipt: DiscoveryPeakUniverseReceipt,
     settings: DiscoverySettings,
     raw_path: Path,
     dll_dir: Path,
@@ -151,7 +148,6 @@ def build_sample_jobs(
         sample=sample,
         method_subject=first_subject,
         candidates=candidates,
-        discovery_receipt=discovery_receipt,
         settings=settings,
         raw_path=raw_path,
         dll_dir=dll_dir,

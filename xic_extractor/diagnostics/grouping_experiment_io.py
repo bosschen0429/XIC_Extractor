@@ -17,8 +17,8 @@ from xic_extractor.alignment.rt_frame import RtFrame
 from xic_extractor.alignment.sample_rt_calibration import (
     BatchRtCalibration,
 )
-from xic_extractor.discovery.csv_reader import read_discovery_batch_index
 from xic_extractor.discovery.input_source import DiscoveryInputSource
+from xic_extractor.discovery.store import read_discovery_batch
 from xic_extractor.rt_calibration_codec import (
     rt_calibration_from_payload as _read_rt_calibration_payload,
 )
@@ -29,10 +29,10 @@ from xic_extractor.tabular_io import read_delimited_rows, write_delimited_rows
 
 
 def query_discovery(
-    index_path: Path, mz_ranges: Sequence[tuple[float, float]]
+    discovery: Path, mz_ranges: Sequence[tuple[float, float]]
 ) -> tuple[tuple[str, ...], list[dict[str, Any]]]:
     """Query saved candidates by measured mass; no RAW or physical-curve loading."""
-    source = DiscoveryInputSource(read_discovery_batch_index(index_path))
+    source = DiscoveryInputSource(read_discovery_batch(discovery))
     selected = tuple(
         cid
         for cid, location in source.locations.items()

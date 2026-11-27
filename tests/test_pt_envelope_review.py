@@ -2,6 +2,7 @@
 
 import json
 from dataclasses import asdict, replace
+from pathlib import Path
 
 import pytest
 
@@ -86,15 +87,21 @@ def test_real_review_entry_adds_envelope_without_changing_saved_candidates(
         DeltaMassPatternSettings,
         DeltaMassPosition,
     )
+    from xic_extractor.configuration.mass_recalibration import (
+        VENDOR_MASS_RECALIBRATION_RESULT,
+    )
     from xic_extractor.diagnostics import delta_mass_review_acquisition as acquisition
     from xic_extractor.diagnostics.delta_mass_review_data import (
         decode_delta_mass_review,
     )
-    from xic_extractor.discovery.delta_mass_csv import write_delta_mass_outputs
     from xic_extractor.discovery.delta_mass_patterns import (
         DeltaMassCandidate,
         DeltaMassPositionResult,
     )
+    from xic_extractor.discovery.delta_mass_publication import (
+        write_delta_mass_outputs,
+    )
+    from xic_extractor.discovery.store import DiscoverySample
     from xic_extractor.xic_models import XICTrace
 
     deltas = (0.0, 1.002111, 2.002271, 4.005214)
@@ -140,7 +147,20 @@ def test_real_review_entry_adds_envelope_without_changing_saved_candidates(
     )
     discovery = tmp_path / "discovery"
     write_delta_mass_outputs(
-        discovery, candidates, {"method": asdict(settings)}, settings
+        discovery,
+        method_label=settings.method_label,
+        method=asdict(settings),
+        samples=[
+            DiscoverySample(
+                c.sample_stem,
+                Path(f"{c.sample_stem}.raw"),
+                None,
+                VENDOR_MASS_RECALIBRATION_RESULT,
+            )
+            for c in candidates
+        ],
+        candidates=candidates,
+        features={},
     )
     before = {p.name: p.read_bytes() for p in discovery.iterdir()}
     raw = tmp_path / "raw"

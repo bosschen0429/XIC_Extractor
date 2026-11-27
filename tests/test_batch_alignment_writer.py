@@ -4,7 +4,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from xic_extractor.discovery.csv_reader import DiscoveryBatchInput
+from xic_extractor.configuration.mass_recalibration import (
+    VENDOR_MASS_RECALIBRATION_RESULT,
+)
+from xic_extractor.discovery.store import DiscoveryBatchInput, DiscoverySample
 from xic_extractor.output.alignment.tsv_writer import (
     ALIGNMENT_CELLS_COLUMNS,
     BatchRowSource,
@@ -21,11 +24,14 @@ ORDER = {"o1": 1, "o2": 2, "n1": 3, "n2": 4, "n3": 5}
 
 def _discovery_batch(stems):
     return DiscoveryBatchInput(
+        path=Path("discovery.sqlite"),
         sample_order=tuple(stems),
-        peak_csvs={stem: Path(f"{stem}.csv") for stem in stems},
-        raw_files={stem: None for stem in stems},
-        event_csvs={stem: None for stem in stems},
-        peak_receipts={stem: object() for stem in stems},
+        samples={
+            stem: DiscoverySample(
+                stem, Path(f"{stem}.raw"), None, VENDOR_MASS_RECALIBRATION_RESULT
+            )
+            for stem in stems
+        },
     )
 
 
@@ -58,7 +64,7 @@ def test_declared_batches_split_in_batch_id_order():
         ("new", ("n1", "n2")),
         ("old", ("o1", "o2")),
     ]
-    assert set(split[1][1].peak_csvs) == {"o1", "o2"}
+    assert set(split[1][1].samples) == {"o1", "o2"}
 
 
 def _group(batch_id, key, rt, *, destination="matrix", detected=None):

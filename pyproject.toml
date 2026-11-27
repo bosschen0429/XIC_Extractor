@@ -281,9 +281,9 @@ allow_indirect_imports = false
 
 [[tool.importlinter.contracts]]
 id = "completed-evidence-readers-do-not-load-raw"
-name = "Completed discovery CSV reader does not load RAW"
+name = "Completed Discovery reader does not load RAW"
 type = "forbidden"
-source_modules = ["xic_extractor.discovery.csv_reader"]
+source_modules = ["xic_extractor.discovery.store"]
 forbidden_modules = [
     "xic_extractor.raw_reader",
     "xic_extractor.raw_source_binding",
@@ -335,7 +335,7 @@ id = "delta-mass-outside-product-routes"
 name = "Delta-mass diagnostics and product routes do not depend on each other"
 type = "forbidden"
 source_modules = [
-    "xic_extractor.discovery.delta_mass_csv",
+    "xic_extractor.discovery.delta_mass_publication",
     "xic_extractor.discovery.delta_mass_patterns",
     "xic_extractor.discovery.delta_mass_pipeline",
     "xic_extractor.discovery.delta_mass_strategy",
@@ -359,7 +359,7 @@ source_modules = [
     "xic_extractor.untargeted_execution",
 ]
 forbidden_modules = [
-    "xic_extractor.discovery.delta_mass_csv",
+    "xic_extractor.discovery.delta_mass_publication",
     "xic_extractor.discovery.delta_mass_patterns",
     "xic_extractor.discovery.delta_mass_pipeline",
     "xic_extractor.discovery.delta_mass_strategy",
@@ -378,7 +378,7 @@ forbidden_modules = [
     "xic_extractor.execution",
     "xic_extractor.untargeted_execution",
     "xic_extractor.discovery.pipeline",
-    "xic_extractor.discovery.csv_writer",
+    "xic_extractor.discovery.output_publication",
     "xic_extractor.extractor",
     "xic_extractor.output",
     "xic_extractor.raw_reader",

@@ -30,56 +30,46 @@ def test_preset_rollback_roundtrip(tmp_path, policy):
 
 
 @pytest.mark.parametrize("outcome", ("applied", "not_applicable"))
-def test_receipt_roundtrip_preserves_each_raw_result_and_legacy_none(tmp_path, outcome):
-    from xic_extractor.configuration.mass_recalibration import MassRecalibrationResult
-    from xic_extractor.discovery.batch_contract import (
-        discovery_receipt_from_index_fields,
-        discovery_receipt_index_fields,
-        mint_discovery_peak_universe_receipt,
-    )
-    from xic_extractor.processing_identity import (
-        build_local_acquisition_source_identity,
-    )
+def test_discovery_file_preserves_each_raw_result(tmp_path, outcome):
+    from dataclasses import replace
 
-    csv = tmp_path / "candidates.csv"
-    csv.write_text("candidate_id\n", encoding="utf-8")
-    for sample, baseline in [("A", -0.4), ("B", 0.6)]:
-        raw = tmp_path / (sample + ".raw")
-        raw.write_bytes(sample.encode())
-        result = MassRecalibrationResult(
+    from tests.discovery_store_fixtures import single_peak_sample, write_discovery
+    from xic_extractor.configuration.mass_recalibration import MassRecalibrationResult
+    from xic_extractor.discovery.store import read_discovery_batch
+
+    results = {
+        sample: MassRecalibrationResult(
             outcome,
             reason="negative_polarity" if outcome == "not_applicable" else None,
             baseline_lm=baseline if outcome == "applied" else None,
             n_anchor=60 if outcome == "applied" else 0,
             policy=MassRecalibration.EASY_IC_RESTORE,
         )
-        receipt = mint_discovery_peak_universe_receipt(
-            sample_stem=sample,
-            acquisition_source=build_local_acquisition_source_identity(
-                raw, acquisition_format="thermo_raw", observation_namespace="test"
-            ),
-            peak_csv=csv,
-            peaks=(),
-            mass_recalibration_result=result,
+        for sample, baseline in [("A", -0.4), ("B", 0.6)]
+    }
+    batch = read_discovery_batch(
+        write_discovery(
+            tmp_path,
+            [
+                replace(
+                    single_peak_sample(tmp_path, sample),
+                    mass_recalibration_result=result,
+                )
+                for sample, result in results.items()
+            ],
         )
-        fields = discovery_receipt_index_fields(receipt)
-        restored = discovery_receipt_from_index_fields(
-            fields, sample_stem=sample, peak_count=0
-        )
-        assert restored.mass_recalibration_result == result
-        fields.pop("mass_recalibration")
-        legacy = discovery_receipt_from_index_fields(
-            fields, sample_stem=sample, peak_count=0
-        )
-        assert legacy.mass_recalibration_result.policy is MassRecalibration.NONE
-        assert legacy.mass_recalibration_result.outcome == "none"
+    )
+    assert {
+        stem: sample.mass_recalibration_result for stem, sample in batch.samples.items()
+    } == results
 
 
 def test_alignment_metadata_keeps_two_samples_probe_results(tmp_path, monkeypatch):
-    import csv
+    from dataclasses import replace
 
-    from tests.alignment_pipeline_helpers import write_batch
+    from tests.alignment_pipeline_helpers import candidate_id
     from tests.cid_nl_raw_fixture import _settings
+    from tests.discovery_store_fixtures import single_peak_sample, write_discovery
     from xic_extractor.alignment import AlignmentConfig
     from xic_extractor.applications.untargeted import application
     from xic_extractor.applications.untargeted.request import UntargetedRequest
@@ -92,25 +82,29 @@ def test_alignment_metadata_keeps_two_samples_probe_results(tmp_path, monkeypatc
         serialize_mass_recalibration_result,
     )
 
-    index = write_batch(tmp_path, ("S1", "S2"))
-    with index.open(encoding="utf-8", newline="") as f:
-        reader = csv.DictReader(f)
-        columns = list(reader.fieldnames or ())
-        rows = list(reader)
-    expected = {}
-    for row, a in zip(rows, (-0.4, 0.7), strict=True):
-        result = MassRecalibrationResult(
+    results = {
+        stem: MassRecalibrationResult(
             "applied",
             baseline_lm=a,
             n_anchor=60,
             policy=MassRecalibration.EASY_IC_RESTORE,
         )
-        row["mass_recalibration"] = serialize_mass_recalibration_result(result)
-        expected[row["sample_stem"]] = json.loads(row["mass_recalibration"])
-    with index.open("w", encoding="utf-8", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=columns)
-        writer.writeheader()
-        writer.writerows(rows)
+        for stem, a in (("S1", -0.4), ("S2", 0.7))
+    }
+    index = write_discovery(
+        tmp_path / "batch",
+        [
+            replace(
+                single_peak_sample(tmp_path, stem, peak_id=candidate_id(stem)),
+                mass_recalibration_result=result,
+            )
+            for stem, result in results.items()
+        ],
+    )
+    expected = {
+        stem: json.loads(serialize_mass_recalibration_result(result))
+        for stem, result in results.items()
+    }
     monkeypatch.setattr(
         application, "complete_untargeted_alignment", lambda **kwargs: object()
     )
@@ -124,7 +118,7 @@ def test_alignment_metadata_keeps_two_samples_probe_results(tmp_path, monkeypatc
     metadata = application.run_untargeted_application(
         UntargetedRequest(
             execution=UntargetedExecutionPolicy(profile=in_process_execution()),
-            discovery_batch_index=index,
+            discovery=index,
             raw_dir=tmp_path / "raw",
             dll_dir=tmp_path / "dll",
             output_dir=tmp_path / "out",
@@ -136,14 +130,14 @@ def test_alignment_metadata_keeps_two_samples_probe_results(tmp_path, monkeypatc
     assert metadata_paths == [tmp_path / "out" / "alignment_run_metadata.json"]
 
 
-def test_standalone_discovery_publishes_readable_probe_receipt(tmp_path):
+def test_standalone_discovery_publishes_readable_probe_result(tmp_path):
     from tests.discovery_pipeline_fixtures import (
         _FakeRawHandle,
         _run_discovery,
         _settings,
     )
     from xic_extractor.configuration.mass_recalibration import MassRecalibrationResult
-    from xic_extractor.discovery.csv_reader import read_discovery_batch_index
+    from xic_extractor.discovery.store import read_discovery_batch
 
     raw = _FakeRawHandle(events=[])
     raw.mass_recalibration_result = MassRecalibrationResult(
@@ -159,8 +153,8 @@ def test_standalone_discovery_publishes_readable_probe_receipt(tmp_path):
         dll_dir=tmp_path,
         raw_opener=lambda *args: raw,
     )
-    restored = read_discovery_batch_index(output.batch_index_csv)
+    restored = read_discovery_batch(output.store)
     assert (
-        restored.peak_receipts["sample"].mass_recalibration_result
+        restored.samples["sample"].mass_recalibration_result
         == raw.mass_recalibration_result
     )

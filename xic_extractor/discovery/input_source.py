@@ -1,30 +1,22 @@
-"""Route immutable Discovery peak rows before constructing peak objects."""
+"""Index a published Discovery batch; load peaks and events only on request."""
 
 from __future__ import annotations
 
-import csv
-import io
-import math
 from collections.abc import Iterator, Mapping, Sequence
-from dataclasses import dataclass
-from pathlib import Path
-from typing import BinaryIO
+from dataclasses import dataclass, replace
 
-from xic_extractor.discovery.batch_contract import validate_discovery_peak_artifact
-from xic_extractor.discovery.csv_reader import (
-    DiscoveryBatchInput,
-    _machine_field,
-    _parse_peak_row,
-    parse_discovery_event_row,
-    require_current_discovery_columns,
-)
 from xic_extractor.discovery.event_evidence import representative_order_within_tag
 from xic_extractor.discovery.models import (
-    DISCOVERY_EVENT_COLUMNS,
-    DISCOVERY_PEAK_COLUMNS,
     DiscoveryEvent,
     DiscoveryPeak,
     located_event_order,
+)
+from xic_extractor.discovery.store import (
+    DiscoveryBatchInput,
+    open_discovery,
+    read_events,
+    read_neutral_loss_by_tag,
+    read_peaks,
 )
 
 
@@ -35,202 +27,68 @@ class CandidateLocation:
     peak_mz: float
     neutral_loss_tag: str
     admitted: bool
-    offset: int
-    byte_size: int
-    row_number: int
+    row_id: int
 
 
-class _CsvLines:
-    def __init__(self, stream: BinaryIO):
-        self.stream = stream
-
-    def __iter__(self) -> _CsvLines:
-        return self
-
-    def __next__(self) -> str:
-        offset = self.stream.tell()
-        line = self.stream.readline()
-        if not line:
-            raise StopIteration
-        return line.decode("utf-8-sig" if offset == 0 else "utf-8")
-
-
-@dataclass(frozen=True, slots=True)
-class _EventRowLocation:
-    offset: int
-    byte_size: int
-    row_number: int
+def _chunks(values: Sequence[int], size: int = 900) -> Iterator[Sequence[int]]:
+    for start in range(0, len(values), size):
+        yield values[start : start + size]
 
 
 class DiscoveryInputSource(Mapping[str, tuple[DiscoveryPeak, ...]]):
-    """An artifact-verified peak index; domain values live only in a requested load.
+    """A Discovery batch's peak index; domain values live only in a requested load.
 
     Alignment candidates are the admitted peaks. The Mapping view is for
     sample-at-a-time diagnostic consumers. Scientific execution uses
     load_candidates with a closed working set of peak IDs, and
-    located_events for the event-table rows that locate one peak.
+    located_events for the events that locate one peak.
     """
 
     def __init__(self, batch: DiscoveryBatchInput):
         self.batch = batch
         self.locations: dict[str, CandidateLocation] = {}
-        self._sample_ids: dict[str, tuple[str, ...]] = {}
-        self._headers: dict[str, tuple[str, ...]] = {}
-        self._stats: dict[str, tuple[int, int]] = {}
-        self._feature_ids: dict[str, tuple[str, ...]] = {}
         self.ms1_apex_mz_by_candidate: dict[str, float] = {}
         self.precursor_mz_by_candidate: dict[str, float] = {}
-        for stem in batch.sample_order:
-            path = batch.peak_csvs[stem]
-            receipt = batch.peak_receipts[stem]
-            before = self._stat(path)
-            validate_discovery_peak_artifact(receipt, path)
-            ids = []
-            with path.open("rb") as stream:
-                reader = csv.DictReader(_CsvLines(stream))
-                header = tuple(reader.fieldnames or ())
-                require_current_discovery_columns(
-                    path, header, DISCOVERY_PEAK_COLUMNS, table="peak table"
+        wanted = set(batch.sample_order)
+        ids: dict[str, list[str]] = {stem: [] for stem in batch.sample_order}
+        by_row: dict[int, str] = {}
+        pools: dict[str, list[tuple[bool, tuple[object, ...], float]]] = {}
+        with open_discovery(batch.path) as db:
+            self._losses = read_neutral_loss_by_tag(db)
+            for row_id, cid, stem, mz, tag, status, apex_mz in db.execute(
+                "SELECT p.id,p.peak_id,s.sample_stem,p.peak_mz,p.neutral_loss_tag,"
+                "p.status,p.ms1_apex_mz FROM peaks p "
+                "JOIN samples s ON s.id=p.sample ORDER BY p.peak_id"
+            ):
+                if stem not in wanted:
+                    continue
+                self.locations[cid] = CandidateLocation(
+                    cid, stem, mz, tag, status == "admitted", row_id
                 )
-                self._headers[stem] = header
-                row_number = 2
-                while True:
-                    offset = stream.tell()
-                    row = next(reader, None)
-                    if row is None:
-                        break
-                    cid = _machine_field(row, "peak_id")
-                    mz = float(row["peak_mz"])
-                    if not cid or cid in self.locations:
-                        raise ValueError(
-                            "Discovery peak identity must be globally unique"
-                        )
-                    if _machine_field(row, "sample_stem") != stem:
-                        raise ValueError("Discovery row crossed its receipt sample")
-                    if not math.isfinite(mz) or mz <= 0:
-                        raise ValueError(
-                            "Discovery precursor must be finite and positive"
-                        )
-                    self.locations[cid] = CandidateLocation(
-                        cid,
-                        stem,
-                        mz,
-                        row["neutral_loss_tag"],
-                        row["status"] == "admitted",
-                        offset,
-                        stream.tell() - offset,
-                        row_number,
+                if apex_mz is not None:
+                    self.ms1_apex_mz_by_candidate[cid] = apex_mz
+                ids[stem].append(cid)
+                by_row[row_id] = cid
+            for peak, reason, event in read_events(
+                db,
+                self._losses,
+                "JOIN peaks p ON p.id=e.peak "
+                "WHERE e.neutral_loss_tag=p.neutral_loss_tag",
+            ):
+                cid = by_row.get(peak) if peak is not None else None
+                if cid is not None:
+                    pools.setdefault(cid, []).append(
+                        (not reason, _representative_order(event), event.precursor_mz)
                     )
-                    apex_mz = row.get("ms1_apex_mz", "").strip()
-                    if apex_mz:
-                        self.ms1_apex_mz_by_candidate[cid] = float(apex_mz)
-                    ids.append(cid)
-                    row_number += 1
-            if len(ids) != receipt.peak_count:
-                raise ValueError("Discovery row count crossed its owner receipt")
-            if self._stat(path) != before:
-                raise ValueError("Discovery CSV changed while building its row index")
-            self._stats[stem] = before
-            self._sample_ids[stem] = tuple(sorted(ids))
-            self._feature_ids[stem] = tuple(
-                cid for cid in self._sample_ids[stem] if self.locations[cid].admitted
-            )
-        self._event_rows: dict[str, list[_EventRowLocation]] = {}
-        self._event_headers: dict[str, tuple[str, ...]] = {}
-        self._event_stats: dict[str, tuple[int, int]] = {}
-        for stem in batch.sample_order:
-            event_path = batch.event_csvs.get(stem)
-            if event_path is not None:
-                self._index_event_rows(stem, event_path)
-
-    def _index_event_rows(self, stem: str, path: Path) -> None:
-        before = self._stat(path)
-        attached_ids: set[str] = set()
-        representative_rows: dict[
-            str, list[tuple[bool, tuple[object, ...], dict[str, str]]]
-        ] = {}
-        with path.open("rb") as stream:
-            reader = csv.DictReader(_CsvLines(stream))
-            header = tuple(reader.fieldnames or ())
-            require_current_discovery_columns(
-                path, header, DISCOVERY_EVENT_COLUMNS, table="event table"
-            )
-            row_number = 2
-            while True:
-                offset = stream.tell()
-                row = next(reader, None)
-                if row is None:
-                    break
-                peak_id = _machine_field(row, "peak_id")
-                if peak_id:
-                    location = self.locations.get(peak_id)
-                    if location is None or location.sample_stem != stem:
-                        raise ValueError(
-                            f"{path}: row {row_number}: event locates an unknown "
-                            f"peak {peak_id!r}"
-                        )
-                    self._event_rows.setdefault(peak_id, []).append(
-                        _EventRowLocation(offset, stream.tell() - offset, row_number)
-                    )
-                    attached = not row["unattached_reason"]
-                    if attached:
-                        attached_ids.add(peak_id)
-                    if row["neutral_loss_tag"] == location.neutral_loss_tag:
-                        representative_rows.setdefault(peak_id, []).append(
-                            (attached, _representative_order(row), row)
-                        )
-                row_number += 1
-        if self._stat(path) != before:
-            raise ValueError("Discovery event table changed while indexing")
-        for peak_id, rows in representative_rows.items():
-            pool = [item for item in rows if item[0] or peak_id not in attached_ids]
-            if pool:
-                _, _, chosen = min(pool, key=lambda item: item[1])
-                self.precursor_mz_by_candidate[peak_id] = float(chosen["precursor_mz"])
-        self._event_headers[stem] = header
-        self._event_stats[stem] = before
-
-    def located_events(
-        self,
-        candidate: DiscoveryPeak,
-        *,
-        neutral_loss_by_tag: Mapping[str, float],
-    ) -> tuple[DiscoveryEvent, ...]:
-        """The event-table rows locating one peak, attached or not."""
-        stem = self.locations[candidate.peak_id].sample_stem
-        rows = self._event_rows.get(candidate.peak_id, [])
-        if not rows:
-            return ()
-        path = self.batch.event_csvs[stem]
-        raw_file = self.batch.raw_files[stem]
-        assert path is not None
-        if raw_file is None:
-            raise ValueError(f"{stem}: Discovery batch index names no RAW file")
-        if self._stat(path) != self._event_stats[stem]:
-            raise ValueError("Discovery event table changed after indexing")
-        events = []
-        with path.open("rb") as stream:
-            for location in rows:
-                stream.seek(location.offset)
-                text = stream.read(location.byte_size).decode("utf-8")
-                fields = next(csv.reader(io.StringIO(text, newline="")))
-                row = dict(zip(self._event_headers[stem], fields, strict=True))
-                events.append(
-                    parse_discovery_event_row(
-                        path,
-                        location.row_number,
-                        row,
-                        raw_file=raw_file,
-                        sample_stem=stem,
-                        neutral_loss_by_tag=neutral_loss_by_tag,
-                    ).event
-                )
-        return located_event_order(events)
-
-    @staticmethod
-    def _stat(path: Path) -> tuple[int, int]:
-        value = path.stat()
-        return value.st_size, value.st_mtime_ns
+        for cid, rows in pools.items():
+            attached = any(item[0] for item in rows)
+            pool = [item for item in rows if item[0] or not attached]
+            self.precursor_mz_by_candidate[cid] = min(pool, key=lambda item: item[1])[2]
+        self._sample_ids = {stem: tuple(values) for stem, values in ids.items()}
+        self._feature_ids = {
+            stem: tuple(cid for cid in values if self.locations[cid].admitted)
+            for stem, values in self._sample_ids.items()
+        }
 
     def __iter__(self) -> Iterator[str]:
         return iter(self.batch.sample_order)
@@ -242,34 +100,33 @@ class DiscoveryInputSource(Mapping[str, tuple[DiscoveryPeak, ...]]):
         return self.load_candidates(self._sample_ids[stem])[stem]
 
     def load_candidates(
-        self, candidate_ids: Sequence[str]
+        self, candidate_ids: Sequence[str], *, located_events: bool = False
     ) -> dict[str, tuple[DiscoveryPeak, ...]]:
-        selected: dict[str, list[CandidateLocation]] = {}
-        for cid in candidate_ids:
-            location = self.locations[cid]
-            selected.setdefault(location.sample_stem, []).append(location)
-        result: dict[str, tuple[DiscoveryPeak, ...]] = {
-            stem: () for stem in self.batch.sample_order
+        """The given peaks by sample; with ``located_events``, each carries the
+        events that locate it, attached or not."""
+        rows = sorted(self.locations[cid].row_id for cid in candidate_ids)
+        selected: dict[str, list[DiscoveryPeak]] = {}
+        with open_discovery(self.batch.path) as db:
+            for chunk in _chunks(rows):
+                marks = ",".join("?" for _ in chunk)
+                events: dict[int, list[DiscoveryEvent]] = {}
+                if located_events:
+                    for located, _reason, event in read_events(
+                        db, self._losses, f"WHERE e.peak IN ({marks})", chunk
+                    ):
+                        assert located is not None
+                        events.setdefault(located, []).append(event)
+                for row_id, peak in read_peaks(db, f"WHERE p.id IN ({marks})", chunk):
+                    if located_events:
+                        peak = replace(
+                            peak,
+                            located_events=located_event_order(events.get(row_id, ())),
+                        )
+                    selected.setdefault(peak.sample_stem, []).append(peak)
+        return {
+            stem: tuple(sorted(selected.get(stem, ()), key=lambda peak: peak.peak_id))
+            for stem in self.batch.sample_order
         }
-        for stem, locations in selected.items():
-            path = self.batch.peak_csvs[stem]
-            if self._stat(path) != self._stats[stem]:
-                raise ValueError("Discovery CSV changed after indexing")
-            values = []
-            with path.open("rb") as stream:
-                for location in sorted(locations, key=lambda item: item.candidate_id):
-                    stream.seek(location.offset)
-                    text = stream.read(location.byte_size).decode("utf-8")
-                    fields = next(csv.reader(io.StringIO(text, newline="")))
-                    row = dict(zip(self._headers[stem], fields, strict=True))
-                    candidate = _parse_peak_row(path, location.row_number, row)
-                    if candidate.peak_id != location.candidate_id:
-                        raise ValueError("Discovery row index crossed peak identity")
-                    values.append(candidate)
-            if self._stat(path) != self._stats[stem]:
-                raise ValueError("Discovery CSV changed while loading a working set")
-            result[stem] = tuple(values)
-        return result
 
     def candidate_ids(self, stem: str) -> tuple[str, ...]:
         return self._sample_ids[stem]
@@ -283,15 +140,14 @@ class DiscoveryInputSource(Mapping[str, tuple[DiscoveryPeak, ...]]):
         return _FeatureCandidateView(self)
 
 
-def _representative_order(row: Mapping[str, str]) -> tuple[object, ...]:
-    error = row["neutral_loss_mass_error_ppm"]
+def _representative_order(event: DiscoveryEvent) -> tuple[object, ...]:
     return representative_order_within_tag(
-        product_intensity=float(row["product_intensity"]),
-        observed_loss_error_ppm=float(error) if error else None,
-        rt=float(row["ms2_rt"]),
-        scan_number=int(row["ms2_scan_number"]),
-        neutral_loss_tag=row["neutral_loss_tag"],
-        product_mz=float(row["product_mz"]),
+        product_intensity=event.product_intensity,
+        observed_loss_error_ppm=event.observed_loss_error_ppm,
+        rt=event.rt,
+        scan_number=event.scan_number,
+        neutral_loss_tag=event.neutral_loss_tag,
+        product_mz=event.product_mz,
     )
 
 

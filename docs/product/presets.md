@@ -63,7 +63,7 @@ method identities, an absent policy means `none`, and restoration runs
 have a different scientific identity from `none` and `easy_ic_probe` runs.
 
 Each RAW's mass result is saved where its review can replay it:
-`discovery_batch_index.csv` (`mass_recalibration`), the Alignment
+the `samples` table of `discovery.sqlite`, the Alignment
 `alignment_run_metadata.json` (`mass_recalibration_by_sample`) and Targeted
 `Run Metadata`. Review curves replay the saved result, not today's default.
 Saved `easy_ic_probe` results keep their original `a + b * LM` formula; a probe

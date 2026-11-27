@@ -219,7 +219,7 @@
     {
       "title": "三種模式的輸入不同",
       "items": [
-        "full 從 RAW 目錄開始；discovery_only 選單一 RAW；align_only 需要 RAW 目錄與既有 discovery_batch_index.csv。"
+        "full 從 RAW 目錄開始；discovery_only 選單一 RAW；align_only 需要 RAW 目錄與既有 discovery.sqlite。"
       ],
       "dot": "cyan"
     },

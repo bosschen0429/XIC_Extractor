@@ -54,7 +54,6 @@ def test_partition_context_rejects_duplicate_injection_order() -> None:
             metadata_by_stem={row.raw_stem: row for row in rows},
             source_expectations={},
             peak_map={},
-            receipt_map={},
             signal_processing_profile=None,
         )
 

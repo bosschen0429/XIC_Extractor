@@ -7,13 +7,12 @@ from pathlib import Path
 
 import pytest
 
-from tests.cid_nl_runtime_fixtures import build_discovery_receipts
-from tests.discovery_csv_fixtures import _peak
 from tests.discovery_ms1_capture_fixtures import _seed
-from xic_extractor.discovery.csv_reader import DiscoveryBatchInput
-from xic_extractor.discovery.csv_writer import write_discovery_events_csv
+from tests.discovery_peak_fixtures import _peak
+from tests.discovery_store_fixtures import SampleRecords, write_discovery
 from xic_extractor.discovery.input_source import DiscoveryInputSource
 from xic_extractor.discovery.models import EventAttachment
+from xic_extractor.discovery.store import read_discovery_batch
 
 
 @pytest.mark.parametrize(
@@ -41,34 +40,28 @@ def test_representative_precursor_follows_discovery_choice_within_one_scan(
     stronger = replace(
         weaker, precursor_mz=300.1100, product_mz=184.0626, product_intensity=900.0
     )
-    write_discovery_events_csv(
-        tmp_path / "events.csv",
-        (
-            EventAttachment(
-                event=weaker,
-                xic_mz=300.1,
-                precursor_verified=True,
-                peak_id=peak.peak_id,
-            ),
-            EventAttachment(
-                event=stronger,
-                xic_mz=300.1,
-                precursor_verified=True,
-                peak_id=peak.peak_id,
-                unattached_reason="" if stronger_attaches else "rt_outside_peak",
-            ),
-        ),
-    )
-    receipts = build_discovery_receipts(tmp_path, (raw_path,), {raw_path.stem: (peak,)})
     source = DiscoveryInputSource(
-        DiscoveryBatchInput(
-            sample_order=(raw_path.stem,),
-            peak_csvs={
-                raw_path.stem: tmp_path / f"{raw_path.stem}.owner-candidates.csv"
-            },
-            raw_files={raw_path.stem: raw_path},
-            event_csvs={raw_path.stem: tmp_path / "events.csv"},
-            peak_receipts=receipts,
+        read_discovery_batch(
+            write_discovery(
+                tmp_path,
+                [
+                    SampleRecords(
+                        raw_path.stem,
+                        raw_path,
+                        peaks=(peak,),
+                        attachments=(
+                            EventAttachment(event=weaker, peak_id=peak.peak_id),
+                            EventAttachment(
+                                event=stronger,
+                                peak_id=peak.peak_id,
+                                unattached_reason=""
+                                if stronger_attaches
+                                else "rt_outside_peak",
+                            ),
+                        ),
+                    )
+                ],
+            )
         )
     )
 

@@ -26,39 +26,20 @@ from xic_extractor.diagnostics.delta_mass_review_data import (
     ReviewReadError,
     ReviewSpectrum,
 )
-from xic_extractor.discovery.detected_features import load_detected_features_csv
 from xic_extractor.discovery.models import DiscoveryEvent
 from xic_extractor.discovery.ms2_events import discovery_events_from_scan
+from xic_extractor.discovery.store import DISCOVERY_ARTIFACT_NAME, open_discovery
 from xic_extractor.discovery.strict_event_receipts import read_parent_ms1_observations
 from xic_extractor.evidence.pt_envelope import EnvelopeTrace, compare_pt_envelope
 from xic_extractor.mass_accuracy import mz_tolerance_da
+from xic_extractor.peak_detection.cid_nl_method_assessment import (
+    CidNlCandidateInterval,
+)
 from xic_extractor.precursor_evidence import PrecursorMassScope
 from xic_extractor.presets.apply import apply_to_discovery
 from xic_extractor.presets.loader import load_preset
 from xic_extractor.raw_reader import open_raw
-from xic_extractor.tabular_io import read_delimited_rows
 from xic_extractor.xic_models import XICRequest
-
-_CANDIDATE_FIELDS = (
-    "candidate_id",
-    "sample_stem",
-    "method_label",
-    "pattern_id",
-    "status",
-    "reject_reason",
-    "base_mz",
-    "base_rt_apex_min",
-)
-_POSITION_FIELDS = (
-    "candidate_id",
-    "sample_stem",
-    "position_label",
-    "delta_da",
-    "expected_mz",
-    "observed_mz",
-    "apex_rt_min",
-    "position_status",
-)
 
 
 def acquire_delta_mass_review(
@@ -77,7 +58,7 @@ def acquire_delta_mass_review(
     """
     if not math.isfinite(padding_min) or padding_min <= 0:
         raise ValueError("padding_min must be positive and finite")
-    selected, mass_results = _read_selected_candidates(
+    selected, mass_results, features = _read_selected_candidates(
         discovery_directory, candidate_ids, padding_min
     )
     nl_settings = apply_to_discovery(load_preset(nl_preset)) if nl_preset else None
@@ -96,46 +77,6 @@ def acquire_delta_mass_review(
     acquired: dict[str, ReviewCandidate] = {}
     for sample, candidates in by_sample.items():
         raw_path = raw_paths[sample]
-        feature_path = discovery_directory / sample / "detected_features.csv"
-        features = (
-            load_detected_features_csv(feature_path) if feature_path.is_file() else ()
-        )
-        feature_bounds = {
-            f.feature_id: (f.rt_start_min, f.rt_end_min)
-            for f in features
-            if f.sample_stem == sample
-            and f.rt_start_min is not None
-            and f.rt_end_min is not None
-        }
-        feature_masses = {
-            f.feature_id: f.mz for f in features if f.sample_stem == sample
-        }
-        bounded_candidates = []
-        for candidate in candidates:
-            bounded_positions = tuple(
-                replace(
-                    p,
-                    peak_rt_window=feature_bounds.get(p.feature_id),
-                    feature_mz=feature_masses.get(p.feature_id),
-                )
-                for p in candidate.positions
-            )
-            windows = [
-                candidate.rt_window,
-                *(
-                    p.peak_rt_window
-                    for p in bounded_positions
-                    if p.peak_rt_window is not None
-                ),
-            ]
-            bounded_candidates.append(
-                replace(
-                    candidate,
-                    positions=bounded_positions,
-                    rt_window=(min(w[0] for w in windows), max(w[1] for w in windows)),
-                )
-            )
-        candidates = bounded_candidates
         targets = (
             tuple(
                 (
@@ -284,7 +225,7 @@ def acquire_delta_mass_review(
                         result,
                         neutral_losses=assess_review_neutral_losses(
                             result,
-                            features=features,
+                            features=features.get(sample, {}),
                             seeds=qualified_seeds,
                             settings=nl_settings,
                         ),
@@ -323,143 +264,120 @@ def acquire_delta_mass_review(
 
 def _read_selected_candidates(
     directory: Path, candidate_ids: Sequence[str] | None, padding_min: float
-) -> tuple[tuple[ReviewCandidate, ...], dict[str, MassRecalibrationResult]]:
+) -> tuple[
+    tuple[ReviewCandidate, ...],
+    dict[str, MassRecalibrationResult],
+    dict[str, dict[str, CidNlCandidateInterval]],
+]:
     if candidate_ids is not None and not candidate_ids:
         raise ValueError(
             "Select at least one candidate ID, or request all candidates explicitly"
         )
-    rows = read_delimited_rows(
-        directory / "delta_mass_candidates.csv",
-        required_columns=_CANDIDATE_FIELDS,
-        delimiter=",",
-        encoding="utf-8-sig",
-    )
+    with open_discovery(directory / DISCOVERY_ARTIFACT_NAME) as db:
+        run = db.execute("SELECT method_label,method FROM delta_mass_run").fetchone()
+        if run is None:
+            raise ValueError("No Delta Mass result in this Discovery output")
+        method_label, method = run[0], json.loads(run[1])
+        rows = {
+            cid: (row_id, stem, pattern, mz, rt, recalibration)
+            for row_id, cid, stem, pattern, mz, rt, recalibration in db.execute(
+                "SELECT c.id,c.candidate_id,s.sample_stem,c.pattern_id,c.base_mz,"
+                "c.base_rt_apex_min,s.mass_recalibration_result "
+                "FROM delta_mass_candidates c JOIN samples s ON s.id=c.sample "
+                "ORDER BY c.id"
+            )
+        }
+        features: dict[str, dict[str, CidNlCandidateInterval]] = {}
+        for stem, feature_id, mz, start, end in db.execute(
+            "SELECT s.sample_stem,f.feature_id,f.mz,f.rt_start_min,f.rt_end_min "
+            "FROM delta_mass_features f JOIN samples s ON s.id=f.sample "
+            "WHERE f.rt_start_min IS NOT NULL AND f.rt_end_min IS NOT NULL"
+        ):
+            features.setdefault(stem, {})[feature_id] = CidNlCandidateInterval(
+                mz, start, end
+            )
+        positions: dict[int, list[tuple[ReviewPosition, float | None]]] = {}
+        for (
+            row_id,
+            stem,
+            label,
+            delta,
+            expected,
+            observed,
+            status,
+            feature,
+            apex,
+        ) in db.execute(
+            "SELECT p.candidate,s.sample_stem,p.position_label,p.delta_da,"
+            "p.expected_mz,p.observed_mz,p.position_status,"
+            "COALESCE(p.feature_id,''),p.apex_rt_min "
+            "FROM delta_mass_positions p "
+            "JOIN delta_mass_candidates c ON c.id=p.candidate "
+            "JOIN samples s ON s.id=c.sample ORDER BY p.candidate,p.ordinal"
+        ):
+            interval = features.get(stem, {}).get(feature)
+            positions.setdefault(row_id, []).append(
+                (
+                    ReviewPosition(
+                        label=label,
+                        delta_da=delta,
+                        expected_mz=expected,
+                        observed_mz=observed,
+                        position_status=status,
+                        feature_id=feature,
+                        peak_rt_window=None
+                        if interval is None
+                        else (interval.rt_left_min, interval.rt_right_min),
+                        feature_mz=None if interval is None else interval.mz,
+                    ),
+                    apex,
+                )
+            )
     if candidate_ids is None:
-        candidate_ids = [r["candidate_id"] for r in rows if r["status"] == "candidate"]
+        candidate_ids = list(rows)
         if not candidate_ids:
             raise ValueError("No saved Delta Mass candidates to review")
-    positions = read_delimited_rows(
-        directory / "delta_mass_positions.csv",
-        required_columns=_POSITION_FIELDS,
-        delimiter=",",
-        encoding="utf-8-sig",
-    )
-    sidecar = json.loads(
-        (directory / "delta_mass_sidecar.json").read_text(encoding="utf-8")
-    )
-    method = sidecar.get("method", {}) if isinstance(sidecar, dict) else {}
-    if not isinstance(method, dict):
-        raise ValueError("Delta Mass sidecar method must be an object")
     policy = resolve_mass_recalibration(method.get("mass_recalibration", "none"))
-    mass_results = {}
-    if policy is not MassRecalibration.NONE:
-        for sample in sidecar.get("samples", []):
-            result = deserialize_mass_recalibration_result(
-                sample.get("mass_recalibration", "")
-            )
-            if result.policy is not policy:
-                raise ValueError(
-                    "Delta Mass sample lacks the run's saved mass restoration result"
-                )
-            mass_results[sample["sample_stem"]] = result
-    configured_positions = {p["label"]: p for p in method.get("positions", [])}
-    try:
-        ppm = float(method["mz_tolerance_ppm"])
-    except (KeyError, TypeError, ValueError) as exc:
-        raise ValueError(
-            "Use current Delta Mass outputs with method.mz_tolerance_ppm in the sidecar"
-        ) from exc
-    if not math.isfinite(ppm) or ppm <= 0:
-        raise ValueError("Saved m/z tolerance must be positive and finite")
+    ppm = float(method["mz_tolerance_ppm"])
     selected = []
+    mass_results: dict[str, MassRecalibrationResult] = {}
     for candidate_id in dict.fromkeys(candidate_ids):
-        matches = [r for r in rows if r["candidate_id"] == candidate_id]
-        if len(matches) != 1:
+        if candidate_id not in rows:
             raise ValueError(
                 f"Candidate ID must identify exactly one saved row: {candidate_id}"
             )
-        row = matches[0]
-        matched_positions = [
-            p
-            for p in positions
-            if p["candidate_id"] == candidate_id
-            and p["sample_stem"] == row["sample_stem"]
+        row_id, stem, pattern, base_mz, base_rt, recalibration = rows[candidate_id]
+        saved = positions.get(row_id, [])
+        parsed = tuple(position for position, _apex in saved)
+        if not parsed:
+            raise ValueError(f"Missing saved positions: {candidate_id}")
+        apices = [base_rt, *(apex for _position, apex in saved if apex is not None)]
+        windows = [
+            (max(0.0, min(apices) - padding_min), max(apices) + padding_min),
+            *(p.peak_rt_window for p in parsed if p.peak_rt_window is not None),
         ]
-        labels = [p["position_label"] for p in matched_positions]
-        if (
-            not labels
-            or any(not label for label in labels)
-            or len(set(labels)) != len(labels)
-        ):
-            raise ValueError(f"Missing or duplicate saved positions: {candidate_id}")
-        parsed = tuple(
-            ReviewPosition(
-                label=p["position_label"],
-                delta_da=_required_number(
-                    configured_positions.get(p["position_label"], p), "delta_da"
-                ),
-                expected_mz=_required_number(p, "expected_mz"),
-                observed_mz=_saved_number(p, "observed_mz"),
-                position_status=p["position_status"],
-                feature_id=p.get("feature_id", ""),
-            )
-            for p in matched_positions
-        )
-        base_mz = _required_number(row, "base_mz")
-        base_rt = _required_number(row, "base_rt_apex_min")
-        if base_mz <= 0 or base_rt < 0 or any(p.query_mz <= 0 for p in parsed):
-            raise ValueError(f"Invalid saved m/z or RT: {candidate_id}")
-        apices = [
-            base_rt,
-            *(
-                _required_number(p, "apex_rt_min")
-                for p in matched_positions
-                if p["apex_rt_min"] != ""
-            ),
-        ]
+        if policy is not MassRecalibration.NONE:
+            result = deserialize_mass_recalibration_result(recalibration)
+            if result.policy is not policy:
+                raise ValueError(f"Missing saved mass restoration for sample: {stem}")
+            mass_results[stem] = result
         selected.append(
             ReviewCandidate(
                 candidate_id=candidate_id,
-                sample_stem=row["sample_stem"],
-                method_label=row["method_label"],
-                pattern_id=row["pattern_id"],
-                status=row["status"],
-                reject_reason=row["reject_reason"],
+                sample_stem=stem,
+                method_label=method_label,
+                pattern_id=pattern,
+                status="candidate",
+                reject_reason="",
                 base_mz=base_mz,
                 base_rt_apex_min=base_rt,
                 positions=parsed,
                 raw_file="",
                 xic_ppm=ppm,
-                rt_window=(
-                    max(0.0, min(apices) - padding_min),
-                    max(apices) + padding_min,
-                ),
+                rt_window=(min(w[0] for w in windows), max(w[1] for w in windows)),
             )
         )
-    if policy is not MassRecalibration.NONE:
-        missing = {c.sample_stem for c in selected} - mass_results.keys()
-        if missing:
-            raise ValueError(
-                f"Missing saved mass restoration for samples: {sorted(missing)}"
-            )
-    return tuple(selected), mass_results
-
-
-def _saved_number(row: dict[str, str], field: str) -> float | None:
-    value = row[field]
-    if value == "":
-        return None
-    result = float(value)
-    if not math.isfinite(result):
-        raise ValueError(f"Saved {field} must be finite")
-    return result
-
-
-def _required_number(row: dict[str, str], field: str) -> float:
-    result = _saved_number(row, field)
-    if result is None:
-        raise ValueError(f"Saved {field} is required")
-    return result
+    return tuple(selected), mass_results, features
 
 
 def _merged_windows(

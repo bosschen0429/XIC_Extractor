@@ -17,14 +17,20 @@ from tests.discovery_ms1_capture_fixtures import (
 from tests.discovery_ms1_capture_fixtures import (
     _settings as _capture_settings,
 )
+from tests.discovery_peak_fixtures import representative_event
 from tests.discovery_physical_measurement_fixtures import (
     _OwnerBoundBatchRaw,
 )
 from tests.discovery_pipeline_fixtures import (
     _OwnerBoundFakeRawHandle,
-    _read_csv,
     _scan_event,
     _settings,
+)
+from tests.discovery_store_fixtures import (
+    SampleRecords,
+    stored_events,
+    stored_peaks,
+    write_discovery,
 )
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
@@ -68,7 +74,6 @@ def _acquisition_totals(batches):
 def test_recorded_mono_nl_match_keeps_distinct_inferred_physical_search(
     tmp_path: Path, parent_support: bool
 ) -> None:
-    from xic_extractor.discovery.csv_reader import read_discovery_peaks_csv
     from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
     from xic_extractor.precursor_evidence import Ms1PrecursorObservation
     from xic_extractor.xic_models import XICTrace
@@ -135,14 +140,17 @@ def test_recorded_mono_nl_match_keeps_distinct_inferred_physical_search(
         dll_dir=tmp_path / "dll",
         raw_opener=lambda *_args: raw,
     )
-    candidates = read_discovery_peaks_csv(outputs.peaks_csv)
+    candidates = stored_peaks(outputs.store)
     supported = [
         candidate for candidate in candidates if candidate.status == "admitted"
     ]
     assert len(supported) == int(parent_support)
     if parent_support:
         assert supported[0].ms1_apex_rt == pytest.approx(9.02)
-        assert supported[0].precursor_mz_basis == "product_plus_neutral_loss"
+        assert (
+            representative_event(supported[0]).precursor_mz_basis
+            == "product_plus_neutral_loss"
+        )
 
 
 @pytest.mark.parametrize("strongest_first", [True, False])
@@ -152,8 +160,6 @@ def test_pipeline_retains_each_seeded_physical_peak_from_one_rt_group(
     strongest_first: bool,
     second_seed_rt: float,
 ) -> None:
-    from xic_extractor.discovery.csv_reader import read_discovery_peaks_csv
-
     raw_path = tmp_path / "two-peaks.raw"
     raw_path.write_bytes(b"two analytical peaks in one RT seed group")
     settings = _settings()
@@ -194,20 +200,18 @@ def test_pipeline_retains_each_seeded_physical_peak_from_one_rt_group(
         raw_opener=lambda *_args: raw,
     )
     candidates = sorted(
-        read_discovery_peaks_csv(outputs.peaks_csv),
-        key=lambda candidate: candidate.ms1_apex_rt,
+        stored_peaks(outputs.store), key=lambda candidate: candidate.ms1_apex_rt
     )
     expected_apices = [10.00] if second_seed_rt == 10.02 else [10.00, 10.15]
     assert [candidate.ms1_apex_rt for candidate in candidates] == pytest.approx(
         expected_apices,
     )
-    assert len(_read_csv(outputs.events_csv)) == 2
+    events = stored_events(outputs.store)
+    assert len(events) == 2
     assert all(candidate.status == "admitted" for candidate in candidates)
     peak_ids = {candidate.peak_id for candidate in candidates}
     assert sorted(
-        int(row["ms2_scan_number"])
-        for row in _read_csv(outputs.events_csv)
-        if row["peak_id"] in peak_ids
+        item.event.scan_number for item in events if item.peak_id in peak_ids
     ) == [100, 200]
     assert raw.raw_chromatogram_call_count == 1
 
@@ -227,9 +231,6 @@ def test_discovery_retained_physical_peak_cardinality(
     expected_apices: tuple[float, ...],
     representative_scan: int | None,
 ) -> None:
-    from xic_extractor.discovery.csv_reader import read_discovery_peaks_csv
-    from xic_extractor.discovery.csv_writer import write_discovery_peaks_csv
-
     fixture = json.loads(
         (Path(__file__).parent / "fixtures" / f"{fixture_name}.json").read_text()
     )
@@ -288,8 +289,21 @@ def test_discovery_retained_physical_peak_cardinality(
         signal_processing_profile=profile,
         ms1_centroid=lambda *_: None,
     )
-    path = write_discovery_peaks_csv(tmp_path / "peaks.csv", result.peaks)
-    valid = list(read_discovery_peaks_csv(path))
+    valid = stored_peaks(
+        write_discovery(
+            tmp_path,
+            [
+                SampleRecords(
+                    raw_path.stem,
+                    raw_path,
+                    peaks=result.peaks,
+                    attachments=result.attachments,
+                    acquisition_source=source,
+                )
+            ],
+            neutral_loss_by_tag=settings.neutral_loss_by_tag,
+        )
+    )
     assert sorted(c.ms1_apex_rt for c in valid) == pytest.approx(
         expected_apices, abs=0.06
     )
@@ -313,20 +327,12 @@ def test_discovery_retained_physical_peak_cardinality(
 
 @pytest.mark.parametrize("combine_mode", ("union", "intersection"))
 @pytest.mark.parametrize("fallback", (False, True))
-def test_merged_physical_candidate_publishes_its_capture_conditions(
+def test_merged_physical_candidate_round_trips_through_the_discovery_file(
     tmp_path: Path, combine_mode: str, fallback: bool, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from xic_extractor.discovery.csv_reader import read_discovery_peaks_csv
     from xic_extractor.discovery.ion_grouping import build_discovery_ions
-    from xic_extractor.discovery.output_publication import (
-        publish_discovery_batch_sample,
-    )
     from xic_extractor.discovery.strict_event_receipts import (
         read_parent_ms1_observations,
-    )
-    from xic_extractor.execution.timing import TimingRecorder
-    from xic_extractor.peak_detection.physical_peak_population import (
-        measure_physical_peak_population,
     )
 
     raw_path = tmp_path / "TumorBC2312_DNA.raw"
@@ -420,37 +426,38 @@ def test_merged_physical_candidate_publishes_its_capture_conditions(
     assert {event.peak_id for event in result.attachments} == {candidate.peak_id}
     evaluation = binding.physical_evaluation
     assert evaluation.answer.selected_segment is not None
-    outputs = publish_discovery_batch_sample(
-        raw_path,
-        result.peaks,
-        result.attachments,
-        output_dir=tmp_path,
-        sample_output_dir=tmp_path / "discovery",
-        acquisition_source=source,
-        timing_recorder=TimingRecorder.disabled("discovery"),
-    ).outputs
-    (restored,) = read_discovery_peaks_csv(outputs.peaks_csv)
-    assert restored == candidate
-    assert restored.query_rt_min == evaluation.question.query_rt_min
-    assert raw.raw_chromatogram_call_count == 1
-    window = raw.extract_xic_many(
-        (
-            replace(
-                raw.request_batches[0][0],
-                mz=restored.peak_mz,
-                rt_min=restored.ms1_search_rt_min,
-                rt_max=restored.ms1_search_rt_max,
-            ),
+    (restored,) = stored_peaks(
+        write_discovery(
+            tmp_path,
+            [
+                SampleRecords(
+                    raw_path.stem,
+                    raw_path,
+                    peaks=result.peaks,
+                    attachments=result.attachments,
+                    acquisition_source=source,
+                )
+            ],
+            neutral_loss_by_tag=settings.neutral_loss_by_tag,
         )
-    )[0]
-    remeasured = measure_physical_peak_population(
-        window.rt,
-        window.intensity,
-        context_rt_start_min=restored.ms1_search_rt_min,
-        context_rt_end_min=restored.ms1_search_rt_max,
-        profile=profile,
-    ).evaluate(restored.query_rt_min)
-    assert remeasured == evaluation
+    )
+    assert restored == candidate
+    assert [_stored_facts(event) for event in restored.located_events] == [
+        _stored_facts(event) for event in candidate.located_events
+    ]
+    assert raw.raw_chromatogram_call_count == 1
+
+
+def _stored_facts(event):
+    return (
+        event.scan_number,
+        event.rt,
+        event.neutral_loss_tag,
+        event.precursor_mz,
+        event.product_mz,
+        event.precursor_mz_basis,
+        event.ms1_precursor_observation,
+    )
 
 
 class _CadenceBoundRaw:
@@ -531,7 +538,7 @@ def test_spec_bound_single_run_uses_compiled_acquisition_and_measures_once(
     )
 
     assert physical_calls == {"prepare": 1, "evaluate": 1}
-    assert len(_read_csv(outputs.peaks_csv)) == 1
+    assert len(stored_peaks(outputs.store)) == 1
     assert not (tmp_path / "out" / "discovery_physical_facts.json").exists()
     assert raw.raw_chromatogram_call_count == 2
 
@@ -560,10 +567,10 @@ def test_sparse_trace_outside_actual_context_reports_truthful_unavailable(
         raw_opener=lambda *_args: raw,
     )
 
-    assert _read_csv(outputs.peaks_csv) == []
-    (event,) = _read_csv(outputs.events_csv)
-    assert event["peak_id"] == ""
-    assert event["unattached_reason"]
+    assert stored_peaks(outputs.store) == []
+    (event,) = stored_events(outputs.store)
+    assert event.peak_id == ""
+    assert event.unattached_reason
     assert raw.raw_chromatogram_call_count == 1
 
 
@@ -625,9 +632,6 @@ def test_short_discovery_request_reacquires_points_without_assuming_peak_support
     assert evaluation.prepared.profile == profile
     (candidate,) = result.peaks
     assert candidate.ms1_apex_rt == pytest.approx(12.15, abs=0.04)
-    final_request = reacquired.traces[0].coordinate.request
-    assert candidate.ms1_search_rt_min == final_request.rt_min
-    assert candidate.ms1_search_rt_max == final_request.rt_max
 
 
 def test_single_seed_discovery_acquires_complete_physical_context(
@@ -661,7 +665,8 @@ def test_single_seed_discovery_acquires_complete_physical_context(
     facts = result.physical_bindings[0].physical_evaluation.answer.selected_segment
     assert candidate.ms1_apex_rt == pytest.approx(12.15, abs=0.04)
     assert facts is not None
-    assert candidate.ms1_search_rt_max - facts.right_rt_min >= 0.04
+    (batch,) = result.measurements.acquisition_batches
+    assert batch.traces[0].coordinate.request.rt_max - facts.right_rt_min >= 0.04
     full_trace_evaluation = evaluate_physical_peak(
         prepare_physical_signal(full_rt, full_intensity, profile=profile),
         query_rt_min=12.063,
@@ -720,10 +725,11 @@ def test_product_inferred_single_seed_uses_widened_initial_context(
     )
 
     assert result.measurements.reacquisition_request_count == 0
-    candidate = result.peaks[0]
-    assert candidate.ms1_search_rt_min == pytest.approx(11.463)
-    assert candidate.ms1_search_rt_max == pytest.approx(12.663)
-    assert candidate.ms1_apex_rt == pytest.approx(12.14)
+    (batch,) = result.measurements.acquisition_batches
+    request = batch.traces[0].coordinate.request
+    assert request.rt_min == pytest.approx(11.463)
+    assert request.rt_max == pytest.approx(12.663)
+    assert result.peaks[0].ms1_apex_rt == pytest.approx(12.14)
 
 
 def test_strong_product_inferred_seed_group_uses_widened_initial_context(
@@ -771,9 +777,8 @@ def test_strong_product_inferred_seed_group_uses_widened_initial_context(
     assert initial_request.rt_min == pytest.approx(11.463)
     assert initial_request.rt_max == pytest.approx(12.700)
     candidate = result.peaks[0]
-    assert candidate.query_rt_min == pytest.approx(12.15, abs=0.04)
-    assert candidate.ms1_search_rt_min == initial_request.rt_min
-    assert candidate.ms1_search_rt_max == initial_request.rt_max
+    question = result.physical_bindings[0].physical_evaluation.question
+    assert question.query_rt_min == pytest.approx(12.15, abs=0.04)
     assert candidate.ms1_apex_rt == pytest.approx(12.15, abs=0.04)
 
 
@@ -1023,14 +1028,20 @@ def test_discovery_publishes_physical_qualification(
     if trace_case == "overlapping_components":
         assert candidate.status == "admitted"
 
-    from xic_extractor.discovery.csv_reader import read_discovery_peaks_csv
-    from xic_extractor.discovery.csv_writer import write_discovery_peaks_csv
-
-    path = write_discovery_peaks_csv(
-        tmp_path / "candidates.csv",
-        result.peaks,
+    (published,) = stored_peaks(
+        write_discovery(
+            tmp_path,
+            [
+                SampleRecords(
+                    candidate.sample_stem,
+                    raw_path,
+                    peaks=result.peaks,
+                    attachments=result.attachments,
+                    acquisition_source=source,
+                )
+            ],
+        )
     )
-    (published,) = read_discovery_peaks_csv(path)
     assert published == candidate
     assert published.ms1_apex_rt == pytest.approx(candidate.ms1_apex_rt)
     assert published.status == candidate.status
@@ -1227,11 +1238,11 @@ def test_pipeline_publishes_inferred_precursor_ms1_ion_from_raw_handle(
         raw_opener=lambda *_args: raw,
     )
 
-    (candidate,) = _read_csv(outputs.peaks_csv)
-    assert candidate["precursor_mz_basis"] == "product_plus_neutral_loss"
-    (event,) = _read_csv(outputs.events_csv)
-    assert float(event["precursor_mz"]) == pytest.approx(500.0)
-    assert float(candidate["ms1_apex_mz"]) == pytest.approx(apex_ion_mz)
+    (candidate,) = stored_peaks(outputs.store)
+    (event,) = stored_events(outputs.store)
+    assert event.event.precursor_mz_basis == "product_plus_neutral_loss"
+    assert event.event.precursor_mz == pytest.approx(500.0)
+    assert candidate.ms1_apex_mz == pytest.approx(apex_ion_mz)
 
 
 def _two_ions(inferred: float, rt: float) -> float:
@@ -1305,8 +1316,6 @@ def test_held_inferred_peak_remains_in_review(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from xic_extractor.discovery.csv_reader import read_discovery_peaks_csv
-
     raw_path = tmp_path / "held-peak.raw"
     raw_path.write_bytes(b"inferred peak with a doubly charged isotope")
     settings = _settings()
@@ -1350,14 +1359,16 @@ def test_held_inferred_peak_remains_in_review(
         raw_opener=lambda *_args: raw,
     )
 
-    (candidate,) = read_discovery_peaks_csv(outputs.peaks_csv)
-    assert candidate.precursor_mz_basis == "product_plus_neutral_loss"
+    (candidate,) = stored_peaks(outputs.store)
+    assert representative_event(candidate).precursor_mz_basis == (
+        "product_plus_neutral_loss"
+    )
     assert candidate.status == "doubly_charged"
     assert candidate.ms1_apex_rt == pytest.approx(10.0)
     assert candidate.ms1_apex_mz == pytest.approx(apex_ion_mz)
-    (event,) = _read_csv(outputs.events_csv)
-    assert event["peak_id"] == candidate.peak_id
-    assert event["unattached_reason"] == "parent_ms1_unavailable"
+    (event,) = stored_events(outputs.store)
+    assert event.peak_id == candidate.peak_id
+    assert event.unattached_reason == "parent_ms1_unavailable"
 
 
 @pytest.mark.parametrize(
@@ -1404,7 +1415,7 @@ def test_a_selected_precursor_carries_a_peak_with_two_ions(
         assert [event.scan_number for event in candidate.located_events] == [10, 11]
         assert candidate.attached_event_count == 1
         assert len(result.physical_bindings) == 1
-        events = {event.ms2_scan_number: event for event in result.attachments}
+        events = {item.event.scan_number: item for item in result.attachments}
         assert events[10].unattached_reason == "parent_ms1_unavailable"
         assert events[11].peak_id == candidate.peak_id
 

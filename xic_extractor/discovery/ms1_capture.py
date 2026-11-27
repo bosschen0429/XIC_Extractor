@@ -144,8 +144,6 @@ def capture_ms1_peaks(
             attachments.append(
                 EventAttachment(
                     event=event,
-                    xic_mz=ion.mz,
-                    precursor_verified=_precursor_verified(event, settings),
                     unattached_reason=_no_peak_reason(captured.evaluation),
                 )
             )
@@ -356,7 +354,6 @@ def _measured_peak(
         attached or located_events, settings=settings
     )
     question = evaluation.question
-    window = captured.acquired_trace.coordinate.request
     peak_id = build_discovery_peak_id(
         sample_stem=representative.sample_stem,
         xic_mz=ion_mz,
@@ -373,9 +370,6 @@ def _measured_peak(
         best_ms2_scan_id=representative.scan_number,
         attached_event_count=len(attached),
         ms1_apex_rt=selected.apex_rt_min,
-        ms1_search_rt_min=window.rt_min,
-        ms1_search_rt_max=window.rt_max,
-        query_rt_min=question.query_rt_min,
         status=_peak_status(
             doubly_charged=doubly_charged, attached_event_count=len(attached)
         ),
@@ -394,19 +388,16 @@ def _measured_peak(
             ),
             settings=settings,
         ),
-        precursor_mz_basis=events_precursor_mz_basis(evidence),
         matched_tag_names=matched_tags,
         located_events=located_event_order(evidence),
     )
     peak_attachments = tuple(
         EventAttachment(
             event=event,
-            xic_mz=ion.mz,
-            precursor_verified=_precursor_verified(event, settings),
             peak_id=peak_id,
             unattached_reason=reasons[event],
         )
-        for ion, event in located
+        for _ion, event in located
     )
     return peak, representative, peak_attachments
 
@@ -446,10 +437,6 @@ def _unattached_reason(
     ):
         return "rt_outside_peak"
     return ""
-
-
-def _precursor_verified(event: DiscoveryEvent, settings: DiscoverySettings) -> bool:
-    return event.assess_precursor_loss(settings.nl_tolerance_ppm).supports_nl
 
 
 def _no_peak_reason(evaluation: PhysicalPeakEvaluation) -> str:

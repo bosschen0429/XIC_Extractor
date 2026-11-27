@@ -16,6 +16,7 @@ from tests.cid_nl_raw_fixture import (
     _multi_tag_settings,
 )
 from tests.cid_nl_runtime_fixtures import install_runtime_raws
+from tests.discovery_store_fixtures import stored_events
 from tests.untargeted_alignment_entry_fixtures import (
     raw_paths,
     read_tsv,
@@ -39,12 +40,12 @@ from xic_extractor.configuration.execution_profile import (
     UntargetedExecutionPolicy,
 )
 from xic_extractor.configuration.mass_recalibration import MassRecalibration
-from xic_extractor.discovery.csv_reader import read_discovery_batch_index
 from xic_extractor.discovery.input_source import DiscoveryInputSource
 from xic_extractor.discovery.pipeline import run_discovery_batch
 from xic_extractor.discovery.processing_run_spec_adapter import (
     compile_discovery_processing_run_spec,
 )
+from xic_extractor.discovery.store import read_discovery_batch
 from xic_extractor.presets.apply import apply_to_discovery
 from xic_extractor.presets.loader import load_preset
 from xic_extractor.sample_metadata import SampleMetadata
@@ -338,12 +339,13 @@ def test_intersection_rechecks_an_observed_peak_outside_the_discovery_window(
         ),
         execution=profile,
     )
-    batch = read_discovery_batch_index(outputs.batch_index_csv)
+    batch = read_discovery_batch(outputs.store)
     source = DiscoveryInputSource(batch)
     assert all(len(source.feature_candidate_ids(stem)) == 1 for stem in stems[:-1])
     assert source.candidate_ids("Late") == ()
-    with batch.event_csvs["Late"].open(encoding="utf-8", newline="") as stream:
-        assert not list(csv.DictReader(stream))
+    assert not [
+        item for item in stored_events(outputs.store) if item.sample_stem == "Late"
+    ]
     assert local_losses == tuple(
         round(scan.precursor_mz - float(scan.masses[0]), 4) for scan in late.scans
     )
@@ -360,7 +362,7 @@ def test_intersection_rechecks_an_observed_peak_outside_the_discovery_window(
     out = tmp_path / "alignment"
     run_untargeted_application(
         UntargetedRequest(
-            discovery_batch_index=batch,
+            discovery=batch,
             discovery_settings=settings,
             sample_metadata=sample_metadata_for(
                 stems,
