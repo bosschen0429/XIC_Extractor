@@ -390,7 +390,7 @@ def prepare_report(
     if selection.nearest_mz is not None:
         from xic_inspector.sources.cid_nl import CidNlSource
 
-        if not isinstance(source, CidNlSource) or summary["retention"] != "review":
+        if not isinstance(source, CidNlSource):
             raise InspectorError(
                 2, "Nearest m/z requires indexed Untargeted matrix evidence"
             )

@@ -17,7 +17,6 @@ from tests.inspector_fixtures import (
     add_witness,
     create_inspector_report,
     discovery,
-    inspector_curve_payload,
     read_report_payload,
     witness_member,
 )
@@ -105,7 +104,7 @@ def test_generate_report_sample_strategy_success() -> None:
 
         assert out_html.is_file()
         assert res.output_path == out_html.resolve()
-        assert res.evidence_capability == "retained_curves"
+        assert res.evidence_capability == "metadata_only"
         assert res.run_total >= 1
         assert res.selected_count >= 1
         assert res.sample_ids == ("S1", "S2")
@@ -120,7 +119,6 @@ def test_generate_report_sample_strategy_success() -> None:
         metadata_start = re.search(r"\bmetadata\s*:\s*(\{)", content).start(1)
         metadata, _ = json.JSONDecoder().raw_decode(content[metadata_start:])
         assert title == metadata["title"] == "Inspector"
-        assert "retained_curves" in content
 
 
 def test_group_query_keeps_unlinked_stored_cells_scoped_and_readable(tmp_path):
@@ -169,7 +167,6 @@ def test_group_query_keeps_unlinked_stored_cells_scoped_and_readable(tmp_path):
     assert samples["S2"]["note"] == "未在此位置搜尋"
     assert samples["S2"]["risk_labels"] == []
     assert {witness["sample_key"] for witness in item["witnesses"]} == {"S1"}
-    assert {curve["sample_id"] for curve in item["curves"]} == {"S1"}
 
     assert item["group_counts"] == {
         "detect": 0,
@@ -201,10 +198,7 @@ def test_group_query_keeps_unlinked_stored_cells_scoped_and_readable(tmp_path):
     assert [sample["sample_id"] for sample in scoped_item["samples"]] == ["S1"]
 
 
-@pytest.mark.parametrize("review_only", (False, True))
-def test_unrelated_hold_does_not_become_a_cell_risk_after_record_renumbering(
-    tmp_path, review_only
-):
+def test_unrelated_hold_does_not_become_a_cell_risk_after_record_renumbering(tmp_path):
     from xic_inspector.api import prepare_report
 
     def assessments(writer):
@@ -219,9 +213,7 @@ def test_unrelated_hold_does_not_become_a_cell_risk_after_record_renumbering(
                 candidate_physical_peak_keys=(),
             )
 
-    report, _, _ = create_inspector_report(
-        tmp_path, extend=assessments, review_only=review_only
-    )
+    report, _, _ = create_inspector_report(tmp_path, extend=assessments)
     selection = SelectionRequest(strategy="query", group_ids=("G1",))
 
     def answers():
@@ -241,7 +233,7 @@ def test_review_candidate_scope_paginates_in_recorded_order(tmp_path):
         for cid in ("last", "first", "middle"):
             writer.add_candidate(cid, "S2", precursor_mz=510.0, **discovery(cid))
 
-    report, _, _ = create_inspector_report(tmp_path, extend=ungrouped, review_only=True)
+    report, _, _ = create_inspector_report(tmp_path, extend=ungrouped)
     prepared = prepare_report(
         report,
         SelectionRequest(
@@ -434,67 +426,6 @@ def test_cli_opens_report_from_run_folder_with_default_output(
     assert cli_main([]) == 2
 
 
-@pytest.mark.parametrize("row_count", [2, 30, 50])
-def test_row_curves_follow_exact_witnesses_and_shared_payload_is_read_once(
-    tmp_path, monkeypatch, row_count, record_property
-):
-    from xic_inspector.api import read_evidence_summary
-    from xic_inspector.sources import cid_nl
-
-    def shared_witness_rows(writer):
-        for index in range(2, row_count + 1):
-            rid = f"row-{index:02d}"
-            writer.add_final_group(
-                rid,
-                feature_id=rid,
-                disposition="completed",
-                members=[witness_member("S1", f"{rid}-member", "obs-01")],
-            )
-
-    report, _, _ = create_inspector_report(tmp_path, extend=shared_witness_rows)
-    reads = []
-    real_reader = cid_nl.read_alignment_curves
-
-    def read(*args, **kwargs):
-        result = real_reader(*args, **kwargs)
-        reads.append((kwargs, len(result)))
-        return result
-
-    monkeypatch.setattr(cid_nl, "read_alignment_curves", read)
-    assert read_evidence_summary(report)["samples"][0]["sample_key"] == "S1"
-    assert reads == []
-    output = tmp_path / "shared.html"
-    import time
-    import tracemalloc
-
-    tracemalloc.start()
-    started = time.perf_counter()
-    result = generate_report(report, SelectionRequest(limit=row_count), output)
-    elapsed = time.perf_counter() - started
-    _, peak = tracemalloc.get_traced_memory()
-    tracemalloc.stop()
-    record_property("generation_seconds", elapsed)
-    record_property("peak_python_bytes", peak)
-    record_property("html_bytes", output.stat().st_size)
-    record_property("selected_items", result.selected_count)
-    assert result.selected_count == row_count
-    items = read_report_payload(output)["items"]
-    assert {json.loads(item["id"])[-1] for item in items} == {"G1"} | {
-        f"row-{index:02d}" for index in range(2, row_count + 1)
-    }
-    assert all(
-        item["curves"][0]["raw_intensities"] == [10.0, 50.0, 1000.0, 40.0, 5.0]
-        for item in items
-    )
-    assert reads == [({"sample_ids": ("S1",), "record_ids": ("obs-01",)}, 1)]
-    assert (
-        "quantitative_value"
-        not in next(i for i in items if json.loads(i["id"])[-1] == "row-02")["samples"][
-            0
-        ]
-    )
-
-
 def test_real_source_query_uses_one_scoped_candidate_observation(tmp_path):
     def second_witness(writer):
         writer.add_peak("S2", "obs-02", (None, 8.0, None))
@@ -577,33 +508,6 @@ def test_source_strata_use_only_selected_samples_actual_cells(tmp_path):
     assert [sample["sample_id"] for sample in item["samples"]] == ["S1"]
 
 
-@pytest.mark.parametrize("failure", ["missing", "attempt"])
-def test_invalid_selected_payload_preserves_existing_report(tmp_path, failure):
-    import zlib
-
-    report, _, _ = create_inspector_report(tmp_path)
-    output = tmp_path / "preserved.html"
-    generate_report(report, SelectionRequest(), output)
-    before = output.read_bytes()
-    with sqlite3.connect(report) as connection:
-        if failure == "missing":
-            connection.execute("DELETE FROM curves")
-        else:
-            pid, blob = connection.execute(
-                "SELECT payload_id,payload FROM curves"
-            ).fetchone()
-            payload = json.loads(zlib.decompress(blob))
-            payload["provenance"]["processing_attempt_id"] = "another-attempt"
-            connection.execute(
-                "UPDATE curves SET payload=? WHERE payload_id=?",
-                (zlib.compress(json.dumps(payload).encode()), pid),
-            )
-    with pytest.raises(InspectorError) as caught:
-        generate_report(report, SelectionRequest(), output)
-    assert caught.value.code == 4
-    assert output.read_bytes() == before
-
-
 def test_legitimate_candidate_without_observation_remains_available_as_metadata(
     tmp_path,
 ):
@@ -647,53 +551,8 @@ def test_candidate_presentation_ids_preserve_sample_identity(tmp_path):
     assert all("note" not in i["samples"][0] for i in items)
 
 
-def test_selected_capture_stages_preserve_each_payload_and_reject_partial_loss(
-    tmp_path,
-):
-    payload_ids = []
-
-    def more_stages(writer):
-        for kind, observation_id, record_id in (
-            ("initial_capture", "obs-earlier", "obs-earlier"),
-            ("backfill_observation", "obs-01", "obs-01"),
-            ("backfill_observation", None, "C1"),
-        ):
-            payload_ids.append(
-                writer.add_curve_payload(
-                    "S1",
-                    kind,
-                    record_id,
-                    inspector_curve_payload("S1", "C1", observation_id, kind=kind),
-                )
-            )
-
-    report, _, _ = create_inspector_report(tmp_path, extend=more_stages)
-    output = tmp_path / "stages.html"
-    generate_report(report, SelectionRequest(), output)
-    curves = read_report_payload(output)["items"][0]["curves"]
-    assert len(curves) == 4
-    assert {c["evidence_ref"] for c in curves} >= set(payload_ids)
-    before = output.read_bytes()
-    with sqlite3.connect(report) as connection:
-        connection.execute(
-            "UPDATE curves SET payload=x'00' WHERE payload_id=?", (payload_ids[1],)
-        )
-    with pytest.raises(InspectorError) as caught:
-        generate_report(report, SelectionRequest(), output)
-    assert caught.value.code == 4
-    assert output.read_bytes() == before
-
-
 def test_sample_without_a_cell_keeps_evidence_but_has_no_origin(tmp_path):
-    refs = {}
-
-    def method_capture(writer):
-        refs["capture"] = writer.add_curve_payload(
-            "S1",
-            "initial_capture",
-            "obs-01",
-            inspector_curve_payload("S1", "C1", "obs-01"),
-        )
+    def assessment(writer):
         writer.add_assessment(
             {
                 "sample_key": "S1",
@@ -703,14 +562,12 @@ def test_sample_without_a_cell_keeps_evidence_but_has_no_origin(tmp_path):
             },
             candidate_physical_peak_keys=("obs-01",),
         )
-        refs["method"] = refs["capture"] + 1
 
     report, _, _ = create_inspector_report(
         tmp_path,
         candidate={"method_subject_id": "M1", "neutral_loss_tag": "dR"},
         cells=[],
-        curve=False,
-        extend=method_capture,
+        extend=assessment,
     )
 
     output = tmp_path / "recovery-origin.html"
@@ -718,23 +575,17 @@ def test_sample_without_a_cell_keeps_evidence_but_has_no_origin(tmp_path):
     item = read_report_payload(output)["items"][0]
 
     assert item["review_summary"]["origin_kinds"] == ["unavailable"]
-    assert item["samples"][0]["support_origin"] == {
+    origin = item["samples"][0]["support_origin"]
+    assert len(origin.pop("method_refs")) == 1
+    assert origin == {
         "kind": "unavailable",
         "label": "來源未記錄",
-        "method_refs": [str(refs["method"])],
-        "capture_refs": [str(refs["capture"])],
         "observation_refs": ["obs-01"],
     }
 
 
 def test_recovery_origin_survives_zero_terminal_final_cell_binding(tmp_path):
     def backfill_recovery(writer):
-        writer.add_curve_payload(
-            "S1",
-            "backfill_observation",
-            "obs-01",
-            inspector_curve_payload("S1", "C1", "obs-01", kind="backfill_observation"),
-        )
         writer.add_assessment(
             {
                 "sample_key": "S1",
@@ -763,7 +614,6 @@ def test_recovery_origin_survives_zero_terminal_final_cell_binding(tmp_path):
             "support_origin": "backfilled",
             "observation_ids": ["obs-01"],
         },
-        curve=False,
         extend=backfill_recovery,
     )
 
@@ -780,106 +630,6 @@ def test_recovery_origin_survives_zero_terminal_final_cell_binding(tmp_path):
         "backfill",
         ["obs-01"],
     )
-
-
-def test_backfill_curve_is_not_shown_on_rows_sharing_its_method_subject(tmp_path):
-    def backfill_curve(sample_key, peak):
-        payload = inspector_curve_payload(
-            sample_key, None, peak, kind="backfill_observation", apex_rt=1.5
-        )
-        payload["provenance"]["method_subject_id"] = "M1"
-        return payload
-
-    def second_row(writer):
-        writer.add_peak("S1", "obs-bf", (None, 1.5, None))
-        member = add_witness(
-            writer, "C2", "S2", rt=1.0, precursor_mz=500.0, method_subject_id="M1"
-        )
-        writer.add_final_group(
-            "G2", feature_id="G2", disposition="completed", members=[member]
-        )
-        writer.add_cells(
-            "G2",
-            [
-                {
-                    "sample_key": "S1",
-                    "variant": "numeric",
-                    "value": 500.0,
-                    "support_origin": "backfilled",
-                    "observation_ids": ["obs-bf"],
-                },
-                {"sample_key": "S2", "variant": "numeric", "value": 900.0},
-            ],
-        )
-        writer.add_curve_payload(
-            "S2",
-            "initial_capture",
-            "peak-C2-S2",
-            inspector_curve_payload("S2", "C2", "peak-C2-S2"),
-        )
-        writer.add_curve_payload(
-            "S1", "backfill_observation", "obs-bf", backfill_curve("S1", "obs-bf")
-        )
-        writer.add_curve_payload(
-            "S2", "backfill_observation", "M1", backfill_curve("S2", None)
-        )
-
-    report, _, _ = create_inspector_report(
-        tmp_path, candidate={"method_subject_id": "M1"}, extend=second_row
-    )
-    output = tmp_path / "shared-subject.html"
-    generate_report(
-        report, SelectionRequest(strategy="query", group_ids=("G1", "G2")), output
-    )
-    items = {
-        json.loads(item["id"])[-1]: item
-        for item in read_report_payload(output)["items"]
-    }
-
-    def shown(row):
-        return sorted((c["sample_id"], c["kind"]) for c in items[row]["curves"])
-
-    assert shown("G1") == [("S1", "initial_capture")]
-    assert shown("G2") == [("S2", "initial_capture")]
-    backfilled = next(s for s in items["G2"]["samples"] if s["sample_id"] == "S1")
-    assert backfilled["support_origin"]["kind"] == "backfilled"
-    assert backfilled["support_origin"]["observation_refs"] == ["obs-bf"]
-
-
-def test_curve_replays_final_rt_estimate_including_boundary_shift(tmp_path):
-    from xic_extractor.alignment.sample_rt_calibration import (
-        BatchRtCalibration,
-        RtCalibrationPolicy,
-        RtEstimateSupport,
-        SampleRtCalibration,
-    )
-    from xic_extractor.rt_calibration_codec import rt_calibration_payload
-
-    sample = SampleRtCalibration(
-        "s1",
-        "calibrated",
-        ((0.9, 1.8), (1.1, 2.2)),
-        estimate_support=RtEstimateSupport((0.9, 1.1), 1.0, 0.1, 0.0),
-    )
-    calibration = BatchRtCalibration(RtCalibrationPolicy(), (), {"s1": sample})
-    report, _, _ = create_inspector_report(
-        tmp_path,
-        summary={
-            "sample_rt_calibration": rt_calibration_payload(calibration),
-            "injection_order": {"s1": 7, "s2": 3},
-        },
-    )
-    output = tmp_path / "aligned.html"
-    generate_report(report, SelectionRequest(), output)
-    payload = read_report_payload(output)
-    curve = payload["items"][0]["curves"][0]
-    assert curve["raw_rts"] == [0.8, 0.9, 1.0, 1.1, 1.2]
-    assert curve["aligned_rts"] == pytest.approx([1.7, 1.8, 2.0, 2.2, 2.3])
-    assert curve["aligned_bound_left_rt"] == pytest.approx(1.8)
-    assert curve["aligned_bound_right_rt"] == pytest.approx(2.2)
-    assert curve["aligned_apex_rt"] == pytest.approx(2.0)
-    assert curve["rt_alignment_methods"] == ["boundary_shift", "loess"]
-    assert payload["summary"]["injection_order"] == {"s1": 7, "s2": 3}
 
 
 def test_obsolete_istd_display_calibration_requires_rerun_alignment(tmp_path):
@@ -906,9 +656,6 @@ def test_saved_cell_is_answered_on_its_sample_without_internal_records(tmp_path)
     assert sample["quantitative_value"] == 1000.0
     assert "note" not in sample and sample["risk_labels"] == []
     assert sample["decision_refs"] == []
-    curve = item["curves"][0]
-    assert curve["raw_intensities"] == [10.0, 50.0, 1000.0, 40.0, 5.0]
-    assert curve["area"] == 2400.0
 
 
 def test_sample_answers_keep_null_zero_and_unknown_distinct(
@@ -990,32 +737,19 @@ def test_excluded_candidate_exposes_exact_exclusion_without_curve(tmp_path):
 
 def test_readable_numeric_formatting_keeps_scientific_payload_precision(tmp_path):
     precursor_mz = 307.1023254394531
-    apex_rt = 17.2623
     area = 28578.925063705414
-
-    def precise_curve(writer):
-        payload = inspector_curve_payload("S1", "C1", "obs-01", apex_rt=apex_rt)
-        payload["integration"]["area_ms1_morphology"] = area
-        writer.add_curve_payload("S1", "initial_capture", "obs-01", payload)
 
     report, _, _ = create_inspector_report(
         tmp_path,
         candidate={"method_subject_id": "M1", "neutral_loss_tag": "dR"},
         method_subject={"precursor_mz": precursor_mz},
         base_cell={"value": area},
-        curve=False,
-        extend=precise_curve,
     )
 
     output = tmp_path / "formatted-values.html"
     generate_report(report, SelectionRequest(), output)
     item = read_report_payload(output)["items"][0]
-    curve = item["curves"][0]
     assert item["samples"][0]["quantitative_value"] == area
-    assert curve["apex_rt"] == apex_rt
-    assert curve["area"] == area
-    assert curve["integration"]["area_ms1_morphology"] == area
-    assert curve["raw_intensities"] == [10.0, 50.0, 1000.0, 40.0, 5.0]
 
 
 @pytest.mark.parametrize(
@@ -1061,7 +795,6 @@ def test_source_labels_explain_recorded_group_and_sample_outcome(
     assert item["group_counts"]["unrecorded"] == sample_count
     assert item["method_label"] == "NL 116.0474"
     assert all("note" not in s for s in item["samples"])
-    assert item["curves"][0]["stage_label"] == "detect 曲線"
     labels = item["title"] + item["route_label"]
     assert not any(
         token in labels
@@ -1071,7 +804,6 @@ def test_source_labels_explain_recorded_group_and_sample_outcome(
     for sample in item["samples"]:
         assert sample["support_origin"]["label"] == "來源未記錄"
         assert sample["risk_labels"] == []
-    assert item["curves"][0]["raw_intensities"] == [10.0, 50.0, 1000.0, 40.0, 5.0]
 
 
 def _create_nearest_mz_db(directory, rows):
@@ -1080,7 +812,7 @@ def _create_nearest_mz_db(directory, rows):
     matrix = directory / "matrix.tsv"
     matrix.write_text("saved matrix", encoding="utf-8")
     samples = [{"sample_key": sid, "sample_stem": sid} for sid in ("S1", "S2")]
-    with ExplanationReportWriter(report, review_only=True) as writer:
+    with ExplanationReportWriter(report) as writer:
         writer.declare_samples(samples)
         for row in rows:
             rid = row["id"]
@@ -1114,7 +846,6 @@ def _create_nearest_mz_db(directory, rows):
                     "samples": samples,
                     "selection_evidence_capability": "recorded_decisions",
                 },
-                review_only=writer.review_only,
             )
         )
     return report, matrix
@@ -1339,18 +1070,6 @@ def test_nearest_mz_rejects_mixed_modes(conflict):
     values.update(conflict)
     with pytest.raises(InspectorError) as exc:
         SelectionRequest(**values).validate()
-    assert exc.value.code == 2
-
-
-def test_nearest_mz_rejects_full_audit(tmp_path):
-    from xic_inspector.api import prepare_report
-
-    report, _, _ = create_inspector_report(tmp_path)
-    with pytest.raises(InspectorError, match="indexed Untargeted matrix") as exc:
-        prepare_report(
-            report,
-            SelectionRequest(strategy="query", review_scope="matrix", nearest_mz=500),
-        )
     assert exc.value.code == 2
 
 

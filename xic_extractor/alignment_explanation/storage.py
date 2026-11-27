@@ -5,9 +5,8 @@ Discovery candidates (with their terminal observation), final groups, initial
 groups, group members, cells, method assessments and exclusions. A cell with a
 value keeps the measured curve of the peak that gave it in ``cell_curves``.
 Membership comparisons share their recorded owner facts and ordered peer groups
-without dropping any alternative or score. Full audit curves have a table only in
-runs that retain them. Rows refer to each other by integer row ids; a list of
-references is a JSON array of row ids.
+without dropping any alternative or score. Rows refer to each other by integer
+row ids; a list of references is a JSON array of row ids.
 """
 
 from __future__ import annotations
@@ -139,20 +138,6 @@ TABLES: dict[str, tuple[str, ...]] = {
     "membership_owner_groups": ("id", "owners"),
     "cell_curves": ("group_id", "sample", "curve"),
 }
-OPTIONAL_TABLES: dict[str, tuple[str, ...]] = {
-    "curves": (
-        "payload_id",
-        "sample_id",
-        "kind",
-        "record_id",
-        "candidate_id",
-        "physical_peak_key",
-        "codec",
-        "payload",
-        "method_subject",
-    ),
-}
-
 _DDL = {
     "run": "CREATE TABLE run (payload TEXT NOT NULL)",
     "samples": (
@@ -223,12 +208,6 @@ _DDL = {
     "membership_owners": (
         "CREATE TABLE membership_owners (id INTEGER PRIMARY KEY, facts TEXT NOT NULL)"
     ),
-    "curves": (
-        "CREATE TABLE curves (payload_id INTEGER PRIMARY KEY, "
-        "sample_id TEXT NOT NULL, kind TEXT NOT NULL, record_id TEXT NOT NULL, "
-        "candidate_id TEXT, physical_peak_key TEXT, codec TEXT NOT NULL, "
-        "payload BLOB NOT NULL, method_subject INTEGER)"
-    ),
 }
 _INDEXES = (
     "CREATE INDEX candidates_subject ON candidates(method_subject, sample)",
@@ -295,10 +274,6 @@ def create_schema(db: sqlite3.Connection) -> None:
     db.executescript(";\n".join((*(_DDL[name] for name in TABLES), *_INDEXES)) + ";")
 
 
-def create_optional_table(db: sqlite3.Connection, name: str) -> None:
-    db.execute(_DDL[name])
-
-
 def present_tables(db: sqlite3.Connection) -> set[str]:
     return {
         name
@@ -313,10 +288,7 @@ def read_completed_metadata(connection: sqlite3.Connection) -> dict[str, Any]:
         raise ExplanationError(
             "不支援此解釋資料格式；請重新執行 Alignment 產生新輸出。"
         )
-    for table, columns in (
-        *TABLES.items(),
-        *((name, cols) for name, cols in OPTIONAL_TABLES.items() if name in tables),
-    ):
+    for table, columns in TABLES.items():
         actual = tuple(
             row[1] for row in connection.execute(f"PRAGMA table_info({table})")
         )

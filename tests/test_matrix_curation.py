@@ -152,7 +152,7 @@ def test_nucleoside_windows_follow_published_method_unless_replaced(
     _write_features(tmp_path, [(268.1040, 14.5), (268.1040, 18.5)])
     if method is not None:
         with ExplanationReportWriter(
-            tmp_path / "alignment_explanation.sqlite", review_only=True
+            tmp_path / "alignment_explanation.sqlite"
         ) as writer:
             writer.finalize(
                 explanation_summary(
@@ -165,7 +165,6 @@ def test_nucleoside_windows_follow_published_method_unless_replaced(
                         if bound
                         else "0" * 64,
                     },
-                    review_only=True,
                 )
             )
     available = bound and method == {"DNA_dR": 116.0474}

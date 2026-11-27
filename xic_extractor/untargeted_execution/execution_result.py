@@ -22,7 +22,6 @@ from xic_extractor.immutable_sequence import ImmutableSequence
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessment,
 )
-from xic_extractor.peak_detection.observations import RetainedCaptureEvidence
 
 
 @dataclass(slots=True)
@@ -61,9 +60,6 @@ class CompletedUntargetBatchWorkflowResult:
         tuple[CrossSamplePeakGroupHypothesis, ...]
         | ImmutableSequence[CrossSamplePeakGroupHypothesis]
     ) = field(default=(), repr=False, compare=False)
-    capture_evidence: (
-        tuple[RetainedCaptureEvidence, ...] | ImmutableSequence[RetainedCaptureEvidence]
-    ) = field(default=(), repr=False, compare=False)
     sample_rt_frame: SampleRtFrame | None = field(
         default=None, repr=False, compare=False
     )
@@ -92,7 +88,6 @@ class CompletedUntargetBatchWorkflowResult:
             sample_rt_frame=sample_rt_frame,
             method_assessments=store.sequence("method_assessments"),
             initial_groups=store.sequence("initial_groups"),
-            capture_evidence=store.sequence("capture_evidence"),
             _resources=_CompletedResultResources(store),
         )
 

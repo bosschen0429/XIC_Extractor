@@ -1669,7 +1669,6 @@ def test_completed_partition_retains_only_light_parent_capture_metadata(
     assert not hasattr(persisted, "excluded_candidates")
     assert not hasattr(persisted, "capture_bindings")
     assert not hasattr(stored, "capture_bindings")
-    assert stored.capture_evidence
 
     store.seal()
     finalized = adapter.finalize_application(store, (composed,))

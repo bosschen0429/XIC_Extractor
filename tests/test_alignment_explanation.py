@@ -11,7 +11,6 @@ from dataclasses import asdict, dataclass, replace
 import pytest
 
 from tests.alignment_explanation_fixtures import (
-    curve_provenance,
     explanation_discovery_facts,
     explanation_summary,
     run_alignment_fixture,
@@ -25,7 +24,6 @@ from xic_extractor.alignment_explanation.errors import (
     ExplanationError,
 )
 from xic_extractor.alignment_explanation.reader import (
-    read_alignment_curves,
     read_alignment_explanation,
     read_review_curves,
     read_review_evidence,
@@ -51,10 +49,9 @@ def test_missing_report_is_unavailable(tmp_path):
         read_alignment_explanation(tmp_path / "missing.sqlite")
 
 
-@pytest.mark.parametrize("full_audit", (False, True))
 @pytest.mark.parametrize("second_measured_mz", (500.2022, None))
 def test_candidate_measured_mz_roundtrip_without_center_fallback(
-    tmp_path, monkeypatch, full_audit, second_measured_mz
+    tmp_path, monkeypatch, second_measured_mz
 ):
     completed, candidates, matrix, config = run_alignment_fixture(
         tmp_path, monkeypatch, "positive"
@@ -73,7 +70,6 @@ def test_candidate_measured_mz_roundtrip_without_center_fallback(
         matrix_path=matrix,
         alignment_config=config,
         ms1_apex_mz_by_candidate=measured,
-        full_audit=full_audit,
     )
     for cid, stem, expected in (
         (first, "S1", 500.2010),
@@ -106,7 +102,6 @@ def test_owner_facts_survive_persisted_candidate_query(tmp_path, monkeypatch, sc
     )
     report = write_alignment_explanation(
         tmp_path / "report.sqlite",
-        full_audit=True,
         completed=completed,
         children=children_of(completed.application_result),
         **explanation_discovery_facts(completed),
@@ -132,9 +127,6 @@ def test_owner_facts_survive_persisted_candidate_query(tmp_path, monkeypatch, sc
     retained = detail["method_assessments"][0]
     assert retained["reason_codes"] == list(assessment.reason_codes)
     assert retained["method_result"] == assessment.method_result
-    assert retained["evaluation_receipt"] == json.loads(
-        json.dumps(asdict(assessment.evaluation_receipt))
-    )
     assert "artifact" not in retained
     assert all(item["candidate_id"] == candidate_id for item in detail["candidates"])
     if scenario == "all_hold":
@@ -221,7 +213,6 @@ def test_owner_facts_survive_persisted_candidate_query(tmp_path, monkeypatch, sc
     with pytest.raises(FileExistsError):
         write_alignment_explanation(
             report,
-            full_audit=True,
             completed=completed,
             children=children_of(completed.application_result),
             **explanation_discovery_facts(completed),
@@ -233,7 +224,6 @@ def test_owner_facts_survive_persisted_candidate_query(tmp_path, monkeypatch, sc
         missing_audit = replace(completed, method_assessments=(), initial_groups=())
         missing_audit_report = write_alignment_explanation(
             tmp_path / "missing_audit.sqlite",
-            full_audit=True,
             completed=missing_audit,
             children=children_of(missing_audit.application_result),
             **explanation_discovery_facts(missing_audit),
@@ -249,13 +239,49 @@ def test_owner_facts_survive_persisted_candidate_query(tmp_path, monkeypatch, sc
         }
 
 
+def test_actual_observation_apex_is_retained_in_query_metadata(tmp_path, monkeypatch):
+    completed, candidates, matrix, config = run_alignment_fixture(
+        tmp_path, monkeypatch, "positive"
+    )
+    expected = {}
+    for child in children_of(completed.application_result):
+        for terminal in child.scientific_core.terminal_subjects:
+            hypothesis = getattr(terminal, "hypothesis", None)
+            if hypothesis is not None:
+                expected[(terminal.candidate_id, terminal.sample_key)] = [
+                    {
+                        "physical_peak_key": (ref.physical_peak_key),
+                        "rt_apex_min": ref.integration.rt_apex_min,
+                        "mz": ref.mz,
+                        "ppm": ref.generation_provenance.query_ppm_tol,
+                    }
+                    for ref in (hypothesis.peak,)
+                ]
+    assert expected
+    report = write_alignment_explanation(
+        tmp_path / "metadata.sqlite",
+        completed=completed,
+        children=children_of(completed.application_result),
+        **explanation_discovery_facts(completed),
+        peaks_by_sample=candidates,
+        matrix_path=matrix,
+        alignment_config=config,
+    )
+    completed.close()
+    actual = {
+        key: candidate.terminal["observations"]
+        for key, candidate in read_review_evidence(report).candidates.items()
+        if candidate.terminal is not None and candidate.terminal.get("hypothesis_id")
+    }
+    assert actual == expected
+
+
 def test_a_fully_detected_row_reviews_its_same_mz_peaks(tmp_path, monkeypatch):
     completed, candidates, matrix, config = run_alignment_fixture(
         tmp_path, monkeypatch, "positive"
     )
     report = write_alignment_explanation(
         tmp_path / "report.sqlite",
-        full_audit=True,
         completed=completed,
         children=children_of(completed.application_result),
         **explanation_discovery_facts(completed),
@@ -314,7 +340,6 @@ def test_exclusions_load_once_with_restored_duplicate_assessments(
         children=children_of(completed.application_result),
         **explanation_discovery_facts(completed),
         **kwargs,
-        full_audit=True,
     )
     store = StreamedResultStore(tmp_path / "assessment-store", ())
     store.append("one", _AssessmentBatch(completed.method_assessments))
@@ -354,7 +379,6 @@ def test_exclusions_load_once_with_restored_duplicate_assessments(
     with recorder.stage("alignment.write_alignment_explanation"):
         report = write_alignment_explanation(
             tmp_path / "duplicated.sqlite",
-            full_audit=True,
             completed=duplicated,
             children=children_of(duplicated.application_result),
             **explanation_discovery_facts(duplicated),
@@ -378,7 +402,6 @@ def test_exclusions_load_once_with_restored_duplicate_assessments(
                 "exclusions",
                 "groups",
                 "initial_groups",
-                "curves",
                 "cells",
             )
         )
@@ -403,7 +426,6 @@ def test_explanation_progress_failure_does_not_publish_report(tmp_path, monkeypa
     with pytest.raises(OSError, match="progress unavailable"):
         write_alignment_explanation(
             report,
-            full_audit=True,
             completed=completed,
             children=children_of(completed.application_result),
             **explanation_discovery_facts(completed),
@@ -538,70 +560,6 @@ def test_incremental_report_deduplicates_and_aborts_conflicts(tmp_path):
     assert not failed.with_name(failed.name + ".tmp").exists()
 
 
-def _curve_payload():
-    return {
-        "schema_version": "curve_payload",
-        "kind": "initial_capture",
-        "sample_id": "S1",
-        "candidate_id": None,
-        "physical_peak_key": "obs-1",
-        "trace_coordinate": {"mz": 500.0, "rt_min": 1.0, "rt_max": 2.0, "ppm_tol": 7.0},
-        "curves": {
-            "rt": [1.0, 1.5, 2.0],
-            "raw": [0.0, 9.0, 0.0],
-            "baseline": None,
-            "smoothed": None,
-            "positive": None,
-        },
-        "integration": None,
-        "provenance": curve_provenance(),
-    }
-
-
-def test_repeated_curve_record_is_stored_once_and_relates_only_its_candidate(
-    tmp_path,
-):
-    report = tmp_path / "normalized.sqlite"
-    with ExplanationReportWriter(report) as writer:
-        writer.declare_samples([{"sample_key": "S1", "sample_stem": "S1"}])
-        for candidate_id, subject in (("C1", "M1"), ("C2", "M2"), ("C3", "M3")):
-            writer.add_candidate(
-                candidate_id,
-                "S1",
-                precursor_mz=500.0,
-                neutral_loss_tag="dR",
-                method_subject_id=subject,
-            )
-        for candidate_id in ("C1", "C2"):
-            writer.add_terminal(
-                candidate_id,
-                "S1",
-                variant="observed",
-                hypothesis_id=f"h-{candidate_id}",
-                physical_peak_key="obs-1",
-            )
-        payload = {**_curve_payload(), "candidate_id": "C1"}
-        payload["provenance"] = {**payload["provenance"], "method_subject_id": "M3"}
-        binding = dict(sample_id="S1", kind="initial_capture", record_id="obs-1")
-        ids = {writer.add_curve_payload(**binding, payload=payload) for _ in range(3)}
-        assert len(ids) == 1
-        writer.finalize(explanation_summary({"neutral_loss_by_tag": {"dR": 116.0}}))
-
-    evidence = read_review_evidence(report)
-    assert {key: c.curves for key, c in evidence.candidates.items()} == {
-        ("C1", "S1"): ("1",),
-        ("C2", "S1"): (),
-        ("C3", "S1"): (),
-    }
-    details = [
-        read_alignment_explanation(report, candidate_id=candidate_id)[
-            "capture_evidence"
-        ]
-        for candidate_id in ("C1", "C2", "C3")
-    ]
-    assert [len(detail) for detail in details] == [1, 0, 0]
-
-
 def test_report_rejects_terminal_without_a_candidate(tmp_path):
     report = tmp_path / "missing-candidate.sqlite"
     with pytest.raises(KeyError, match="missing"):
@@ -687,8 +645,7 @@ def test_indexed_query_preserves_many_groups_and_skips_unrelated_payloads(tmp_pa
     "corruption",
     ("bytes", "schema_identity", "schema", "payload"),
 )
-@pytest.mark.parametrize("reader", (read_alignment_explanation, read_alignment_curves))
-def test_invalid_report_never_returns_empty_success(tmp_path, corruption, reader):
+def test_invalid_report_never_returns_empty_success(tmp_path, corruption):
     report = tmp_path / "bad.sqlite"
     if corruption == "bytes":
         report.write_bytes(b"not sqlite")
@@ -711,4 +668,4 @@ def test_invalid_report_never_returns_empty_success(tmp_path, corruption, reader
         else "malformed|failed reading"
     )
     with pytest.raises(ExplanationError, match=message):
-        reader(report)
+        read_alignment_explanation(report)

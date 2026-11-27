@@ -164,8 +164,8 @@ curation folder itself keeps that curation and reads evidence and curves from
 the result its summary records. The overview counts, coverage, Matrix list and
 download then cover only the kept features. Removed features are under
 **整理時移除**, beside the unadopted groups, each with one line built from
-its `feature_decisions.tsv` row. A result without curation, and full-audit
-evidence (which has no Matrix scopes), is reviewed as published.
+its `feature_decisions.tsv` row. A result without curation is reviewed as
+published.
 
 ## Retained evidence and diagnostics
 
@@ -181,10 +181,9 @@ evidence file. Its content is `diagnostic_only`: it records request/attempt
 provenance, effective configuration, retained candidate/group/cell facts and
 the published Matrix hash. It cannot authorize a writer or prove readiness.
 
-- The default compact report keeps values, membership and review reasons, and
-  the saved raw curve of each cell with a value; full audit retains every curve
-  with its processed series. These are retention choices, not separate
-  scientific authorities.
+- The report keeps values, membership and review reasons, and the saved raw
+  curve of each cell with a value. For other samples, request the RAW curve
+  without changing the recorded result.
 - Repeated membership owner facts and compared peer groups are stored once.
   Readers restore every selected group, alternative partition, score and reason;
   this is lossless storage, not a reduction in review evidence.

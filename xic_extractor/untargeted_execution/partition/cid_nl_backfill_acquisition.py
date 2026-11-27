@@ -5,7 +5,6 @@ from __future__ import annotations
 import math
 from collections.abc import Callable
 from dataclasses import dataclass
-from dataclasses import field as dataclass_field
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
@@ -49,7 +48,6 @@ from xic_extractor.peak_detection.cid_nl_peak_support import (
 from xic_extractor.peak_detection.detector_invocations import GROUP_BACKFILL_DETECTOR
 from xic_extractor.peak_detection.observations import (
     PeakObservation,
-    RetainedCaptureEvidence,
     mint_physical_peak_observations,
 )
 from xic_extractor.peak_detection.physical_peak_evaluation import (
@@ -92,9 +90,6 @@ class UntargetedCidNlBackfillAttemptResult:
     group_hypothesis_id: str
     query_rt: float | None = None
     query_rt_basis: str = "group_center"
-    capture_evidence: tuple[RetainedCaptureEvidence, ...] = dataclass_field(
-        default=(), compare=False
-    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -336,7 +331,6 @@ def acquire_untargeted_cid_nl_backfill_trace_batch(
 
 def backfill_untargeted_cid_nl_sample_subject(
     *,
-    processing_attempt_id: str,
     sample: SampleMetadata,
     acquisition_source: AcquisitionSourceIdentity,
     method_subject: CidNlMethodSubject,
@@ -503,19 +497,6 @@ def backfill_untargeted_cid_nl_sample_subject(
         backfill_support=backfill_support,
         backfill_sets=backfill_sets,
         acquisition=acquisition,
-        capture_evidence=tuple(
-            RetainedCaptureEvidence(
-                sample_key=sample.sample_name,
-                processing_attempt_id=processing_attempt_id,
-                method_subject_id=method_subject.method_subject_id,
-                candidate_id=None,
-                capture_stage="method_backfill",
-                trace=trace,
-                physical_evaluation=evaluation,
-                observation_ref=observation,
-            )
-            for evaluation in physical_evaluations
-        ),
     )
 
 
@@ -537,7 +518,6 @@ def _close_backfill_attempt(
     backfill_support: tuple[DdaCidNlPeakSupport, ...],
     backfill_sets: tuple[DdaCidNlCandidateSetRelation, ...],
     acquisition: TraceAcquisitionBatch | None,
-    capture_evidence: tuple[RetainedCaptureEvidence, ...],
 ) -> UntargetedCidNlBackfillAttemptResult:
     try:
         assessment = mint_cid_nl_method_assessment(
@@ -590,7 +570,6 @@ def _close_backfill_attempt(
         group_hypothesis_id=group_hypothesis_id,
         query_rt=float(query_rt),
         query_rt_basis=query_rt_basis,
-        capture_evidence=capture_evidence,
     )
 
 
@@ -676,18 +655,6 @@ def reuse_cid_nl_backfill_peak(
         backfill_support=(),
         backfill_sets=(),
         acquisition=None,
-        capture_evidence=(
-            RetainedCaptureEvidence(
-                sample_key=sample.sample_name,
-                processing_attempt_id=record.processing_attempt_id,
-                method_subject_id=target.method_subject.method_subject_id,
-                candidate_id=None,
-                capture_stage="method_backfill",
-                trace=record.trace,
-                physical_evaluation=answer,
-                observation_ref=observed,
-            ),
-        ),
     )
 
 

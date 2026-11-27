@@ -50,7 +50,6 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
 )
 from xic_extractor.peak_detection.observations import (
     PeakObservation,
-    RetainedCaptureEvidence,
 )
 from xic_extractor.peak_detection.search_scope import (
     SEARCH_SCOPE_SCHEMA_VERSION,
@@ -95,7 +94,6 @@ class UntargetedPartitionComposition:
     capture_bindings: tuple[CaptureCandidateBinding, ...]
     method_assessments: tuple[CidNlMethodAssessment, ...]
     initial_groups: tuple[CrossSamplePeakGroupHypothesis, ...]
-    capture_evidence: tuple[RetainedCaptureEvidence, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,7 +104,6 @@ class ChildProjectionContext:
     samples: tuple[SampleMetadata, ...]
     membership_risks_by_owner: Mapping[str, AcceptedMembershipRisk]
     sample_rt_frame: SampleRtFrame | None
-    capture_evidence_retained: bool
 
 
 ChildOutputProjection = Callable[
@@ -122,7 +119,6 @@ class _PersistedPartitionComposition:
     excluded_candidates: tuple[UntargetedCandidateExclusion, ...]
     method_assessments: tuple[CidNlMethodAssessment, ...]
     initial_groups: tuple[CrossSamplePeakGroupHypothesis, ...]
-    capture_evidence: tuple[RetainedCaptureEvidence, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -277,7 +273,6 @@ def compose_and_persist_untargeted_partition(
         samples=batch.context.samples,
         membership_risks_by_owner=accepted_membership_risks(inputs.initial_groups),
         sample_rt_frame=sample_rt_frame,
-        capture_evidence_retained=bool(inputs.capture_evidence),
     )
 
     def check_cancellation() -> None:
@@ -305,7 +300,6 @@ def compose_and_persist_untargeted_partition(
         excluded_candidates=inputs.request.excluded_candidates,
         method_assessments=inputs.method_assessments,
         initial_groups=inputs.initial_groups,
-        capture_evidence=inputs.capture_evidence,
     )
     sealed = store.append_child_outputs(
         partition_key,
@@ -332,7 +326,6 @@ class _ProductionCompositionInputs:
     ]
     method_assessments: tuple[CidNlMethodAssessment, ...]
     initial_groups: tuple[CrossSamplePeakGroupHypothesis, ...]
-    capture_evidence: tuple[RetainedCaptureEvidence, ...] = ()
 
 
 def compose_untargeted_partition(
@@ -357,7 +350,6 @@ def compose_untargeted_partition(
         capture_bindings=inputs.request.scope.capture_bindings,
         method_assessments=inputs.method_assessments,
         initial_groups=inputs.initial_groups,
-        capture_evidence=inputs.capture_evidence,
     )
 
 
@@ -550,18 +542,6 @@ def _build_production_composition_inputs(
             group
             for workset in prepared.worksets
             for group in workset.grouping_scope.groups
-        ),
-        capture_evidence=tuple(
-            evidence
-            for result in sample_results
-            for evidence in (
-                *result.adapter_result.capture_evidence,
-                *(
-                    item
-                    for attempt in result.backfill_attempts
-                    for item in attempt.capture_evidence
-                ),
-            )
         ),
     )
 

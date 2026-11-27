@@ -188,13 +188,14 @@ class ReviewWorkspace:
                 )
                 if not sample_ids:
                     raise ValueError("這份結果沒有可檢閱的樣本。")
-                reviewed = summary.get("retention") == "review"
                 return SelectionRequest(
                     strategy="query",
                     sample_ids=sample_ids,
                     limit=25,
-                    review_scope="matrix" if reviewed else "all",
-                    curation_removed_ids=_removed_ids(curation) if reviewed else (),
+                    review_scope="matrix"
+                    if path.suffix.lower() == ".sqlite"
+                    else "all",
+                    curation_removed_ids=_removed_ids(curation),
                 )
 
             try:
