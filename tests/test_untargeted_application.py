@@ -862,10 +862,6 @@ def test_reduced_discovery_persistence_keeps_inferred_peak_and_qualifies_alignme
     assert [tuple(row[column] for column in value_columns) for row in cli_cells] == [
         tuple(row[column] for column in value_columns) for row in cells
     ]
-    assert alignment.review_tsv is not None
-    assert (cli_output / "alignment_review.tsv").read_bytes() == (
-        alignment.review_tsv.read_bytes()
-    )
     assert [row["Mz"] for row in matrix] == ["701.0000"]
     by_candidate = {row["source_candidate_id"]: row for row in cells}
     assert set(by_candidate) == {

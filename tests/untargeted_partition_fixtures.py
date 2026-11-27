@@ -16,7 +16,6 @@ from xic_extractor.alignment.cid_nl_inputs import (
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSamplePeakGroupHypothesis,
-    accepted_membership_risks,
 )
 from xic_extractor.alignment.drift_evidence import KnownIstdReference
 from xic_extractor.alignment.result.application_result import (
@@ -73,7 +72,6 @@ from xic_extractor.untargeted_execution.partition_composition import (
 )
 
 ALL_ROW_OUTPUTS = AlignmentRunOutputs(
-    review_tsv=Path("review.tsv"),
     matrix_tsv=Path("matrix.tsv"),
     backfill_cell_evidence_tsv=Path("backfill.tsv"),
     cells_tsv=Path("cells.tsv"),
@@ -145,7 +143,6 @@ def composed_child_outputs(
 
     context = ChildProjectionContext(
         samples=samples,
-        membership_risks_by_owner=accepted_membership_risks(initial_groups),
         sample_rt_frame=sample_rt_frame,
         capture_evidence_retained=capture_evidence_retained,
     )

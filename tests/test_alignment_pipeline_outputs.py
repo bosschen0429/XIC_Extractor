@@ -55,7 +55,7 @@ def test_validation_minimal_outputs_keep_gate_artifacts_without_debug_surfaces(
     )
 
     assert outputs.matrix_tsv == tmp_path / "alignment_matrix.tsv"
-    assert outputs.review_tsv == tmp_path / "alignment_review.tsv"
+    assert outputs.run_metadata_json == tmp_path / "alignment_run_metadata.json"
     assert outputs.backfill_cell_evidence_tsv == (
         tmp_path / "alignment_backfill_cell_evidence.tsv"
     )
@@ -329,12 +329,11 @@ def test_one_pass_writes_every_requested_file(tmp_path: Path) -> None:
             owner_cell(area=10.0),
             owner_cell(area=20.0),
             owner_cell(None, no_write="searched_no_observation"),
-            center_mz=612.25,
+            center_mz=612.250049,
         ),
     )
     directory = tmp_path / "out"
     outputs = pipeline_outputs_module.AlignmentRunOutputs(
-        review_tsv=directory / "alignment_review.tsv",
         matrix_tsv=directory / "alignment_matrix.tsv",
         backfill_cell_evidence_tsv=directory / "alignment_backfill_cell_evidence.tsv",
         cells_tsv=directory / "alignment_cells.tsv",
@@ -344,13 +343,15 @@ def test_one_pass_writes_every_requested_file(tmp_path: Path) -> None:
 
     row_count = _write(outputs, batch, metadata={"schema_version": "test"})
 
+    manifest = json.loads(outputs.run_metadata_json.read_text(encoding="utf-8"))
+    assert manifest["matrix_identity"]["rows"][0][0] == "F000001"
+    assert manifest["matrix_identity"]["rows"][1] == ["F000003", 612.250049]
     assert row_count == 3
     assert sorted(path.name for path in directory.iterdir()) == [
         "alignment_backfill_cell_evidence.tsv",
         "alignment_cells.tsv",
         "alignment_matrix.tsv",
         "alignment_matrix_status.tsv",
-        "alignment_review.tsv",
         "alignment_run_metadata.json",
     ]
     line_counts = {
@@ -362,7 +363,6 @@ def test_one_pass_writes_every_requested_file(tmp_path: Path) -> None:
         "alignment_cells.tsv": 10,
         "alignment_matrix.tsv": 3,
         "alignment_matrix_status.tsv": 4,
-        "alignment_review.tsv": 4,
     }
 
 

@@ -68,7 +68,7 @@ B 與 M 不是猜的，而是從一批明顯漂移、彼此佐證的化合物量
 
 用種子現有的峰比較「不套用、只用 a、只用 b、兩個都用」，取剩餘 RT 散布最小者；散布相同就用較少係數。最終分組時，能用同一組係數解釋的種子會先合併：兩個種子用合起來擬的係數扣掉漂移後，自己就能連成一條帶，就當成同一個種子。接著固定這組係數，扣掉漂移後重連，只收與種子相連的帶；擬合只用種子自己的峰，不拿重連時才接進來的峰重擬。投票 M 的列不做合併，所以 M 不受影響。用到的 B 或 M 未知時，該峰不參加這一次重連。Backfill 預測缺格位置時，加回該針的漂移，不改這列的係數。
 
-結果資料夾中，每個 feature 的 a、b 寫在 `alignment_review.tsv` 的 `rt_time_coefficient`（a）與 `rt_sample_shift_coefficient`（b）。漂移錨點清單、M 未知的樣本與係數非零的列數，記在 `alignment_run_metadata.json` 的 `rt_drift_summary`。
+漂移錨點清單、M 未知的樣本與係數非零的列數，記在 `alignment_run_metadata.json` 的 `rt_drift_summary`。
 
 ### 每一列用哪一條 B
 

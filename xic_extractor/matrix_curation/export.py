@@ -52,7 +52,7 @@ from xic_extractor.matrix_curation.steps import (
     StepResult,
     StepTable,
 )
-from xic_extractor.output.alignment.matrix_output_contract import matrix_review_rows
+from xic_extractor.output.alignment.matrix_output_contract import read_matrix_identities
 from xic_extractor.sample_metadata import (
     SAMPLE_METADATA_COLUMNS,
     SAMPLE_METADATA_SCHEMA_VERSION,
@@ -328,22 +328,15 @@ def prepare_matrix_curation(
     header, rows, matrix_digest = read_tsv_with_header_snapshot(
         source.matrix_path, required_columns=("Mz", "RT"), encoding="utf-8-sig"
     )
-    review_header, review_rows, _ = read_tsv_with_header_snapshot(
-        source.review_path, encoding="utf-8-sig"
-    )
-    identities = matrix_review_rows(
+    identities = read_matrix_identities(
+        source.identity_path,
         matrix_header=header,
         matrix_rows=rows,
-        review_columns=review_header,
-        review_rows=review_rows,
+        matrix_digest=matrix_digest,
     )
     features = tuple(
-        FeatureIdentity(
-            feature_id=str(identity["feature_id"]),
-            matrix_mz=float(str(identity["group_center_mz"])),
-            matrix_rt=float(str(identity["group_center_rt"])),
-        )
-        for identity in identities
+        FeatureIdentity(feature_id=feature_id, matrix_mz=mz, matrix_rt=float(row["RT"]))
+        for (feature_id, mz), row in zip(identities, rows, strict=True)
     )
     binding = bind_samples(
         header[2:], sample_metadata, missing="找不到樣本資料；請選擇樣本資料 TSV。"
@@ -531,7 +524,7 @@ def prepare_matrix_curation(
         "inputs": {
             "source_dir": str(source.source_dir.resolve()),
             "matrix": str(source.matrix_path.resolve()),
-            "review": str(source.review_path.resolve()),
+            "matrix_identity": str(source.identity_path.resolve()),
             "explanation": (
                 str(source.explanation_path.resolve())
                 if needs_cells and source.explanation_path is not None

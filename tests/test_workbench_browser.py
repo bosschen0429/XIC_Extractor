@@ -1807,7 +1807,9 @@ def test_untargeted_result_shows_one_matrix_and_groups_technical_files(
             "sample_count": 2,
             "overview": {"matrix_count": 4, "complete_count": 3, "unresolved_count": 1},
             "evidence": {"path": f"{folder}/alignment_explanation.sqlite"},
-            "alignment_outputs": {"review_tsv": f"{folder}/alignment_review.tsv"},
+            "alignment_outputs": {
+                "run_metadata_json": f"{folder}/alignment_run_metadata.json"
+            },
             "artifacts": [
                 {
                     "name": path.rsplit("/", 1)[-1],
@@ -4804,7 +4806,9 @@ def _open_curation_folder(page, tmp_path, fake_runs):
     write_tsv(output / "sample_metadata.tsv", sample_rows(), SAMPLE_METADATA_COLUMNS)
     fake_runs.result = {
         "matrix_tsv": str(output / "alignment_matrix.tsv"),
-        "alignment_outputs": {"review_tsv": str(output / "alignment_review.tsv")},
+        "alignment_outputs": {
+            "run_metadata_json": str(output / "alignment_run_metadata.json")
+        },
     }
     _view(page, "untargeted")
     page.locator("#u-output_dir").fill(str(output))
@@ -4962,7 +4966,9 @@ def test_matrix_curation_from_a_run_and_from_an_existing_folder(
     )
     fake_runs.result = {
         "matrix_tsv": str(run_output / "alignment_matrix.tsv"),
-        "alignment_outputs": {"review_tsv": str(run_output / "alignment_review.tsv")},
+        "alignment_outputs": {
+            "run_metadata_json": str(run_output / "alignment_run_metadata.json")
+        },
     }
     _view(page, "untargeted")
     page.locator("#u-raw_dir").fill(str(tmp_path / "raw"))

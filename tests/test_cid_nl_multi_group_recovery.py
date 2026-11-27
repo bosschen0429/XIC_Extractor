@@ -41,6 +41,7 @@ from tests.untargeted_alignment_entry_fixtures import (
     discover,
     publish_alignment,
     published_cells,
+    published_matrix,
     raw_paths,
     read_tsv,
     sample_metadata_for,
@@ -111,13 +112,22 @@ def _gaussian_raw(
 
 
 def _cells_of(output, stem):
-    """One sample's published cells, each with its feature's review row."""
-    review = {
-        row["feature_id"]: row for row in read_tsv(output / "alignment_review.tsv")
-    }
     return {
-        feature: (cell, review[feature])
+        feature: cell
         for (feature, sample), cell in published_cells(output).items()
+        if sample == stem
+    }
+
+
+def _cells_at_supported_rt(output, stem):
+    rows = published_cells(output)
+    apexes = {}
+    for (feature, _), cell in rows.items():
+        if cell["status"] == "detected":
+            apexes.setdefault(feature, []).append(float(cell["apex_rt"]))
+    return {
+        round(sum(apexes[feature]) / len(apexes[feature]), 1): cell
+        for (feature, sample), cell in rows.items()
         if sample == stem
     }
 
@@ -528,10 +538,7 @@ def test_backfill_recovers_every_authorized_rt_group(
         alignment_config=ALIGNMENT,
     )
 
-    missing = {
-        round(float(review["group_center_rt"]), 1): cell
-        for cell, review in _cells_of(output, "Missing").values()
-    }
+    missing = _cells_at_supported_rt(output, "Missing")
     assert set(missing) == {8.0, 12.0}
     assert all(cell["source_candidate_id"] == "" for cell in missing.values())
     for center in authorized:
@@ -611,7 +618,7 @@ def test_shared_physical_recovery_claim_is_not_assigned_to_two_groups(
     )
 
     assert len(read_tsv(output / "alignment_matrix.tsv")) == 2
-    missing = [cell for cell, _review in _cells_of(output, "Missing").values()]
+    missing = list(_cells_of(output, "Missing").values())
     assert sorted(cell["status"] for cell in missing) == ["backfilled", "unresolved"]
     assert sum(bool(cell["area"]) for cell in missing) == 1
 
@@ -760,12 +767,13 @@ def test_batch_ms1_only_publishes_only_one_selected_peak_in_the_established_row(
     )
 
     (matrix_row,) = read_tsv(output / "alignment_matrix.tsv")
-    missing = tuple(_cells_of(output, "Missing").values())
-    ((cell, review),) = (item for item in missing if item[1]["matrix_row_index"])
+    missing = _cells_of(output, "Missing")
+    (feature,) = published_matrix(output)
+    cell = missing[feature]
     assert len(missing) == len(missing_peaks)
     assert cell["status"] == "backfilled"
     assert cell["source_candidate_id"] == ""
-    support_area = float(published_cells(output)[(review["feature_id"], "S1")]["area"])
+    support_area = float(published_cells(output)[(feature, "S1")]["area"])
     assert float(cell["area"]) == pytest.approx(support_area, rel=0.05)
     assert float(matrix_row["Missing"]) == pytest.approx(float(cell["area"]), rel=1e-5)
     assert any(
@@ -773,20 +781,12 @@ def test_batch_ms1_only_publishes_only_one_selected_peak_in_the_established_row(
         for apex in missing_peaks
     )
     if len(missing_peaks) > 1:
-        assert "accepted_competition" in review["membership_risk_flags"].split(";")
-    assert review["detected_count"] == "2"
-    assert review["warning"] != "no_anchor"
-    if not composition:
-        assert review["neutral_loss_tag"] == "cid_nl:116.0474"
-    expected_loss = (
-        (116.0474 + 132.0423) / 2 if composition == "intersection" else 116.0474
-    )
-    assert float(review["group_product_mz"]) == pytest.approx(
-        500.0 - expected_loss, abs=1e-3
-    )
-    assert float(review["group_observed_neutral_loss_da"]) == pytest.approx(
-        expected_loss, abs=1e-3
-    )
+        from xic_extractor.alignment_explanation.reader import read_review_evidence
+
+        group = read_review_evidence(output / "alignment_explanation.sqlite").groups[
+            feature
+        ]
+        assert "accepted_competition" in group.risk_flags
 
 
 def test_backfill_reaches_a_sample_whose_support_belongs_to_another_group(
@@ -815,10 +815,7 @@ def test_backfill_reaches_a_sample_whose_support_belongs_to_another_group(
         alignment_config=ALIGNMENT,
     )
 
-    missing = {
-        round(float(review["group_center_rt"]), 1): cell
-        for cell, review in _cells_of(output, "Missing").values()
-    }
+    missing = _cells_at_supported_rt(output, "Missing")
     assert missing[8.0]["status"] == "backfilled"
     assert float(missing[8.0]["area"]) > 0
     assert missing[8.0]["source_candidate_id"] == ""
@@ -856,9 +853,12 @@ def test_alignment_uses_configured_recovery_groups(tmp_path, monkeypatch):
         alignment_config=AlignmentConfig(preferred_rt_sec=2.0),
     )
 
+    rows = published_cells(output)
     missing = {
-        review["detected_count"]: cell
-        for cell, review in _cells_of(output, "Missing").values()
+        str(
+            sum(r["status"] == "detected" for (f, _), r in rows.items() if f == feature)
+        ): cell
+        for feature, cell in _cells_of(output, "Missing").items()
     }
     assert set(missing) == {"1", "2"}
     assert missing["2"]["status"] == "unavailable"
