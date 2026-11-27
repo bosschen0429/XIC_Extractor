@@ -112,11 +112,9 @@ class ReviewWorkspace:
         """
         self._cancel.set()
         if self._job is not None:
-            self._replaced_job = (
-                {**self._job, "status": "cancelled", "message": reason}
-                if self._job["status"] in {"running", "cancelling"}
-                else dict(self._job)
-            )
+            if self._job["status"] in {"running", "cancelling"}:
+                self._job.update(status="cancelled", message=reason)
+            self._replaced_job = self._job
         self._job = None
 
     @property
@@ -462,7 +460,7 @@ class ReviewWorkspace:
                     raise WorkspaceBusy("分析執行中；完成後才能讀取 RAW。")
             job_id = uuid.uuid4().hex
             self._cancel = cancel = threading.Event()
-            self._job = {
+            job: dict[str, Any] = {
                 "id": job_id,
                 "item_id": description["id"],
                 "status": "running",
@@ -474,6 +472,7 @@ class ReviewWorkspace:
                 if raw_needed
                 else "正在顯示保存的曲線。",
             }
+            self._job = job
             request = {
                 "report": self._report,
                 "source": self._page.source,
@@ -486,11 +485,12 @@ class ReviewWorkspace:
                 "dll_dir": dll_dir,
                 "padding_min": values.get("padding_min", 0.5),
             }
-        if raw_needed:
-            self._executor.submit(self._read_curves, job_id, request, cancel)
-        else:
-            self._read_curves(job_id, request, cancel)
-        return self.job(job_id)
+            if raw_needed:
+                self._executor.submit(self._read_curves, job_id, request, cancel)
+                return dict(job)
+        self._read_curves(job_id, request, cancel)
+        with self._lock:
+            return dict(job)
 
     def _read_curves(
         self, job_id: str, request: dict[str, Any], cancel: threading.Event
