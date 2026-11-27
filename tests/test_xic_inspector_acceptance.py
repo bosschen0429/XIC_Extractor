@@ -139,8 +139,12 @@ def test_missing_bound_matrix_rejects_generation(
     assert not out_html.exists()
 
 
-def test_acceptance_a4_zero_curve_read_on_metadata_query(tmp_path, monkeypatch) -> None:
-    """A4: Metadata queries read 0 curves; generation reads only needed curves."""
+def test_acceptance_a4_full_audit_loads_only_selected_evidence(
+    tmp_path, monkeypatch
+) -> None:
+    """A4: Select from metadata, then load only the selected audit evidence."""
+    from xic_inspector.sources import cid_nl
+
     completed, candidates, matrix, config = run_alignment_fixture(
         tmp_path, monkeypatch, "positive"
     )
@@ -160,6 +164,16 @@ def test_acceptance_a4_zero_curve_read_on_metadata_query(tmp_path, monkeypatch) 
     assert "curves" not in summary
     assert summary["candidate_count"] > 0
 
+    read_evidence = cid_nl.read_review_evidence
+
+    def read_page(path, *, candidate_keys, row_ids, summary):
+        assert candidate_keys
+        assert len(row_ids) <= 1
+        return read_evidence(
+            path, candidate_keys=candidate_keys, row_ids=row_ids, summary=summary
+        )
+
+    monkeypatch.setattr(cid_nl, "read_review_evidence", read_page)
     out_html = tmp_path / "report.html"
     res = generate_report(
         report_path,

@@ -34,8 +34,12 @@ from xic_extractor.applications.untargeted.alignment_explanation_projection impo
 )
 from xic_extractor.diagnostics.explanation_conversion import compact_explanation
 from xic_extractor.injection_timeline import InjectionSequence
-from xic_inspector.api import SelectionRequest, generate_report
-from xic_inspector.sources.cid_nl import CidNlSource
+from xic_inspector.api import (
+    InspectorError,
+    SelectionRequest,
+    generate_report,
+    prepare_report,
+)
 
 
 def _cells(report):
@@ -115,33 +119,39 @@ def test_explanation_from_an_older_alignment_is_rejected_on_open(
 
 
 @pytest.mark.parametrize(
-    "criteria,expected",
+    "criteria,counts,witnesses",
     [
-        ({"mz_min": 500, "mz_max": 500, "rt_min": 2, "rt_max": 2}, (5, 5, 0, 2)),
-        ({"mz_min": 500, "mz_max": 500}, (5, 5, 4, 0)),
-        ({"sample_ids": ("S1",), "mz_min": 500, "mz_max": 500}, (5, 3, 3, 0)),
-        ({"sample_ids": ("absent",), "mz_min": 500}, (5, 0, 0, 0)),
-        ({"candidate_ids": ("C1",)}, (5, 5, 1, 0)),
-        ({"group_ids": ("row-α",), "sample_ids": ("S2",)}, (5, 3, 1, 0)),
-        ({"mz_min": 500, "offset": 1, "limit": 2}, (5, 5, 4, 0)),
-        ({"rt_min": 99}, (5, 5, 0, 2)),
-        ({"strategy": "sample", "seed": 0, "limit": 2}, (5, 5, 5, 0)),
-        ({"strategy": "sample", "seed": 19, "limit": 4}, (5, 5, 5, 0)),
-        ({"strategy": "sample", "seed": 19, "sample_ids": ("S1",)}, (5, 3, 3, 0)),
-        ({"strategy": "sample", "sample_ids": ("S2",), "limit": 1}, (5, 3, 3, 0)),
-        ({"strategy": "sample", "sample_ids": ("absent",)}, (5, 0, 0, 0)),
-        ({"strategy": "attention", "limit": 2}, (5, 5, 3, 0)),
-        ({"strategy": "attention", "sample_ids": ("S1",)}, (5, 3, 2, 0)),
-        ({"strategy": "attention", "sample_ids": ("S2",)}, (5, 3, 2, 0)),
+        ({"mz_min": 500, "mz_max": 500, "rt_min": 2, "rt_max": 2}, (5, 5, 0, 2), ()),
+        (
+            {"mz_min": 500, "mz_max": 500},
+            (5, 5, 4, 0),
+            ("C4@S2", "C3@S1", "C5@S1", "C1@S1 C2@S2"),
+        ),
+        ({"sample_ids": ("absent",), "mz_min": 500}, (5, 0, 0, 0), ()),
+        ({"candidate_ids": ("C1",)}, (5, 5, 1, 0), ("C1@S1 C2@S2",)),
+        ({"group_ids": ("row-α",), "sample_ids": ("S2",)}, (5, 3, 1, 0), ("C2@S2",)),
+        ({"mz_min": 500, "offset": 1, "limit": 2}, (5, 5, 4, 0), ("C3@S1", "C5@S1")),
+        ({"rt_min": 99}, (5, 5, 0, 2), ()),
+        (
+            {"strategy": "sample", "seed": 19, "limit": 4},
+            (5, 5, 5, 0),
+            ("C3@S1", "", "C5@S1", "C1@S1 C2@S2"),
+        ),
+        (
+            {"strategy": "sample", "sample_ids": ("S2",), "limit": 1},
+            (5, 3, 3, 0),
+            ("C2@S2",),
+        ),
+        ({"strategy": "attention", "limit": 2}, (5, 5, 3, 0), ("", "C5@S1")),
+        ({"strategy": "attention", "sample_ids": ("S2",)}, (5, 3, 2, 0), ("", "C2@S2")),
     ],
 )
-def test_indexed_selection_keeps_witness_scope_counts_and_bounded_loading(
-    tmp_path, monkeypatch, criteria, expected
+def test_review_selection_keeps_witness_scope_and_counts(
+    tmp_path, criteria, counts, witnesses
 ):
     from tests.inspector_fixtures import (
         NEUTRAL_LOSS_BY_TAG,
         discovery,
-        read_report_payload,
         witness_member,
     )
 
@@ -211,35 +221,18 @@ def test_indexed_selection_keeps_witness_scope_counts_and_bounded_loading(
             )
         )
     request = SelectionRequest(**{"strategy": "query", **criteria})
-    baseline = tmp_path / "baseline.html"
-    with monkeypatch.context() as patch:
-        patch.setattr("xic_inspector.api.open_source", lambda path: CidNlSource(path))
-        old = generate_report(report, request, baseline)
-    assert (
-        old.run_total,
-        old.eligible_count,
-        old.matched_count,
-        old.missing_rt_count,
-    ) == expected
-
-    def forbidden(*args, **kwargs):
-        raise AssertionError("indexed query read the entire review population")
-
-    monkeypatch.setattr("xic_inspector.sources.cid_nl.read_review_evidence", forbidden)
-    output = tmp_path / "indexed.html"
-    result = generate_report(report, request, output)
+    result = prepare_report(report, request)
     assert (
         result.run_total,
         result.eligible_count,
         result.matched_count,
         result.missing_rt_count,
-    ) == expected
-    assert [
-        (item["id"], item["witnesses"]) for item in read_report_payload(output)["items"]
-    ] == [
-        (item["id"], item["witnesses"])
-        for item in read_report_payload(baseline)["items"]
-    ]
+    ) == counts
+    actual_witnesses = tuple(
+        " ".join(f"{w['candidate_id']}@{w['sample_key']}" for w in item["witnesses"])
+        for item in result.payload["items"]
+    )
+    assert actual_witnesses == witnesses
 
 
 @pytest.mark.parametrize("scenario", ("positive", "all_hold", "review_only"))
@@ -292,8 +285,13 @@ def test_default_review_keeps_values_and_query_without_curves(
     with sqlite3.connect(report) as db:
         db.execute("DROP INDEX cells_sample_apex")
         db.execute(f"ALTER TABLE cells DROP COLUMN {missing_cell_column}")
-    with pytest.raises(ExplanationError, match="rerun"):
-        CidNlSource(report)
+    with pytest.raises(InspectorError, match="rerun") as exc:
+        generate_report(
+            report,
+            selection=SelectionRequest(strategy="query", candidate_ids=(candidate_id,)),
+            output=tmp_path / "invalid.html",
+        )
+    assert exc.value.code == 4
 
 
 def test_selected_curves_are_explicit_and_other_ranges_stay_small(

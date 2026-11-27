@@ -1237,7 +1237,7 @@ def test_nearest_mz_sorts_full_population_before_stable_pagination(
     tmp_path, monkeypatch
 ):
     from xic_inspector.api import prepare_report
-    from xic_inspector.sources import cid_nl_query
+    from xic_inspector.sources import cid_nl
 
     coordinates = {f"item-{i:02}": 200 + (30 - i) / 100 for i in range(31)}
     coordinates.update({"tie-z": 201, "tie-a": 201})
@@ -1247,13 +1247,13 @@ def test_nearest_mz_sorts_full_population_before_stable_pagination(
     )
     expected = sorted(coordinates, key=lambda key: (abs(coordinates[key] - 200), key))
     restored_rows = []
-    read_selection = cid_nl_query.read_review_evidence
+    read_selection = cid_nl.read_review_evidence
 
     def read_page(*args, **kwargs):
         restored_rows.append(len(kwargs["row_ids"]))
         return read_selection(*args, **kwargs)
 
-    monkeypatch.setattr(cid_nl_query, "read_review_evidence", read_page)
+    monkeypatch.setattr(cid_nl, "read_review_evidence", read_page)
     pages = []
     for offset in (0, 25):
         prepared = prepare_report(
@@ -1342,7 +1342,7 @@ def test_nearest_mz_rejects_mixed_modes(conflict):
     assert exc.value.code == 2
 
 
-def test_nearest_mz_rejects_nonindexed_evidence_without_fallback(tmp_path):
+def test_nearest_mz_rejects_full_audit(tmp_path):
     from xic_inspector.api import prepare_report
 
     report, _, _ = create_inspector_report(tmp_path)
