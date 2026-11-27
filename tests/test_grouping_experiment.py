@@ -637,7 +637,6 @@ def test_grouping_anchor_table_lists_istd_knots_without_any_workset(
     calibration = build_batch_rt_calibration(
         {},
         sample_stems=("S0", "S1"),
-        prior_injections={},
         policy=RtCalibrationPolicy(),
         measured_istds=(("ISTD1", "S0", 2.0), ("ISTD1", "S1", 2.2)),
     )

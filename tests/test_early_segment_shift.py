@@ -32,9 +32,6 @@ def _calibration(standards, *, unsupported_before=None):
                 stem,
                 "calibrated",
                 ((starts.get(stem, 2.0),) * 2, (40.0, 40.0)),
-                None,
-                None,
-                "unmeasured",
                 standard_residuals=tuple(
                     (label, observed, reference, 0.0)
                     for (label, reference), observed in zip(
@@ -44,9 +41,6 @@ def _calibration(standards, *, unsupported_before=None):
             )
             for stem, values in standards.items()
         },
-        front_shift_center_min=None,
-        front_shift_mad_min=None,
-        perturbation_tolerance_min=None,
     )
 
 

@@ -1942,15 +1942,9 @@ def test_final_grouping_uses_the_sample_shift_voted_by_direct_evidence_rows(
                     stem,
                     "calibrated",
                     ((7.0, 7.0), (9.0, 9.0)),
-                    None,
-                    None,
-                    "not_evaluated",
                 )
                 for stem in inputs.sample_stems
             },
-            None,
-            None,
-            None,
         )
         shift = voted_shift if rows else anchors_shift
         return calibration, RtDriftModel((), dict.fromkeys(inputs.sample_stems, shift))

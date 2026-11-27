@@ -776,15 +776,6 @@ def compose_calibrations(
             knot for _batch, item in sorted(present.items()) for knot in item.knots
         ),
         samples=dict(sorted(samples.items())),
-        front_shift_center_min=None
-        if reference is None
-        else reference.front_shift_center_min,
-        front_shift_mad_min=None
-        if reference is None
-        else reference.front_shift_mad_min,
-        perturbation_tolerance_min=None
-        if reference is None
-        else reference.perturbation_tolerance_min,
     )
 
 

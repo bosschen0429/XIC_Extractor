@@ -35,16 +35,10 @@ def test_explanation_freezes_final_rt_owner_and_preserves_reference_provenance(
                 stem,
                 "insufficient_anchors",
                 (),
-                None,
-                None,
-                "unmeasured",
                 estimate_support=RtEstimateSupport((7.0, 9.0), shift, 0.01, None),
             )
             for stem, shift in (("S1", 0.2), ("S2", -0.3))
         },
-        None,
-        None,
-        None,
     )
     completed = replace(
         completed, sample_rt_frame=SampleRtFrame().with_sample_calibration(calibration)

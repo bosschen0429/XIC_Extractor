@@ -179,8 +179,7 @@ Only band linking reads it. An affected injection's peak before 8.5 min moves to
 the elution time solving observed = elution + A × g(elution), then is read
 through the maps of the unaffected injections around it. Such a predicted
 coordinate does not vote on M. The published calibration, Backfill localization
-and every output keep their values. The calibration's front shift, measured at
-its earliest knots, misses this shift when those knots elute before g rises.
+and every output keep their values.
 
 ### Persisted RT replay
 

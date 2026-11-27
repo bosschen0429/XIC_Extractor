@@ -85,7 +85,6 @@ class KnownIstdReference:
             measured_istds=tuple(
                 (label, sample, rt) for label, sample, rt, _ in self.coordinates
             ),
-            prior_injections={},
             policy=RtCalibrationPolicy(),
         )
         sample_knots = tuple(

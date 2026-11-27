@@ -150,7 +150,6 @@ def test_sparse_calibration_localizes_in_target_coordinates_without_strong_claim
             "late": {"a": 20, "b": 20, "target": 22},
         },
         sample_stems=("a", "b", "target"),
-        prior_injections={},
         policy=RtCalibrationPolicy(),
     )
     frame = SampleRtFrame(
