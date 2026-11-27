@@ -10,7 +10,6 @@ from xic_extractor.extraction.scoring_factory import build_scoring_context_facto
 from xic_extractor.extraction.target_extraction import extract_raw_file_result
 from xic_extractor.output.messages import DiagnosticRecord
 from xic_extractor.processing_identity import AcquisitionSourceExpectation
-from xic_extractor.raw_mass_recalibration import PreparedRawMassRecalibration
 
 if TYPE_CHECKING:
     from xic_extractor.extraction.result_models import FileResult, RunOutput
@@ -24,8 +23,6 @@ def run_serial(
     progress_callback: Callable[[int, int, str], None] | None = None,
     should_stop: Callable[[], bool] | None = None,
     acquisition_sources_by_sample: Mapping[str, AcquisitionSourceExpectation]
-    | None = None,
-    mass_recalibration_by_sample: Mapping[str, PreparedRawMassRecalibration]
     | None = None,
     defer_analyte_selection: bool = False,
 ) -> RunOutput:
@@ -44,10 +41,6 @@ def run_serial(
         extraction_kwargs: dict[str, Any] = {}
         if defer_analyte_selection:
             extraction_kwargs["defer_analyte_selection"] = True
-        if mass_recalibration_by_sample:
-            extraction_kwargs["prepared_mass_recalibration"] = (
-                mass_recalibration_by_sample[raw_path.stem]
-            )
         expected_source = _expected_source(raw_path, acquisition_sources_by_sample)
         if expected_source is not None:
             extraction_kwargs["expected_acquisition_source"] = expected_source

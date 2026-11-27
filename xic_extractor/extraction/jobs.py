@@ -13,7 +13,6 @@ from xic_extractor.execution.workers import execute_process_jobs
 from xic_extractor.extraction.result_models import RawFileExtractionResult
 from xic_extractor.extraction.scoring_factory import build_scoring_context_factory
 from xic_extractor.processing_identity import AcquisitionSourceExpectation
-from xic_extractor.raw_mass_recalibration import PreparedRawMassRecalibration
 
 
 @dataclass(frozen=True)
@@ -23,7 +22,6 @@ class RawFileJob:
     config: ExtractionConfig
     targets: tuple[Target, ...]
     expected_acquisition_source: AcquisitionSourceExpectation | None = None
-    prepared_mass_recalibration: PreparedRawMassRecalibration | None = None
     defer_analyte_selection: bool = False
 
 
@@ -129,10 +127,6 @@ def extract_raw_file_job(job: RawFileJob) -> WorkerResult:
         extraction_kwargs: dict[str, Any] = {}
         if job.defer_analyte_selection:
             extraction_kwargs["defer_analyte_selection"] = True
-        if job.prepared_mass_recalibration is not None:
-            extraction_kwargs["prepared_mass_recalibration"] = (
-                job.prepared_mass_recalibration
-            )
         if job.expected_acquisition_source is not None:
             extraction_kwargs["expected_acquisition_source"] = (
                 job.expected_acquisition_source

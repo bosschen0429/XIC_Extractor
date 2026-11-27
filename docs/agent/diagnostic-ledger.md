@@ -365,13 +365,16 @@ database differed only in internal integer peak ids, renumbered by the new
 partition order; every table matched once peak references were resolved to
 `physical_peak_key`. Initial acquisition took 278 s (opens 2,550 to 1,445,
 vendor calls 6,844 to 2,142, worker time 1,474 to 1,034 s), Backfill 190 s
-(166 s of it in-order composition) and the runtime 586 s. Tree peak private
-memory stayed 12.2 GB, set by the 11-process ISTD reference stage before
-acquisition; the RAW phases peaked at 6.2 (initial), 9.2 (grouping) and
-9.8 GB (Backfill).
+(166 s of it in-order composition) and the runtime 586 s. The ISTD reference
+stage then set the tree's private-memory peak at 12.2 GB, with 11 Targeted
+processes before acquisition. Taking each sample's ISTD apex from its Discovery
+peaks instead, without RAW, reproduced that run's reference (510 coordinates,
+every provenance key) and every output byte for byte. The stage took 0.07 s
+instead of 38 s, and the run peaked at 10.1 GB in Backfill (6.4 initial, 9.4
+grouping) with 6 processes instead of 17.
 
-Rerun when partition packing, worker scheduling, Backfill planning or the RAW
-reader changes. Artifacts: `output/1306/` in the `research-1306-raw-time-46fb42`
+Rerun when partition packing, worker scheduling, Backfill planning, the ISTD
+reference or the RAW reader changes. Artifacts: `output/1306/` in the `research-1306-raw-time-46fb42`
 worktree.
 
 ### Drift grouping reuses prepared numerical evidence

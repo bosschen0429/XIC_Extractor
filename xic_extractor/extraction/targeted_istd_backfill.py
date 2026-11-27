@@ -1,30 +1,23 @@
-"""Targeted inputs to ISTD reference recovery and conservative Backfill.
+"""Targeted inputs to conservative ISTD-anchored Backfill.
 
 Backfill applies to a Target that is an internal standard or is paired with
 one. Its rule belongs to ``alignment.backfill.istd_anchored``; this module reads
 the Targeted population for what that rule consumes: the direct CID-NL peers and
 the paired internal standard's observation in each sample.
-Reference recovery uses retained Targeted peaks and the shared band
-localizer; it does not promote an MS1-only observation to local CID-NL support.
 """
 
 from __future__ import annotations
-
-from collections.abc import Mapping, Sequence
-from statistics import median
 
 from xic_extractor.alignment.backfill.istd_anchored import (
     IstdAnchoredBackfill,
     SampleAssessments,
     resolve_istd_anchored_backfill,
 )
-from xic_extractor.alignment.band_rt_location import BandRtLocator
 from xic_extractor.alignment.cell_observation.observations import CidNlCellGroupSupport
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.result.scientific_alignment import ObservedSearchSubject
-from xic_extractor.alignment.rt_frame import RtFrame, SampleRtFrame
-from xic_extractor.configuration.models import ExtractionConfig, Target
-from xic_extractor.extraction.result_models import FileResult
+from xic_extractor.alignment.rt_frame import RtFrame
+from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.extraction.target_extraction import credible_istd_anchor_rt
 from xic_extractor.extraction.targeted_capture_population import (
     TargetedCapturePopulation,
@@ -35,108 +28,6 @@ from xic_extractor.peak_detection.observations import PeakObservation
 from xic_extractor.peak_detection.peak_hypothesis_identity import (
     HYPOTHESIS_METHOD_DDA_CID_NL,
 )
-
-
-def resolve_istd_reference_peaks(
-    targets: Sequence[Target],
-    results_by_sample: Mapping[str, FileResult],
-    *,
-    alignment_config: AlignmentConfig,
-    sample_cohorts: Mapping[str, str],
-) -> dict[tuple[str, str], float]:
-    """Recover an observed ISTD peak without manufacturing local NL support.
-
-    Direct Targeted selections freeze the peer evidence. A missing selection,
-    or the unique selection contradicting the batch's ISTD order, may use the
-    same empirical band localization as Targeted Backfill. The sample
-    being repaired never contributes to its own localization. Only one retained
-    available physical peak may win; a forecast is never a measured coordinate.
-    """
-    direct = {}
-    supported = {}
-    for target in targets:
-        for sample, file_result in results_by_sample.items():
-            result = file_result.results.get(target.label)
-            rt = credible_istd_anchor_rt(result)
-            if rt is not None:
-                direct[target.label, sample] = rt
-                if result is not None and result.selected_cid_nl_supported:
-                    supported[target.label, sample] = rt
-    cohort_points: dict[tuple[str, str], list[float]] = {}
-    for (label, sample), rt in supported.items():
-        cohort_points.setdefault((sample_cohorts[sample], label), []).append(rt)
-    centers = {key: median(values) for key, values in cohort_points.items()}
-    contested = set()
-    for sample in results_by_sample:
-        cohort = sample_cohorts[sample]
-        labels = sorted(
-            (label for batch, label in centers if batch == cohort),
-            key=lambda label: centers[cohort, label],
-        )
-        points = [
-            (label, direct[label, sample])
-            for label in labels
-            if (label, sample) in direct
-        ]
-
-        def ordered(values):
-            return all(a[1] < b[1] for a, b in zip(values, values[1:], strict=False))
-
-        if len(points) >= 4 and not ordered(points):
-            alternatives = [
-                label
-                for index, (label, _) in enumerate(points)
-                if ordered(points[:index] + points[index + 1 :])
-            ]
-            if len(alternatives) == 1:
-                contested.add((alternatives[0], sample))
-    coordinates = dict(direct)
-    frame = SampleRtFrame(
-        sample_universe=frozenset(results_by_sample),
-        sample_cohorts=sample_cohorts,
-    )
-    for target in targets:
-        for sample, file_result in results_by_sample.items():
-            key = target.label, sample
-            if key in direct and key not in contested:
-                continue
-            peers = tuple(
-                (other, rt)
-                for (label, other), rt in supported.items()
-                if label == target.label
-                and other != sample
-                and sample_cohorts[other] == sample_cohorts[sample]
-                and (label, other) not in contested
-            )
-            result = file_result.results.get(target.label)
-            if len(peers) < 3 or result is None:
-                continue
-            location = BandRtLocator(peers).backfill_locations(
-                (sample,),
-                reference_samples=frozenset(s for s, _ in peers),
-                rt_frame=frame,
-                backfill_half_window_min=alignment_config.preferred_rt_sec / 60,
-            )[sample]
-            if not location.reliable:
-                continue
-            assert location.apex_tolerance_sec is not None
-            matches = [
-                (index, evaluation)
-                for index, evaluation in enumerate(
-                    result.candidate_physical_evaluations
-                )
-                if evaluation.state == "available"
-                and evaluation.integration is not None
-                and abs(evaluation.integration.rt_apex_min - location.location.query_rt)
-                * 60
-                <= location.apex_tolerance_sec
-            ]
-            if len(matches) != 1:
-                continue
-            _, evaluation = matches[0]
-            assert evaluation.integration is not None
-            coordinates[key] = evaluation.integration.rt_apex_min
-    return coordinates
 
 
 def resolve_targeted_istd_backfill(
@@ -206,4 +97,4 @@ def _paired_istd_observations(
     return tuple(observations)
 
 
-__all__ = ["resolve_istd_reference_peaks", "resolve_targeted_istd_backfill"]
+__all__ = ["resolve_targeted_istd_backfill"]

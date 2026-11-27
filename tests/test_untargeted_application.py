@@ -576,8 +576,8 @@ def test_pure_cid_nl_targets_csv_integration(
 
     monkeypatch.setattr(
         application_module,
-        "extract_batch_known_istd_reference",
-        lambda **kwargs: fake_ref,
+        "known_istd_reference_from_discovery",
+        lambda *args, **kwargs: fake_ref,
     )
     monkeypatch.setattr(
         application_module,
@@ -917,10 +917,8 @@ def test_mixed_target_list_only_supplies_istds_to_untargeted_alignment(
     loss,
     count,
 ):
-    import xic_extractor.acquisition.raw_paths as raw_sources
     from xic_extractor.configuration.targets import read_targets
     from xic_extractor.presets import apply_to_discovery, load_preset
-    from xic_extractor.sample_metadata import SampleMetadata
 
     source = (
         Path(__file__).parents[1]
@@ -932,17 +930,15 @@ def test_mixed_target_list_only_supplies_istds_to_untargeted_alignment(
     all_targets = read_targets(source)
     batch_index = _write_batch(tmp_path, ("S1",))
     captured = {}
-    metadata = (SampleMetadata("S1", "S1", batch_id="declared-batch"),)
 
-    def extract_reference(**kwargs):
-        captured.update(kwargs)
+    def reference_from_discovery(targets, _source, **_kwargs):
+        captured["targets"] = targets
         return None
 
-    monkeypatch.setattr(raw_sources, "existing_raw_paths", lambda **kwargs: {})
     monkeypatch.setattr(
         application_module,
-        "extract_batch_known_istd_reference",
-        extract_reference,
+        "known_istd_reference_from_discovery",
+        reference_from_discovery,
     )
     monkeypatch.setattr(
         application_module,
@@ -962,7 +958,6 @@ def test_mixed_target_list_only_supplies_istds_to_untargeted_alignment(
             alignment_config=AlignmentConfig(),
             discovery_settings=apply_to_discovery(load_preset(method)),
             targets_csv=source,
-            sample_metadata=metadata,
         )
     )
     if not count:
@@ -972,4 +967,3 @@ def test_mixed_target_list_only_supplies_istds_to_untargeted_alignment(
             t for t in all_targets if t.is_istd and t.neutral_loss_da == loss
         )
         assert len(captured["targets"]) == count
-        assert captured["sample_metadata"] == metadata
