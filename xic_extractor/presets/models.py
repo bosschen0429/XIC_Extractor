@@ -15,6 +15,16 @@ class PresetError(ValueError):
     """Raised when a preset file is missing, invalid, or unsupported."""
 
 
+def checked_tag_name(name: str, *, label: str) -> str:
+    """Discovery tables join a peak's tag names with ';', so a name has none."""
+    if ";" in name:
+        raise PresetError(
+            f"{label} {name!r} must not contain ';', which joins tag names "
+            "in Discovery tables"
+        )
+    return name
+
+
 @dataclass(frozen=True)
 class PresetTag:
     strategy: str

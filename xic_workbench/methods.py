@@ -21,6 +21,7 @@ from xic_extractor.presets.models import (
     Preset,
     PresetError,
     PresetTag,
+    checked_tag_name,
 )
 from xic_extractor.presets.serialization import save_preset, serialize_preset
 from xic_extractor.processing_run_spec import validate_cid_nl_discovery_settings
@@ -223,7 +224,10 @@ def _draft(values: dict[str, Any]) -> tuple[Preset, dict[str, object]]:
             tags.append(
                 PresetTag(
                     strategy="delta_mass",
-                    name=_required_text(raw.get("name"), f"tags[{index}].name"),
+                    name=checked_tag_name(
+                        _required_text(raw.get("name"), f"tags[{index}].name"),
+                        label=f"tags[{index}].name",
+                    ),
                     pattern_id=_required_text(
                         raw.get("pattern_id"), f"tags[{index}].pattern_id"
                     ),
@@ -250,7 +254,10 @@ def _draft(values: dict[str, Any]) -> tuple[Preset, dict[str, object]]:
         tags.append(
             PresetTag(
                 strategy="neutral_loss",
-                name=_required_text(raw.get("name"), f"tags[{index}].name"),
+                name=checked_tag_name(
+                    _required_text(raw.get("name"), f"tags[{index}].name"),
+                    label=f"tags[{index}].name",
+                ),
                 value=float(value),
             )
         )

@@ -25,6 +25,8 @@ in [`xic_extractor/presets/data/`](../../xic_extractor/presets/data/).
   invalid method leaves an existing destination intact.
 - Preset names carry no readiness claim. A successful run of any preset does
   not assert product readiness.
+- A tag name contains no `;`: Discovery tables join a peak's tag names with
+  it, so Alignment could not read such a name back.
 - A method label can wrap a strategy family for usability: `pt_pattern` means
   `delta_mass(pattern_id=pt)`. The preset layer never turns a label into a new
   primitive strategy or ProductWriter authority.
