@@ -6,7 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
-from tests.cid_nl_evidence_spine_fixtures import (
+from tests.cid_nl_assessment_fixtures import (
     _completed_receipt,
     _truth_table_fixture,
 )
@@ -20,27 +20,72 @@ from xic_extractor.alignment.backfill.evaluation_coverage import (
     BackfillEvaluationCoverageBatch,
     BackfillPlanningPosition,
 )
+from xic_extractor.alignment.band_grouping import group_peak_bands
 from xic_extractor.alignment.cid_nl_completion import _cell_planning_reason
-from xic_extractor.alignment.cid_nl_evidence_spine import (
-    build_cid_nl_reference_spine,
+from xic_extractor.alignment.cid_nl_predecessor_cells import (
+    compose_cid_nl_predecessor_cells,
 )
+from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample.association import (
     build_cross_sample_association_lineage_handoff,
 )
+from xic_extractor.alignment.hypothesis_owner_adapter import (
+    compose_cid_nl_peak_hypotheses_from_assessment,
+    owner_from_cid_nl_assessment_support,
+)
+from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
+    CidNlMethodAssessment,
     mint_cid_nl_method_assessment,
 )
+from xic_extractor.sample_metadata import SampleMetadata
+
+
+def _group_and_predecessor_cells(
+    sample_assessments: tuple[tuple[SampleMetadata, CidNlMethodAssessment], ...],
+    *,
+    known_label: str | None = None,
+):
+    """Arrange one fixture group using the real grouping and cell owners."""
+    owners = tuple(
+        owner_from_cid_nl_assessment_support(
+            sample=sample, assessment=assessment, hypothesis=hypothesis
+        )
+        for sample, assessment in sample_assessments
+        for hypothesis in compose_cid_nl_peak_hypotheses_from_assessment(
+            sample=sample, assessment=assessment
+        )
+    )
+    config = AlignmentConfig()
+    rt_frame = SampleRtFrame.from_samples(
+        tuple(sample for sample, _ in sample_assessments)
+    )
+    (group,) = group_peak_bands(
+        owners,
+        config=config,
+        rt_frame=rt_frame,
+        stage="targeted" if known_label is not None else "final",
+        known_identity_bindings=(
+            tuple((owner.owner_id, known_label) for owner in owners)
+            if known_label is not None
+            else ()
+        ),
+    )
+    return group, compose_cid_nl_predecessor_cells(
+        groups=(group,),
+        sample_assessments=sample_assessments,
+        alignment_config=config,
+        rt_frame=rt_frame,
+    )
 
 
 def _owner_handoff(tmp_path: Path):
     fixture, assessments = _truth_table_fixture(tmp_path)
-    spine = build_cid_nl_reference_spine(
-        target=fixture.target,
-        sample_assessments=tuple(zip(fixture.samples, assessments, strict=True)),
+    group, cells = _group_and_predecessor_cells(
+        tuple(zip(fixture.samples, assessments, strict=True)),
+        known_label=fixture.target.label,
     )
-    assert spine.group is not None
-    group = spine.group
-    return fixture, spine, _owner_handoff_for_cells(fixture, group, spine.cells)
+    return fixture, cells, _owner_handoff_for_cells(fixture, group, cells)
 
 
 def _owner_handoff_for_cells(
