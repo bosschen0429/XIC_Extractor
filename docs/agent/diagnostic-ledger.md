@@ -397,14 +397,23 @@ producer threads spent 76 s reading spool records meanwhile, and composition
 steps overlapping those reads ran at 7.9 (inputs), 19 (explanation projection)
 and 62 (curve encoding) times their thread CPU, against 2.4-3.7 times when no
 read overlapped. That contention was not the main cost. Composing on a worker
-instead, one partition at a time (local branch
-`wip/backfill-compose-on-worker`, outputs equal), took 153 s of task wall and
-left Backfill at 195.7 s, with 1.1 GB more in each composing worker; about a
-third of the task re-reads the final grouping and initial results the producer
-already read (8RAW proportions). Overlapping compositions within the three
-admission credits simulates to ~170 s; more credits keep more partitions in
-the parent. Review-curve encoding alone costs about 8.4 s (timed on 3,000 of
-the 39,487 curves).
+instead, one partition at a time (an experiment not kept, outputs equal), took
+153 s of task wall and left Backfill at 195.7 s, with 1.1 GB more in each
+composing worker; about a third of the task re-read the final grouping and
+initial results the producer had already read (8RAW proportions), and
+overlapping compositions within the three admission credits simulated to
+~170 s. Review-curve encoding alone costs about 8.4 s (timed on 3,000 of the
+39,487 curves).
+
+After the branch merged master (8RAW outputs equal to master's but for the
+ISTD source path), an 85RAW run gave Backfill 180.1 s, runtime 543.2 s, CLI
+605 s and a 10.0 GB tree peak. Running each Backfill partition whole on one
+worker, which reads its final grouping and initial results once, revisits its
+samples one RAW at a time and composes, left every output identical: Backfill
+126.9 s, runtime 482.9 s, CLI 543 s, tree peak 10.7 GB with 7.7 GB available.
+Its bound is the larger of partition work over workers (492 s / 4 here) and the
+largest partition (38 s); a batch with fewer partitions than workers loses the
+sample parallelism within a partition.
 
 Rerun when partition packing, worker scheduling, Backfill planning, the ISTD
 reference, the RAW reader or where composition runs changes. Artifacts: `output/1306/` in the `research-1306-raw-time-46fb42`
