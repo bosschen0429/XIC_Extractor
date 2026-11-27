@@ -144,9 +144,8 @@ def test_crowded_doublet_keeps_both_physical_peaks_and_local_cid_lineage(
     initial_composed = adapter.execute_composition(initial_partition, initial, store)
     assert grouping_phase.prepare_before is not None
     grouping_phase.prepare_before(store, lambda: None)
-    prepared = store.read_header_field(
-        adapter._final_groupings[0].index, "grouping"
-    ).prepared
+    final = store.read_header_field(adapter._final_groupings[0].index, "grouping")
+    prepared = final.prepared
     groups = tuple(
         group
         for workset in prepared.worksets
@@ -163,6 +162,7 @@ def test_crowded_doublet_keeps_both_physical_peaks_and_local_cid_lineage(
             abs=0.005,
         )
     group_ids = {group.group_hypothesis_id for group in groups}
+    assert not final.backfill_questions
     assert backfill_phase.prepare_before is not None
     backfill_phase.prepare_before(store, lambda: None)
     (composed,) = adapter._backfill_partitions
@@ -291,9 +291,8 @@ def test_review_only_input_supplies_each_physical_member_without_cid(
     initial_composed = adapter.execute_composition(initial_partition, initial, store)
     assert grouping_phase.prepare_before is not None
     grouping_phase.prepare_before(store, lambda: None)
-    prepared = store.read_header_field(
-        adapter._final_groupings[0].index, "grouping"
-    ).prepared
+    final = store.read_header_field(adapter._final_groupings[0].index, "grouping")
+    prepared = final.prepared
     groups = tuple(
         group
         for workset in prepared.worksets
@@ -306,6 +305,7 @@ def test_review_only_input_supplies_each_physical_member_without_cid(
         for group in groups
     }
     assert sorted(group_apex.values()) == list(group_apices)
+    assert not final.backfill_questions
     assert backfill_phase.prepare_before is not None
     backfill_phase.prepare_before(store, lambda: None)
     store.seal()

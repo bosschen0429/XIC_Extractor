@@ -1677,6 +1677,7 @@ def test_formal_partition_reuses_prepared_group_ids_with_ms1_only_members(
         owner.sample_stem: owner.primary_identity_event is not None
         for owner in group.owners
     } == {"S0": True, "S1": True, "S2": False, "S3": False}
+    assert not final.backfill_questions
     prepared_group_ids = {group.group_hypothesis_id}
     adapter.run_backfill(store, lambda: None)
     assert calls == [1]
