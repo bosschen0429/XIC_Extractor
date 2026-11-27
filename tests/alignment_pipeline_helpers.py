@@ -449,7 +449,7 @@ def written_rows(
     directory.mkdir(parents=True, exist_ok=True)
     paths = {
         kind: directory / f"{kind}.tsv"
-        for kind in ("matrix", "review", "backfill", "cells", "status")
+        for kind in ("matrix", "review", "backfill", "cells")
     }
     write_alignment_tsvs(paths, projected(completed, **inputs))
     return {kind: read_tsv(path) for kind, path in paths.items()}
