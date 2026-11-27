@@ -2,9 +2,8 @@
 
 Each stored concept is read as one object: a Discovery candidate with its
 method subject, assessments, exclusion and terminal observation; a final group
-with its members, cells and result row; an initial group; a retained curve.
-Which candidates a group, an initial group or a curve relates to follows from
-the stored references (see ``relations``) and is read with that object.
+with its members, cells and result row; an initial group. Candidate membership
+is derived from stored references (see ``relations``).
 """
 
 from __future__ import annotations
@@ -29,7 +28,6 @@ from .storage import (
     decode_review_curve,
     encode_object,
     open_readonly,
-    present_tables,
     read_completed_metadata,
     read_completed_summary,
 )
@@ -44,8 +42,7 @@ _GROUPS = "SELECT id,feature_id,disposition,destination,center_mz,ppm FROM group
 class CandidateEvidence:
     """One Discovery candidate and the facts recorded about it.
 
-    ``groups``, ``initial_groups`` and ``curves`` are the references of the
-    read groups and curves this candidate relates to.
+    ``groups`` and ``initial_groups`` name the groups this candidate relates to.
     """
 
     fields: dict[str, Any]
@@ -56,7 +53,6 @@ class CandidateEvidence:
     terminal: dict[str, Any] | None
     groups: tuple[str, ...]
     initial_groups: tuple[str, ...]
-    curves: tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,7 +81,6 @@ class ReviewEvidence:
     candidates: dict[CandidateKey, CandidateEvidence]
     groups: dict[str, GroupEvidence]
     initial_groups: dict[str, dict[str, Any]]
-    curves: dict[str, dict[str, Any]]
 
 
 def _sorted(value: dict[str, Any]) -> dict[str, Any]:
@@ -133,8 +128,6 @@ class _Report:
             "temp.requested_candidates" if self.scoped else "main.candidates"
         )
         self.summary = summary
-        self.full = summary["retention"] == "full_audit"
-        self.tables = present_tables(db)
         self._risk_owners: dict[int, list[Any]] = {}
         self._risk_owner_groups: dict[int, list[Any]] = {}
         self.samples = [sample["sample_key"] for sample in summary["samples"]]
@@ -253,11 +246,6 @@ class _Report:
             "sample_key": self.samples[row[1]],
             "technical_state": row[7],
         }
-        if self.full:
-            record.update(
-                acquisition_source_id=row[11],
-                evaluation_receipt=decode_json(row[12]),
-            )
         return _sorted(record)
 
     def exclusion(self, candidate: int, reason: str) -> dict[str, Any]:
@@ -275,7 +263,6 @@ class _Report:
         row_ids: Sequence[int],
         groups: Mapping[int, list[Any]],
         initial_groups: Mapping[int, list[Any]],
-        curves: Mapping[int, list[Any]],
     ) -> dict[CandidateKey, CandidateEvidence]:
         assessments: dict[tuple[int, int], list[tuple[str, dict[str, Any]]]] = (
             defaultdict(list)
@@ -285,7 +272,10 @@ class _Report:
         )
         for subject, sample in pairs:
             for row in self.db.execute(
-                "SELECT * FROM method_assessments WHERE method_subject=? AND sample=? "
+                "SELECT id,sample,method_subject,provider_id,method_id,method_version,"
+                "detector_invocation_id,technical_state,method_result,"
+                "reason_codes,peaks "
+                "FROM method_assessments WHERE method_subject=? AND sample=? "
                 "ORDER BY id",
                 (subject, sample),
             ):
@@ -312,7 +302,6 @@ class _Report:
                 terminal=self.terminal(row_id),
                 groups=tuple(groups.get(row_id, ())),
                 initial_groups=tuple(initial_groups.get(row_id, ())),
-                curves=tuple(curves.get(row_id, ())),
             )
         return result
 
@@ -504,34 +493,14 @@ class _Report:
             result[str(group_id)] = json.loads(encode_object(record))
         return result
 
-    def curves(self, payload_ids: Iterable[int]) -> dict[str, dict[str, Any]]:
-        ids = sorted(set(payload_ids))
-        result = {}
-        for chunk in _chunks(ids):
-            for payload_id, sample_id, kind, record_id, cid, peak in self.db.execute(
-                "SELECT payload_id,sample_id,kind,record_id,candidate_id,"
-                f"physical_peak_key FROM curves WHERE {_in('payload_id', chunk)} "
-                "ORDER BY payload_id",
-                chunk,
-            ):
-                result[str(payload_id)] = {
-                    "candidate_id": cid,
-                    "kind": kind,
-                    "payload_id": payload_id,
-                    "physical_peak_key": peak,
-                    "record_id": record_id,
-                    "sample_id": sample_id,
-                }
-        return result
-
     def cells(
         self, feature_ids: Sequence[str] | None
     ) -> dict[str, dict[str, dict[str, Any]]]:
         """Cells of the given rows (or of every row) by feature and sample."""
         query = (
-            "SELECT g.feature_id,c.sample,c.variant,c.value,c.apex_rt_min,c.source,"
-            "c.support_origin,c.peaks,c.evidence_states,c.reason_codes,"
-            "c.signal_quality,c.observation,c.group_id,c.risks "
+            "SELECT c.group_id,g.feature_id,c.sample,c.variant,c.value,c.apex_rt_min,"
+            "c.source,c.support_origin,c.peaks,c.evidence_states,c.reason_codes,"
+            "c.signal_quality,c.risks "
             "FROM cells c "
             "JOIN groups g ON g.id=c.group_id"
         )
@@ -547,9 +516,10 @@ class _Report:
                 )
             )
         rows = list(rows)
-        member_risks = self._member_risks("final_group", (row[12] for row in rows))
+        member_risks = self._member_risks("final_group", (row[0] for row in rows))
         result: dict[str, dict[str, dict[str, Any]]] = {}
         for (
+            group,
             feature_id,
             sample,
             variant,
@@ -561,8 +531,6 @@ class _Report:
             evidence_states,
             reason_codes,
             signal_quality,
-            observation,
-            group,
             stored_risks,
         ) in rows:
             risks = [
@@ -593,11 +561,6 @@ class _Report:
                     for quality in json.loads(signal_quality)
                 ],
                 "membership_risks": risks,
-                **(
-                    {}
-                    if observation is None
-                    else {"observation": decode_json(observation)}
-                ),
             }
         return result
 
@@ -606,11 +569,6 @@ class _Report:
         selected = list(self.candidate_rows)
         groups = self.related("group_candidates", "group_id", selected)
         initial = self.related("initial_group_candidates", "group_id", selected)
-        curves = (
-            self.related("curve_candidates", "payload_id", selected)
-            if "curves" in self.tables
-            else {}
-        )
         group_candidates: dict[int, set[CandidateKey]] = defaultdict(set)
         for candidate, ids in groups.items():
             for group in ids:
@@ -648,16 +606,11 @@ class _Report:
                     candidate: [str(group) for group in ids]
                     for candidate, ids in initial.items()
                 },
-                {
-                    candidate: [str(payload) for payload in ids]
-                    for candidate, ids in curves.items()
-                },
             ),
             groups=read_groups,
             initial_groups=self.initial_groups(
                 group for ids in initial.values() for group in ids
             ),
-            curves=self.curves(payload for ids in curves.values() for payload in ids),
         )
 
 
@@ -913,74 +866,7 @@ def read_alignment_explanation(
             "initial_groups": [
                 evidence.initial_groups[ref] for ref in sorted(evidence.initial_groups)
             ],
-            "capture_evidence": [
-                evidence.curves[ref] for ref in sorted(evidence.curves)
-            ],
         }
-
-
-def read_alignment_curves(
-    path: str | Path,
-    *,
-    sample_ids: Sequence[str] | None = None,
-    record_ids: Sequence[str] | None = None,
-) -> list[dict[str, Any]]:
-    """Selectively read and decompress curve payloads without rehydration."""
-    from .curves import validate_curve_payload
-
-    with open_readonly(path) as connection:
-        read_completed_metadata(connection)
-        if sample_ids is not None and not sample_ids:
-            return []
-        if record_ids is not None and not record_ids:
-            return []
-        if "curves" not in present_tables(connection):
-            return []
-        query = (
-            "SELECT payload_id, sample_id, kind, record_id, codec, payload, "
-            "candidate_id, physical_peak_key, "
-            "(SELECT method_subject_id FROM method_subjects m "
-            "WHERE m.id=curves.method_subject) "
-            "FROM curves WHERE 1=1"
-        )
-        params: list[Any] = []
-        if sample_ids:
-            query += f" AND sample_id IN ({','.join('?' for _ in sample_ids)})"
-            params.extend(sample_ids)
-        if record_ids:
-            query += f" AND record_id IN ({','.join('?' for _ in record_ids)})"
-            params.extend(record_ids)
-        results: list[dict[str, Any]] = []
-        for (
-            payload_id,
-            sample_id,
-            kind,
-            record_id,
-            codec,
-            blob,
-            candidate_id,
-            peak,
-            subject,
-        ) in connection.execute(
-            query + " ORDER BY sample_id, record_id, payload_id", params
-        ):
-            if codec != "zlib-json-utf8":
-                raise ExplanationError(f"unsupported curve payload codec: {codec}")
-            payload_data = decode_json(blob)
-            if not isinstance(payload_data, dict):
-                raise ExplanationError("curve payload must be an object")
-            payload_data.update(
-                sample_id=sample_id,
-                kind=kind,
-                candidate_id=candidate_id,
-                physical_peak_key=peak,
-            )
-            payload_data["provenance"]["method_subject_id"] = subject
-            validate_curve_payload(
-                payload_data, sample_id=sample_id, kind=kind, record_id=record_id
-            )
-            results.append({**payload_data, "payload_id": payload_id})
-        return results
 
 
 def read_summary_with_examples(

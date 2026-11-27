@@ -22,7 +22,6 @@ from xic_extractor.immutable_sequence import ImmutableSequence
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessment,
 )
-from xic_extractor.peak_detection.observations import RetainedCaptureEvidence
 
 
 @dataclass(slots=True)
@@ -30,7 +29,6 @@ class _CompletedResultResources:
     """Shared lifetime of a completed result and its immutable views."""
 
     store: StreamedResultStore | None = None
-    retain_partition_spool: bool = False
     closed: bool = False
 
     def close(self) -> None:
@@ -38,10 +36,7 @@ class _CompletedResultResources:
             return
         self.closed = True
         if self.store is not None:
-            if self.retain_partition_spool:
-                self.store.preserve_results()
-            else:
-                self.store.cleanup()
+            self.store.cleanup()
 
 
 @dataclass(frozen=True, slots=True)
@@ -65,9 +60,6 @@ class CompletedUntargetBatchWorkflowResult:
         tuple[CrossSamplePeakGroupHypothesis, ...]
         | ImmutableSequence[CrossSamplePeakGroupHypothesis]
     ) = field(default=(), repr=False, compare=False)
-    capture_evidence: (
-        tuple[RetainedCaptureEvidence, ...] | ImmutableSequence[RetainedCaptureEvidence]
-    ) = field(default=(), repr=False, compare=False)
     sample_rt_frame: SampleRtFrame | None = field(
         default=None, repr=False, compare=False
     )
@@ -84,22 +76,19 @@ class CompletedUntargetBatchWorkflowResult:
         *,
         application_result: FinalizedUntargetBatchApplicationResult,
         store: StreamedResultStore,
-        retain_partition_spool: bool = False,
         sample_rt_frame: SampleRtFrame | None = None,
     ) -> CompletedUntargetBatchWorkflowResult:
         """Own the lazy result views and the store that keeps them readable.
 
-        Retention publishes a readable record index on close; ordinary results
-        remove their private spool. Acquisition cache and worker lifetimes stay
-        with execution, not this result.
+        Closing the result removes its private spool. Acquisition cache and
+        worker lifetimes stay with execution, not this result.
         """
         return cls(
             application_result=application_result,
             sample_rt_frame=sample_rt_frame,
             method_assessments=store.sequence("method_assessments"),
             initial_groups=store.sequence("initial_groups"),
-            capture_evidence=store.sequence("capture_evidence"),
-            _resources=_CompletedResultResources(store, retain_partition_spool),
+            _resources=_CompletedResultResources(store),
         )
 
     def bind_publication_inputs(

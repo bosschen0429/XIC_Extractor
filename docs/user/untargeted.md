@@ -111,9 +111,8 @@ ISTD 清單直接用 Targeted 的[目標清單](targeted.md#目標清單)檔案�
 | 檔案 | 內容 |
 | --- | --- |
 | `alignment_matrix.tsv` | 主要結果：feature × 樣本的面積矩陣 |
-| `alignment_review.tsv` | 每個 feature 一列：中心 m/z 與 RT、偵測數、是否進矩陣、警示 |
 | `alignment_explanation.sqlite` | 檢閱畫面用的判定與曲線，不需要自己開 |
-| `alignment_run_metadata.json` | 本次的輸入與設定 |
+| `alignment_run_metadata.json` | 本次的輸入、設定和整理矩陣用的列身分 |
 | `sample_metadata.tsv` | 本次使用的樣本角色、注射順序與排除 |
 | `<樣本>/discovery_peaks.csv` | 該樣本找到的 MS1 峰，以及哪些進入對齊 |
 | `<樣本>/discovery_events.csv` | 該樣本的每個中性丟失 MS2 事件，以及它落在哪個峰 |
@@ -128,19 +127,9 @@ ISTD 清單直接用 Targeted 的[目標清單](targeted.md#目標清單)檔案�
 | `RT` | feature 的中心 RT（min） |
 | 每個樣本一欄 | 面積；沒有值時留空 |
 
-樣本欄依注射順序排列。要對回 `alignment_review.tsv`，用該檔的 `matrix_row_index`，不要用四捨五入後的 `Mz`。
-
-### `alignment_review.tsv` 的主要欄位
-
-| 欄 | 意思 |
-| --- | --- |
-| `feature_id` | feature 編號，如 `F000001`；只在這份結果內有效 |
-| `matrix_row_index` | 在矩陣的第幾列；空白表示沒進矩陣 |
-| `group_center_mz`、`group_center_rt` | feature 中心 m/z 與 RT（完整精度） |
-| `detected_count` | 直接偵測到的樣本數 |
-| `accepted_cell_count`、`accepted_backfill_count` | 有值的格數，以及其中由回填取得的格數 |
-| `identity_reason` | feature 的判定；只有 `established` 進矩陣 |
-| `warning` | `no_anchor`、`high_not_searched` 或 `high_backfill_dependency`（有回填值但沒有直接偵測） |
+樣本欄依注射順序排列。要看某列的判定、樣本結果和 XIC，回到 Workbench
+開啟這份結果。整理矩陣會用執行資訊裡的 feature ID 對列，不會用四捨五入
+後的 `Mz` 猜身分。
 
 ### 整理矩陣的資料夾
 

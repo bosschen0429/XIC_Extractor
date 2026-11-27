@@ -153,36 +153,6 @@ def build_extraction_result(
     )
 
 
-def reproject_extraction_result(
-    result: ExtractionResult,
-    *,
-    target: Target,
-    sample_name: str,
-    selection_decision: PeakHypothesisSelectionDecision | None = None,
-) -> ExtractionResult:
-    resolved_selection_decision = (
-        selection_decision
-        if selection_decision is not None
-        else result.selection_decision
-    )
-    updated = replace(
-        result,
-        selection_decision=resolved_selection_decision,
-        reason=_result_reason(
-            result.peak_result,
-            resolved_selection_decision,
-        ),
-    )
-    return replace(
-        updated,
-        targeted_product_projection=project_targeted_result(
-            updated,
-            target=target,
-            sample_name=sample_name,
-        ),
-    )
-
-
 def _result_target_label(
     target: Target,
     selected_hypothesis: PeakHypothesis | None,

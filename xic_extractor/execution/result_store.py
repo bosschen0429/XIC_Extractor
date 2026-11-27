@@ -15,8 +15,8 @@ from uuid import uuid4
 from xic_extractor.execution._serialization import _OwnerPickler, _OwnerUnpickler
 from xic_extractor.immutable_sequence import ImmutableSequence
 
-PRESERVED_INDEX_NAME = "partition-index.pickle"
 SHARED_OWNERS_NAME = "shared-owners.pickle"
+INDIVIDUALLY_ADDRESSABLE_FIELDS = frozenset({"child_outputs", "excluded_candidates"})
 
 
 class StreamingPartitionPayload(Protocol):
@@ -43,7 +43,6 @@ class _PartitionWriter:
 class SealedPartition:
     index: int
     key: str
-    size_bytes: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,7 +50,6 @@ class WrittenPartition:
     """A partition file another worker wrote into the spool for adoption."""
 
     path: Path
-    lengths: dict[str, int]
     records: dict[str, tuple[tuple[int, int], ...]]
 
 
@@ -79,30 +77,27 @@ def write_spooled_partition(
 ) -> WrittenPartition:
     """Write one partition file beside the spool for its store to adopt."""
     path = directory / f"written-{uuid4().hex}.pickle"
-    _, lengths, records, _ = write_partition_payload(
-        path, payload, shared_objects=load_shared_owners(shared_owners)
+    records = _write_partition_payload(
+        path,
+        payload,
+        shared_objects=load_shared_owners(shared_owners),
+        child_outputs=None,
+        individually_addressable_fields=INDIVIDUALLY_ADDRESSABLE_FIELDS,
+        before_publish=None,
     )
-    return WrittenPartition(path, lengths, records)
+    return WrittenPartition(path, records)
 
 
-def write_partition_payload(
+def _write_partition_payload(
     path: Path,
     payload: Any,
     *,
     shared_objects: tuple[object, ...],
-    child_outputs: Iterable[object] | None = None,
-    individually_addressable_fields: frozenset[str] = frozenset(
-        {"child_outputs", "excluded_candidates"}
-    ),
-    before_publish: Callable[[], None] | None = None,
-    retain_memory: bool = False,
-) -> tuple[
-    int,
-    dict[str, int],
-    dict[str, tuple[tuple[int, int], ...]],
-    dict[str, tuple[tuple[Any, ...], ...]],
-]:
-    """Write one partition file and return its content facts and record table.
+    child_outputs: Iterable[object] | None,
+    individually_addressable_fields: frozenset[str],
+    before_publish: Callable[[], None] | None,
+) -> dict[str, tuple[tuple[int, int], ...]]:
+    """Write a sealed partition and return its tuple-record offsets.
 
     The store calls this in process; a worker writing a partition for the store
     to adopt calls it through write_spooled_partition. One writer keeps both
@@ -110,17 +105,15 @@ def write_partition_payload(
     """
 
     field_names = tuple(item.name for item in fields(payload))
-    lengths = {
-        item.name: len(getattr(payload, item.name))
-        for item in fields(payload)
-        if not item.name.startswith("_")
-        and type(getattr(payload, item.name)) is tuple
-        and not (item.name == "child_outputs" and child_outputs is not None)
+    tuple_fields = {
+        name
+        for name in field_names
+        if not name.startswith("_") and type(getattr(payload, name)) is tuple
     }
     if child_outputs is not None:
         if "child_outputs" not in field_names:
             raise TypeError("streaming partition payload requires child outputs")
-        lengths["child_outputs"] = 0
+        tuple_fields.add("child_outputs")
     temporary = path.with_suffix(".tmp")
     if path.exists():
         raise FileExistsError(f"partition artifact already exists: {path}")
@@ -133,55 +126,38 @@ def write_partition_payload(
                 {
                     item.name: getattr(payload, item.name)
                     for item in fields(payload)
-                    if item.name not in lengths
+                    if item.name not in tuple_fields
                 },
             )
             _OwnerPickler(writer, shared_objects).dump(header)
             records: dict[str, tuple[tuple[int, int], ...]] = {}
-            cached_fields: dict[str, tuple[tuple[Any, ...], ...]] = {}
             for name in field_names:
                 if name == "child_outputs" and child_outputs is not None:
                     entries = []
-                    cached_items: list[tuple[Any, ...]] | None = (
-                        [] if retain_memory else None
-                    )
                     for value in child_outputs:
                         entries.append((writer.size_bytes, 1))
                         _OwnerPickler(writer, shared_objects).dump((value,))
-                        if cached_items is not None:
-                            cached_items.append((value,))
                         del value
-                    lengths["child_outputs"] = len(entries)
                     records["child_outputs"] = tuple(entries)
-                    if cached_items is not None:
-                        cached_fields["child_outputs"] = tuple(cached_items)
                     continue
-                if name not in lengths:
+                if name not in tuple_fields:
                     continue
                 values = getattr(payload, name)
                 width = 1 if name in individually_addressable_fields else 2048
                 entries = []
-                cached_chunks: list[tuple[Any, ...]] | None = (
-                    [] if retain_memory else None
-                )
                 for start in range(0, len(values), width):
                     chunk = values[start : start + width]
                     entries.append((writer.size_bytes, len(chunk)))
                     _OwnerPickler(writer, shared_objects).dump(chunk)
-                    if cached_chunks is not None:
-                        cached_chunks.append(chunk)
                 records[name] = tuple(entries)
-                if cached_chunks is not None:
-                    cached_fields[name] = tuple(cached_chunks)
             if before_publish is not None:
                 before_publish()
-        size_bytes = writer.size_bytes
         if path.exists():
             raise FileExistsError(f"partition artifact already exists: {path}")
         os.replace(temporary, path)
     finally:
         temporary.unlink(missing_ok=True)
-    return size_bytes, lengths, records, cached_fields
+    return records
 
 
 class StreamedResultStore:
@@ -198,8 +174,8 @@ class StreamedResultStore:
         directory: Path,
         shared_objects: tuple[object, ...],
         *,
-        individually_addressable_fields: frozenset[str] = frozenset(
-            {"child_outputs", "excluded_candidates"}
+        individually_addressable_fields: frozenset[str] = (
+            INDIVIDUALLY_ADDRESSABLE_FIELDS
         ),
     ):
         self._directory = Path(directory).resolve()
@@ -208,10 +184,7 @@ class StreamedResultStore:
         self._individually_addressable_fields = frozenset(
             individually_addressable_fields
         )
-        self._partitions: list[SealedPartition] = []
-        self._field_lengths: list[dict[str, int]] = []
         self._field_records: list[dict[str, tuple[tuple[int, int], ...]]] = []
-        self._field_caches: list[dict[str, tuple[tuple[Any, ...], ...]]] = []
         self._keys: set[str] = set()
         self._sealed = False
 
@@ -224,7 +197,7 @@ class StreamedResultStore:
 
     def partition_path(self, index: int) -> Path:
         """The sealed file another worker may read with the shared owners."""
-        if isinstance(index, bool) or not 0 <= index < len(self._partitions):
+        if isinstance(index, bool) or not 0 <= index < len(self._field_records):
             raise IndexError("partition index out of range")
         return self._path(index)
 
@@ -241,10 +214,8 @@ class StreamedResultStore:
                 temporary.unlink(missing_ok=True)
         return path
 
-    def append(
-        self, partition_key: str, payload: object, retain_memory: bool = False
-    ) -> SealedPartition:
-        return self._append_payload(partition_key, payload, retain_memory=retain_memory)
+    def append(self, partition_key: str, payload: object) -> SealedPartition:
+        return self._append_payload(partition_key, payload)
 
     def append_child_outputs(
         self,
@@ -252,7 +223,6 @@ class StreamedResultStore:
         metadata_payload: StreamingPartitionPayload,
         child_outputs: Iterable[object],
         before_publish: Callable[[], None] | None = None,
-        retain_memory: bool = False,
     ) -> SealedPartition:
         """Atomically append child outputs while composing them one at a time."""
 
@@ -263,7 +233,6 @@ class StreamedResultStore:
             metadata_payload,
             child_outputs=child_outputs,
             before_publish=before_publish,
-            retain_memory=retain_memory,
         )
 
     def _append_payload(
@@ -273,48 +242,20 @@ class StreamedResultStore:
         *,
         child_outputs: Iterable[object] | None = None,
         before_publish: Callable[[], None] | None = None,
-        retain_memory: bool = False,
     ) -> SealedPartition:
         self._require_writable_key(partition_key)
-        index = self._claim_index()
-        path = self._path(index)
-        size_bytes, lengths, records, cached_fields = write_partition_payload(
-            path,
+        index = len(self._field_records)
+        records = _write_partition_payload(
+            self._path(index),
             payload,
             shared_objects=self._shared_objects,
             child_outputs=child_outputs,
             individually_addressable_fields=self._individually_addressable_fields,
             before_publish=before_publish,
-            retain_memory=retain_memory,
         )
-        entry = SealedPartition(index, partition_key, size_bytes)
-        self._register(entry, lengths, records, cached_fields)
-        return entry
-
-    def _require_writable_key(self, partition_key: str) -> None:
-        if self._sealed:
-            raise ValueError("partition store is sealed")
-        if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", partition_key) is None:
-            raise ValueError("invalid partition key")
-        if partition_key in self._keys:
-            raise ValueError("duplicate partition key")
-
-    def _claim_index(self) -> int:
-        """Return the next slot; a failed write publishes nothing and keeps it."""
-        return len(self._partitions)
-
-    def _register(
-        self,
-        entry: SealedPartition,
-        lengths: dict[str, int],
-        records: dict[str, tuple[tuple[int, int], ...]],
-        cached_fields: dict[str, tuple[tuple[Any, ...], ...]],
-    ) -> None:
-        self._partitions.append(entry)
-        self._field_lengths.append(lengths)
         self._field_records.append(records)
-        self._field_caches.append(cached_fields)
-        self._keys.add(entry.key)
+        self._keys.add(partition_key)
+        return SealedPartition(index, partition_key)
 
     def adopt_written(
         self, partition_key: str, written: WrittenPartition
@@ -328,15 +269,12 @@ class StreamedResultStore:
         self._require_writable_key(partition_key)
         if written.path.parent != self._directory:
             raise ValueError("written partition is outside this spool")
-        index = self._claim_index()
+        index = len(self._field_records)
         path = self._path(index)
         if path.exists():
             raise FileExistsError(f"partition artifact already exists: {path}")
         os.replace(written.path, path)
         size_bytes = path.stat().st_size
-        lengths = {str(name): int(value) for name, value in written.lengths.items()}
-        if any(length < 0 for length in lengths.values()):
-            raise ValueError("chunk lengths must be non-negative integers")
         records = {
             str(name): tuple((int(offset), int(length)) for offset, length in entries)
             for name, entries in written.records.items()
@@ -347,14 +285,22 @@ class StreamedResultStore:
             for offset, length in entries
         ):
             raise ValueError("adopted partition record leaves its sealed bytes")
-        entry = SealedPartition(index, partition_key, size_bytes)
-        self._register(entry, lengths, records, {})
-        return entry
+        self._field_records.append(records)
+        self._keys.add(partition_key)
+        return SealedPartition(index, partition_key)
+
+    def _require_writable_key(self, partition_key: str) -> None:
+        if self._sealed:
+            raise ValueError("partition store is sealed")
+        if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", partition_key) is None:
+            raise ValueError("invalid partition key")
+        if partition_key in self._keys:
+            raise ValueError("duplicate partition key")
 
     def read(self, index: int) -> object:
-        if isinstance(index, bool) or not 0 <= index < len(self._partitions):
+        if isinstance(index, bool) or not 0 <= index < len(self._field_records):
             raise IndexError("partition index out of range")
-        with self._path(self._partitions[index].index).open("rb") as stream:
+        with self._path(index).open("rb") as stream:
             payload_type, values = _OwnerUnpickler(stream, self._shared_objects).load()
             for name, records in self._field_records[index].items():
                 values[name] = self._read_tuple_records(stream, records)
@@ -369,7 +315,7 @@ class StreamedResultStore:
         Stage inputs and acquired records can share one atomic spool write
         without forcing their consumers to rehydrate both graphs.
         """
-        if isinstance(index, bool) or not 0 <= index < len(self._partitions):
+        if isinstance(index, bool) or not 0 <= index < len(self._field_records):
             raise IndexError("partition index out of range")
         with self._path(index).open("rb") as stream:
             _, values = _OwnerUnpickler(stream, self._shared_objects).load()
@@ -384,7 +330,7 @@ class StreamedResultStore:
         instead of copying them into each derived payload. Both bulk and
         individually addressable tuple fields use their sealed record offsets.
         """
-        if isinstance(index, bool) or not 0 <= index < len(self._partitions):
+        if isinstance(index, bool) or not 0 <= index < len(self._field_records):
             raise IndexError("partition index out of range")
         if field_name not in self._field_records[index]:
             raise ValueError("read_tuple requires a stored tuple field")
@@ -413,7 +359,7 @@ class StreamedResultStore:
         self, index: int, field_name: str, positions: tuple[int, ...]
     ) -> tuple[Any, ...]:
         """Read selected elements of an independently addressable owner field."""
-        if isinstance(index, bool) or not 0 <= index < len(self._partitions):
+        if isinstance(index, bool) or not 0 <= index < len(self._field_records):
             raise IndexError("partition index out of range")
         if field_name not in self._individually_addressable_fields:
             raise ValueError("field does not have individually addressable results")
@@ -423,9 +369,6 @@ class StreamedResultStore:
             for position in positions
         ):
             raise IndexError("field position out of range")
-        if index < len(self._field_caches) and field_name in self._field_caches[index]:
-            cached = self._field_caches[index][field_name]
-            return tuple(cached[position][0] for position in positions)
         with self._path(index).open("rb") as stream:
             return tuple(
                 self._read_record(stream, *records[position])[0]
@@ -441,23 +384,10 @@ class StreamedResultStore:
         if (
             field_name.startswith("_")
             or not field_name.isidentifier()
-            or any(field_name not in lengths for lengths in self._field_lengths)
+            or any(field_name not in records for records in self._field_records)
         ):
             raise ValueError(
                 "sequence requires a public tuple field in every partition"
-            )
-
-        all_cached = len(self._field_caches) == len(self._partitions) and all(
-            field_name in caches for caches in self._field_caches
-        )
-        if all_cached:
-            cached_chunks = tuple(
-                chunk for caches in self._field_caches for chunk in caches[field_name]
-            )
-            return ImmutableSequence(
-                tuple(len(chunk) for chunk in cached_chunks),
-                load_chunk=lambda index: cached_chunks[index],
-                load_chunks=lambda: iter(cached_chunks),
             )
 
         chunks = tuple(
@@ -488,77 +418,7 @@ class StreamedResultStore:
             tuple(length for _, _, length in chunks), load_chunk, load_chunks
         )
 
-    def preserve_results(self) -> Path:
-        """Publish the sealed record index beside the partitions it addresses.
-
-        The index carries the per-field record offsets and the shared owner
-        references a reader needs, so another process can restore one record by
-        position instead of receiving a copy of every record. It is read-only
-        and private: it neither resumes a runtime attempt nor grants
-        publication authority.
-        """
-        snapshot = {
-            "shared_objects": self._shared_objects,
-            "individually_addressable_fields": self._individually_addressable_fields,
-            "partitions": self._partitions,
-            "field_lengths": self._field_lengths,
-            "field_records": self._field_records,
-        }
-        destination = self._directory / PRESERVED_INDEX_NAME
-        temporary = destination.with_suffix(".tmp")
-        if destination.exists():
-            raise FileExistsError(destination)
-        stream = temporary.open("xb")
-        try:
-            with stream:
-                _OwnerPickler(stream, ()).dump(snapshot)
-            os.replace(temporary, destination)
-        finally:
-            temporary.unlink(missing_ok=True)
-        self._field_caches.clear()
-        return destination
-
     def cleanup(self) -> None:
-        """Remove private spool directory and release in-memory caches."""
-        self._field_caches.clear()
+        """Remove the private spool directory."""
         if self._directory.exists():
             shutil.rmtree(self._directory, ignore_errors=True)
-
-
-def open_preserved_results(path: Path) -> StreamedResultStore:
-    """Restore a preserved index for read-only record access in any process.
-
-    The directory is rebound to the index's own location, so a preserved spool
-    stays readable after it is moved. The restored store is sealed: it reads
-    records, and it never writes, adopts or cleans up.
-    """
-    resolved = Path(path).resolve()
-    with resolved.open("rb") as stream:
-        index = _OwnerUnpickler(stream, ()).load()
-    if not isinstance(index, dict) or set(index) != {
-        "shared_objects",
-        "individually_addressable_fields",
-        "partitions",
-        "field_lengths",
-        "field_records",
-    }:
-        raise ValueError(
-            "unsupported preserved partition structure; rerun the analysis"
-        )
-    if any(
-        type(length) is not int or length < 0
-        for lengths in index["field_lengths"]
-        for length in lengths.values()
-    ):
-        raise ValueError("chunk lengths must be non-negative integers")
-    store = object.__new__(StreamedResultStore)
-    store._directory = resolved.parent
-    store._shared_objects = index["shared_objects"]
-    store._individually_addressable_fields = index["individually_addressable_fields"]
-    store._partitions = index["partitions"]
-    store._field_lengths = index["field_lengths"]
-    store._field_records = index["field_records"]
-    store._field_caches = []
-    store._keys = {partition.key for partition in store._partitions}
-    store._sealed = True
-    return store

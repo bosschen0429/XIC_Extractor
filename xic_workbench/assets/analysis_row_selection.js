@@ -35,9 +35,10 @@ export function createRowSelection(options) {
     },
   };
   let drag = null;
-  let suppressed = { key: null, until: 0 };
+  let suppressDragClick = false;
 
   function start(event) {
+    suppressDragClick = false;
     const origin = event.target.closest(startSelector);
     if (!origin || event.button !== 0 || event.shiftKey) return;
     const box = options.box();
@@ -87,22 +88,24 @@ export function createRowSelection(options) {
     selection.keys = hit;
     options.onChange();
   }
-  function end(event) {
+  function end() {
     if (!drag) return;
     const ended = drag;
     drag = null;
     ended.band?.remove();
     if (ended.moved && ended.last !== null) {
       selection.anchor = ended.last;
-      suppressed = { key: ended.last, until: event.timeStamp + 80 };
+      suppressDragClick = true;
     }
   }
   function onClick(event) {
     const tr = event.target.closest(options.rowSelector);
     if (!tr || !event.target.closest(startSelector)) return;
-    const key = options.keyOf(tr);
-    if (key === suppressed.key && event.timeStamp < suppressed.until) return;
-    selection.click(key, event);
+    if (suppressDragClick && event.detail > 0) {
+      suppressDragClick = false;
+      return;
+    }
+    selection.click(options.keyOf(tr), event);
   }
   selection.bind = (rows) => {
     rows.addEventListener("pointerdown", start);

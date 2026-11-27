@@ -208,7 +208,6 @@ def run_untargeted_application(
                     execution=request.execution.profile,
                     should_cancel=context.should_cancel,
                     progress_callback=context.progress_callback,
-                    retain_partition_memory=False,
                     max_partition_jobs=request.execution.max_partition_jobs,
                     mass_recalibration_by_sample=(
                         _batch_mass_recalibration(
@@ -601,6 +600,7 @@ def _group_batch(
 
 
 _RETIRED_ALIGNMENT_ARTIFACT_NAMES = (
+    "alignment_review.tsv",
     "alignment_results.xlsx",
     "review_report.html",
     "event_to_ms1_owner.tsv",
@@ -609,7 +609,6 @@ _RETIRED_ALIGNMENT_ARTIFACT_NAMES = (
 
 _CONDITIONAL_ALIGNMENT_ARTIFACT_NAMES = (
     "alignment_explanation.sqlite",
-    "alignment_matrix_status.tsv",
     "alignment_cell_integration_audit.tsv",
     "alignment_owner_backfill_candidate_audit.tsv",
     "skipped_evidence_ledger.tsv",

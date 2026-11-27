@@ -1807,7 +1807,9 @@ def test_untargeted_result_shows_one_matrix_and_groups_technical_files(
             "sample_count": 2,
             "overview": {"matrix_count": 4, "complete_count": 3, "unresolved_count": 1},
             "evidence": {"path": f"{folder}/alignment_explanation.sqlite"},
-            "alignment_outputs": {"review_tsv": f"{folder}/alignment_review.tsv"},
+            "alignment_outputs": {
+                "run_metadata_json": f"{folder}/alignment_run_metadata.json"
+            },
             "artifacts": [
                 {
                     "name": path.rsplit("/", 1)[-1],
@@ -2053,11 +2055,13 @@ def test_review_search_and_saved_results_keep_one_scroll_and_visible_evidence(
                 disposition="completed",
                 members=[witness_member("S1", f"{group}-member", "obs-01")],
             )
+            writer.set_row_destination(group, "matrix")
 
     create_inspector_report(tmp_path, extend=more_rows)
     _open_results(page)
     page.locator("#source").fill(str(tmp_path))
     page.locator("#open-form button[type=submit]").click()
+    page.get_by_role("button", name="瀏覽矩陣 feature", exact=True).click()
     expect(page.locator("#item-list button")).to_have_count(25)
     page.locator("#next").click()
     expect(page.locator("#item-list button")).to_have_count(1)
@@ -2068,6 +2072,7 @@ def test_review_search_and_saved_results_keep_one_scroll_and_visible_evidence(
     assert off_page_id not in page.locator("#item-list button").evaluate_all(
         "buttons => buttons.map(button => button.dataset.itemId)"
     )
+    page.locator("#untargeted-search-mode").select_option("exact")
     page.locator("#group-filter > summary").click()
     page.locator("#group-id").fill(off_page_group)
     page.locator("#query-form button[type=submit]").click()
@@ -2077,6 +2082,7 @@ def test_review_search_and_saved_results_keep_one_scroll_and_visible_evidence(
     )
     page.locator("#reset-query").click()
     expect(page.locator("#item-list button")).to_have_count(25)
+    page.locator("#untargeted-search-mode").select_option("exact")
     page.locator("#group-id").fill("G1")
     page.locator("#query-form button[type=submit]").click()
     expect(page.locator("#item-list button")).to_have_count(1)
@@ -2222,9 +2228,9 @@ def test_untargeted_curves_open_beside_saved_report_and_reuse_loaded_view(
     _open_results(page)
     page.locator("#source").fill(str(db))
     page.locator("#open-form button[type=submit]").click()
+    page.get_by_role("button", name="瀏覽矩陣 feature").click()
     selected_view = None
     if sample_count > 1:
-        page.get_by_role("button", name="瀏覽矩陣 feature").click()
         page.locator("#item-list button").first.click()
         _wait_for_curve_report(page, inline=True)
         expect(
@@ -4449,16 +4455,39 @@ def test_sample_click_right_after_a_drag_selects_that_row(
     _wait_for_analysis_status(page, "已完成")
     page.locator("#t-samples-edit").click()
     _sample_row(page, "S1").hover()
-    first = _sample_row(page, "S1").bounding_box()
-    last = _sample_row(page, "S3").bounding_box()
-    page.mouse.move(first["x"] + 20, first["y"] + first["height"] / 2)
-    page.mouse.down()
-    page.mouse.move(last["x"] + 20, last["y"] + last["height"] / 2, steps=6)
-    page.mouse.up()
-    expect(page.locator("#sample-selection")).to_have_text("選取的 3 個 設為")
-    _sample_row(page, "S4").click()
-    _sample_row(page, "S5").click(modifiers=["Shift"])
-    expect(page.locator("#sample-selection")).to_have_text("選取的 2 個 設為")
+    selections = page.evaluate(
+        """() => {
+          const first = document.querySelector('tr[data-stem="S1"] td');
+          const last = document.querySelector('tr[data-stem="S3"] td');
+          const pointer = (node, type) => {
+            const rect = node.getBoundingClientRect();
+            node.dispatchEvent(new PointerEvent(type, {
+              bubbles: true, button: 0, clientY: rect.y + rect.height / 2,
+            }));
+          };
+          const click = () => last.dispatchEvent(
+            new MouseEvent("click", { bubbles: true, detail: 1 })
+          );
+          const selected = () => Array.from(
+            document.querySelectorAll("#sample-rows tr.selected"),
+            row => row.dataset.stem
+          );
+          pointer(first, "pointerdown");
+          pointer(last, "pointermove");
+          pointer(last, "pointerup");
+          click();
+          const dragged = selected();
+          pointer(last, "pointerdown");
+          pointer(last, "pointerup");
+          click();
+          return [dragged, selected()];
+        }"""
+    )
+    assert selections == [["S1", "S2", "S3"], ["S3"]]
+    _sample_row(page, "S4").click(modifiers=["Shift"])
+    expect(page.locator("#sample-rows tr.selected")).to_have_text(
+        [re.compile("S3"), re.compile("S4")]
+    )
 
 
 def test_an_open_sample_editor_follows_another_tabs_job(
@@ -4781,7 +4810,9 @@ def _open_curation_folder(page, tmp_path, fake_runs):
     write_tsv(output / "sample_metadata.tsv", sample_rows(), SAMPLE_METADATA_COLUMNS)
     fake_runs.result = {
         "matrix_tsv": str(output / "alignment_matrix.tsv"),
-        "alignment_outputs": {"review_tsv": str(output / "alignment_review.tsv")},
+        "alignment_outputs": {
+            "run_metadata_json": str(output / "alignment_run_metadata.json")
+        },
     }
     _view(page, "untargeted")
     page.locator("#u-output_dir").fill(str(output))
@@ -4939,7 +4970,9 @@ def test_matrix_curation_from_a_run_and_from_an_existing_folder(
     )
     fake_runs.result = {
         "matrix_tsv": str(run_output / "alignment_matrix.tsv"),
-        "alignment_outputs": {"review_tsv": str(run_output / "alignment_review.tsv")},
+        "alignment_outputs": {
+            "run_metadata_json": str(run_output / "alignment_run_metadata.json")
+        },
     }
     _view(page, "untargeted")
     page.locator("#u-raw_dir").fill(str(tmp_path / "raw"))

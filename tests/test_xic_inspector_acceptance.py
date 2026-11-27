@@ -2,12 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
-import subprocess
-import sys
-from dataclasses import asdict
-
 import pytest
 
 from tests.alignment_explanation_fixtures import (
@@ -19,7 +13,6 @@ from tests.untargeted_partition_fixtures import children_of
 from xic_extractor.alignment_explanation.reader import (
     read_alignment_explanation,
 )
-from xic_extractor.alignment_explanation.storage import SCHEMA_VERSION
 from xic_extractor.applications.untargeted.alignment_explanation_projection import (
     write_alignment_explanation,
 )
@@ -43,73 +36,6 @@ from xic_inspector.api import (
 from xic_inspector.cli import main as cli_main
 
 
-def test_acceptance_a1_production_owner_pipeline_fidelity(
-    tmp_path, monkeypatch
-) -> None:
-    """A1: Run real pipeline fixtures, verify DB re-read and curve fidelity."""
-    completed, candidates, matrix, config = run_alignment_fixture(
-        tmp_path, monkeypatch, "positive"
-    )
-    report_path = write_alignment_explanation(
-        tmp_path / "alignment_explanation.sqlite",
-        full_audit=True,
-        completed=completed,
-        children=children_of(completed.application_result),
-        **explanation_discovery_facts(completed),
-        peaks_by_sample=candidates,
-        matrix_path=matrix,
-        alignment_config=config,
-    )
-    expected_observations = {
-        ref.physical_peak_key: asdict(ref.integration)
-        for child in children_of(completed.application_result)
-        for terminal in child.scientific_core.terminal_subjects
-        if getattr(terminal, "hypothesis", None) is not None
-        for ref in (terminal.hypothesis.peak,)
-    }
-    completed.close()
-
-    summary = read_alignment_explanation(report_path)
-    assert summary["schema_version"] == SCHEMA_VERSION
-    assert summary["retention"] == "full_audit"
-    assert summary["plot_evidence_capability"] == "retained_curves"
-    assert summary["matrix_sha256"] == hashlib.sha256(matrix.read_bytes()).hexdigest()
-
-    reread = subprocess.run(
-        [
-            sys.executable,
-            "-c",
-            "import json,sys; from xic_extractor.alignment_explanation.reader "
-            "import read_alignment_curves; "
-            "print(json.dumps(read_alignment_curves(sys.argv[1])))",
-            str(report_path),
-        ],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    curves = json.loads(reread.stdout)
-    assert len(curves) >= 1
-    for retained in curves:
-        observation_id = retained["physical_peak_key"]
-        if observation_id in expected_observations:
-            assert retained["integration"] == json.loads(
-                json.dumps(expected_observations[observation_id])
-            )
-    assert expected_observations.keys() <= {
-        retained["physical_peak_key"] for retained in curves
-    }
-    s1_sample = next(s for s in summary["samples"] if s["sample_stem"] == "S1")
-    curve = next(c for c in curves if c["sample_id"] == s1_sample["sample_key"])
-    assert curve["kind"] == "initial_capture"
-    assert curve["sample_id"] == s1_sample["sample_key"]
-    assert len(curve["curves"]["rt"]) == len(curve["curves"]["raw"])
-    assert len(curve["curves"]["rt"]) > 0
-    assert curve["integration"] is not None
-    assert curve["integration"]["height_raw"] > 0
-    assert curve["integration"]["area_raw_counts_seconds"] > 0
-
-
 def test_missing_bound_matrix_rejects_generation(
     tmp_path,
 ) -> None:
@@ -129,7 +55,6 @@ def test_missing_bound_matrix_rejects_generation(
                     "matrix_sha256": "0" * 64,
                     "samples": [],
                 },
-                review_only=writer.review_only,
             )
         )
     out_html = tmp_path / "out.html"
@@ -139,14 +64,15 @@ def test_missing_bound_matrix_rejects_generation(
     assert not out_html.exists()
 
 
-def test_acceptance_a4_zero_curve_read_on_metadata_query(tmp_path, monkeypatch) -> None:
-    """A4: Metadata queries read 0 curves; generation reads only needed curves."""
+def test_acceptance_a4_loads_only_selected_evidence(tmp_path, monkeypatch) -> None:
+    """A4: Select from metadata, then load only the selected review evidence."""
+    from xic_inspector.sources import cid_nl
+
     completed, candidates, matrix, config = run_alignment_fixture(
         tmp_path, monkeypatch, "positive"
     )
     report_path = write_alignment_explanation(
         tmp_path / "alignment_explanation.sqlite",
-        full_audit=True,
         completed=completed,
         children=children_of(completed.application_result),
         **explanation_discovery_facts(completed),
@@ -160,6 +86,16 @@ def test_acceptance_a4_zero_curve_read_on_metadata_query(tmp_path, monkeypatch) 
     assert "curves" not in summary
     assert summary["candidate_count"] > 0
 
+    read_evidence = cid_nl.read_review_evidence
+
+    def read_page(path, *, candidate_keys, row_ids, summary):
+        assert candidate_keys
+        assert len(row_ids) <= 1
+        return read_evidence(
+            path, candidate_keys=candidate_keys, row_ids=row_ids, summary=summary
+        )
+
+    monkeypatch.setattr(cid_nl, "read_review_evidence", read_page)
     out_html = tmp_path / "report.html"
     res = generate_report(
         report_path,
@@ -177,7 +113,6 @@ def test_cli_callable_emits_embedded_html(tmp_path, monkeypatch) -> None:
     )
     report_path = write_alignment_explanation(
         tmp_path / "alignment_explanation.sqlite",
-        full_audit=True,
         completed=completed,
         children=children_of(completed.application_result),
         **explanation_discovery_facts(completed),
@@ -229,7 +164,6 @@ def test_acceptance_a7_cancel_and_atomic_replace(tmp_path, monkeypatch) -> None:
     )
     report_path = write_alignment_explanation(
         tmp_path / "alignment_explanation.sqlite",
-        full_audit=True,
         completed=completed,
         children=children_of(completed.application_result),
         **explanation_discovery_facts(completed),

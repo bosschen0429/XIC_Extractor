@@ -8,33 +8,30 @@ from pathlib import Path
 from typing import Any
 
 from xic_extractor.alignment_explanation.storage import EXPLANATION_ARTIFACT_NAME
-
-MATRIX_NAME = "alignment_matrix.tsv"
-REVIEW_NAME = "alignment_review.tsv"
-RUN_METADATA_NAME = "alignment_run_metadata.json"
+from xic_extractor.output.alignment.matrix_output_contract import (
+    MATRIX_NAME,
+    RUN_METADATA_NAME,
+    locate_matrix_identity,
+)
 
 
 @dataclass(frozen=True)
 class CurationSource:
     source_dir: Path
     matrix_path: Path
-    review_path: Path
+    identity_path: Path
     raw_dir: Path | None = None
     explanation_path: Path | None = None
     target_snapshot: str | None = None
 
 
 def locate_curation_source(source_dir: Path) -> CurationSource:
-    """Find the published Matrix, its bound Review and the run's RAW folder."""
+    """Find the published Matrix, its row identities and the run's RAW folder."""
     if not source_dir.is_dir():
         raise ValueError(f"找不到 Untargeted 結果資料夾：{source_dir}")
-    matrix, review = source_dir / MATRIX_NAME, source_dir / REVIEW_NAME
+    matrix = source_dir / MATRIX_NAME
     if not matrix.is_file():
         raise ValueError(f"資料夾中沒有 {MATRIX_NAME}：{source_dir}")
-    if not review.is_file():
-        raise ValueError(
-            f"資料夾中沒有 {REVIEW_NAME}；請以會輸出 Review 的層級重跑 Alignment。"
-        )
     run: dict[str, Any] = {}
     try:
         loaded = json.loads((source_dir / RUN_METADATA_NAME).read_text("utf-8"))
@@ -48,7 +45,7 @@ def locate_curation_source(source_dir: Path) -> CurationSource:
     return CurationSource(
         source_dir=source_dir,
         matrix_path=matrix,
-        review_path=review,
+        identity_path=locate_matrix_identity(source_dir, run),
         raw_dir=raw_dir,
         explanation_path=explanation if explanation.is_file() else None,
         target_snapshot=snapshot if isinstance(snapshot, str) else None,

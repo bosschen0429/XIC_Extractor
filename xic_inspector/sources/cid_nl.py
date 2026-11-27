@@ -2,24 +2,26 @@
 
 The scientific reader owns payload validation and reads each concept once. This
 adapter scopes an item to its candidates, builds the item's evidence cards from
-the concepts those candidates relate to, and projects curves;
+the concepts those candidates relate to;
 cid_nl_presentation assembles labels and readable cards.
 """
 
 from __future__ import annotations
 
 import json
-from collections.abc import Callable, Iterable
+from collections.abc import Iterable
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
-from xic_extractor.alignment_explanation.errors import ExplanationError
+from xic_extractor.alignment_explanation.query import (
+    ScopedReviewFacts,
+    open_review_query,
+)
 from xic_extractor.alignment_explanation.reader import (
     CandidateKey,
     GroupEvidence,
     ReviewEvidence,
-    read_alignment_curves,
     read_alignment_explanation,
     read_review_evidence,
 )
@@ -32,17 +34,30 @@ from xic_inspector.selection.canonical import (
     CanonicalItem,
     Witness,
     build_canonical_ref,
+    serialize_canonical_ref,
+)
+from xic_inspector.selection.query import filter_by_query
+from xic_inspector.selection.sampler import (
+    review_case,
+    review_case_order,
+    sampling_rank,
 )
 from xic_inspector.selection.strata import classify_scoped_stratum
 from xic_inspector.sources import cid_nl_presentation as presentation
-from xic_inspector.sources.rt_replay import align_curve, read_calibration
+from xic_inspector.sources.untargeted_overview import (
+    ordered_review_items,
+    review_overview,
+)
 
 CardRef = str | tuple[str, str]
 
 
 def read_summary(path: str | Path) -> dict[str, Any]:
     """Read compact metadata without retrieving curve payloads."""
-    return read_alignment_explanation(path)
+    return {
+        **read_alignment_explanation(path),
+        "plot_evidence_capability": "metadata_only",
+    }
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,7 +114,6 @@ def build_item_evidence(
     subjects: Linked = {}
     assessments: Linked = {}
     initial: Linked = {}
-    curves: Linked = {}
     groups: dict[str, set[CandidateKey]] = {}
 
     def link(found: Linked, ref: str, facts: dict[str, Any], key) -> None:
@@ -115,9 +129,6 @@ def build_item_evidence(
                 groups.setdefault(ref, set()).add(key)
         for ref in candidate.initial_groups:
             link(initial, ref, evidence.initial_groups[ref], key)
-        for ref in candidate.curves:
-            if evidence.curves[ref]["sample_id"] == key[1]:
-                link(curves, ref, evidence.curves[ref], key)
     excluded_keys = [key for key in scoped if evidence.candidates[key].exclusion]
     cells = [
         {**cell, "quantitative_value": cell["value"]}
@@ -177,7 +188,6 @@ def build_item_evidence(
             sid,
             support_observations[sid],
             cells_by_sample.get(sid),
-            curves,
             assessments,
         )
         for sid in sample_ids
@@ -211,31 +221,20 @@ def build_item_evidence(
     )
     row = group if kind == "row" else None
     route = {"destination": row.destination, "reason": row.disposition} if row else {}
-    cards = [
-        *(
-            Card(card_kind, card_ref, facts, frozenset(linked), _samples(linked))
-            for card_kind, found in (("capture_evidence", curves),)
-            for card_ref, (facts, linked) in found.items()
-        ),
-        *(
-            Card(
-                card_kind,
-                _candidate_ref(key),
-                facts,
-                frozenset((key,)),
-                frozenset((key[1],)),
-            )
-            for key in scoped
-            for card_kind, facts in (
-                ("exclusions", evidence.candidates[key].exclusion),
-            )
-            if facts is not None
-        ),
-    ]
-    cards.sort(key=lambda card: (card.kind, card.ref))
+    cards = tuple(
+        Card(
+            "exclusions",
+            _candidate_ref(key),
+            facts,
+            frozenset((key,)),
+            frozenset((key[1],)),
+        )
+        for key in excluded_keys
+        if (facts := evidence.candidates[key].exclusion) is not None
+    )
     return ItemEvidence(
         item=item,
-        cards=tuple(cards),
+        cards=cards,
         route=route,
         reason=group.disposition if group is not None else "unavailable",
         state=evidence.groups[min(groups)].disposition
@@ -329,7 +328,7 @@ def _support_observation_refs(sample_id, members, witnesses, cell):
     return sorted(refs)
 
 
-def _support_origin(sample_id, observation_refs, cell, curves, assessments):
+def _support_origin(sample_id, observation_refs, cell, assessments):
     """Read the cell owner; without a cell, show evidence but no origin."""
     if cell is not None:
         kind = cell["support_origin"]
@@ -339,16 +338,9 @@ def _support_origin(sample_id, observation_refs, cell, curves, assessments):
                 kind if kind in ("backfilled", "detected") else "unavailable"
             ),
             "method_refs": [],
-            "capture_refs": [],
             "observation_refs": observation_refs,
         }
     observation_set = set(observation_refs)
-    captures = [
-        (ref, facts)
-        for ref, (facts, _) in curves.items()
-        if facts["sample_id"] == sample_id
-        and facts["physical_peak_key"] in observation_set
-    ]
     methods = [
         (ref, facts)
         for ref, (facts, _) in assessments.items()
@@ -361,153 +353,204 @@ def _support_origin(sample_id, observation_refs, cell, curves, assessments):
         "kind": kind,
         "label": presentation.support_origin_label(kind),
         "method_refs": sorted(ref for ref, _ in methods),
-        "capture_refs": sorted(ref for ref, _ in captures),
         "observation_refs": observation_refs,
     }
 
 
+def _review_order(kind: str, facts: ScopedReviewFacts) -> tuple[int, bool, bool]:
+    stratum = classify_scoped_stratum(
+        is_attention=facts.attention,
+        is_excluded=facts.excluded,
+        has_null_cell=facts.nulls,
+        has_zero_cell=facts.zeros,
+    )
+    case = review_case(kind, stratum, facts.observed, facts.present, facts.origins)
+    coverage, origin, status = review_case_order(case)
+    return coverage * 20 + origin * 5 + status, status == 0, kind == "candidate"
+
+
 class CidNlSource:
-    """A full-audit report: every item is built in memory for selection."""
+    """Select in SQL, then read and render only the selected items."""
 
-    def __init__(self, path: Path, summary: dict[str, Any] | None = None) -> None:
+    def __init__(self, path: Path) -> None:
         self.path = path
-        self.evidence = read_review_evidence(path, summary=summary)
-        self._bind(self.evidence.summary)
-        self._items: dict[str, ItemEvidence] = {}
-
-    def _bind(self, summary: dict[str, Any]) -> None:
+        summary = read_summary(path)
         self.summary = summary
         self.attempt_id = summary.get("processing_attempt_id", "")
         self.sample_labels = {
             sample["sample_key"]: sample["sample_stem"]
             for sample in summary.get("samples", [])
         }
-        self.rt_calibration = read_calibration(summary["sample_rt_calibration"])
+        self.missing_mz_count = 0
+        self.mz_distances: dict[str, float] = {}
 
-    def load_items(self, sample_ids: set[str]) -> list[CanonicalItem]:
-        evidence = self.evidence
-        grouped = {
-            key for group in evidence.groups.values() for key in group.candidates
-        }
-        built = [
-            build_item_evidence(
-                evidence,
-                self.attempt_id,
-                "row" if group.feature_id is not None else "group",
-                ref,
-                ref,
-                group.candidates,
-                sample_ids,
-            )
-            for ref, group in evidence.groups.items()
-        ]
-        built.extend(
-            build_item_evidence(
-                evidence,
-                self.attempt_id,
-                "candidate",
-                key[0],
-                None,
-                (key,),
-                sample_ids,
-            )
-            for key, candidate in evidence.candidates.items()
-            if key not in grouped
+    def load_render_items(self, items, *, capability, check_cancel):
+        items = list(items)
+        check_cancel()
+        evidence = read_review_evidence(
+            self.path,
+            candidate_keys=sorted(
+                {
+                    (w.candidate_id, w.sample_key)
+                    for item in items
+                    for w in item.witnesses
+                }
+            ),
+            row_ids=sorted({item.identifier for item in items if item.kind == "row"}),
+            summary=self.summary,
         )
-        self._items.update((view.item.serialized_ref, view) for view in built)
-        return sorted((view.item for view in built), key=lambda item: item.sort_key)
-
-    def load_render_items(
-        self, items, *, capability: str, check_cancel: Callable[[], None]
-    ):
-        return self._render(
-            [
+        scope = {sid for item in items for sid in item.sample_ids}
+        views = []
+        for item in items:
+            if item.kind == "candidate":
+                key = (item.identifier, json.loads(item.serialized_ref)[2])
+                view = build_item_evidence(
+                    evidence,
+                    self.attempt_id,
+                    item.kind,
+                    item.identifier,
+                    None,
+                    (key,),
+                    scope,
+                )
+            else:
+                group = evidence.groups[item.identifier]
+                view = build_item_evidence(
+                    evidence,
+                    self.attempt_id,
+                    item.kind,
+                    item.identifier,
+                    item.identifier,
+                    group.candidates,
+                    scope,
+                )
+            views.append(
                 replace(
-                    self._items[item.serialized_ref],
-                    item=replace(
-                        self._items[item.serialized_ref].item,
-                        matched_witnesses=item.matched_witnesses,
-                    ),
+                    view,
+                    item=replace(view.item, matched_witnesses=item.matched_witnesses),
                 )
-                for item in items
-            ],
-            capability=capability,
-            check_cancel=check_cancel,
-        )
+            )
+        return self._render(views, check_cancel=check_cancel)
 
-    def _render(self, views: list[ItemEvidence], *, capability, check_cancel):
-        refs_by_sample: dict[str, set[str]] = {}
-        captures_by_item = {
-            view.item.serialized_ref: [
-                card.facts for card in view.cards if card.kind == "capture_evidence"
-            ]
-            for view in views
-        }
-        for view in views:
-            item = view.item
-            for capture in captures_by_item[item.serialized_ref]:
-                refs_by_sample.setdefault(capture["sample_id"], set()).add(
-                    capture["record_id"]
-                )
-            for witness in item.witnesses:
-                refs = refs_by_sample.setdefault(witness.sample_key, set())
-                if witness.observation_id:
-                    refs.add(witness.observation_id)
-                elif item.kind == "candidate":
-                    refs.add(witness.candidate_id)
-        raw_curves = []
-        if capability == "retained_curves":
-            for sid, refs in sorted(refs_by_sample.items()):
-                if not refs:
-                    continue
-                check_cancel()
-                raw_curves.extend(
-                    read_alignment_curves(
-                        self.path, sample_ids=(sid,), record_ids=tuple(sorted(refs))
+    def select_items(self, scope, request):
+        criteria = dict(
+            candidate_ids=request.candidate_ids,
+            group_ids=request.group_ids,
+            mz_min=request.mz_min,
+            mz_max=request.mz_max,
+            rt_min=request.rt_min,
+            rt_max=request.rt_max,
+        )
+        review_scope = request.review_scope
+        with open_review_query(self.path, self.summary) as query:
+            if request.strategy == "query":
+                ordered = None
+                if review_scope != "all":
+                    overview, rows = review_overview(
+                        self.path, self.summary, request.curation_removed_ids
                     )
+                    headers = query.item_headers()
+                    overview["candidate_count"] = sum(
+                        kind == "candidate" for _, kind, _ in headers
+                    )
+                    self.summary["overview"] = overview
+                    ordered = ordered_review_items(headers, rows, review_scope)
+                if request.nearest_mz is not None:
+                    (
+                        ids,
+                        run_total,
+                        eligible,
+                        matched,
+                        missing,
+                        self.missing_mz_count,
+                        distances,
+                    ) = query.nearest_page(
+                        scope,
+                        mz=request.nearest_mz,
+                        offset=request.offset,
+                        limit=request.limit,
+                        ordered_item_ids=ordered,
+                        **criteria,
+                    )
+                else:
+                    ids, run_total, eligible, matched, missing = query.page(
+                        scope,
+                        **criteria,
+                        offset=request.offset,
+                        limit=request.limit,
+                        ordered_item_ids=ordered,
+                    )
+            else:
+
+                def rank(sort_key):
+                    ref = json.loads(sort_key)
+                    full = serialize_canonical_ref([ref[0], self.attempt_id, *ref[1:]])
+                    return sampling_rank(full, request.seed)
+
+                ids, run_total, eligible, matched, missing = query.review_page(
+                    scope,
+                    classify=_review_order,
+                    rank=rank,
+                    attention_only=request.strategy == "attention",
+                    limit=request.limit,
                 )
-            present = {
-                (curve.get("sample_id"), curve.get("physical_peak_key"))
-                for curve in raw_curves
-            }
-            promised = {
-                (w.sample_key, w.observation_id)
-                for view in views
-                for w in view.item.witnesses
-                if w.observation_id
-            }
-            missing = promised - present
-            if missing and self.summary.get("curve_retention") != "selected":
-                raise ExplanationError(
-                    f"Missing promised selected observation payloads: {sorted(missing)}"
+
+            def item(item_id):
+                stored = query.item(item_id, scope)
+                _, ref = build_canonical_ref(
+                    stored.kind,
+                    self.attempt_id,
+                    stored.identifier,
+                    sample_id=stored.candidate_sample_id,
                 )
-            promised_captures = {
-                (capture["sample_id"], capture["payload_id"])
-                for captures in captures_by_item.values()
-                for capture in captures
-            }
-            present_captures = {
-                (curve.get("sample_id"), curve.get("payload_id"))
-                for curve in raw_curves
-            }
-            missing_captures = promised_captures - present_captures
-            if missing_captures:
-                raise ExplanationError(
-                    "Missing promised selected capture payloads: "
-                    f"{sorted(missing_captures)}"
+                return CanonicalItem(
+                    stored.kind,
+                    self.attempt_id,
+                    stored.identifier,
+                    ref,
+                    stored.sample_ids,
+                    tuple(
+                        Witness(
+                            sid,
+                            cid,
+                            stored.group_id,
+                            stored.identifier if stored.kind == "row" else None,
+                            mz,
+                            rt,
+                            oid,
+                            stem,
+                        )
+                        for sid, cid, mz, rt, oid, stem in stored.witnesses
+                    ),
+                    "unclassified",
                 )
-            for curve in raw_curves:
-                provenance = curve.get("provenance", {})
-                for name, expected in (("processing_attempt_id", self.attempt_id),):
-                    if name in provenance and provenance[name] != expected:
-                        raise ExplanationError(f"Selected curve crosses {name} binding")
+
+            selected = []
+            for item_id in ids:
+                primary = item(item_id)
+                if request.strategy == "query":
+                    with_matches, _, _ = filter_by_query([primary], **criteria, limit=1)
+                    primary = replace(
+                        primary, matched_witnesses=with_matches[0].matched_witnesses
+                    )
+                selected.append(primary)
+                if request.nearest_mz is not None:
+                    self.mz_distances[primary.serialized_ref] = distances[item_id]
+            return (
+                selected
+                if review_scope != "all"
+                else sorted(selected, key=lambda item: item.sort_key),
+                run_total,
+                eligible,
+                matched,
+                missing,
+            )
+
+    def _render(self, views: list[ItemEvidence], *, check_cancel):
         rendered = []
         for view in views:
             check_cancel()
             item = view.item
-            projected_curves = self._project_curves(
-                item, raw_curves, captures_by_item[item.serialized_ref]
-            )
             samples = [
                 presentation.build_sample(
                     view,
@@ -521,7 +564,6 @@ class CidNlSource:
                 presentation.build_render_item(
                     view,
                     samples=samples,
-                    projected_curves=projected_curves,
                     readable_records=self._readable_records(view),
                     measured_mz_by_candidate=view.measured_mz,
                     relationship_members=[
@@ -538,40 +580,6 @@ class CidNlSource:
             )
         return rendered
 
-    def _project_curves(self, item, raw_curves, captures):
-        keys = {(w.candidate_id, w.sample_key) for w in item.witnesses}
-        observation_keys = {
-            (w.observation_id, w.sample_key) for w in item.witnesses if w.observation_id
-        }
-        capture_keys = {
-            (capture["sample_id"], capture["payload_id"]) for capture in captures
-        }
-        curves = [
-            curve
-            for curve in raw_curves
-            if (curve.get("sample_id"), curve.get("payload_id")) in capture_keys
-            or (
-                (curve.get("physical_peak_key"), curve.get("sample_id"))
-                in observation_keys
-                if observation_keys
-                else (curve.get("candidate_id"), curve.get("sample_id")) in keys
-            )
-        ]
-        projected_curves = []
-        for curve in curves:
-            projected = self._curve(curve)
-            projected["candidate_ids"] = sorted(
-                {
-                    witness.candidate_id
-                    for witness in item.witnesses
-                    if witness.sample_key == curve.get("sample_id")
-                    and witness.observation_id
-                    and witness.observation_id == curve.get("physical_peak_key")
-                }
-            )
-            projected_curves.append(projected)
-        return projected_curves
-
     def _readable_records(self, view: ItemEvidence) -> list[dict[str, Any]]:
         item = view.item
         return [
@@ -583,38 +591,6 @@ class CidNlSource:
             for card in view.cards
             if card.kind == "exclusions"
         ]
-
-    def _curve(self, payload):
-        curves = payload.get("curves", {})
-        integration = payload.get("integration") or {}
-        rts = curves.get("rt", [])
-        result = {
-            "sample_id": payload.get("sample_id"),
-            "candidate_id": payload.get("candidate_id"),
-            "evidence_ref": payload.get("payload_id", payload.get("physical_peak_key")),
-            "observation_id": payload.get("physical_peak_key"),
-            "kind": payload.get("kind"),
-            "stage_label": presentation.curve_stage_label(payload.get("kind")),
-            "raw_rts": rts,
-            "raw_intensities": curves.get("raw", []),
-            "processed_curves": [
-                {"kind": kind, "rts": rts, "intensities": values}
-                for kind, values in curves.items()
-                if kind in ("baseline", "smoothed", "positive") and values is not None
-            ],
-            "bound_left_rt": integration.get("rt_left_min"),
-            "bound_right_rt": integration.get("rt_right_min"),
-            "apex_rt": integration.get("rt_apex_min", integration.get("apex_rt_min")),
-            "area": integration.get("area_ms1_morphology"),
-            "integration": integration,
-            "provenance": payload.get("provenance"),
-        }
-        align_curve(
-            result,
-            self.sample_labels.get(payload.get("sample_id")),
-            self.rt_calibration,
-        )
-        return result
 
 
 def _decision_refs(view: ItemEvidence, sample_id: str) -> list[CardRef]:

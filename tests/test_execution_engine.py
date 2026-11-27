@@ -28,7 +28,6 @@ from xic_extractor.execution.result_store import (
     StreamedResultStore,
     WrittenPartition,
     _OwnerUnpickler,
-    open_preserved_results,
 )
 from xic_extractor.execution.workers import WorkerAdmissionPool
 
@@ -94,7 +93,6 @@ def test_streamed_result_store_basic_roundtrip(tmp_path: Path) -> None:
     entry = store.append("p-0", payload)
     assert entry.index == 0
     assert entry.key == "p-0"
-    assert entry.size_bytes > 0
 
     restored = store.read(0)
     assert restored.child_outputs == (1, 2, 3)
@@ -105,48 +103,6 @@ def test_streamed_result_store_basic_roundtrip(tmp_path: Path) -> None:
     assert tuple(store.sequence("child_outputs")) == (1, 2, 3)
     assert tuple(store.sequence("method_assessments")) == ("assess_1",)
     assert store.read_selected(0, "excluded_candidates", (1, 0)) == ("ex_2", "ex_1")
-
-
-def test_streamed_result_store_retained_memory_bypass(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    store = StreamedResultStore(tmp_path / "spool", ())
-    payload = MockPayload(
-        child_outputs=(10, 20, 30),
-        method_assessments=(100, 200),
-        excluded_candidates=(1000, 2000),
-    )
-    entry = store.append_child_outputs(
-        "p-0",
-        MockPayload(
-            (),
-            payload.method_assessments,
-            payload.excluded_candidates,
-            payload.label,
-        ),
-        child_outputs=(10, 20, 30),
-        retain_memory=True,
-    )
-    assert entry.size_bytes > 0
-    store.seal()
-
-    opened: list[Any] = []
-    orig_open = Path.open
-
-    def tracking_open(path, *args, **kwargs):
-        stream = orig_open(path, *args, **kwargs)
-        opened.append(stream)
-        return stream
-
-    monkeypatch.setattr(Path, "open", tracking_open)
-
-    seq = store.sequence("child_outputs")
-    assert tuple(seq) == (10, 20, 30)
-    assert len(opened) == 0
-
-    selected = store.read_selected(0, "excluded_candidates", (1, 0))
-    assert selected == (2000, 1000)
-    assert len(opened) == 0
 
 
 @pytest.mark.parametrize("duplicate_shared_root", [False, True])
@@ -169,15 +125,6 @@ def test_streamed_result_store_shared_objects_identity(
     assert restored.ref is shared_config
     assert restored.child_outputs[0][0] is shared_config
     assert restored.child_outputs[0][1] is shared_ref
-    store.seal()
-    checkpoint = store.preserve_results()
-    retained = open_preserved_results(checkpoint)
-    replay = retained.read(0)
-    assert replay.ref == shared_config
-    assert replay.child_outputs[0][1] == shared_ref
-    assert replay.ref is retained._shared_objects[0]
-    assert replay.child_outputs[0][0] is replay.ref
-    assert replay.child_outputs[0][1] is retained._shared_objects[1]
 
 
 def test_streamed_result_store_unknown_shared_identity_rejected() -> None:
@@ -221,7 +168,6 @@ def test_streamed_result_store_cleanup_idempotent(tmp_path: Path) -> None:
 
     store.cleanup()
     assert not spool_dir.exists()
-    assert len(store._field_caches) == 0
 
     store.cleanup()
     assert not spool_dir.exists()
@@ -255,7 +201,6 @@ class MockAdapter:
         self.composition_delay = composition_delay
         self.on_acquisition = on_acquisition
         self.on_composition = on_composition
-        self.retained_memory_seen: list[bool] = []
 
     @property
     def partitions(self) -> tuple[WorkPartition[dict[str, int]], ...]:
@@ -288,10 +233,8 @@ class MockAdapter:
         acquisition_output: PartitionAcquisitionOutput[dict[str, Any]],
         store: StreamedResultStore,
         *,
-        retain_memory: bool = False,
         should_cancel=None,
     ) -> PartitionCompositionOutput[dict[str, Any]]:
-        self.retained_memory_seen.append(retain_memory)
         if self.composition_delay > 0:
             time.sleep(self.composition_delay)
         if self.on_composition is not None:
@@ -303,9 +246,7 @@ class MockAdapter:
             method_assessments=(f"assess-{partition.index}",),
             excluded_candidates=(f"ex-{partition.index}",),
         )
-        sealed = store.append(
-            partition.partition_key, payload, retain_memory=retain_memory
-        )
+        sealed = store.append(partition.partition_key, payload)
         return PartitionCompositionOutput(
             result={"comp_done": partition.index},
             sealed=sealed,
@@ -342,7 +283,6 @@ def test_scheduler_execute_success(tmp_path: Path) -> None:
         adapter,
         output_dir=output_dir,
         progress_callback=progress_events.append,
-        retain_partition_memory=False,
         pipeline_overlap=False,
     )
 
@@ -444,23 +384,6 @@ def test_scheduler_cleanup_failure_prevents_successful_terminal_acknowledgement(
         )
 
     assert cleanup_calls == 1
-
-
-def test_scheduler_execute_single_partition_retains_memory(tmp_path: Path) -> None:
-    fixture = build_processing_identity_no_raw_fixture(
-        tmp_path, sample_stems=("sample-1",)
-    )
-    adapter = MockAdapter(fixture.samples, num_partitions=1)
-    output_dir = tmp_path / "output"
-
-    result = PartitionPipelineScheduler.execute(
-        adapter,
-        output_dir=output_dir,
-        retain_partition_memory=True,
-    )
-
-    assert result["application_result"]["total_children"] == 1
-    assert adapter.retained_memory_seen == [True]
 
 
 def test_scheduler_execute_cancellation_cleans_up(tmp_path: Path) -> None:
@@ -1246,7 +1169,7 @@ def test_partition_written_by_another_process_is_adopted_identically(
             "payload = MockPayload(child_outputs=(), method_assessments=(owner, 'b'),"
             " label='remote')",
             "written = write_spooled_partition(owners.parent, payload, owners)",
-            "print(json.dumps({'path': str(written.path), 'lengths': written.lengths,"
+            "print(json.dumps({'path': str(written.path),"
             " 'records': {name: [list(item) for item in rows]"
             " for name, rows in written.records.items()}}))",
         )
@@ -1263,7 +1186,6 @@ def test_partition_written_by_another_process_is_adopted_identically(
         "partition-remote",
         WrittenPartition(
             Path(reported["path"]),
-            reported["lengths"],
             {
                 name: tuple((offset, length) for offset, length in rows)
                 for name, rows in reported["records"].items()

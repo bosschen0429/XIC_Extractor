@@ -313,13 +313,13 @@ def test_run_alignment_cli_dna_dr_preset_binds_retained_recipe(
     def fake_run_alignment(request, context=None):
         captured_alignment.update(request=request, context=context)
         output_dir.mkdir(parents=True, exist_ok=True)
-        review = output_dir / "alignment_review.tsv"
+        run_metadata = output_dir / "alignment_run_metadata.json"
         matrix = output_dir / "alignment_matrix.tsv"
         cells = output_dir / "alignment_cells.tsv"
-        for path in (review, matrix, cells):
+        for path in (run_metadata, matrix, cells):
             path.write_text("x\n", encoding="utf-8")
         return AlignmentRunOutputs(
-            review_tsv=review,
+            run_metadata_json=run_metadata,
             matrix_tsv=matrix,
             cells_tsv=cells,
         )
@@ -447,7 +447,7 @@ backfill_expansion_productization = "clean-target-selective"
         call_order.append("alignment")
         output_dir.mkdir(parents=True, exist_ok=True)
         paths = {
-            "review_tsv": output_dir / "alignment_review.tsv",
+            "run_metadata_json": output_dir / "alignment_run_metadata.json",
             "matrix_tsv": output_dir / "alignment_matrix.tsv",
             "backfill_cell_evidence_tsv": (
                 output_dir / "alignment_backfill_cell_evidence.tsv"
@@ -525,13 +525,13 @@ def test_run_alignment_cli_dna_dr_preset_uses_light_cells_for_validation_minimal
     def fake_run_alignment(request, context=None):
         captured_alignment.update(request=request, context=context)
         output_dir.mkdir(parents=True, exist_ok=True)
-        review = output_dir / "alignment_review.tsv"
+        run_metadata = output_dir / "alignment_run_metadata.json"
         matrix = output_dir / "alignment_matrix.tsv"
         light_cells = output_dir / "alignment_backfill_cell_evidence.tsv"
-        for path in (review, matrix, light_cells):
+        for path in (run_metadata, matrix, light_cells):
             path.write_text("x\n", encoding="utf-8")
         return AlignmentRunOutputs(
-            review_tsv=review,
+            run_metadata_json=run_metadata,
             matrix_tsv=matrix,
             backfill_cell_evidence_tsv=light_cells,
         )
@@ -1601,10 +1601,8 @@ def test_run_alignment_cli_routes_sample_metadata_without_losing_cohorts(
     def fake_application(request, context=None) -> AlignmentRunOutputs:
         captured.update(request=request, context=context)
         return AlignmentRunOutputs(
-            review_tsv=None,
             matrix_tsv=None,
             cells_tsv=None,
-            status_matrix_tsv=None,
         )
 
     monkeypatch.setattr(run_alignment, "run_untargeted_application", fake_application)

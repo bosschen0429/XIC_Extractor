@@ -3,8 +3,8 @@
 Same-sample cells in different rows whose row precursor m/z (default 10 ppm)
 and published apex (default 3 s) coincide are classified per row pair as a
 complementary split, distinct peaks sharing a Backfill, or a duplicate view.
-Reads the Matrix projection of ``alignment_review.tsv``, the Backfill cell
-evidence and ``alignment_explanation.sqlite`` from a ``validation-minimal`` or
+Reads the published Matrix identities and ``alignment_explanation.sqlite``
+from a ``validation-minimal`` or
 richer output. It does not open RAW or change values; the result is a
 screening count, not chemical identity.
 """

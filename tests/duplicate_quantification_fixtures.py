@@ -26,7 +26,6 @@ def publish_owner_run(tmp_path, monkeypatch, level):
         output_dir,
         output_level=level,
         emit_alignment_cells=False,
-        emit_alignment_status_matrix=False,
     )
     write_completed_untargeted_outputs_atomic(
         outputs,

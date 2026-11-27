@@ -388,9 +388,9 @@ def prepare_report(
         selection.validate()
 
     if selection.nearest_mz is not None:
-        from xic_inspector.sources.cid_nl_query import IndexedCidNlSource
+        from xic_inspector.sources.cid_nl import CidNlSource
 
-        if not isinstance(source, IndexedCidNlSource):
+        if not isinstance(source, CidNlSource):
             raise InspectorError(
                 2, "Nearest m/z requires indexed Untargeted matrix evidence"
             )
@@ -545,9 +545,9 @@ def _prepare_selection(
     _check_cancel()
 
     normalized_set = set(normalized_sample_ids)
-    from xic_inspector.sources.cid_nl_query import IndexedCidNlSource
+    from xic_inspector.sources.cid_nl import CidNlSource
 
-    if isinstance(source, (IndexedCidNlSource, TargetedWorkbookSource)):
+    if isinstance(source, (CidNlSource, TargetedWorkbookSource)):
         try:
             (
                 selected_items,

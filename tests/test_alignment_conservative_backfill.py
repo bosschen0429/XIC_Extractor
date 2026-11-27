@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from tests.cell_observations_fixtures import _group_and_predecessor_cells
 from tests.cid_nl_peak_support_no_raw_fixture import (
     cid_nl_evidence,
     cid_nl_peak,
@@ -18,16 +19,11 @@ from tests.processing_identity_no_raw_fixture import (
 from xic_extractor.alignment.backfill.conservative import (
     ConservativeBackfillCellDecision,
     ConservativeBackfillContractError,
-    ConservativeBackfillEvidence,
     assess_conservative_backfill_group,
     map_conservative_backfill_candidates,
     minimum_direct_support_count,
     mint_conservative_backfill_candidate_universe,
     plan_conservative_backfill_targets,
-)
-from xic_extractor.alignment.cid_nl_evidence_spine import (
-    CidNlReferenceSpine,
-    build_cid_nl_reference_spine,
 )
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlEvaluationReceipt,
@@ -70,7 +66,7 @@ def test_roles_votes_and_full_support_trace_set_are_owner_derived(
         sample_stems=tuple(roles),
         sample_roles=roles,
     )
-    spine = _spine(
+    group, cells = _grouped_fixture(
         fixture,
         support_apex_by_sample={
             "study": 8.0,
@@ -82,7 +78,7 @@ def test_roles_votes_and_full_support_trace_set_are_owner_derived(
     )
 
     targeted = assess_conservative_backfill_group(
-        spine.cells,
+        cells,
         sample_population=fixture.samples,
     )
 
@@ -90,7 +86,7 @@ def test_roles_votes_and_full_support_trace_set_are_owner_derived(
         left is right
         for left, right in zip(
             targeted.source_cells,
-            spine.cells,
+            cells,
             strict=True,
         )
     )
@@ -110,10 +106,10 @@ def test_roles_votes_and_full_support_trace_set_are_owner_derived(
     )
     assert not any("median" in field.name.lower() for field in fields(type(targeted)))
     assert plan_conservative_backfill_targets(
-        (spine.group,), sample_population=fixture.samples
+        (group,), sample_population=fixture.samples
     ) == (
         (
-            spine.group,
+            group,
             frozenset({fixture.sample("pooled").sample_name}),
         ),
     )
@@ -121,20 +117,17 @@ def test_roles_votes_and_full_support_trace_set_are_owner_derived(
 
 def test_rejected_group_plans_no_backfill(tmp_path: Path) -> None:
     fixture = _study_fixture(tmp_path, ("s1", "s2", "s3"))
-    spine = _spine(
+    group, cells = _grouped_fixture(
         fixture,
         support_apex_by_sample={"s1": 8.0, "s2": 8.0},
         invocation="rejected",
     )
-    assert spine.group is not None
     established = plan_conservative_backfill_targets(
-        (spine.group,), sample_population=fixture.samples
+        (group,), sample_population=fixture.samples
     )
-    assert established == (
-        (spine.group, frozenset({fixture.sample("s3").sample_name})),
-    )
+    assert established == ((group, frozenset({fixture.sample("s3").sample_name})),)
 
-    rejected = replace(spine.group, disposition="rejected")
+    rejected = replace(group, disposition="rejected")
 
     assert (
         plan_conservative_backfill_targets(
@@ -149,25 +142,23 @@ def test_large_run_backfill_preserves_population_threshold(
     tmp_path: Path, support_count: int
 ) -> None:
     fixture = _study_fixture(tmp_path, tuple(f"s{i}" for i in range(85)))
-    spine = _spine(
+    group, cells = _grouped_fixture(
         fixture,
         support_apex_by_sample={f"s{i}": 8.0 for i in range(support_count)},
         invocation="large-run",
     )
-    facts = assess_conservative_backfill_group(
-        spine.cells, sample_population=fixture.samples
-    )
+    facts = assess_conservative_backfill_group(cells, sample_population=fixture.samples)
     assert facts.minimum_support_k == 4
     assert facts.may_attempt_backfill is (support_count >= 4)
     plans = plan_conservative_backfill_targets(
-        (spine.group,), sample_population=fixture.samples
+        (group,), sample_population=fixture.samples
     )
     if support_count < 4:
         assert plans == ()
     else:
         assert plans == (
             (
-                spine.group,
+                group,
                 frozenset(
                     fixture.sample(f"s{i}").sample_name
                     for i in range(support_count, 85)
@@ -180,14 +171,13 @@ def test_group_exists_below_threshold_but_cannot_trigger_recovery(
     tmp_path: Path,
 ) -> None:
     fixture = _study_fixture(tmp_path, ("s1", "s2", "s3"))
-    spine = _spine(
+    group, cells = _grouped_fixture(
         fixture,
         support_apex_by_sample={"s1": 8.0},
         invocation="below-threshold",
     )
-    assert spine.group is not None
     facts = assess_conservative_backfill_group(
-        spine.cells,
+        cells,
         sample_population=fixture.samples,
     )
 
@@ -208,9 +198,7 @@ def test_group_exists_below_threshold_but_cannot_trigger_recovery(
     assert facts.minimum_support_k == 2
     assert facts.may_attempt_backfill is False
     assert (
-        plan_conservative_backfill_targets(
-            (spine.group,), sample_population=fixture.samples
-        )
+        plan_conservative_backfill_targets((group,), sample_population=fixture.samples)
         == ()
     )
     assert decision.disposition == "hold"
@@ -223,15 +211,13 @@ def test_incomplete_group_snapshot_is_held_even_when_support_threshold_passes(
     tmp_path: Path,
 ) -> None:
     fixture = _study_fixture(tmp_path, ("s1", "s2", "s3", "s4"))
-    spine = _spine(
+    group, cells = _grouped_fixture(
         fixture,
         support_apex_by_sample={"s1": 8.0, "s2": 8.0},
         invocation="not-frozen",
     )
     retained_cells = tuple(
-        cell
-        for cell in spine.cells
-        if cell.sample_key != fixture.sample("s4").sample_name
+        cell for cell in cells if cell.sample_key != fixture.sample("s4").sample_name
     )
     facts = assess_conservative_backfill_group(
         retained_cells,
@@ -266,14 +252,14 @@ def test_terminal_method_results_precede_group_recovery_eligibility(
         below_threshold_dir,
         ("support", "reject", "missing"),
     )
-    below_threshold_spine = _spine(
+    _group, cells = _grouped_fixture(
         below_threshold_fixture,
         support_apex_by_sample={"support": 8.0},
         reject_sample_stems=frozenset({"reject"}),
         invocation="terminal-below-threshold",
     )
     below_threshold = assess_conservative_backfill_group(
-        below_threshold_spine.cells,
+        cells,
         sample_population=below_threshold_fixture.samples,
     )
 
@@ -301,7 +287,7 @@ def test_terminal_method_results_precede_group_recovery_eligibility(
         incomplete_dir,
         ("s1", "s2", "reject", "omitted"),
     )
-    incomplete_spine = _spine(
+    _group, cells = _grouped_fixture(
         incomplete_fixture,
         support_apex_by_sample={"s1": 8.0, "s2": 8.0},
         reject_sample_stems=frozenset({"reject"}),
@@ -309,7 +295,7 @@ def test_terminal_method_results_precede_group_recovery_eligibility(
     )
     retained_cells = tuple(
         cell
-        for cell in incomplete_spine.cells
+        for cell in cells
         if cell.sample_key != incomplete_fixture.sample("omitted").sample_name
     )
     incomplete = assess_conservative_backfill_group(
@@ -331,22 +317,22 @@ def test_ordered_one_to_one_mapping_retains_evidence_without_backfill_votes(
     tmp_path: Path,
 ) -> None:
     fixture = _study_fixture(tmp_path, ("a1", "a2", "b1", "b2", "missing"))
-    early = _spine(
+    _, early_cells = _grouped_fixture(
         fixture,
         support_apex_by_sample={"a1": 7.8, "a2": 7.8},
         invocation="early",
     )
-    late = _spine(
+    _, late_cells = _grouped_fixture(
         fixture,
         support_apex_by_sample={"b1": 8.2, "b2": 8.2},
         invocation="late",
     )
     early_facts = assess_conservative_backfill_group(
-        early.cells,
+        early_cells,
         sample_population=fixture.samples,
     )
     late_facts = assess_conservative_backfill_group(
-        late.cells,
+        late_cells,
         sample_population=fixture.samples,
     )
     early_peak = _peak(fixture, "missing", apex_rt=7.8)
@@ -404,22 +390,22 @@ def test_mapping_retains_owner_universe_order_while_pairing_by_rt(
     early_peak, late_peak = opposite_order_pair
     early_rt = early_peak.integration.rt_apex_min
     late_rt = late_peak.integration.rt_apex_min
-    early = _spine(
+    _, early_cells = _grouped_fixture(
         fixture,
         support_apex_by_sample={"a1": early_rt, "a2": early_rt},
         invocation="owner-order-early",
     )
-    late = _spine(
+    _, late_cells = _grouped_fixture(
         fixture,
         support_apex_by_sample={"b1": late_rt, "b2": late_rt},
         invocation="owner-order-late",
     )
     early_facts = assess_conservative_backfill_group(
-        early.cells,
+        early_cells,
         sample_population=fixture.samples,
     )
     late_facts = assess_conservative_backfill_group(
-        late.cells,
+        late_cells,
         sample_population=fixture.samples,
     )
     owner_ordered_peaks = tuple(
@@ -462,22 +448,18 @@ def test_one_to_many_and_many_to_one_cardinality_remain_held(
     tmp_path: Path,
 ) -> None:
     fixture = _study_fixture(tmp_path, ("a1", "a2", "b1", "b2", "missing"))
-    early = assess_conservative_backfill_group(
-        _spine(
-            fixture,
-            support_apex_by_sample={"a1": 7.8, "a2": 7.8},
-            invocation="cardinality-early",
-        ).cells,
-        sample_population=fixture.samples,
+    _, cells = _grouped_fixture(
+        fixture,
+        support_apex_by_sample={"a1": 7.8, "a2": 7.8},
+        invocation="cardinality-early",
     )
-    late = assess_conservative_backfill_group(
-        _spine(
-            fixture,
-            support_apex_by_sample={"b1": 8.2, "b2": 8.2},
-            invocation="cardinality-late",
-        ).cells,
-        sample_population=fixture.samples,
+    early = assess_conservative_backfill_group(cells, sample_population=fixture.samples)
+    _, cells = _grouped_fixture(
+        fixture,
+        support_apex_by_sample={"b1": 8.2, "b2": 8.2},
+        invocation="cardinality-late",
     )
+    late = assess_conservative_backfill_group(cells, sample_population=fixture.samples)
     first_peak = _peak(fixture, "missing", apex_rt=7.8)
     second_peak = _peak(fixture, "missing", apex_rt=8.2)
     one_to_many_universe = _recovery_universe(
@@ -522,14 +504,12 @@ def test_mapping_retains_empty_receipt_and_rejects_duplicate_target_receipts(
     tmp_path: Path,
 ) -> None:
     fixture = _study_fixture(tmp_path, ("s1", "s2", "missing"))
-    facts = assess_conservative_backfill_group(
-        _spine(
-            fixture,
-            support_apex_by_sample={"s1": 8.0, "s2": 8.0},
-            invocation="empty-recovery-universe",
-        ).cells,
-        sample_population=fixture.samples,
+    _, cells = _grouped_fixture(
+        fixture,
+        support_apex_by_sample={"s1": 8.0, "s2": 8.0},
+        invocation="empty-recovery-universe",
     )
+    facts = assess_conservative_backfill_group(cells, sample_population=fixture.samples)
     empty_universe = _recovery_universe(
         fixture,
         (facts,),
@@ -565,45 +545,16 @@ def test_mapping_retains_empty_receipt_and_rejects_duplicate_target_receipts(
         )
 
 
-def test_recovery_evidence_cannot_create_first_group_or_become_support(
-    tmp_path: Path,
-) -> None:
-    fixture = _study_fixture(tmp_path, ("s1", "s2", "missing"))
-    facts = assess_conservative_backfill_group(
-        _spine(
-            fixture,
-            support_apex_by_sample={"s1": 8.0, "s2": 8.0},
-            invocation="no-first-group",
-        ).cells,
-        sample_population=fixture.samples,
-    )
-    universe = _recovery_universe(
-        fixture,
-        (facts,),
-        "missing",
-        (_peak(fixture, "missing", apex_rt=8.0),),
-    )
-    candidate = ConservativeBackfillEvidence(
-        candidate_universe=universe,
-        peak_observation=universe.candidate_peaks[0],
-    )
-
-    assert facts.direct_support_count_s == 2
-    assert candidate.peak_observation not in facts.support_trace_refs
-
-
 def test_rt_mismatch_remains_nonnumeric_without_drift_or_split_logic(
     tmp_path: Path,
 ) -> None:
     fixture = _study_fixture(tmp_path, ("s1", "s2", "missing"))
-    facts = assess_conservative_backfill_group(
-        _spine(
-            fixture,
-            support_apex_by_sample={"s1": 8.0, "s2": 8.0},
-            invocation="rt-mismatch",
-        ).cells,
-        sample_population=fixture.samples,
+    _, cells = _grouped_fixture(
+        fixture,
+        support_apex_by_sample={"s1": 8.0, "s2": 8.0},
+        invocation="rt-mismatch",
     )
+    facts = assess_conservative_backfill_group(cells, sample_population=fixture.samples)
     shifted_universe = _recovery_universe(
         fixture,
         (facts,),
@@ -633,14 +584,14 @@ def _study_fixture(
     )
 
 
-def _spine(
+def _grouped_fixture(
     fixture: ProcessingIdentityNoRawFixture,
     *,
     support_apex_by_sample: dict[str, float],
     reject_sample_stems: frozenset[str] = frozenset(),
     invocation: str,
     target=None,
-) -> CidNlReferenceSpine:
+):
     effective_target = fixture.target if target is None else target
     assessments = tuple(
         (
@@ -666,12 +617,10 @@ def _spine(
         )
         for index, sample in enumerate(fixture.samples, start=1)
     )
-    spine = build_cid_nl_reference_spine(
-        target=effective_target,
-        sample_assessments=assessments,
+    return _group_and_predecessor_cells(
+        assessments,
+        known_label=effective_target.label,
     )
-    assert spine.group is not None
-    return spine
 
 
 def _reject_assessment(

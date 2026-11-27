@@ -10,6 +10,7 @@ Synthetic acquisitions carry no lock masses, so Discovery recorded none.
 from __future__ import annotations
 
 import csv
+import json
 from collections import Counter
 from collections.abc import Callable, Mapping
 from dataclasses import replace
@@ -172,13 +173,18 @@ def publish_alignment(
     }
     assert repeated == {}, repeated
     stages = Counter((r.stage, r.sample_stem) for r in recorder.records)
-    assert [stage for stage, count in stages.items() if count > 1] == []
+    batch_count = len({row.batch_id for row in sample_metadata or ()}) or 1
+    repeated_stages = {
+        (stage, stem): count
+        for (stage, stem), count in stages.items()
+        if count > (1 if stem else batch_count)
+    }
+    assert not repeated_stages, repeated_stages
     return output_dir
 
 
 PUBLISHED_TABLES = (
     "alignment_matrix.tsv",
-    "alignment_review.tsv",
     "alignment_cells.tsv",
     "alignment_rt_anchors.tsv",
 )
@@ -186,6 +192,12 @@ PUBLISHED_TABLES = (
 
 def published_tables(output: Path) -> dict[str, bytes]:
     return {name: (output / name).read_bytes() for name in PUBLISHED_TABLES}
+
+
+def published_matrix(output: Path) -> dict[str, dict[str, str]]:
+    metadata = json.loads((output / "alignment_run_metadata.json").read_text("utf-8"))
+    ids = [feature for feature, _ in metadata["matrix_identity"]["rows"]]
+    return dict(zip(ids, read_tsv(output / "alignment_matrix.tsv"), strict=True))
 
 
 def read_tsv(path: Path) -> list[dict[str, str]]:

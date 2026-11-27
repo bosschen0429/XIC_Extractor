@@ -7,6 +7,7 @@ from pathlib import Path
 import xic_extractor.alignment.result.scientific_alignment as finalizer_owner
 from tests.cell_observations_fixtures import (
     _coverage_for_groups,
+    _group_and_predecessor_cells,
     _receipt_fixture,
     _support_assessment,
 )
@@ -20,9 +21,6 @@ from tests.processing_identity_no_raw_fixture import (
 )
 from xic_extractor.alignment.cell_observation.observations import (
     compose_final_group_cell_observation_population,
-)
-from xic_extractor.alignment.cid_nl_evidence_spine import (
-    build_cid_nl_reference_spine,
 )
 from xic_extractor.alignment.cross_sample.association import (
     build_cross_sample_association_lineage_handoff,
@@ -96,11 +94,10 @@ def _finalized_case(
         )
         for index, sample in enumerate(fixture.samples)
     )
-    spine = build_cid_nl_reference_spine(
-        target=fixture.target,
-        sample_assessments=tuple(zip(fixture.samples, assessments, strict=True)),
+    predecessor, predecessor_cells = _group_and_predecessor_cells(
+        tuple(zip(fixture.samples, assessments, strict=True)),
+        known_label=fixture.target.label,
     )
-    predecessor = spine.group
     member_by_stem = {
         sample.raw_stem: next(
             member
@@ -110,12 +107,7 @@ def _finalized_case(
         for sample in fixture.samples
     }
     hypothesis_by_stem = {
-        stem: next(
-            hypothesis
-            for hypothesis in spine.support_hypotheses
-            if hypothesis.hypothesis_id == member.subject_id
-        )
-        for stem, member in member_by_stem.items()
+        owner.sample_stem: owner.hypothesis for owner in predecessor.owners
     }
     groups = []
     for group_stems, disposition in group_specs:
@@ -137,7 +129,7 @@ def _finalized_case(
         fixture,
         (predecessor,),
         fixture.samples,
-        predecessor_cells=spine.cells,
+        predecessor_cells=predecessor_cells,
     )
     handoff = build_cross_sample_association_lineage_handoff(
         coverage=coverage,

@@ -174,7 +174,6 @@ class _GroupingPartition:
     excluded_candidates: tuple[()] = ()
     method_assessments: tuple[()] = ()
     initial_groups: tuple[()] = ()
-    capture_evidence: tuple[()] = ()
 
 
 def _initialize_sample_process(dll_dir: Path) -> None:
@@ -265,7 +264,6 @@ class UntargetedPartitionPipelineAdapter:
         known_istd_reference: KnownIstdReference | None = None,
         execution: ExecutionProfile,
         max_partition_jobs: int = 100_000,
-        retain_partition_spool: bool = False,
         grouping_only: bool = False,
         capture_grouping: Callable[[PreparedGroupingExperiment], None] | None = None,
         capture_backfill: Callable[[FrozenBackfillPartition], None] | None = None,
@@ -275,7 +273,6 @@ class UntargetedPartitionPipelineAdapter:
     ) -> None:
         if project_child is None and not grouping_only:
             raise ValueError("composing children requires an output projection")
-        self._retain_partition_spool = bool(retain_partition_spool)
         self._grouping_only = grouping_only
         self._bootstrap_anchors: dict[int, tuple[RtAnchorObservation, ...]] = {}
         self._capture_grouping = capture_grouping
@@ -667,7 +664,6 @@ class UntargetedPartitionPipelineAdapter:
         ],
         store: StreamedResultStore,
         *,
-        retain_memory: bool = False,
         should_cancel: Callable[[], bool] | Callable[[], None] | None = None,
     ) -> PartitionCompositionOutput[PersistedUntargetedPartition]:
         batch, leaf = acquisition_output.result
@@ -704,7 +700,6 @@ class UntargetedPartitionPipelineAdapter:
             sample_rt_frame=self._batch_preparation.frozen_rt_frame,
             known_istd_reference=self._known_istd_reference,
             should_cancel=cancel_check,
-            retain_memory=retain_memory,
         )
         return PartitionCompositionOutput(result=persisted, sealed=persisted.sealed)
 
@@ -769,7 +764,6 @@ class UntargetedPartitionPipelineAdapter:
         return CompletedUntargetBatchWorkflowResult.from_runtime(
             application_result=application_result,
             store=store,
-            retain_partition_spool=self._retain_partition_spool,
             sample_rt_frame=self._batch_preparation.frozen_rt_frame,
         )
 
@@ -784,8 +778,6 @@ def execute_untargeted_plan(
     execution: ExecutionProfile,
     max_partition_jobs: int = 100_000,
     should_cancel: Callable[[], bool] | None = None,
-    retain_partition_memory: bool = False,
-    retain_partition_spool: bool = False,
     grouping_only: bool = False,
     capture_grouping: Callable[[PreparedGroupingExperiment], None] | None = None,
     capture_backfill: Callable[[FrozenBackfillPartition], None] | None = None,
@@ -811,7 +803,6 @@ def execute_untargeted_plan(
         known_istd_reference=known_istd_reference,
         execution=execution,
         max_partition_jobs=max_partition_jobs,
-        retain_partition_spool=retain_partition_spool,
         grouping_only=grouping_only,
         capture_grouping=capture_grouping,
         capture_backfill=capture_backfill,
@@ -825,7 +816,6 @@ def execute_untargeted_plan(
             output_dir=output_dir,
             progress_callback=progress_callback,
             should_cancel=should_cancel,
-            retain_partition_memory=retain_partition_memory,
             pipeline_overlap=execution.overlap_partitions,
             acquisition_workers=adapter.acquisition_workers,
             store_factory=StreamedResultStore,

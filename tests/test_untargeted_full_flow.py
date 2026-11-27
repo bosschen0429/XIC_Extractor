@@ -61,7 +61,6 @@ def test_complete_cid_nl_matches_workbench_intake_with_sample_values(
         "sample_metadata.tsv",
         "discovery_batch_index.csv",
         "alignment_matrix.tsv",
-        "alignment_review.tsv",
         "alignment_explanation.sqlite",
     } <= {Path(path).name for path in direct["published_paths"]}
     with Path(direct["matrix_tsv"]).open(encoding="utf-8", newline="") as handle:

@@ -44,7 +44,7 @@ minutes or, with both bounds absent, `expected_rt_min` (±0.75 min).
 A complete range takes precedence. An enabled step with a missing, empty or
 invalid list cannot export. A list alone does not enable the CLI step.
 
-The bound Review's `group_center_mz` must be within 10 ppm of a reference
+The published full-precision centre m/z must be within 10 ppm of a reference
 **and** its `group_center_rt` inside the inclusive window. A remaining row
 also leaves when a row `same_compound` folded into it lies in a window
 (`member_window_match`), so a listed nucleoside cannot stay in the Matrix under
@@ -94,7 +94,7 @@ it to exactly one parent. An unresolved element or parent does not rescue a
 supported derivative; an unclassified feature is not assumed to be an artifact.
 It has no parameters; its thresholds are fixed
 and recorded in the summary. It needs the run's `alignment_explanation.sqlite` in
-the current table layout (compact review or full audit) and is unavailable
+the current Alignment evidence layout and is unavailable
 without its published cell values.
 
 Evidence uses each published cell's recorded apex. Directly detected cells
@@ -116,7 +116,7 @@ direct detections leave insufficient:
   direct evidence.
 - **Mass relation:** `e_ppm = 1e6 × (observed − predicted) / predicted` with
   `|e_ppm| ≤ 10`, where the predicted heavier m/z comes from the lighter row.
-  Both use the Review's `group_center_mz` (the group's centre m/z, the mean
+  Both use the published full-precision centre m/z (the group's centre m/z, the mean
   of its members' m/z); this is not per-sample mass evidence. `precursor_mz` is
   never used as MS1 m/z.
 - **Isotope ratio screening:** on all supporting samples whose published
@@ -275,7 +275,7 @@ The review lists these families; removed derivatives are not evaluated again.
 
 ### Internal standards
 
-A row is an internal standard when its `group_center_mz` lies within 10 ppm of
+A row is an internal standard when its full-precision centre m/z lies within 10 ppm of
 a listed standard and its `group_center_rt` lies in that standard's RT range
 (`rt_min`–`rt_max`; without a range, `expected_rt_min` ± 0.75 min). Internal
 standards are always kept; their step columns are recorded as judged and the
@@ -285,12 +285,12 @@ target list file, or else from the standards the run declared in its
 
 ## Inputs
 
-The source is an Alignment output folder with `alignment_matrix.tsv` and its
-bound `alignment_review.tsv`. The Review supplies `feature_id`; its Matrix rows
-must pass the row-index census and row-binding validator, and non-Matrix groups
-with blank `matrix_row_index` are ignored. A folder without Review cannot be
-curated; rerun Alignment at an output level that emits Review. Identity is never
-reconstructed from rounded m/z or RT.
+The source is an Alignment folder with `alignment_matrix.tsv` and
+`alignment_run_metadata.json`. Curation checks the Matrix SHA-256 and uses the
+published feature IDs and full-precision masses in Matrix row order. RT comes
+from the Matrix. If a file changed, open the original output instead of joining
+on rounded m/z. Existing folders with a bound `alignment_review.tsv` remain
+readable; Curation does not rewrite them.
 
 Sample data is chosen in this order:
 

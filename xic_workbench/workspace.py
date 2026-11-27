@@ -112,11 +112,9 @@ class ReviewWorkspace:
         """
         self._cancel.set()
         if self._job is not None:
-            self._replaced_job = (
-                {**self._job, "status": "cancelled", "message": reason}
-                if self._job["status"] in {"running", "cancelling"}
-                else dict(self._job)
-            )
+            if self._job["status"] in {"running", "cancelling"}:
+                self._job.update(status="cancelled", message=reason)
+            self._replaced_job = self._job
         self._job = None
 
     @property
@@ -190,13 +188,14 @@ class ReviewWorkspace:
                 )
                 if not sample_ids:
                     raise ValueError("這份結果沒有可檢閱的樣本。")
-                reviewed = summary.get("retention") == "review"
                 return SelectionRequest(
                     strategy="query",
                     sample_ids=sample_ids,
                     limit=25,
-                    review_scope="matrix" if reviewed else "all",
-                    curation_removed_ids=_removed_ids(curation) if reviewed else (),
+                    review_scope="matrix"
+                    if path.suffix.lower() == ".sqlite"
+                    else "all",
+                    curation_removed_ids=_removed_ids(curation),
                 )
 
             try:
@@ -407,9 +406,8 @@ class ReviewWorkspace:
             item = self._item(item_id)
             assert self._page is not None and self._report is not None
             self._replace_job()
-            payload = copy.deepcopy(self._page.payload)
-            payload["items"] = [copy.deepcopy(item)]
-            payload["selection"]["limit"] = 1
+            payload = dict(self._page.payload, items=[item])
+            payload["selection"] = dict(payload["selection"], limit=1)
             prepared = replace(self._page, payload=payload, selected_count=1)
             view_id = uuid.uuid4().hex
             self._store_view(view_id, prepared)
@@ -462,7 +460,7 @@ class ReviewWorkspace:
                     raise WorkspaceBusy("分析執行中；完成後才能讀取 RAW。")
             job_id = uuid.uuid4().hex
             self._cancel = cancel = threading.Event()
-            self._job = {
+            job: dict[str, Any] = {
                 "id": job_id,
                 "item_id": description["id"],
                 "status": "running",
@@ -474,6 +472,7 @@ class ReviewWorkspace:
                 if raw_needed
                 else "正在顯示保存的曲線。",
             }
+            self._job = job
             request = {
                 "report": self._report,
                 "source": self._page.source,
@@ -486,11 +485,12 @@ class ReviewWorkspace:
                 "dll_dir": dll_dir,
                 "padding_min": values.get("padding_min", 0.5),
             }
-        if raw_needed:
-            self._executor.submit(self._read_curves, job_id, request, cancel)
-        else:
-            self._read_curves(job_id, request, cancel)
-        return self.job(job_id)
+            if raw_needed:
+                self._executor.submit(self._read_curves, job_id, request, cancel)
+                return dict(job)
+        self._read_curves(job_id, request, cancel)
+        with self._lock:
+            return dict(job)
 
     def _read_curves(
         self, job_id: str, request: dict[str, Any], cancel: threading.Event
@@ -664,18 +664,16 @@ class ReviewWorkspace:
             raise
         self._views[view_id] = path
 
-    def _view_snapshot(self, view_id: str) -> dict[str, Any]:
+    def _view_path(self, view_id: str) -> Path:
         try:
-            path = self._views[view_id]
+            return self._views[view_id]
         except KeyError:
             raise FileNotFoundError("檢閱頁已不存在，請重新開啟選取項目。") from None
-        with path.open(encoding="utf-8") as stream:
-            return json.load(stream)
 
     def view_payload(self, view_id: str) -> dict[str, Any]:
         """Read captured owner facts with the interactive view's display groups."""
-        with self._lock:
-            snapshot = self._view_snapshot(view_id)
+        with self._lock, self._view_path(view_id).open(encoding="utf-8") as stream:
+            snapshot = json.load(stream)
             payload = snapshot["payload_data"]
             if "sample_groups" in snapshot:
                 payload["sample_groups"] = snapshot["sample_groups"]
@@ -684,10 +682,12 @@ class ReviewWorkspace:
     def report_path(self, view_id: str) -> Path:
         """Package an immutable view as offline HTML only when requested."""
         with self._lock:
-            snapshot = self._view_snapshot(view_id)
-            snapshot.pop("sample_groups", None)
+            snapshot_path = self._view_path(view_id)
             path = self._folder / f"{view_id}.html"
             if not path.is_file():
+                with snapshot_path.open(encoding="utf-8") as stream:
+                    snapshot = json.load(stream)
+                snapshot.pop("sample_groups", None)
                 write_report_atomically(build_report_html(**snapshot), path)
             return path
 

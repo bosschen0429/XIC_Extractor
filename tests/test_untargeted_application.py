@@ -321,7 +321,6 @@ def test_pipeline_publishes_projected_children_and_cleans_up(
             output_dir=tmp_path / name,
             alignment_config=config,
             max_partition_jobs=4,
-            retain_partition_memory=False,
             project_child=project_child,
             execution=in_process_execution(),
         ).bind_publication_inputs(
@@ -868,10 +867,6 @@ def test_reduced_discovery_persistence_keeps_inferred_peak_and_qualifies_alignme
     assert [tuple(row[column] for column in value_columns) for row in cli_cells] == [
         tuple(row[column] for column in value_columns) for row in cells
     ]
-    assert alignment.review_tsv is not None
-    assert (cli_output / "alignment_review.tsv").read_bytes() == (
-        alignment.review_tsv.read_bytes()
-    )
     assert [row["Mz"] for row in matrix] == ["701.0000"]
     by_candidate = {row["source_candidate_id"]: row for row in cells}
     assert set(by_candidate) == {

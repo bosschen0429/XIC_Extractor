@@ -167,9 +167,7 @@ def test_crowded_doublet_keeps_both_physical_peaks_and_local_cid_lineage(
         )
     group_ids = {group.group_hypothesis_id for group in groups}
     assert all(not result.backfill_attempts for result in leaf.sample_results)
-    composed = adapter.execute_composition(
-        partition, acquisition, store, retain_memory=True
-    )
+    composed = adapter.execute_composition(partition, acquisition, store)
     persisted = store.read(composed.sealed.index)
     assert {
         group.group_hypothesis_id for group in persisted.initial_groups
@@ -317,9 +315,7 @@ def test_review_only_input_supplies_each_physical_member_without_cid(
         result for result in leaf.sample_results if result.job.sample.raw_stem == "S6"
     )
     assert not s6.backfill_attempts
-    composed = adapter.execute_composition(
-        partition, acquisition, store, retain_memory=True
-    )
+    composed = adapter.execute_composition(partition, acquisition, store)
     store.seal()
     completed = adapter.finalize_application(store, (initial_composed, composed))
     writer = completed

@@ -51,24 +51,30 @@ def _curate_nucleosides(source, output, listing=None):
 
 
 def _write_features(tmp_path, observations):
-    from tests.matrix_review_fixtures import current_matrix_review_row
     from xic_extractor.output.alignment.matrix_output_contract import (
-        MATRIX_REVIEW_COLUMNS,
         public_matrix_mz_text,
     )
+    from xic_extractor.tabular_io import file_sha256
 
-    matrix, review = [], []
-    for i, (mz, rt) in enumerate(observations, 1):
-        matrix.append(
-            {"Mz": public_matrix_mz_text(str(mz)), "RT": str(rt), "S": str(i)}
-        )
-        review.append(
-            current_matrix_review_row(
-                index=i, mz=str(mz), rt=str(rt), feature_id=f"F{i:06d}"
-            )
-        )
-    write_tsv(tmp_path / "alignment_matrix.tsv", matrix, ("Mz", "RT", "S"))
-    write_tsv(tmp_path / "alignment_review.tsv", review, MATRIX_REVIEW_COLUMNS)
+    matrix = [
+        {"Mz": public_matrix_mz_text(mz), "RT": str(rt), "S": str(i)}
+        for i, (mz, rt) in enumerate(observations, 1)
+    ]
+    path = tmp_path / "alignment_matrix.tsv"
+    write_tsv(path, matrix, ("Mz", "RT", "S"))
+    (tmp_path / "alignment_run_metadata.json").write_text(
+        json.dumps(
+            {
+                "matrix_identity": {
+                    "matrix_sha256": file_sha256(path),
+                    "rows": [
+                        [f"F{i:06d}", mz] for i, (mz, _) in enumerate(observations, 1)
+                    ],
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
     return matrix
 
 
@@ -152,7 +158,7 @@ def test_nucleoside_windows_follow_published_method_unless_replaced(
     _write_features(tmp_path, [(268.1040, 14.5), (268.1040, 18.5)])
     if method is not None:
         with ExplanationReportWriter(
-            tmp_path / "alignment_explanation.sqlite", review_only=True
+            tmp_path / "alignment_explanation.sqlite"
         ) as writer:
             writer.finalize(
                 explanation_summary(
@@ -165,7 +171,6 @@ def test_nucleoside_windows_follow_published_method_unless_replaced(
                         if bound
                         else "0" * 64,
                     },
-                    review_only=True,
                 )
             )
     available = bound and method == {"DNA_dR": 116.0474}
@@ -223,6 +228,13 @@ def test_membership_uses_bound_full_precision_mass_and_rt_not_id_or_order(
         for r, observation in zip(matrix, observations, strict=True)
         if observation not in {(1562.484375, 4), (1562.515625, 6)}
     ]
+
+    replacement = matrix.copy()
+    replacement[0] = {**matrix[0], "S": "100"}
+    write_tsv(tmp_path / "alignment_matrix.tsv", replacement, ("Mz", "RT", "S"))
+    rejected = tmp_path / "rejected"
+    assert _curate_nucleosides(tmp_path, rejected, listing) == 2
+    assert not rejected.exists()
 
 
 def test_cli_keeps_original_rows_and_records_each_decision(tmp_path):

@@ -12,6 +12,7 @@ import subprocess
 import sys
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from http.server import ThreadingHTTPServer
 from urllib.parse import parse_qs, urlsplit
@@ -387,45 +388,6 @@ def test_review_follows_the_latest_curation_unless_one_is_opened(tmp_path):
         detail = workspace.detail(page["items"][0]["id"])
         assert detail["item"]["group_id"] == "z-priority"
         assert detail["item"]["saved_curve_sample_ids"] == ["S1"]
-    finally:
-        workspace.close()
-
-
-def test_full_audit_result_is_browsed_as_published_beside_a_curation(
-    tmp_path, monkeypatch
-):
-    """A full audit has no Matrix scopes, so no curation label sits over it."""
-    from unittest.mock import Mock
-
-    from tests.matrix_curation_fixtures import published_curation
-    from xic_extractor.alignment_explanation import reader
-
-    create_inspector_report(
-        tmp_path, extend=lambda writer: writer.set_row_destination("G1", "matrix")
-    )
-    published_curation(
-        tmp_path / "matrix_curation_20261101_090000",
-        tmp_path,
-        [
-            {
-                "feature_id": "G1",
-                "finite_count": "0",
-                "eligible_sample_count": "1",
-                "decision": "drop",
-                "decision_reason": "dropped_by:finite_fraction",
-            }
-        ],
-        min_finite_fraction=0.5,
-    )
-    read_summary = Mock(wraps=reader.read_completed_summary)
-    monkeypatch.setattr(reader, "read_completed_summary", read_summary)
-    workspace = review_workspace(config_dir=tmp_path / "config")
-    try:
-        page = workspace.open(str(tmp_path))
-        read_summary.assert_called_once()
-        assert page["curation"] is None
-        assert page["result_artifact"]["name"] == "alignment_matrix.tsv"
-        assert [item["group_id"] for item in page["items"]] == ["G1"]
     finally:
         workspace.close()
 
@@ -1068,13 +1030,15 @@ def test_http_curve_reads_never_block_review_and_leave_results_readable(
         assert request(f"/reports/{result['view_id']}.html")[0] == 200
 
 
-def test_http_saved_curves_answer_in_the_same_request_without_raw(tmp_path):
+def test_http_saved_curves_answer_in_the_same_request_without_raw(
+    tmp_path, monkeypatch
+):
+    from xic_workbench import review_curves
+
     rt = [0.8 + 0.01 * i for i in range(41)]
     raw = [1000.0 * 2.718 ** (-(((x - 1.0) / 0.05) ** 2)) for x in rt]
     db, _, _ = create_inspector_report(
         tmp_path,
-        review_only=True,
-        curve=False,
         base_cell={"observation_ids": ["obs-01"], "apex_rt_min": 1.0},
         prepare=lambda writer: writer.add_peak("S1", "obs-01", (500.0, 1.0, 5.0)),
         extend=lambda writer: (
@@ -1082,10 +1046,8 @@ def test_http_saved_curves_answer_in_the_same_request_without_raw(tmp_path):
             writer.set_cell_curve("G1", "S1", encode_review_curve(rt, raw)),
         ),
     )
-    with workbench_client(
-        review_workspace(config_dir=tmp_path / "config"),
-        read_user_guide=read_user_guide,
-    ) as request:
+    workspace = review_workspace(config_dir=tmp_path / "config")
+    with workbench_client(workspace, read_user_guide=read_user_guide) as request:
         _, page, _ = request("/api/open", {"source": str(db)})
         item_id = page["items"][0]["id"]
         _, detail, _ = request("/api/detail", {"item_id": item_id})
@@ -1099,6 +1061,31 @@ def test_http_saved_curves_answer_in_the_same_request_without_raw(tmp_path):
         assert curve["sample_id"] == "S1"
         assert list(curve["raw_rts"]) == rt
         assert list(curve["raw_intensities"]) == raw
+
+        entered = threading.Event()
+        release = threading.Event()
+        original_read = review_curves.review_curve_bundle
+
+        def hold_first_read(*args, **kwargs):
+            if not entered.is_set():
+                entered.set()
+                assert release.wait(timeout=5)
+            return original_read(*args, **kwargs)
+
+        monkeypatch.setattr(review_curves, "review_curve_bundle", hold_first_read)
+        values = {"item_id": item_id, "sample_ids": ["S1"]}
+        with ThreadPoolExecutor(max_workers=1) as http:
+            pending = http.submit(request, "/api/curves", values)
+            try:
+                assert entered.wait(timeout=5)
+                second = workspace.start_curves(values)
+                third = workspace.start_curves(values)
+            finally:
+                release.set()
+            status, first, _ = pending.result(timeout=5)
+        assert status == 202 and first["status"] == "cancelled"
+        assert len({first["id"], second["id"], third["id"]}) == 3
+        assert request("/api/review")[1]["job"]["view_id"] == third["view_id"]
 
 
 def test_two_servers_keep_independent_sessions_with_shared_browser_cookies(tmp_path):

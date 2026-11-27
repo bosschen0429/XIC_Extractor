@@ -41,13 +41,9 @@ def open_source(path):
         ):
             return DeltaMassReviewSource(path, loaded)
         return CurveBundleSource.read(path, loaded=loaded)
-    from xic_inspector.sources.cid_nl import CidNlSource, read_summary
-    from xic_inspector.sources.cid_nl_query import IndexedCidNlSource
+    from xic_inspector.sources.cid_nl import CidNlSource
 
-    summary = read_summary(path)
-    if summary["retention"] == "review":
-        return IndexedCidNlSource(path, summary)
-    return CidNlSource(path, summary)
+    return CidNlSource(path)
 
 
 __all__ = [

@@ -7,7 +7,6 @@ import pytest
 from xic_extractor.discovery.csv_reader import DiscoveryBatchInput
 from xic_extractor.output.alignment.tsv_writer import (
     ALIGNMENT_CELLS_COLUMNS,
-    ALIGNMENT_REVIEW_COLUMNS,
     BatchRowSource,
     FinalMatrixValues,
     UntargetGroupRows,
@@ -65,20 +64,6 @@ def test_declared_batches_split_in_batch_id_order():
 def _group(batch_id, key, rt, *, destination="matrix", detected=None):
     stems = SAMPLES[batch_id]
     detected = stems if detected is None else detected
-    review = dict.fromkeys(ALIGNMENT_REVIEW_COLUMNS, "")
-    review.update(
-        feature_id="",
-        matrix_row_index="",
-        neutral_loss_tag="dR",
-        group_center_mz="300",
-        group_center_rt=str(rt),
-        detected_count=str(len(detected)),
-        not_searched_count="0",
-        unresolved_count="0",
-        identity_reason=f"{batch_id}_reason",
-        accepted_cell_count=str(len(detected)),
-        accepted_backfill_count="0",
-    )
     areas = {s: 10 * int(key[1:]) + ORDER[s] for s in detected}
     cells = tuple(
         (
@@ -97,11 +82,7 @@ def _group(batch_id, key, rt, *, destination="matrix", detected=None):
         physical_peaks=tuple((f"{key}:{stem}", "d") for stem in detected),
         source_candidate_ids=tuple(f"{key}:{stem}" for stem in detected),
         matrix=FinalMatrixValues(300.0, rt, tuple(areas.get(s) for s in stems)),
-        rows=(
-            ("cells", cells),
-            ("status", (("", "dR", "300", str(rt), *("detected" for _ in stems)),)),
-            ("review", (tuple(review[column] for column in ALIGNMENT_REVIEW_COLUMNS),)),
-        ),
+        rows=(("cells", cells),),
     )
 
 
@@ -125,26 +106,21 @@ def _source(batch_id, groups):
 
 
 def _write(tmp_path, sources, partners):
-    paths = {
-        name: tmp_path / f"{name}.tsv"
-        for name in ("matrix", "cells", "status", "review")
-    }
-    states = {key: "paired" for key in partners}
-    for members in partners.values():
-        states.update(dict.fromkeys(members, "paired"))
+    paths = {name: tmp_path / f"{name}.tsv" for name in ("matrix", "cells")}
+    identities = []
     count = write_batch_alignment_tsvs(
         paths,
         sources,
         reference_batch="new",
         partners=partners,
-        states=states,
+        matrix_identities=identities,
         to_reference_rt=lambda batch_id, rt: rt - 0.5,
     )
     tables = {}
     for name, path in paths.items():
         with path.open(encoding="utf-8", newline="") as handle:
             tables[name] = list(csv.reader(handle, delimiter="\t"))
-    return count, tables
+    return count, tables, identities
 
 
 def test_paired_rows_share_one_row_and_single_batch_rows_keep_their_batch(tmp_path):
@@ -153,7 +129,9 @@ def test_paired_rows_share_one_row_and_single_batch_rows_keep_their_batch(tmp_pa
         _source("new", [_group("new", "N1", 10.0), _group("new", "N2", 30.0)]),
     ]
 
-    count, tables = _write(tmp_path, sources, {("new", "N1"): (("old", "O1"),)})
+    count, tables, identities = _write(
+        tmp_path, sources, {("new", "N1"): (("old", "O1"),)}
+    )
 
     assert count == 3
     matrix = tables["matrix"]
@@ -164,8 +142,6 @@ def test_paired_rows_share_one_row_and_single_batch_rows_keep_their_batch(tmp_pa
         [300, 20, 21, 22, None, None, None],
     ]
 
-    status = tables["status"]
-    assert status[3][4:] == ["detected", "detected"] + ["not_searched"] * 3
     cells = [row for row in tables["cells"][1:] if row[0] == "F000002"]
     assert [(row[1], row[2]) for row in cells] == [
         ("o1", "not_searched"),
@@ -175,18 +151,7 @@ def test_paired_rows_share_one_row_and_single_batch_rows_keep_their_batch(tmp_pa
         ("n3", "detected"),
     ]
 
-    review = {
-        row[0]: dict(zip(tables["review"][0], row, strict=True))
-        for row in tables["review"][1:]
-    }
-    paired = review["F000001"]
-    assert paired["detected_count"] == "5"
-    assert paired["not_searched_count"] == "0"
-    assert paired["identity_reason"] == "new_reason;old_reason"
-    assert (paired["batch_ids"], paired["batch_pairing"]) == ("new;old", "paired")
-    single = review["F000003"]
-    assert single["not_searched_count"] == "3"
-    assert single["batch_ids"] == "old"
+    assert identities == [("F000001", 300.0), ("F000002", 300.0), ("F000003", 300.0)]
 
 
 def test_a_partner_without_its_reference_row_is_not_dropped(tmp_path):
@@ -197,70 +162,3 @@ def test_a_partner_without_its_reference_row_is_not_dropped(tmp_path):
 
     with pytest.raises(ValueError, match="O1"):
         _write(tmp_path, sources, {("new", "N1"): (("old", "O1"),)})
-
-
-def test_a_paired_group_joins_its_reference_row_in_the_explanation(tmp_path):
-    import hashlib
-
-    from tests.alignment_explanation_fixtures import explanation_summary
-    from tests.inspector_fixtures import NEUTRAL_LOSS_BY_TAG
-    from xic_extractor.alignment_explanation.reader import read_review_evidence
-    from xic_extractor.alignment_explanation.writer import ExplanationReportWriter
-
-    matrix = tmp_path / "matrix.tsv"
-    matrix.write_text("matrix", encoding="utf-8")
-    report = tmp_path / "review.sqlite"
-    samples = [{"sample_key": s, "sample_stem": s} for s in ("n1", "o1")]
-
-    def member(sample):
-        return {
-            "sample_key": sample,
-            "subject_kind": "peak_hypothesis",
-            "subject_id": f"h-{sample}",
-            "physical_peak_keys": [f"p-{sample}"],
-        }
-
-    with ExplanationReportWriter(report, review_only=True) as writer:
-        writer.declare_samples(samples)
-        for sample, apex in (("n1", 10.0), ("o1", 10.3)):
-            writer.add_peak(sample, f"p-{sample}", (300.0, apex, 20.0))
-        writer.add_final_group(
-            "new-group",
-            feature_id="F000001",
-            disposition="established",
-            members=[member("n1")],
-            center_mz=300.0,
-            ppm=20.0,
-        )
-        writer.extend_final_group(
-            "new-group", disposition="provisional", members=[member("o1")]
-        )
-        writer.set_row_destination("new-group", "matrix")
-        for sample in ("n1", "o1"):
-            writer.add_cells(
-                "new-group",
-                [
-                    {
-                        "sample_key": sample,
-                        "variant": "numeric",
-                        "value": 100.0,
-                        "apex_rt_min": {"n1": 10.0, "o1": 10.3}[sample],
-                        "observation_ids": [f"p-{sample}"],
-                    }
-                ],
-            )
-        writer.finalize(
-            explanation_summary(
-                {
-                    "samples": samples,
-                    "neutral_loss_by_tag": NEUTRAL_LOSS_BY_TAG,
-                    "matrix_path": str(matrix),
-                    "matrix_sha256": hashlib.sha256(matrix.read_bytes()).hexdigest(),
-                },
-                review_only=True,
-            )
-        )
-
-    row = read_review_evidence(report).groups["F000001"]
-    assert row.disposition == "provisional"
-    assert sorted(item["sample_key"] for item in row.members) == ["n1", "o1"]

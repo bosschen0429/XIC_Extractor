@@ -16,20 +16,14 @@ from typing import Any
 
 from xic_extractor.alignment_explanation.errors import ExplanationError
 
-from .curves import validate_curve_payload
 from .storage import (
     SCHEMA_VERSION,
-    create_optional_table,
     create_schema,
     encode_object,
 )
 
 CandidateKey = tuple[str, str]
 PeakCoordinates = tuple[float | None, float | None, float | None]
-
-_DISPOSITION_CERTAINTY = ("established", "provisional", "unresolved", "rejected")
-
-_CURVE_COLUMNS = ("sample_id", "kind", "candidate_id", "physical_peak_key")
 
 _CELL_FIELDS = frozenset(
     {
@@ -45,7 +39,6 @@ _CELL_FIELDS = frozenset(
         "reason_codes",
         "signal_quality",
         "membership_risks",
-        "observation",
     }
 )
 
@@ -62,18 +55,10 @@ def _compressed(value: Any) -> bytes:
 class ExplanationReportWriter:
     """Buffer one run's evidence; publish it only by explicit finalization."""
 
-    def __init__(
-        self,
-        path: Path,
-        *,
-        review_only: bool = False,
-        curve_mz_ranges: Sequence[tuple[float, float]] = (),
-    ):
+    def __init__(self, path: Path):
         self.path = Path(path)
         self.temporary = self.path.with_name(self.path.name + ".tmp")
         self.connection: sqlite3.Connection | None = None
-        self.review_only = review_only
-        self.curve_mz_ranges = tuple(curve_mz_ranges)
         self._samples: dict[str, int] = {}
         self._peaks: dict[tuple[str, str], list[Any]] = {}
         self._subjects: dict[str, list[Any]] = {}
@@ -86,7 +71,6 @@ class ExplanationReportWriter:
         self._assessments: list[tuple[Any, ...]] = []
         self._exclusions: dict[CandidateKey, str] = {}
         self._last_record_id = 0
-        self._curves: dict[tuple[Any, ...], list[Any]] = {}
         self._cell_curves: dict[tuple[str, str], bytes] = {}
         self._risk_owners: dict[tuple[Any, ...], tuple[int, str]] = {}
         self._risk_owner_groups: dict[tuple[int, ...], tuple[int, bytes]] = {}
@@ -109,7 +93,6 @@ class ExplanationReportWriter:
             + len(self._exclusions)
             + len(self._groups)
             + len(self._initial_groups)
-            + len(self._curves)
             + len(self._cells)
         )
 
@@ -263,10 +246,6 @@ class ExplanationReportWriter:
                 payload.get("method_result"),
                 json.dumps(list(payload.get("reason_codes", ())), ensure_ascii=False),
                 json.dumps(self._peak_ids(sample_key, candidate_physical_peak_keys)),
-                None if self.review_only else payload.get("acquisition_source_id"),
-                None
-                if self.review_only or payload.get("evaluation_receipt") is None
-                else encode_object(payload["evaluation_receipt"]),
             )
         )
 
@@ -344,15 +323,9 @@ class ExplanationReportWriter:
         self,
         group_id: str,
         *,
-        disposition: str,
         members: Sequence[Mapping[str, Any]],
     ) -> None:
-        """Another batch's paired group joins this result row.
-
-        Its members join the row; the row keeps the less certain disposition.
-        """
-        row = self._groups[group_id]
-        row[2] = max(row[2], disposition, key=_DISPOSITION_CERTAINTY.index)
+        """Add members of another batch's established group to the Matrix row."""
         for member in members:
             self._member(member, initial=None, final=group_id)
 
@@ -425,9 +398,6 @@ class ExplanationReportWriter:
                 _compressed([self._risk_references(risk) for risk in risks])
                 if risks
                 else None,
-                None
-                if cell.get("observation") is None
-                else _compressed(cell["observation"]),
             ]
 
     def set_cell_position(self, group_id: str, sample_key: str, rt_min: float) -> None:
@@ -472,64 +442,6 @@ class ExplanationReportWriter:
         precision; readers recompute processed signals.
         """
         self._cell_curves[group_id, sample_key] = curve
-
-    def add_curve_payload(
-        self,
-        sample_id: str,
-        kind: str,
-        record_id: str,
-        payload: Mapping[str, Any],
-        codec: str = "zlib-json-utf8",
-    ) -> int:
-        """Store exact curve data once and return its database-local id.
-
-        The curve's sample, kind, candidate, peak and provenance method subject
-        are stored once, as columns; the payload keeps nulls in their place and
-        readers restore them.
-        """
-        validate_curve_payload(
-            payload, sample_id=sample_id, kind=kind, record_id=record_id
-        )
-        if codec != "zlib-json-utf8":
-            raise ExplanationError(f"unsupported curve codec: {codec}")
-        provenance = payload["provenance"]
-        subject = provenance.get("method_subject_id")
-        self._subject_id(subject)
-        stored = {
-            **payload,
-            **dict.fromkeys(_CURVE_COLUMNS),
-            "provenance": {**provenance, "method_subject_id": None},
-        }
-        compressed = zlib.compress(
-            json.dumps(
-                stored,
-                ensure_ascii=False,
-                sort_keys=True,
-                separators=(",", ":"),
-                allow_nan=False,
-            ).encode("utf-8"),
-            level=1,
-        )
-        key = (
-            sample_id,
-            kind,
-            record_id,
-            payload.get("candidate_id"),
-            payload.get("physical_peak_key"),
-            compressed,
-        )
-        row = self._curves.get(key)
-        if row is None:
-            row = self._curves[key] = [
-                self._record_id(),
-                payload.get("candidate_id"),
-                payload.get("physical_peak_key"),
-                codec,
-                subject,
-            ]
-        elif row[4] != subject:
-            raise ValueError(f"one curve names two method subjects: {record_id}")
-        return int(row[0])
 
     def finalize(self, summary: Mapping[str, Any]) -> Path:
         db = self._connection()
@@ -588,14 +500,14 @@ class ExplanationReportWriter:
             ),
         )
         db.executemany(
-            "INSERT INTO cells VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO cells VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,NULL)",
             (
                 (self._groups[group_id][0], self._samples[sample], *row)
                 for (group_id, sample), row in self._cells.items()
             ),
         )
         db.executemany(
-            "INSERT INTO method_assessments VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO method_assessments VALUES (?,?,?,?,?,?,?,?,?,?,?,NULL,NULL)",
             ((row[0], self._samples[row[1]], *row[2:]) for row in self._assessments),
         )
         db.executemany(
@@ -619,27 +531,6 @@ class ExplanationReportWriter:
                 for (group_id, sample), curve in self._cell_curves.items()
             ),
         )
-        if self._curves:
-            create_optional_table(db, "curves")
-            db.executemany(
-                "INSERT INTO curves VALUES (?,?,?,?,?,?,?,?,?)",
-                (
-                    (
-                        row[0],
-                        sample_id,
-                        kind,
-                        record_id,
-                        row[1],
-                        row[2],
-                        row[3],
-                        compressed,
-                        self._subject_id(row[4]),
-                    )
-                    for (sample_id, kind, record_id, _, _, compressed), row in (
-                        self._curves.items()
-                    )
-                ),
-            )
         db.execute(
             "INSERT INTO run VALUES (?)",
             (
@@ -651,11 +542,10 @@ class ExplanationReportWriter:
                             if key != "samples"
                         },
                         "schema_version": SCHEMA_VERSION,
-                        "plot_evidence_capability": (
-                            "retained_curves"
-                            if not self.review_only or self._curves
-                            else "metadata_only"
-                        ),
+                        "plot_evidence_capability": "metadata_only",
+                        "retention": "review",
+                        "curve_retention": "none",
+                        "curve_mz_ranges": [],
                         "diagnostic_only": True,
                         "completion": "post_matrix_publication",
                     }

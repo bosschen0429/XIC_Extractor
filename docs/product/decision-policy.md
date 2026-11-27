@@ -160,8 +160,6 @@ Invariants:
   independently of counting. The finalized paired-position policy still applies.
 - New evidence sources enter as typed evidence or selection context and are
   reconciled by workflow projection, not a direct display or count authority.
-- `reproject_extraction_result` preserves the same selection, projection, and
-  display precedence as `build_extraction_result`.
 
 ## Targeted Policy
 
