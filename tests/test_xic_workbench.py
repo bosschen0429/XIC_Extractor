@@ -12,6 +12,7 @@ import subprocess
 import sys
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from http.server import ThreadingHTTPServer
 from urllib.parse import parse_qs, urlsplit
@@ -1068,7 +1069,11 @@ def test_http_curve_reads_never_block_review_and_leave_results_readable(
         assert request(f"/reports/{result['view_id']}.html")[0] == 200
 
 
-def test_http_saved_curves_answer_in_the_same_request_without_raw(tmp_path):
+def test_http_saved_curves_answer_in_the_same_request_without_raw(
+    tmp_path, monkeypatch
+):
+    from xic_workbench import review_curves
+
     rt = [0.8 + 0.01 * i for i in range(41)]
     raw = [1000.0 * 2.718 ** (-(((x - 1.0) / 0.05) ** 2)) for x in rt]
     db, _, _ = create_inspector_report(
@@ -1082,10 +1087,8 @@ def test_http_saved_curves_answer_in_the_same_request_without_raw(tmp_path):
             writer.set_cell_curve("G1", "S1", encode_review_curve(rt, raw)),
         ),
     )
-    with workbench_client(
-        review_workspace(config_dir=tmp_path / "config"),
-        read_user_guide=read_user_guide,
-    ) as request:
+    workspace = review_workspace(config_dir=tmp_path / "config")
+    with workbench_client(workspace, read_user_guide=read_user_guide) as request:
         _, page, _ = request("/api/open", {"source": str(db)})
         item_id = page["items"][0]["id"]
         _, detail, _ = request("/api/detail", {"item_id": item_id})
@@ -1099,6 +1102,31 @@ def test_http_saved_curves_answer_in_the_same_request_without_raw(tmp_path):
         assert curve["sample_id"] == "S1"
         assert list(curve["raw_rts"]) == rt
         assert list(curve["raw_intensities"]) == raw
+
+        entered = threading.Event()
+        release = threading.Event()
+        original_read = review_curves.review_curve_bundle
+
+        def hold_first_read(*args, **kwargs):
+            if not entered.is_set():
+                entered.set()
+                assert release.wait(timeout=5)
+            return original_read(*args, **kwargs)
+
+        monkeypatch.setattr(review_curves, "review_curve_bundle", hold_first_read)
+        values = {"item_id": item_id, "sample_ids": ["S1"]}
+        with ThreadPoolExecutor(max_workers=1) as http:
+            pending = http.submit(request, "/api/curves", values)
+            try:
+                assert entered.wait(timeout=5)
+                second = workspace.start_curves(values)
+                third = workspace.start_curves(values)
+            finally:
+                release.set()
+            status, first, _ = pending.result(timeout=5)
+        assert status == 202 and first["status"] == "cancelled"
+        assert len({first["id"], second["id"], third["id"]}) == 3
+        assert request("/api/review")[1]["job"]["view_id"] == third["view_id"]
 
 
 def test_two_servers_keep_independent_sessions_with_shared_browser_cookies(tmp_path):
