@@ -138,7 +138,10 @@ A link's distance is its RT step plus 0.005 min per injection apart; shorter
 distances are tried first, then shorter injection gaps, then measured peak
 order. A union may not
 duplicate an injection or exceed the configured full-band precursor span
-(capped at 10 ppm). Missing injection order does not invent links.
+(capped at 10 ppm). Missing injection order does not invent links. An
+under-equilibrated injection's peaks before 8.5 min first move to where they
+would elute without its
+[early-segment shift](rt-calibration.md#early-segment-of-an-under-equilibrated-injection).
 
 A band with at least six members and two direct peaks may seed its own
 [drift fit](rt-calibration.md#drift-beyond-the-map). Peaks in the workset

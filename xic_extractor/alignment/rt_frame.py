@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
+from statistics import median
 from typing import TYPE_CHECKING, Protocol
 
 from xic_extractor.alignment.drift_evidence import (
@@ -16,6 +17,10 @@ from xic_extractor.alignment.drift_evidence import (
     DriftPriorSource,
     KnownIstdOwnerLookup,
     KnownIstdReference,
+)
+from xic_extractor.alignment.early_segment_shift import (
+    EarlySegmentShift,
+    measure_early_segment_shift,
 )
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 from xic_extractor.alignment.sample_rt_calibration import RtEstimate
@@ -57,6 +62,10 @@ class RtFrame(Protocol):
     def common_rt_min(self, sample_stem: str, observed_rt: float) -> float: ...
 
     def calibrated_rt_min(
+        self, sample_stem: str, observed_rt: float
+    ) -> float | None: ...
+
+    def early_segment_rt_min(
         self, sample_stem: str, observed_rt: float
     ) -> float | None: ...
 
@@ -115,6 +124,9 @@ class SampleRtFrame:
     _reference: KnownIstdReference | None = field(default=None, repr=False)
     _sample_calibration: BatchRtCalibration | None = field(default=None, repr=False)
     _drift_model: RtDriftModel | None = field(default=None, repr=False)
+    _early_segment: EarlySegmentShift = field(
+        default_factory=EarlySegmentShift, repr=False
+    )
     _coordinate_override: Callable[[SampleLocalMS1Owner], float] | None = field(
         default=None,
         repr=False,
@@ -177,6 +189,9 @@ class SampleRtFrame:
             self,
             _sample_calibration=calibration,
             _drift_model=drift_model,
+            _early_segment=measure_early_segment_shift(
+                calibration, self.injection_order
+            ),
             _coordinate_override=None,
         )
 
@@ -223,6 +238,7 @@ class SampleRtFrame:
             self,
             _sample_calibration=frozen._sample_calibration,
             _drift_model=frozen._drift_model,
+            _early_segment=frozen._early_segment,
             _coordinate_override=frozen._coordinate_override,
         )
 
@@ -334,6 +350,25 @@ class SampleRtFrame:
             sample = self._sample_calibration.samples.get(sample_stem)
             return sample.calibrated_rt(observed_rt) if sample is not None else None
         return None
+
+    def early_segment_rt_min(
+        self, sample_stem: str, observed_rt: float
+    ) -> float | None:
+        """An under-equilibrated injection's early peak, in its neighbours' maps.
+
+        The peak is first moved to where it would elute without the shift, then
+        read through the maps of the unaffected injections around it; without
+        their answer it keeps that unshifted RT. None where no shift applies.
+        """
+        elution = self._early_segment.elution_rt_min(sample_stem, observed_rt)
+        if elution is None:
+            return None
+        mapped = [
+            rt
+            for other in self._early_segment.neighbours[sample_stem]
+            if (rt := self.calibrated_rt_min(other, elution)) is not None
+        ]
+        return median(mapped) if mapped else elution
 
     def observed_rt_min(self, sample_stem: str, common_rt: float) -> float | None:
         if self._sample_calibration is not None:

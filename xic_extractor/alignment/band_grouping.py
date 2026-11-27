@@ -39,8 +39,15 @@ from xic_extractor.mass_accuracy import within_ppm
 
 
 def band_rt(owner: SampleLocalMS1Owner, rt_frame: RtFrame) -> float:
-    """Use the calibrated coordinate when supported, otherwise the measured RT."""
+    """Use the calibrated coordinate when supported, otherwise the measured RT.
+
+    An under-equilibrated injection's early peak is first placed where it would
+    elute without that injection's early-segment shift.
+    """
     raw = owner.peak.rt_apex_min
+    early = rt_frame.early_segment_rt_min(owner.sample_stem, raw)
+    if early is not None:
+        return early
     calibrated = rt_frame.calibrated_rt_min(owner.sample_stem, raw)
     if calibrated is not None:
         return calibrated
@@ -246,8 +253,18 @@ def band_shift_rows(
     config: AlignmentConfig,
     rt_frame: RtFrame,
 ) -> tuple[dict[str, float], ...]:
-    """Only a band of at least twenty direct peaks can vote on M."""
-    direct = tuple(owner for owner in owners if has_cid_nl_activation_support(owner))
+    """Only a band of at least twenty direct peaks can vote on M.
+
+    A peak placed by the early-segment shift is a prediction, not a measured
+    coordinate, so it does not vote.
+    """
+    direct = tuple(
+        owner
+        for owner in owners
+        if has_cid_nl_activation_support(owner)
+        and rt_frame.early_segment_rt_min(owner.sample_stem, owner.peak.rt_apex_min)
+        is None
+    )
     if len(direct) < ROW_MIN_SAMPLES:
         return ()
     return tuple(

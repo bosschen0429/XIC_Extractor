@@ -127,7 +127,7 @@ statistical confidence interval or independent identity verification.
 ### Graded query support
 
 The strong-only map and inverse remain bounded by the supported anchor range.
-Final membership and localization explicitly use a graded query instead:
+Localization explicitly uses a graded query instead:
 
 - Inside a usable curve, preserve its LOESS coordinate exactly.
 - Outside it, use the nearest endpoint's constant shift (`boundary_shift`).
@@ -141,8 +141,10 @@ Final membership and localization explicitly use a graded query instead:
 The frozen measured support is prepared once. Each answer carries its method,
 qualified position count, measured range, model residual spread, nearest-anchor
 distance and distance outside model support. These are descriptive facts, not
-probabilities or bounds on true error. The bounded map supplies band membership coordinates; the graded estimates
-remain available for Backfill forecasts and their review facts. Accepted membership risks retain the applied query facts in the
+probabilities or bounds on true error. The bounded map supplies band membership
+coordinates, apart from an under-equilibrated injection's
+[early segment](#early-segment-of-an-under-equilibrated-injection); the graded
+estimates remain available for Backfill forecasts and their review facts. Accepted membership risks retain the applied query facts in the
 review outputs. Weak localization uses an `estimated_` basis and remains a
 forecast, not a physical observation. Neither query changes observed RT, peak
 boundaries, area, identity, or Backfill admission rules.
@@ -151,6 +153,34 @@ The persisted calibration retains the measured support for these queries. Legacy
 v1/v2 coordinates remain exact and bounded, with quality unrecorded; old knots
 do not create weak estimates. Bootstrap's strong-only APIs and ISTD-only unique
 same-target fallback retain their existing meaning.
+
+### Early segment of an under-equilibrated injection
+
+After a short method (a 15 min Blank or an 8 min SDOLEK), the next injection
+starts on a column that has not re-equilibrated, and its early-eluting compounds
+come early (#786): shift(RT, injection) = A × g(RT). The map absorbs the shift
+from about 9 min, where the injection has anchors; before that it usually has
+none, so its early peaks kept the whole shift, up to two minutes, and fell out
+of their bands.
+
+[`early_segment_shift`](../../xic_extractor/alignment/early_segment_shift.py)
+measures A from the frozen calibration's own standards. A standard's deviation is
+its observed RT minus the median of the same standard in up to three injections
+on each side. An injection is affected when its earliest standard is earlier
+than both 10 s and five times the batch's median absolute deviation, and its next
+standard moved the same way by a fraction closer to g's decay than to a uniform
+shift; with fewer than two standards no injection is affected. g is
+exp(−(RT − 8.5)/5.26) from 8.5 min and, before that, the medians #786 measured:
+0 at 2.6 min, rising to 2.6 at 5.0 min, then 1.4 at 6.5 min and 1.0 from 7.5 min.
+Both were measured on the 60 min dna_dr gradient; another gradient needs g
+measured again. Single compounds at 4–7 min spread from 1.2 to 3.1 times A.
+
+Only band linking reads it. An affected injection's peak before 8.5 min moves to
+the elution time solving observed = elution + A × g(elution), then is read
+through the maps of the unaffected injections around it. Such a predicted
+coordinate does not vote on M. The published calibration, Backfill localization
+and every output keep their values. The calibration's front shift, measured at
+its earliest knots, misses this shift when those knots elute before g rises.
 
 ### Persisted RT replay
 
