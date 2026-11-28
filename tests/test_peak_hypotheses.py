@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 import numpy as np
 import pytest
 
@@ -6,10 +8,12 @@ from xic_extractor.extraction.targeted_peak_hypotheses import (
     build_targeted_peak_hypotheses as build_peak_hypotheses,
 )
 from xic_extractor.ms2_trace_evidence import MS2TraceEvidence
+from xic_extractor.peak_detection.detection_result import detection_success
 from xic_extractor.peak_detection.hypotheses import hypothesis_audit_id
 from xic_extractor.peak_detection.models import (
     PeakCandidate,
     PeakCandidateScore,
+    PeakCandidatesResult,
     PeakDetectionResult,
     PeakResult,
 )
@@ -41,14 +45,10 @@ def test_hypothesis_id_is_deterministic() -> None:
 
 def test_build_peak_hypotheses_marks_selected_and_rejected_candidates() -> None:
     selected = _candidate(8.5, area=5000.0, proposal_sources=("savgol",))
-    rejected = _candidate(8.9, area=900.0, proposal_sources=("local_minimum",))
-    result = PeakDetectionResult(
-        status="OK",
-        peak=selected.peak,
-        n_points=20,
-        max_smoothed=3000.0,
-        n_prominent_peaks=2,
-        candidates=(selected, rejected),
+    rejected = replace(selected, proposal_sources=("local_minimum",))
+    result = detection_success(
+        PeakCandidatesResult("OK", (rejected, selected), 20, 3000.0, 2),
+        selected,
         candidate_scores=(
             _score(selected, raw_score=92, nl_supported=True),
             _score(rejected, raw_score=58, nl_supported=False),
@@ -68,24 +68,25 @@ def test_build_peak_hypotheses_marks_selected_and_rejected_candidates() -> None:
         },
     )
 
-    assert [hypothesis.audit.selected for hypothesis in hypotheses] == [True, False]
-    assert hypotheses[0].audit.proposal_sources == ("savgol",)
-    assert hypotheses[0].evidence.ms2_present is True
-    assert hypotheses[0].evidence.nl_match is True
-    assert hypotheses[0].evidence.raw_score == 92
-    assert hypotheses[0].evidence.support_labels == ("strict_nl_ok", "shape_clean")
-    assert hypotheses[0].integration.boundary_sources == ("candidate_interval",)
-    assert hypotheses[1].audit.proposal_sources == ("local_minimum",)
-    assert hypotheses[1].audit.rejection_reason == "lower_score"
-    assert hypotheses[1].evidence.nl_match is False
-    assert hypotheses[1].evidence.concern_labels == ("nl_fail",)
+    assert [hypothesis.audit.selected for hypothesis in hypotheses] == [False, True]
+    other, chosen = hypotheses
+    assert chosen.audit.proposal_sources == ("savgol",)
+    assert chosen.evidence.ms2_present is True
+    assert chosen.evidence.nl_match is True
+    assert chosen.evidence.raw_score == 92
+    assert chosen.evidence.support_labels == ("strict_nl_ok", "shape_clean")
+    assert chosen.integration.boundary_sources == ("candidate_interval",)
+    assert other.audit.proposal_sources == ("local_minimum",)
+    assert other.audit.rejection_reason == "lower_score"
+    assert other.evidence.nl_match is False
+    assert other.evidence.concern_labels == ("nl_fail",)
 
 
 def test_hypothesis_selection_reference_comes_from_detection_result() -> None:
     selected = _candidate(8.5)
     result = PeakDetectionResult(
         status="OK",
-        peak=selected.peak,
+        selected_candidate=selected,
         n_points=20,
         max_smoothed=3000.0,
         n_prominent_peaks=1,
@@ -157,7 +158,7 @@ def test_build_peak_hypotheses_projects_scorer_facts_to_successor_evidence() -> 
     )
     result = PeakDetectionResult(
         status="OK",
-        peak=selected.peak,
+        selected_candidate=selected,
         n_points=20,
         max_smoothed=3000.0,
         n_prominent_peaks=1,
@@ -230,7 +231,7 @@ def test_build_peak_hypotheses_scan_indices_match_bounded_baseline_interval() ->
     selected = _candidate(9.8, left=9.8, right=10.2)
     result = PeakDetectionResult(
         status="OK",
-        peak=selected.peak,
+        selected_candidate=selected,
         n_points=3,
         max_smoothed=1200.0,
         n_prominent_peaks=1,
@@ -255,7 +256,7 @@ def test_build_peak_hypotheses_rejects_retired_linear_edge_baseline_override() -
     selected = _candidate(8.5, left=8.0, right=9.0)
     result = PeakDetectionResult(
         status="OK",
-        peak=selected.peak,
+        selected_candidate=selected,
         n_points=3,
         max_smoothed=1200.0,
         n_prominent_peaks=1,
@@ -279,7 +280,7 @@ def test_build_peak_hypotheses_accepts_shared_trace_group() -> None:
     selected = _candidate(9.8, left=9.8, right=10.2)
     result = PeakDetectionResult(
         status="OK",
-        peak=selected.peak,
+        selected_candidate=selected,
         n_points=3,
         max_smoothed=1200.0,
         n_prominent_peaks=1,
@@ -316,7 +317,7 @@ def test_build_peak_hypotheses_accepts_shared_trace_group() -> None:
 def test_build_peak_hypotheses_returns_empty_without_candidate_intervals() -> None:
     result = PeakDetectionResult(
         status="PEAK_NOT_FOUND",
-        peak=None,
+        selected_candidate=None,
         n_points=20,
         max_smoothed=3000.0,
         n_prominent_peaks=0,
@@ -416,7 +417,7 @@ def test_legacy_integration_records_raw_interval_sigma_without_redefining_area()
     selected = _candidate(8.5, left=8.0, right=9.0, area=1234.0)
     result = PeakDetectionResult(
         status="OK",
-        peak=selected.peak,
+        selected_candidate=selected,
         n_points=len(rt),
         max_smoothed=80.0,
         n_prominent_peaks=1,

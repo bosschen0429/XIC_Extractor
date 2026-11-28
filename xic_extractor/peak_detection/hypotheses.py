@@ -149,7 +149,7 @@ def build_peak_hypotheses(
         raise ValueError("analysis_mode must be targeted or untargeted")
     if trace_group is not None and trace_group.analysis_mode != analysis_mode:
         raise ValueError("trace_group analysis mode mismatches analysis_mode")
-    selected = _selected_candidate(peak_result)
+    selected = peak_result.selected_candidate
     score_by_candidate = {
         score.candidate: score for score in peak_result.candidate_scores
     }
@@ -165,7 +165,7 @@ def build_peak_hypotheses(
     for candidate in peak_result.candidates:
         score = score_by_candidate.get(candidate)
         evidence = evidence_by_candidate.get(candidate)
-        is_selected = selected is not None and candidate == selected
+        is_selected = candidate is selected
         hypotheses.append(
             PeakHypothesis(
                 hypothesis_id=hypothesis_audit_id(
@@ -519,15 +519,6 @@ def _candidate_signal_semantics(
             count_no_ms2_as_detected=count_no_ms2_as_detected,
         )
     )
-
-
-def _selected_candidate(peak_result: PeakDetectionResult) -> PeakCandidate | None:
-    if peak_result.peak is None:
-        return None
-    for candidate in peak_result.candidates:
-        if candidate.peak == peak_result.peak:
-            return candidate
-    return None
 
 
 def _rejection_reason(

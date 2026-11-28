@@ -6,6 +6,7 @@ from openpyxl import Workbook, load_workbook
 
 from scripts.csv_to_excel import run
 from tests.execution_fixtures import in_process_execution
+from tests.target_extraction_fixtures import candidate_for_peak
 from tests.targeted_fixtures import selected_targeted_hypothesis
 from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.evidence.neutral_loss import NLResult
@@ -286,7 +287,9 @@ def test_csv_to_excel_retains_multi_peak_selection_and_candidate_count(
         ),
         peak_result=PeakDetectionResult(
             status="OK",
-            peak=PeakResult(9.0, 200.0, 190.0, 123.0, 8.9, 9.1),
+            selected_candidate=candidate_for_peak(
+                PeakResult(9.0, 200.0, 190.0, 123.0, 8.9, 9.1)
+            ),
             n_points=401,
             max_smoothed=1000.0,
             n_prominent_peaks=2,

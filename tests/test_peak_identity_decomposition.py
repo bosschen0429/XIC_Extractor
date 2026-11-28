@@ -208,7 +208,7 @@ def _peak_candidate() -> PeakCandidate:
 def _peak_result(candidate: PeakCandidate) -> PeakDetectionResult:
     return PeakDetectionResult(
         status="OK",
-        peak=candidate.peak,
+        selected_candidate=candidate,
         n_points=5,
         max_smoothed=480.0,
         n_prominent_peaks=1,

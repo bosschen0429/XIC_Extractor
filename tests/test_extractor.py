@@ -2277,7 +2277,7 @@ def _ok_peak(
     )
     return PeakDetectionResult(
         status="OK",
-        peak=peak,
+        selected_candidate=candidate,
         n_points=15,
         max_smoothed=intensity,
         n_prominent_peaks=1,
@@ -2300,7 +2300,7 @@ def _failed_peak(
 ) -> PeakDetectionResult:
     return PeakDetectionResult(
         status=status,
-        peak=None,
+        selected_candidate=None,
         n_points=n_points,
         max_smoothed=max_smoothed,
         n_prominent_peaks=0,
@@ -2690,12 +2690,11 @@ def _bind_fixture_candidates_to_physical_segments(
             key=lambda item: abs(item.selection_apex_rt - candidate.selection_apex_rt),
         )
         replacements[candidate] = physical
-    selected = next(
-        candidate for candidate in result.candidates if candidate.peak == result.peak
-    )
+    selected = result.selected_candidate
+    assert selected is not None
     return replace(
         result,
-        peak=replacements[selected].peak,
+        selected_candidate=replacements[selected],
         candidates=tuple(replacements[candidate] for candidate in result.candidates),
         candidate_scores=tuple(
             replace(score, candidate=replacements.get(score.candidate, score.candidate))

@@ -13,7 +13,6 @@ from xic_extractor.extraction.scoring_factory import (
     build_scoring_context_factory,
     is_credible_istd_peak,
     paired_istd_fwhm,
-    selected_candidate,
     selected_shape_metrics,
 )
 from xic_extractor.peak_detection.baseline import asls_baseline_on_rt
@@ -73,14 +72,13 @@ def test_selected_candidate_and_credible_istd_peak_reject_quality_flags() -> Non
     candidate = _candidate(apex_index=1, quality_flags=("too_broad",))
     peak_result = PeakDetectionResult(
         status="OK",
-        peak=candidate.peak,
+        selected_candidate=candidate,
         n_points=3,
         max_smoothed=10.0,
         n_prominent_peaks=1,
         candidates=(candidate,),
     )
 
-    assert selected_candidate(peak_result) is candidate
     assert is_credible_istd_peak(peak_result) is False
 
 
@@ -91,14 +89,13 @@ def test_credible_istd_peak_allows_soft_adap_like_quality_flags() -> None:
     )
     peak_result = PeakDetectionResult(
         status="OK",
-        peak=candidate.peak,
+        selected_candidate=candidate,
         candidates=(candidate,),
         n_points=3,
         max_smoothed=20.0,
         n_prominent_peaks=1,
     )
 
-    assert selected_candidate(peak_result) is candidate
     assert is_credible_istd_peak(peak_result) is True
 
 
@@ -114,14 +111,13 @@ def test_credible_istd_peak_allows_adap_equivalent_legacy_flags() -> None:
     )
     peak_result = PeakDetectionResult(
         status="OK",
-        peak=candidate.peak,
+        selected_candidate=candidate,
         candidates=(candidate,),
         n_points=3,
         max_smoothed=20.0,
         n_prominent_peaks=1,
     )
 
-    assert selected_candidate(peak_result) is candidate
     assert is_credible_istd_peak(peak_result) is True
 
 
@@ -224,7 +220,7 @@ def test_missing_prepared_shape_keeps_quality_unknown(
     available = _prepared(rt, intensity)
     no_peak = PeakDetectionResult(
         status="PEAK_NOT_FOUND",
-        peak=None,
+        selected_candidate=None,
         n_points=len(rt),
         max_smoothed=0.0,
         n_prominent_peaks=0,
@@ -375,7 +371,7 @@ def _gaussian(rt: np.ndarray, *, sigma: float = 0.1) -> np.ndarray:
 def _peak_result(candidate: PeakCandidate, sample_count: int) -> PeakDetectionResult:
     return PeakDetectionResult(
         status="OK",
-        peak=candidate.peak,
+        selected_candidate=candidate,
         n_points=sample_count,
         max_smoothed=1000.0,
         n_prominent_peaks=1,

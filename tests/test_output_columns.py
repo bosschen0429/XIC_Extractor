@@ -61,7 +61,7 @@ def _fabricate_run_output() -> RunOutput:
     )
     peak_result = PeakDetectionResult(
         status="OK",
-        peak=peak,
+        selected_candidate=candidate,
         n_points=10,
         max_smoothed=500.0,
         n_prominent_peaks=1,

@@ -21,7 +21,7 @@ def detection_success(
 ) -> PeakDetectionResult:
     return PeakDetectionResult(
         status="OK",
-        peak=candidate.peak,
+        selected_candidate=candidate,
         n_points=candidates_result.n_points,
         max_smoothed=candidates_result.max_smoothed,
         n_prominent_peaks=candidates_result.n_prominent_peaks,
@@ -38,7 +38,7 @@ def detection_success(
 def detection_failure(candidates_result: PeakCandidatesResult) -> PeakDetectionResult:
     return PeakDetectionResult(
         status=candidates_result.status,
-        peak=None,
+        selected_candidate=None,
         n_points=candidates_result.n_points,
         max_smoothed=candidates_result.max_smoothed,
         n_prominent_peaks=candidates_result.n_prominent_peaks,

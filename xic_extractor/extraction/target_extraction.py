@@ -364,7 +364,7 @@ def extract_one_target(
 
         peak_result = PeakDetectionResult(
             status="PEAK_NOT_FOUND",
-            peak=None,
+            selected_candidate=None,
             n_points=len(rt),
             max_smoothed=candidate_assessment.candidates.max_smoothed,
             n_prominent_peaks=0,

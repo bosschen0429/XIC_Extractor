@@ -1,3 +1,4 @@
+from tests.target_extraction_fixtures import candidate_for_peak
 from xic_extractor.peak_detection.evidence_semantics import EvidenceDecisionSemantics
 from xic_extractor.peak_detection.hypotheses import (
     AuditTrail,
@@ -99,13 +100,15 @@ def test_selection_decision_retains_no_ms2_policy() -> None:
     )
     peak_result = PeakDetectionResult(
         status="OK",
-        peak=PeakResult(
-            rt=8.5,
-            intensity=1200.0,
-            intensity_smoothed=1100.0,
-            area=1234.0,
-            peak_start=8.4,
-            peak_end=8.6,
+        selected_candidate=candidate_for_peak(
+            PeakResult(
+                rt=8.5,
+                intensity=1200.0,
+                intensity_smoothed=1100.0,
+                area=1234.0,
+                peak_start=8.4,
+                peak_end=8.6,
+            )
         ),
         n_points=10,
         max_smoothed=1200.0,

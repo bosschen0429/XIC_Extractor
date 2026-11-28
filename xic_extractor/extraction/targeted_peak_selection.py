@@ -19,7 +19,6 @@ from xic_extractor.evidence.neutral_loss import (
 from xic_extractor.extraction.result_assembly import build_extraction_result
 from xic_extractor.extraction.scoring_factory import (
     ScoringContextBuilder,
-    selected_candidate,
 )
 from xic_extractor.extraction.targeted_peak_evidence import (
     build_targeted_peak_evidence,
@@ -203,7 +202,7 @@ class TargetedCandidateAssessment:
         if selected is None:
             return PeakDetectionResult(
                 status="PEAK_NOT_FOUND",
-                peak=None,
+                selected_candidate=None,
                 n_points=self.candidates.n_points,
                 max_smoothed=self.candidates.max_smoothed,
                 n_prominent_peaks=0,
@@ -259,7 +258,7 @@ class TargetedCandidateAssessment:
             selection_rt_max=self.selection_window[1],
             candidate_evaluations=self.candidate_evaluations,
         )
-        candidate = selected_candidate(selection.peak_result)
+        candidate = selection.peak_result.selected_candidate
         result = build_extraction_result(
             peak_result=selection.peak_result,
             nl_result=None,
@@ -532,7 +531,7 @@ def select_targeted_peak(
         trace_group=trace_group,
     )
     selected_hypothesis = selected_peak_hypothesis(hypotheses)
-    candidate = selected_candidate(peak_result)
+    candidate = peak_result.selected_candidate
     selected_ms2_evidence = (
         candidate_ms2_evidence.get(candidate)
         if candidate is not None and candidate_ms2_evidence is not None
@@ -554,7 +553,7 @@ def select_targeted_peak(
                 if physical_evaluation.reason == "no_signal_above_baseline"
                 else "PEAK_NOT_FOUND"
             ),
-            peak=None,
+            selected_candidate=None,
             candidates=(),
             n_prominent_peaks=0,
             reason=physical_evaluation.reason,

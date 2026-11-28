@@ -407,7 +407,7 @@ def _finalized_extraction_result(
             extraction,
             peak_result=replace(
                 extraction.peak_result,
-                peak=None,
+                selected_candidate=None,
                 candidates=(),
                 candidate_scores=(),
             ),
@@ -430,7 +430,7 @@ def _finalized_extraction_result(
         extraction,
         peak_result=replace(
             extraction.peak_result,
-            peak=None,
+            selected_candidate=None,
             candidates=(),
             candidate_scores=(),
             reason=no_write_reason,

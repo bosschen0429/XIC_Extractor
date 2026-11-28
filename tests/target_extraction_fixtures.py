@@ -7,6 +7,19 @@ from xic_extractor.peak_detection.models import (
 )
 
 
+def candidate_for_peak(peak: PeakResult) -> PeakCandidate:
+    return PeakCandidate(
+        peak,
+        peak.rt,
+        peak.intensity_smoothed,
+        1,
+        peak.rt,
+        peak.intensity,
+        1,
+        peak.intensity_smoothed,
+    )
+
+
 def _candidate(
     *,
     rt: float = 10.0,
@@ -40,7 +53,7 @@ def _candidate(
 def _peak_result(candidate: PeakCandidate) -> PeakDetectionResult:
     return PeakDetectionResult(
         status="OK",
-        peak=candidate.peak,
+        selected_candidate=candidate,
         n_points=5,
         max_smoothed=1200.0,
         n_prominent_peaks=1,

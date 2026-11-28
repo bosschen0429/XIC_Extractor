@@ -67,7 +67,7 @@ def _numeric_peak(
     )
     result = PeakDetectionResult(
         status="OK",
-        peak=peak,
+        selected_candidate=candidate,
         n_points=trace.scan_count,
         max_smoothed=height,
         n_prominent_peaks=1,
