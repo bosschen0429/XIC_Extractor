@@ -31,6 +31,22 @@ function toast(message, kind = "info", timeout) {
   if (delay) setTimeout(() => node.remove(), delay);
   return node;
 }
+async function downloadResult(event) {
+  if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+  event.preventDefault();
+  const { href, download } = event.currentTarget;
+  try {
+    const response = await fetch(href);
+    if (!response.ok) throw new Error((await response.json()).error);
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(await response.blob());
+    link.download = download;
+    link.click();
+    URL.revokeObjectURL(link.href);
+  } catch (error) {
+    toast(error.message || "無法下載這份結果。", "error");
+  }
+}
 function confirm({ title, message, accept = "確定", danger = false }) {
   const dialog = $("confirm-dialog");
   $("confirm-title").textContent = title;
@@ -184,6 +200,7 @@ async function openSession() {
 }
 export {
   api,
+  downloadResult,
   icon,
   toast,
   confirm,

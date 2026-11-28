@@ -66,7 +66,7 @@ def install_targeted_raws(
     return reads
 
 
-def write_rare_detection_workbook(path):
+def write_rare_detection_workbook(path, *, counted_area=55.5):
     """Five samples: one counted Analyte peak among shared absences."""
     book = Workbook()
     targets = book.active
@@ -95,7 +95,7 @@ def write_rare_detection_workbook(path):
                 sample,
                 "Analyte",
                 9.4 if hit else "ND",
-                55.5 if hit else "ND",
+                counted_area if hit else "ND",
                 None,
                 None,
                 "ISTD 位置" if hit else "未見 NL",

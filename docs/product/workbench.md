@@ -19,8 +19,14 @@ arguments, and the code and its tests own layout, views and interactions.
   counted detection or writes workbook or Matrix values; Inspector switches no
   candidate and builds no RT reselection table.
 - **Downloads are what the run published.** Review never rebuilds the
-  Targeted XLSX or Untargeted Matrix from Inspector data; an opened workbook is
-  bound by its SHA-256.
+  Targeted XLSX or Untargeted Matrix from Inspector data. An opened workbook
+  or Matrix (including a curated Matrix) is bound by its SHA-256. A new read
+  of a saved curve or its published value must belong to the opened Alignment
+  attempt. If the source has changed, reopen it; a previously captured view
+  still shows its original data.
+- **Starting or cancelling a job does not withdraw a published result.**
+  Its downloads remain available in the command reply just as in the next
+  status update.
 - **Review curves are not measurements.** Saved curves reproduce the run's
   processed signal; RAW reads for samples without a saved curve are new
   diagnostic views matched by file name, not checked against the analysed

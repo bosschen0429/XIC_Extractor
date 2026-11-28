@@ -66,11 +66,13 @@ class _RawRead:
 class RunSettings:
     """The run's signal-processing profile, mass recalibration and RAW folder."""
 
-    def __init__(self, report: Path) -> None:
+    def __init__(self, report: Path, attempt_id: str) -> None:
         path = report.parent / RUN_METADATA_NAME
         metadata: dict[str, Any] = (
             json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
         )
+        if metadata.get("processing_attempt_id", attempt_id) != attempt_id:
+            raise ExplanationError("曲線設定屬於不同的分析結果，請重新開啟。")
         profile = metadata.get("signal_processing_profile_json")
         self.profile: SignalProcessingProfile = (
             deserialize_signal_processing_profile(profile)
@@ -100,6 +102,7 @@ def review_curve_bundle(
     dll_dir: Path | None = None,
     padding_min: float = 0.5,
     same_mz_curves: bool = False,
+    settings: RunSettings | None = None,
     is_cancelled: Callable[[], bool] = lambda: False,
     on_progress: Callable[[int, int, str], None] | None = None,
 ) -> tuple[CurveBundle, list[str]]:
@@ -111,7 +114,13 @@ def review_curve_bundle(
     """
     requested = set(sample_ids)
     selected = [loc for loc in curves.locations if loc.sample_key in requested]
-    settings = RunSettings(report)
+    if settings is None:
+        settings = RunSettings(report, curves.processing_attempt_id)
+    values = list(
+        read_row_cell_values(
+            report, {key}, expected_attempt_id=curves.processing_attempt_id
+        )
+    )
     traces, unusable = _saved_traces(
         (loc for loc in selected if loc.curve is not None), settings.profile
     )
@@ -142,7 +151,7 @@ def review_curve_bundle(
     represented = {trace.sample_id for trace in traces if trace.role != SAME_MZ_ROLE}
     cells = [
         (sid, value, origin, apex)
-        for _, sid, value, origin, apex in read_row_cell_values(report, {key})
+        for _, sid, value, origin, apex in values
         if sid in represented
     ]
     quantities = tuple(

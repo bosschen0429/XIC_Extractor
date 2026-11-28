@@ -904,10 +904,123 @@ def test_opened_results_download_original_bytes_and_switch_with_source(tmp_path)
         assert request("/files/../../workspace.json")[0] == 404
 
 
+def test_download_stays_bound_to_the_opened_result(tmp_path):
+    from tests.matrix_curation_fixtures import published_curation
+    from tests.xic_inspector_targeted_workbook_fixtures import (
+        write_rare_detection_workbook,
+    )
+
+    workbook = write_rare_detection_workbook(tmp_path / "result.xlsx")
+    db, matrix, _ = create_inspector_report(tmp_path)
+    with workbench_client(review_workspace(config_dir=tmp_path / "config")) as request:
+
+        def open_result(path):
+            status, page, _ = request("/api/open", {"source": str(path)})
+            assert status == 200, page
+            return page["result_artifact"]["url"]
+
+        first = open_result(workbook)
+        write_rare_detection_workbook(workbook, counted_area=155.5)
+        status, error, _ = request(first)
+        assert status == 400 and "重新開啟" in error["error"]
+        second = open_result(workbook)
+        assert request(second)[:2] == (200, workbook.read_bytes())
+        assert request(first)[0] == 400
+
+        original = open_result(db)
+        curated = published_curation(
+            tmp_path / "matrix_curation_01",
+            tmp_path,
+            [{"feature_id": "G1", "decision": "keep"}],
+        )
+        curated_url = open_result(curated)
+        source_bytes = matrix.read_bytes()
+        for url, path in (
+            (original, matrix),
+            (curated_url, curated / "analysis_matrix.tsv"),
+        ):
+            assert request(url)[:2] == (200, path.read_bytes())
+            path.write_text("Mz\tRT\tS1\n500\t1\t7000\n", encoding="utf-8")
+            assert request(url)[0] == 400
+        matrix.write_bytes(source_bytes)
+        assert request(open_result(curated))[:2] == (
+            200,
+            (curated / "analysis_matrix.tsv").read_bytes(),
+        )
+        assert request(curated_url)[0] == 400
+
+
+def test_replaced_run_cannot_supply_curves_for_an_open_row(tmp_path):
+    import shutil
+
+    def batch(folder, attempt, height):
+        folder.mkdir()
+        rt = [0.8 + 0.01 * i for i in range(41)]
+        raw = [height * 2.718 ** (-(((x - 1) / 0.05) ** 2)) for x in rt]
+        return create_inspector_report(
+            folder,
+            attempt_id=attempt,
+            base_cell={"observation_ids": ["obs-01"], "apex_rt_min": 1.0},
+            prepare=lambda writer: writer.add_peak("S1", "obs-01", (500.0, 1.0, 5.0)),
+            extend=lambda writer: writer.set_cell_curve(
+                "G1", "S1", encode_review_curve(rt, raw)
+            ),
+        )[0]
+
+    db = batch(tmp_path / "active", "attempt-A", 1000)
+    other = batch(tmp_path / "other", "attempt-B", 7000)
+    with workbench_client(review_workspace(config_dir=tmp_path / "config")) as request:
+
+        def open_row():
+            status, page, _ = request("/api/open", {"source": str(db)})
+            assert status == 200, page
+            return page["items"][0]["id"]
+
+        def curve(item):
+            status, job, _ = request(
+                "/api/curves", {"item_id": item, "sample_ids": ["S1"]}
+            )
+            assert status == 202, job
+            return job
+
+        def view(view_id):
+            (item,) = request(f"/api/views/{view_id}")[1]["items"]
+            (saved,) = item["curves"]
+            return (
+                json.loads(item["id"]),
+                saved["sample_id"],
+                max(saved["raw_intensities"]),
+            )
+
+        old = open_row()
+        captured = curve(old)["view_id"]
+        before = (["row", "attempt-A", "G1"], "S1", 1000)
+        assert view(captured) == before
+        shutil.copyfile(other, db)
+        stale = curve(old)
+        assert stale["status"] == "failed" and "重新開啟" in stale["message"]
+        status, error, _ = request("/api/detail", {"item_id": old})
+        assert status == 400 and "重新開啟" in error["error"]
+        assert view(captured) == before
+        new = open_row()
+        settings = db.parent / "alignment_run_metadata.json"
+        settings.write_text(json.dumps({"processing_attempt_id": "attempt-A"}))
+        stale = curve(new)
+        assert stale["status"] == "failed" and "重新開啟" in stale["message"]
+        settings.write_text(json.dumps({"processing_attempt_id": "attempt-B"}))
+        assert view(curve(new)["view_id"]) == (
+            ["row", "attempt-B", "G1"],
+            "S1",
+            7000,
+        )
+
+
 def test_http_curve_reads_never_block_review_and_leave_results_readable(
     tmp_path, monkeypatch
 ):
+    from tests.workbench_analysis_fixtures import _terminal
     from xic_workbench import review_curves
+    from xic_workbench.application import create_workspace
 
     db, _, _ = create_inspector_report(
         tmp_path, base_cell={"observation_ids": ["obs-01"]}
@@ -931,12 +1044,7 @@ def test_http_curve_reads_never_block_review_and_leave_results_readable(
         raise AssertionError(f"job did not reach {status}: {result}")
 
     monkeypatch.setattr(review_curves, "review_curve_bundle", blocked_read)
-    workspace = review_workspace()
-
-    def rejected_analysis(*args, **kwargs):
-        raise ValueError("RAW folder is missing")
-
-    monkeypatch.setattr(workspace.analysis.jobs, "start", rejected_analysis)
+    workspace = create_workspace(config_dir=tmp_path / "config")
     with workbench_client(workspace, read_user_guide=read_user_guide) as request:
         _, page, _ = request("/api/open", {"source": str(db)})
         item_id = page["items"][0]["id"]
@@ -956,7 +1064,14 @@ def test_http_curve_reads_never_block_review_and_leave_results_readable(
         assert status == 202 and first["status"] == "running"
         assert entered.wait(timeout=5)
         assert (
-            request("/api/analysis/start", {"kind": "targeted", "values": {}})[0] == 400
+            request(
+                "/api/analysis/start",
+                {
+                    "kind": "untargeted",
+                    "values": {"output_dir": str(tmp_path / "runs"), "dll_dir": ""},
+                },
+            )[0]
+            == 400
         )
         status, current, _ = request(f"/api/jobs/{first['id']}")
         assert status == 200 and current["status"] == "running"
@@ -979,17 +1094,19 @@ def test_http_curve_reads_never_block_review_and_leave_results_readable(
         entered.clear()
         _, job, _ = request("/api/curves", parameters)
         assert entered.wait(timeout=5)
-        monkeypatch.setattr(
-            workspace.analysis.jobs, "start", lambda kind, values: {"accepted": True}
-        )
         assert (
-            request("/api/analysis/start", {"kind": "targeted", "values": {}})[0] == 202
+            request(
+                "/api/analysis/start",
+                {"kind": "samples", "values": {"raw_dir": str(tmp_path)}},
+            )[0]
+            == 202
         )
         status, ended, _ = request(f"/api/jobs/{job['id']}")
         assert status == 200 and ended["status"] == "cancelled"
         assert ended["message"] == "已停止曲線載入，分析工作已開始。"
         assert request("/api/review")[1]["job"] is None
         assert request(f"/api/jobs/{job['id']}/cancel", {})[1]["status"] == "cancelled"
+        _terminal(workspace.analysis.jobs)
 
         def failed_read(*args, **kwargs):
             raise FileNotFoundError("selected RAW is missing")

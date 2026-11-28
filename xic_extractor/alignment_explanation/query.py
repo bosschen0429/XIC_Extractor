@@ -58,7 +58,9 @@ class IndexedItem:
 @contextmanager
 def open_review_query(path: Path, summary: Mapping[str, Any]) -> Iterator[ReviewQuery]:
     """One request-local selection session, with no cross-request cache."""
-    with open_readonly(path) as db:
+    with open_readonly(
+        path, expected_attempt_id=summary.get("processing_attempt_id")
+    ) as db:
         yield ReviewQuery(db, summary)
 
 

@@ -13,6 +13,7 @@ XIC-specific task routing and invariants; global rules own general defaults.
 | Choosing, adding or running tests; UI demonstration | [`testing.md`](docs/agent/testing.md) |
 | Which module owns a behavior | [`module-ownership.md`](docs/architecture/module-ownership.md) |
 | Scheduling, workers, pools or timing | [`runtime-execution.md`](docs/architecture/runtime-execution.md) |
+| Workbench/Inspector backend: job replies, review sources and downloads | [Workbench contract](docs/product/workbench.md#boundaries) and [loopback HTTP harness](tests/workbench_http.py) |
 | UI information hierarchy, interactions, wording, styling or theme roles | [`ui-design.md`](docs/ui-design.md) |
 | Imports in startup-sensitive or lightweight readers | [`dependency-direction.md`](docs/architecture/dependency-direction.md) |
 | Issue scope, implementation completion, push, PR or review | [`delivery.md`](docs/agent/delivery.md) |

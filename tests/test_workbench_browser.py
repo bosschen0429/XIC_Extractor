@@ -2116,7 +2116,7 @@ def test_review_search_and_saved_results_keep_one_scroll_and_visible_evidence(
 
 @pytest.mark.parametrize("targeted", [True, False])
 def test_review_download_survives_reload_and_keeps_original_product(
-    workbench, tmp_path, targeted
+    workbench, tmp_path, targeted, browser_errors
 ):
     from tests.inspector_fixtures import create_review_batch
     from tests.xic_inspector_targeted_workbook_fixtures import (
@@ -2143,6 +2143,15 @@ def test_review_download_survives_reload_and_keeps_original_product(
     downloaded = pending.value
     assert downloaded.suggested_filename == product.name
     assert Path(downloaded.path()).read_bytes() == product.read_bytes()
+    if targeted:
+        write_rare_detection_workbook(product, counted_area=155.5)
+        link.click()
+        expect(page.get_by_role("alert")).to_contain_text("重新開啟")
+        expect(link).to_be_visible()
+        browser_errors.remove(
+            "Failed to load resource: the server responded with a status of "
+            "400 (Bad Request)"
+        )
 
 
 def test_untargeted_review_starts_with_results_and_explains_missing_curves(

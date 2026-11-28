@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
 import shutil
 import sys
@@ -14,11 +15,28 @@ from typing import Any, Protocol
 from xic_workbench.json_transport import json_value
 
 
+def _file_revision(stat: os.stat_result) -> tuple[int, ...]:
+    return stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns
+
+
 @dataclass(frozen=True, slots=True)
 class _RegisteredArtifact:
     source: Path
     served: Path
     version: str | None
+    revision: str | tuple[int, ...]
+
+    def read(self) -> bytes:
+        with self.served.open("rb") as handle:
+            data = handle.read()
+            current = (
+                hashlib.sha256(data).hexdigest()
+                if isinstance(self.revision, str)
+                else _file_revision(os.fstat(handle.fileno()))
+            )
+        if current != self.revision:
+            raise ValueError("結果檔案已變更；請重新開啟結果。")
+        return data
 
 
 class AnalysisJobControl(Protocol):
@@ -234,8 +252,9 @@ class AnalysisWorkspace:
 
         return read_preferences(config_dir=self.config_dir)
 
-    def state(self) -> dict[str, Any]:
-        state = json_value(self.jobs.state())
+    def state(self, snapshot: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Present the accepted command's snapshot, or the current one for polling."""
+        state = json_value(self.jobs.state() if snapshot is None else snapshot)
         job = state.get("job")
         if (
             job is not None
@@ -263,7 +282,7 @@ class AnalysisWorkspace:
         return state
 
     def register_artifact(
-        self, path: Path, *, version: str | None = None
+        self, path: Path, *, version: str | None = None, sha256: str | None = None
     ) -> dict[str, str]:
         """Expose a published or opened result through the local file allowlist."""
         path = path.resolve()
@@ -271,7 +290,9 @@ class AnalysisWorkspace:
             (
                 key
                 for key, artifact in self._files.items()
-                if artifact.source == path and artifact.version == version
+                if artifact.source == path
+                and artifact.version == version
+                and (sha256 is None or artifact.revision == sha256)
             ),
             None,
         )
@@ -283,14 +304,17 @@ class AnalysisWorkspace:
                 snapshot_folder.mkdir()
                 served = snapshot_folder / path.name
                 shutil.copyfile(path, served)
-            self._files[key] = _RegisteredArtifact(path, served, version)
+            self._files[key] = _RegisteredArtifact(
+                path, served, version, sha256 or _file_revision(served.stat())
+            )
         return {"name": path.name, "path": str(path), "url": f"/files/{key}"}
 
-    def artifact_path(self, key: str) -> Path:
+    def read_artifact(self, key: str) -> tuple[Path, bytes]:
         try:
-            return self._files[key].served
+            artifact = self._files[key]
         except KeyError as exc:
             raise ValueError("這個檔案不屬於目前工作區的輸出。") from exc
+        return artifact.served, artifact.read()
 
     def action(self, action: str, values: dict[str, Any]) -> dict[str, Any]:
         if action == "paths/validate":

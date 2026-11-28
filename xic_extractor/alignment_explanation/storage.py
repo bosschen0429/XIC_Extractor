@@ -304,7 +304,9 @@ def read_counts(connection: sqlite3.Connection) -> dict[str, Any]:
 
 
 @contextmanager
-def open_readonly(path: str | Path) -> Iterator[sqlite3.Connection]:
+def open_readonly(
+    path: str | Path, *, expected_attempt_id: str | None = None
+) -> Iterator[sqlite3.Connection]:
     """Close on every exit and translate persisted-input failures at the boundary.
 
     A published file is never written again, so it opens immutable: no locks and
@@ -320,6 +322,10 @@ def open_readonly(path: str | Path) -> Iterator[sqlite3.Connection]:
         with closing(
             sqlite3.connect(path.resolve().as_uri() + "?mode=ro&immutable=1", uri=True)
         ) as db:
+            if expected_attempt_id is not None and db.execute(
+                "SELECT processing_attempt_id FROM run"
+            ).fetchone() != (expected_attempt_id,):
+                raise ExplanationError("這份檢閱結果已變更，請重新開啟。")
             yield db
     except (sqlite3.Error, json.JSONDecodeError, zlib.error, UnicodeError) as exc:
         raise ExplanationError(f"malformed explanation: {exc}") from exc

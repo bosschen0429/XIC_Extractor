@@ -350,7 +350,10 @@ def read_review_evidence(
 
     A caller that already admitted this report's summary passes it on.
     """
-    with open_readonly(path) as connection:
+    with open_readonly(
+        path,
+        expected_attempt_id=summary.get("processing_attempt_id") if summary else None,
+    ) as connection:
         summary = dict(summary) if summary else read_run(connection)
         return _Report(connection, summary, candidate_keys=candidate_keys).evidence(
             row_ids
@@ -399,6 +402,7 @@ class ReviewCurves:
     center m/z lies within its ppm, itself included, and that m/z and ppm.
     """
 
+    processing_attempt_id: str
     locations: tuple[ReviewCurveLocation, ...]
     sample_rt_calibration: dict[str, Any] | None
     injection_order: dict[str, int]
@@ -451,10 +455,14 @@ _SAME_MZ_PEAKS = (
 
 
 def read_review_curves(
-    path: Path, *, feature_id: str | None = None, candidate_id: str | None = None
+    path: Path,
+    *,
+    feature_id: str | None = None,
+    candidate_id: str | None = None,
+    expected_attempt_id: str | None = None,
 ) -> ReviewCurves:
     """Read one result row's or candidate's curve locations and saved curves."""
-    with open_readonly(path) as db:
+    with open_readonly(path, expected_attempt_id=expected_attempt_id) as db:
         if feature_id is not None:
             curve = _SAVED_CURVE.format(scope=" AND v.group_id=g.id")
             query, key = _GROUP_LOCATIONS, feature_id
@@ -462,7 +470,9 @@ def read_review_curves(
             curve = _SAVED_CURVE.format(scope=" LIMIT 1")
             query, key = _CANDIDATE_LOCATIONS, str(candidate_id)
         rows = db.execute(query.format(curve=curve), (key,)).fetchall()
-        (calibration,) = db.execute("SELECT sample_rt_calibration FROM run").fetchone()
+        attempt, calibration = db.execute(
+            "SELECT processing_attempt_id,sample_rt_calibration FROM run"
+        ).fetchone()
         injection_order = dict(
             db.execute(
                 "SELECT sample_stem,injection_order FROM samples "
@@ -481,6 +491,7 @@ def read_review_curves(
             if center is not None:
                 row_mz, row_ppm = center
     return ReviewCurves(
+        attempt,
         tuple(
             ReviewCurveLocation(
                 sample_key,
@@ -502,10 +513,10 @@ def read_review_curves(
 
 
 def read_row_cell_values(
-    path: Path, feature_ids: Iterable[str]
+    path: Path, feature_ids: Iterable[str], *, expected_attempt_id: str | None = None
 ) -> Iterator[tuple[str, str, float | None, str, float | None]]:
     """Read owner value, support origin and selected apex of the given rows."""
-    with open_readonly(path) as db:
+    with open_readonly(path, expected_attempt_id=expected_attempt_id) as db:
         yield from db.execute(
             "SELECT g.feature_id,s.sample_key,c.value,c.support_origin,c.apex_rt_min "
             "FROM cells c JOIN groups g ON g.id=c.group_id "

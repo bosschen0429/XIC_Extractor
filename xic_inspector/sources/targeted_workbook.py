@@ -6,6 +6,7 @@ import hashlib
 import math
 from collections import defaultdict
 from dataclasses import asdict, dataclass
+from io import BytesIO
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 from xml.etree.ElementTree import ParseError
@@ -83,13 +84,13 @@ class TargetedWorkbookSource:
         from openpyxl.utils.exceptions import InvalidFileException
 
         path = path.resolve()
-        with path.open("rb") as handle:
-            digest = hashlib.file_digest(handle, "sha256").hexdigest()
+        content = path.read_bytes()
+        digest = hashlib.sha256(content).hexdigest()
         self.locator = TargetedWorkbookLocator(path, digest)
         if expected_source is not None and self.locator != expected_source:
             raise ExplanationError("Targeted 結果已變更，請重新開啟。")
         try:
-            book = load_workbook(path, read_only=True, data_only=True)
+            book = load_workbook(BytesIO(content), read_only=True, data_only=True)
         except (
             BadZipFile,
             InvalidFileException,
