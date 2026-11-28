@@ -37,10 +37,6 @@ from xic_inspector.selection.canonical import (
 from xic_inspector.selection.query import filter_by_query
 from xic_inspector.selection.strata import classify_scoped_stratum
 from xic_inspector.sources import cid_nl_presentation as presentation
-from xic_inspector.sources.untargeted_overview import (
-    ordered_review_items,
-    review_overview,
-)
 
 CardRef = str | tuple[str, str]
 
@@ -374,17 +370,18 @@ class CidNlSource:
                 2, "Alignment evidence is reviewed with the query strategy"
             )
         with open_review_query(self.path, self.summary) as query:
-            ordered = None
             if review_scope != "all":
-                overview, rows = review_overview(
-                    self.path, self.summary, request.curation_removed_ids
-                )
-                headers = query.item_headers()
-                overview["candidate_count"] = sum(
-                    kind == "candidate" for _, kind, _ in headers
-                )
-                self.summary["overview"] = overview
-                ordered = ordered_review_items(headers, rows, review_scope)
+                self.summary["overview"] = {
+                    **query.overview(request.curation_removed_ids),
+                    "candidate_count": query.candidate_count(),
+                }
+            page = dict(
+                review_scope=review_scope,
+                removed=request.curation_removed_ids,
+                offset=request.offset,
+                limit=request.limit,
+                **criteria,
+            )
             if request.nearest_mz is not None:
                 (
                     ids,
@@ -394,22 +391,9 @@ class CidNlSource:
                     missing,
                     self.missing_mz_count,
                     distances,
-                ) = query.nearest_page(
-                    scope,
-                    mz=request.nearest_mz,
-                    offset=request.offset,
-                    limit=request.limit,
-                    ordered_item_ids=ordered,
-                    **criteria,
-                )
+                ) = query.nearest_page(scope, mz=request.nearest_mz, **page)
             else:
-                ids, run_total, eligible, matched, missing = query.page(
-                    scope,
-                    **criteria,
-                    offset=request.offset,
-                    limit=request.limit,
-                    ordered_item_ids=ordered,
-                )
+                ids, run_total, eligible, matched, missing = query.page(scope, **page)
 
             def item(item_id):
                 stored = query.item(item_id, scope)

@@ -196,7 +196,9 @@ class _Report:
         query = (
             "SELECT g.feature_id,c.group_id,c.sample,c.variant,c.value,c.apex_rt_min,"
             "c.source,c.support_origin,c.evidence_states,c.reason_codes,"
-            "c.risk_flags,c.competition FROM cells c JOIN groups g ON g.id=c.group_id"
+            "(SELECT json_group_array(flag) FROM (SELECT flag FROM cell_risk_flags f "
+            "WHERE f.group_id=c.group_id AND f.sample=c.sample ORDER BY flag)) "
+            "FROM cells c JOIN groups g ON g.id=c.group_id"
         )
         if feature_ids is None:
             rows = self.db.execute(query + " ORDER BY c.group_id,c.sample").fetchall()
@@ -220,6 +222,15 @@ class _Report:
                 chunk,
             ):
                 peaks[group, sample].append((key, low))
+        competition: dict[tuple[int, int], list[Any]] = defaultdict(list)
+        for chunk in _chunks(sorted({row[1] for row in rows})):
+            for group, sample, alternative in self.db.execute(
+                "SELECT group_id,sample,peers FROM cell_competition "
+                f"WHERE {_in('group_id', chunk)} "
+                "ORDER BY group_id,sample,batch,position",
+                chunk,
+            ):
+                competition[group, sample].append(json.loads(alternative))
         result: dict[str, dict[str, dict[str, Any]]] = {}
         for (
             feature_id,
@@ -233,7 +244,6 @@ class _Report:
             evidence_states,
             reason_codes,
             risk_flags,
-            competition,
         ) in rows:
             sid = self.samples[sample]
             observed = peaks.get((group, sample), [])
@@ -254,7 +264,7 @@ class _Report:
                     if low is not None
                 ],
                 "risk_flags": json.loads(risk_flags),
-                "competition": json.loads(competition),
+                "competition": competition.get((group, sample), []),
             }
         return result
 
@@ -578,32 +588,3 @@ def read_summary_with_examples(
                 "ORDER BY c.candidate_id,s.sample_key LIMIT 5"
             )
         ]
-
-
-def read_review_row_counts(
-    path: Path, summary: Mapping[str, Any]
-) -> Iterator[dict[str, Any]]:
-    """Overview facts from named row and cell columns, without reasons or curves."""
-    samples = [s["sample_key"] for s in summary["samples"]]
-    with open_readonly(path) as db:
-        counts = {
-            group: (numeric, unresolved)
-            for group, numeric, unresolved in db.execute(
-                "SELECT group_id,"
-                "group_concat(CASE WHEN variant='numeric' THEN sample END),"
-                "sum(variant='unresolved') FROM cells GROUP BY group_id"
-            )
-        }
-        for group_id, feature_id, destination in db.execute(
-            "SELECT id,feature_id,destination FROM groups "
-            "WHERE feature_id IS NOT NULL ORDER BY id"
-        ):
-            numeric, unresolved = counts.get(group_id, (None, 0))
-            yield {
-                "feature_id": feature_id,
-                "destination": destination,
-                "numeric_samples": [samples[int(i)] for i in numeric.split(",")]
-                if numeric
-                else [],
-                "unresolved_count": unresolved or 0,
-            }

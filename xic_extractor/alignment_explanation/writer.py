@@ -8,7 +8,6 @@ the write connection and are gone once the relation is materialized.
 
 from __future__ import annotations
 
-import json
 import os
 import sqlite3
 from collections.abc import Iterable, Mapping, Sequence
@@ -81,6 +80,13 @@ INSERT INTO main.group_candidates
     ) related JOIN main.members m ON m.id = related.member;
 """
 
+_CELL = "VALUES (:group,:sample,{})"
+_MEMBER_CELL = (
+    "SELECT c.group_id,c.sample,{} FROM members m "
+    "JOIN cells c ON c.group_id=m.group_id AND c.sample=m.sample "
+    "WHERE m.sample=:sample AND m.subject_id=:subject"
+)
+
 
 def _low_signal_to_noise(quality: Mapping[str, Any]) -> int | None:
     flag = quality.get("low_signal_to_noise")
@@ -98,6 +104,7 @@ class ExplanationReportWriter:
         self._peaks: dict[tuple[str, str], int] = {}
         self._groups: dict[str, int] = {}
         self._candidates: dict[tuple[str, str], int] = {}
+        self._risk_batch = 0
         self.candidate_count = 0
         self.record_count = 0
 
@@ -335,9 +342,8 @@ class ExplanationReportWriter:
                 raise ValueError(f"undeclared cell fields: {sorted(unknown)}")
             sample_key = cell["sample_key"]
             sample = self._sample(sample_key)
-            risks = cell.get("membership_risks", ())
             self._db.execute(
-                "INSERT INTO cells VALUES (?,?,?,?,?,NULL,?,?,?,?,?,?)",
+                "INSERT INTO cells VALUES (?,?,?,?,?,NULL,?,?,?,?)",
                 (
                     group,
                     sample,
@@ -348,11 +354,14 @@ class ExplanationReportWriter:
                     cell.get("support_origin", "unavailable"),
                     encode_json(list(cell.get("evidence_states", ()))),
                     encode_json(list(cell.get("reason_codes", ()))),
-                    encode_json(
-                        sorted({flag for risk in risks for flag in risk["risk_flags"]})
-                    ),
-                    encode_json(competition_peers(risks, sample_key)),
                 ),
+            )
+            self._risks(
+                _CELL,
+                {"group": group, "sample": sample},
+                cell.get("membership_risks", ()),
+                sample_key,
+                batch=0,
             )
             quality = {
                 q["observation_id"]: _low_signal_to_noise(q)
@@ -370,37 +379,52 @@ class ExplanationReportWriter:
             )
             self.record_count += 1
 
+    def _risks(
+        self,
+        cell: str,
+        key: Mapping[str, Any],
+        risks: Iterable[Mapping[str, Any]],
+        sample_key: str,
+        *,
+        batch: int,
+    ) -> None:
+        """Record risks on the cell ``cell`` selects with ``key``.
+
+        A flag or a competing alternative the cell already has is kept once.
+        """
+        risks = tuple(risks)
+        self._db.executemany(
+            "INSERT OR IGNORE INTO cell_risk_flags " + cell.format(":flag"),
+            ({**key, "flag": flag} for risk in risks for flag in risk["risk_flags"]),
+        )
+        self._db.executemany(
+            "INSERT OR IGNORE INTO cell_competition "
+            + cell.format(":batch,:position,:peers"),
+            (
+                {
+                    **key,
+                    "batch": batch,
+                    "position": position,
+                    "peers": encode_json(peers),
+                }
+                for position, peers in enumerate(competition_peers(risks, sample_key))
+            ),
+        )
+
     def add_member_risks(
         self, risks: Mapping[tuple[str, str], Mapping[str, Any]]
     ) -> None:
         """Accepted membership risks by (sample, member subject); each is shown
-        on its member's cell in the member's final group."""
+        on its member's cell in the member's final group, ahead of the risks
+        recorded before it."""
         for (sample_key, subject_id), risk in risks.items():
-            sample = self._sample(sample_key)
-            row = self._db.execute(
-                "SELECT c.group_id,c.risk_flags,c.competition FROM members m "
-                "JOIN cells c ON c.group_id=m.group_id AND c.sample=m.sample "
-                "WHERE m.sample=? AND m.subject_id=?",
-                (sample, subject_id),
-            ).fetchone()
-            if row is None:
-                continue
-            group, flags, competition = row
-            peers = json.loads(competition)
-            peers[:0] = [
-                owners
-                for owners in competition_peers((risk,), sample_key)
-                if owners not in peers
-            ]
-            self._db.execute(
-                "UPDATE cells SET risk_flags=?,competition=? "
-                "WHERE group_id=? AND sample=?",
-                (
-                    encode_json(sorted({*json.loads(flags), *risk["risk_flags"]})),
-                    encode_json(peers),
-                    group,
-                    sample,
-                ),
+            self._risk_batch -= 1
+            self._risks(
+                _MEMBER_CELL,
+                {"sample": self._sample(sample_key), "subject": subject_id},
+                (risk,),
+                sample_key,
+                batch=self._risk_batch,
             )
 
     def set_cell_position(self, group_id: str, sample_key: str, rt_min: float) -> None:

@@ -65,7 +65,7 @@ def present_result(result: dict[str, Any]) -> dict[str, Any]:
         from xic_inspector.sources.untargeted_overview import review_overview
 
         path = Path(evidence.report_path)
-        result["overview"], _rows = review_overview(path, read_evidence_summary(path))
+        result["overview"] = review_overview(path, read_evidence_summary(path))
     return result
 
 

@@ -90,9 +90,24 @@ CREATE TABLE cells (
         CHECK (support_origin IN ({_ORIGINS})),
     evidence_states TEXT NOT NULL CHECK (json_type(evidence_states) = 'array'),
     reason_codes TEXT NOT NULL CHECK (json_type(reason_codes) = 'array'),
-    risk_flags TEXT NOT NULL DEFAULT '[]' CHECK (json_type(risk_flags) = 'array'),
-    competition TEXT NOT NULL DEFAULT '[]' CHECK (json_type(competition) = 'array'),
     PRIMARY KEY (group_id, sample)
+) STRICT, WITHOUT ROWID;
+CREATE TABLE cell_risk_flags (
+    group_id INTEGER NOT NULL,
+    sample INTEGER NOT NULL,
+    flag TEXT NOT NULL,
+    PRIMARY KEY (group_id, sample, flag),
+    FOREIGN KEY (group_id, sample) REFERENCES cells
+) STRICT, WITHOUT ROWID;
+CREATE TABLE cell_competition (
+    group_id INTEGER NOT NULL,
+    sample INTEGER NOT NULL,
+    batch INTEGER NOT NULL,
+    position INTEGER NOT NULL,
+    peers TEXT NOT NULL CHECK (json_type(peers) = 'array'),
+    PRIMARY KEY (group_id, sample, batch, position),
+    UNIQUE (group_id, sample, peers),
+    FOREIGN KEY (group_id, sample) REFERENCES cells
 ) STRICT, WITHOUT ROWID;
 CREATE TABLE cell_peaks (
     group_id INTEGER NOT NULL,
@@ -137,6 +152,27 @@ CREATE VIEW review_item_candidates AS
     UNION ALL
     SELECT -c.id, c.id FROM candidates c
     WHERE NOT EXISTS (SELECT 1 FROM group_candidates g WHERE g.candidate = c.id);
+CREATE VIEW review_items AS
+    SELECT id AS item,
+        CASE WHEN feature_id IS NULL THEN 'group' ELSE 'row' END AS kind,
+        COALESCE(feature_id, CAST(id AS TEXT)) AS identifier,
+        NULL AS sample_key,
+        json_array(CASE WHEN feature_id IS NULL THEN 'group' ELSE 'row' END,
+            COALESCE(feature_id, CAST(id AS TEXT))) AS sort_key,
+        CASE WHEN feature_id IS NOT NULL THEN destination END AS destination,
+        (SELECT COUNT(*) FROM cells c
+         WHERE c.group_id = groups.id AND c.variant = 'numeric') AS numeric_count,
+        (SELECT COUNT(*) FROM cells c
+         WHERE c.group_id = groups.id AND c.variant = 'unresolved')
+            AS unresolved_count
+    FROM groups
+    UNION ALL
+    SELECT ic.item, 'candidate', c.candidate_id, s.sample_key,
+        json_array('candidate', s.sample_key, c.candidate_id), NULL, 0, 0
+    FROM review_item_candidates ic
+    JOIN candidates c ON c.id = ic.candidate
+    JOIN samples s ON s.id = c.sample
+    WHERE ic.item < 0;
 CREATE VIEW review_samples AS
     SELECT ic.item, c.sample FROM review_item_candidates ic
     JOIN candidates c ON c.id = ic.candidate
