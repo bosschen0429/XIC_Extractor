@@ -99,22 +99,26 @@ def test_completed_empty_recovery_preserves_each_compatible_source_subject(
     if not backfill_enabled:
         from xic_extractor.alignment_explanation.reader import (
             read_alignment_explanation,
+            read_review_curves,
         )
 
+        report = output / "alignment_explanation.sqlite"
         detail = read_alignment_explanation(
-            output / "alignment_explanation.sqlite",
-            candidate_id=peaks[stems[0]][0].peak_id,
+            report, candidate_id=peaks[stems[0]][0].peak_id
         )
         missing_queries = [
-            query
+            location
             for group in detail["groups"]
-            for query in group["xic_extractions"]
-            if query["sample_key"] == "Missing"
+            if "feature_id" in group
+            for location in read_review_curves(
+                report, feature_id=group["feature_id"]
+            ).locations
+            if location.sample_key == "Missing"
         ]
         assert len(missing_queries) == 1
-        assert missing_queries[0]["group_position"] is True
-        assert missing_queries[0]["rt_apex_min"] == pytest.approx(7.98, abs=0.02)
-        assert missing_queries[0]["ppm"] == settings.precursor_mz_tolerance_ppm
+        assert missing_queries[0].physical_peak_key is None
+        assert missing_queries[0].rt_apex_min == pytest.approx(7.98, abs=0.02)
+        assert missing_queries[0].ppm == settings.precursor_mz_tolerance_ppm
 
 
 def _nearby_subjects(tmp_path: Path):

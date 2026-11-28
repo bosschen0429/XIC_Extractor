@@ -141,7 +141,6 @@ S1, S2, S2_OTHER, S3 = (
     ],
 )
 def test_competition_names_what_the_alternative_does_with_this_peak(risks, expected):
-    from xic_inspector.sources.cid_nl_presentation import competition_groups
+    from xic_extractor.alignment_explanation.review import competition_peers
 
-    cell = {"sample_key": "S2", "membership_risks": risks}
-    assert competition_groups(cell) == expected
+    assert competition_peers(risks, "S2") == expected

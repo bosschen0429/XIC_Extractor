@@ -579,7 +579,8 @@ def test_inspector_job_rejects_source_not_bound_to_published_untargeted_result(
     current_report, current_matrix, current_hash = create_inspector_report(current_dir)
     stale_report, _, _ = create_inspector_report(stale_dir, attempt_id="att-stale")
     expected_source = prepare_report(
-        current_report, SelectionRequest(strategy="sample", limit=10)
+        current_report,
+        SelectionRequest(strategy="query", sample_ids=("S1", "S2"), limit=10),
     ).source
     assert isinstance(expected_source, EvidenceLocator)
     current_output = tmp_path / "current-inspector.html"
@@ -593,7 +594,11 @@ def test_inspector_job_rejects_source_not_bound_to_published_untargeted_result(
             {
                 "source": str(current_report),
                 "output": str(current_output),
-                "selection": {"strategy": "sample", "limit": 10},
+                "selection": {
+                    "strategy": "query",
+                    "sample_ids": ["S1", "S2"],
+                    "limit": 10,
+                },
             },
         )
         succeeded = _terminal(jobs)
@@ -605,7 +610,11 @@ def test_inspector_job_rejects_source_not_bound_to_published_untargeted_result(
             {
                 "source": str(stale_report),
                 "output": str(stale_output),
-                "selection": {"strategy": "sample", "limit": 10},
+                "selection": {
+                    "strategy": "query",
+                    "sample_ids": ["S1", "S2"],
+                    "limit": 10,
+                },
             },
         )
         state = _terminal(jobs)

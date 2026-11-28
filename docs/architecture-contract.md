@@ -263,7 +263,7 @@ peak table is an output, not an analysis handoff. Stage CLI inputs remain valid.
 | --- | --- |
 | `sample_metadata.py` | sample metadata parsing, RAW mapping and role inference; a run's samples are `SampleMetadata` rows |
 | `matrix_curation/` | post-Alignment curation over a published Matrix and its export; never Alignment decisions or normalization |
-| `evidence_artifacts.py` | completed-evidence locator: report and Matrix paths, Matrix SHA-256, attempt UUID, schema version |
+| `evidence_artifacts.py` | completed-evidence locator: report and Matrix paths, Matrix SHA-256, attempt UUID |
 | `processing_identity.py` | RAW source fingerprints checked at file handoffs |
 | `execution/attempt.py` | sole attempt construction, execution, settlement and finalization authority |
 | `acquisition_contract.py` | capability-bound acquisition batches and call/point facts |
