@@ -52,6 +52,8 @@ XIC_Extractor/
 │   ├── user/                  使用者操作、欄位參考、概念 HTML 與截圖（assets/）；README.md 是索引
 │   ├── product/               產品行為與科學規則；README.md 依主題找文件
 │   ├── agent/                 按任務讀的執行、驗證與交付規則；含診斷結論 ledger
+│   ├── adr/                   已採納的架構決策與其理由
+│   ├── development/           從原始碼執行、CLI 與維護者解說頁；不隨 ZIP 提供
 │   ├── architecture-contract.md  程式入口、責任與依賴方向
 │   ├── ui-design.md              UI 設計與呈現原則
 │   └── project-layout.md      本檔
