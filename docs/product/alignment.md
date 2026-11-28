@@ -195,8 +195,8 @@ calibrated error rate.
 Backfill localizes from the accepted band's measured member apices, including
 MS1-only positions without turning them into CID-NL support. It fits up to
 twelve same-cohort neighbors in the common coordinate when possible, removing
-and restoring the band's frozen drift without refitting it; fallbacks and the
-empirical tolerance are in [Backfill](backfill.md#query-rt-versus-group-rt).
+and restoring the band's frozen drift without refitting it
+([Backfill](backfill.md#where-each-decision-lives) names the owners).
 It creates no row and accepts a missing-sample observation only inside the
 fixed band's physical and method limits, resolving competing claims on one
 physical peak once; output reads the resulting decisions without regrouping.

@@ -311,7 +311,7 @@ and blocker requirements still apply. An uncounted or missing ISTD imposes no
 rejection.
 
 Cohort Backfill is a separate recovery once direct reference observations
-exist: the [shared Backfill route](backfill.md#targeted-route) attributes a
+exist: the [shared Backfill route](backfill.md#boundaries-across-modules) attributes a
 unique qualified retained MS1 peak from confirmed peers and paired ISTD RT. Its
 receipt can replace an observation-only capture; it does not rerank a directly
 supported selection or promote HOLD to confirmation.
