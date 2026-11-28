@@ -295,83 +295,42 @@ Artifacts: `output/issue422-bounded-worksets-20260921/alignment85-process12/`.
 ### Where the RAW phases spend time
 
 `diagnostic_only`; `78cf27ceb` (#1306), 85RAW `dna_dr`, four process workers.
-Probed runs matched un-probed runs' Matrix, review, Backfill evidence and RT
-anchors byte for byte.
 
-- **Conclusion:** initial acquisition is worker-bound (93% utilization) and
-  Backfill was parent-bound (33%). Summed partition acquisition over wall is
-  capped at two by the two partition producers, so it does not measure the
-  workers. Separate RawFileReader processes do not wait on one another (flat
-  per-task time from one to four; throughput at six and eight 1.26 and 1.46
-  times four), and RAW reads stayed warm.
-- **Accepted, in order:**
-  1. Planning with the final grouping on workers (#1315): Backfill 353 to
-     241 s, final grouping 96 to 110 s. The producer had computed band RT
-     locations itself (393 s: `locate` 54%, `_empirical_tolerances` 41%) and
-     13–15 of 28 partitions waited for an admission credit.
-  2. Reading each ion's contrast neighbourhood with its region XIC and the
-     2048 budget: initial acquisition 278 s (opens 2,550 to 1,445, vendor calls
-     6,844 to 2,142, worker time 1,474 to 1,034 s), Backfill 190 s, runtime
-     586 s. Every (partition, sample) task reopens its RAW (open 15 ms, dispose
-     10 ms, about 0.13 s on the first chromatogram call), about 22% of initial
-     worker time. Discovery's windows would answer at most 0.06% of initial
-     and 0.84% of Backfill requests; initial region reads answer 98.8% of
-     Backfill requests within 2 ppm, but 0.66% at the same mass centre.
-  3. ISTD apexes from Discovery peaks without RAW (`expected_diff`): the same
-     510 coordinates (8RAW 48), stage 38 to 0.07 s, tree peak 12.2 to 10.1 GB
-     with 6 processes instead of 17. A sample whose standard DDA never sampled
-     now has no coordinate for that label.
-  4. Workers reading and writing the grouping spool themselves: grouping 114.2
-     to 53.3 s, peak 9.43 to 8.15 GB. Composition recording the RT drift count
-     and membership-risk flag: post-Backfill phase 84.5 to 57.6 s.
-  5. Each Backfill partition whole on one worker: Backfill 180.1 to 126.9 s,
-     runtime 543.2 to 482.9 s, CLI 605 to 543 s, tree peak 10.0 to 10.7 GB
-     with 7.7 GB available. Its bound is the larger of partition work over
-     workers (492 s / 4) and the largest partition (38 s); a batch with fewer
-     partitions than workers loses sample parallelism within a partition.
-- **Rejected:** composing on a worker one partition at a time left Backfill at
-  195.7 s with 1.1 GB more per composing worker; spool-read contention was not
-  the main cost. Review-curve encoding costs about 8.4 s.
+- **Conclusion:** initial acquisition is worker-bound (93% utilization);
+  summed partition acquisition over wall is capped at two by the two partition
+  producers, so it does not measure the workers. Separate RawFileReader
+  processes do not wait on one another (flat per-task time from one to four;
+  throughput at six and eight 1.26 and 1.46 times four), and RAW reads stay
+  warm. Every (partition, sample) task reopens its RAW (open 15 ms, dispose
+  10 ms, about 0.13 s on the first chromatogram call), about 22% of initial
+  worker time. Discovery's windows would answer at most 0.06% of initial and
+  0.84% of Backfill requests; initial region reads answer 98.8% of Backfill
+  requests within 2 ppm, but 0.66% at the same mass centre.
+- **Current state:** each Backfill partition runs whole on one worker; its
+  bound is the larger of partition work over workers (492 s / 4 on 85RAW) and
+  the largest partition (38 s), so a batch with fewer partitions than workers
+  loses sample parallelism within a partition.
+- **Rejected:** composing on a worker one partition at a time (Backfill
+  195.7 s, 1.1 GB more per composing worker); spool-read contention was not
+  the main cost.
 - **Not established:** parent stack samples are biased toward GIL-releasing
-  code, so costs come from timed spans; one run each. All 510 ISTD pairs exist
-  on both sides, so none of the removed Targeted paths ran (credibility gate,
-  elution-order check, cross-sample recovery, error on a failed RAW). The
-  explanation database differed in internal integer peak ids, renumbered by
-  the new partition order; its tables matched once peak references were
-  resolved to `physical_peak_key`, and it is not byte-identical.
+  code, so costs come from timed spans; one run each.
 - **Reopen:** when partition packing, worker scheduling, Backfill planning,
-  the ISTD reference, the RAW reader or where composition runs changes.
+  the RAW reader or where composition runs changes.
 
 Artifacts: `output/1306/` in the `research-1306-raw-time-46fb42` worktree.
 
-### Drift grouping reuses prepared numerical evidence
+### Drift grouping cost floor
 
-`diagnostic_only`; output-preserving grouping optimizations (#1165, #1172,
-#1175, 2026-11-17). In-memory grouping measurements, not a full85 RAW or
-Backfill runtime claim.
+`diagnostic_only` (#1165, #1172, #1175, 2026-11-17); in-memory grouping
+measurements.
 
-- **Conclusion:** three steps kept complete inference results identical
-  (coefficients, decisions, operation counts; six drift scenarios; 8RAW replay
-  with five byte-identical TSVs):
-  1. Shared Theil-Sen regressor pairs, comparison-scoped pair terms and cached
-     zero-model costs (`2fa578cb`): 255 synthetic owners 110.38–112.12 to
-     53.61–60.24 s; 8RAW replay kept 871 groups and 2,681 observations.
-  2. Shared RT, weight, region and trend-neighbour arrays per group, offsets
-     expanded only for scored owners (`2f2d5769`): medians 91.71 to 71.85 s
-     under a loaded host, peak working set 1,261 to 314 MB; 68,954 of 69,220
-     candidate fits were distinct, so no repeat work remained.
-  3. Borrowed batch state once per exact RT, and early rejection when the zero
-     model's costliest pair exceeds the bound (`4082cce7`): on the 85-sample
-     312.069 / 299.154 worksets borrowed computations 16,220 / 12,049 to
-     227 / 208, full pair scorings 48,220 / 44,975 to 15,859 / 38,566, medians
-     19.95 to 14.61 s and 13.27 to 11.55 s; 8RAW replay 3.13 to 2.91 s.
-- **Current state:** Theil-Sen fitting and batch-state lookup are the floor; a
-  fixed-term lower bound that would skip fits was diagnosed but not attempted.
+- **Conclusion:** Theil-Sen fitting and batch-state lookup are the floor.
+  68,954 of 69,220 candidate fits on the 255-owner fixture were distinct
+  groups, so no repeated work is left to share.
+- **Not attempted:** a fixed-term lower bound that would skip fits.
 - **Reopen:** when drift fitting, pair scoring or the comparison population
   changes.
-
-Artifacts: `output/codex-rt1165-grouping-optimization/` (#1165 worktree),
-`output/1172/` (#1172), `output/1175/` (#1175).
 
 ### Grouping-only output avoids round-trip work
 
@@ -440,36 +399,10 @@ MS2.
   for every candidate shift) and two nearly all in membership search
   re-scoring merged groups (161,023 evaluations for 239 owners); drift fitting
   was about a fifth. One window timed 31 and 40 s in two runs.
-- **Accepted:** rejecting losing drift models before scoring and sharing
-  measured pair costs across merges: m/z 268.1184 (286 owners) 24.50 to
-  18.06 s, three interleaved runs; the 72-owner 272.1358 control 0.63 to
-  0.48 s once skipping a drift fit no longer disabled bulk reads of computed
-  pair costs. Seven windows and the 8-injection 474.2933 window kept the same
-  memberships and decision records; not evidence the rows are chemically
-  correct.
 - **Reopen:** when membership search, pattern matching or window density
   changes.
 
-Artifacts: `output/perf_probe/run83/` (`feat/replay-rt-calibration` worktree),
-`output/grouping-cost/` (`perf/1270-grouping-cost` worktree).
-
-### Accepted Alignment optimizations
-
-All `exact_safe` with byte-identical public outputs; local gains, not cohort
-percentages.
-
-| Change | Measured gain | Rerun when |
-| --- | --- | --- |
-| One mass-recalibration probe per RAW (#931, `bd77a760`) | probe calls 136 to 8, probe time 110.5 to 8.0 s; end-to-end ratio inconclusive | probe logic, source binding, worker transport or applied correction changes |
-| Process workers read the shared owner bootstrap from shared memory, not initargs | workers started about 4 s apart (initargs block spawn until each child re-imports the main module), now together; initial phase 8RAW 35.4/36.4 to 28.7/32.4 s, oil 62.6/64.1 to 55.7/58.4 s; runtime −4 to −8 s | worker transport or start method changes |
-| No per-entry fsync in the recomputable fact cache (#699, `332f19f4`) | 8RAW median 104.1 to 80.2 s | cache persistence or recovery semantics change |
-| Final membership replay reuses group costs (#913, `a51d0473f`) | `replay_grouping` 240 to 178 s on 44 samples | membership costs, search or snapshot change |
-| Regroup replays worksets in process workers, largest first | 83 injections on 6 cores/12 threads: whole regroup 120 s against 526 s for sequential grouping alone, same 2,539 groups, peak working set 8.3 GB; 8RAW 4.2 to 6.2 s with six byte-identical tables | workset independence, worker transport or host changes |
-| Injection ordering prepared once per grouping population | grouping 0.156 to 0.115 s on the m/z 396 snapshot | neighbor semantics or grouping population change |
-| Peak trajectories use local mass and order regions | 128 mass families 1.85 to 0.17 s; ppm calls 1.75M to 13.6k | ppm/order semantics or density change |
-| Dense peak patterns reuse top-two DP states | 32 peaks 3.58 to 1.18 s | matching semantics change |
-| SQLite scalar reads in named columns (`42372d7f`) | Matrix-page preparation 239.5 to 120.8 ms; database 12.1 to 10.6 MB | cell retention, index layout or selection changes |
-| Review overview streams expanded cells | 1,600 rows: allocation peak 125.7 MB to 0.68 MB | reader or overview semantics change |
+Artifacts: `output/perf_probe/run83/` (`feat/replay-rt-calibration` worktree).
 
 ### Rejected Alignment designs
 
@@ -499,21 +432,6 @@ model.
 
 ## Discovery And Acquisition
 
-### Accepted Discovery optimizations
-
-All `exact_safe` with byte-identical candidate, review and physical-facts
-outputs. Keep the formatted trailer API; the typed API changes numeric
-precision.
-
-| Change | Measured gain | Rerun when |
-| --- | --- | --- |
-| MS1 acquisition shares super-window reads (#546) | vendor calls 3,082 to 53; `ms1_backfill` 28.6 to 16.4 s on one RAW | request planning, super-window grouping or the RAW reader changes |
-| Native MS1 batching, batch maximum 256 (#234) | 8RAW median 160.2 to 146.8 s; batches 31,819 to 128 | batching or reader changes |
-| Early precursor rejection in candidate merge (#699) | MS1 Backfill 17.8 to 14.2 s on one RAW | merge eligibility or order changes |
-| Precursor-mass index in candidate merge | MS1 Backfill 17.5 to 14.1 s on one RAW | merge eligibility or order changes |
-| MS2 precursor metadata uses file-local trailer indices | seed stage 5.76 to 4.52 s on one RAW | trailer decoding changes |
-| MS1 mass channels track the oldest live channel instead of rescanning all | EASY-IC oil 8 RAW wall 104.7/102.8 to 73.7/70.9 s; 8RAW 37.2 to 31.4 s; `within_ppm` calls 23.1M to linear on the 22,091-event RAW | channel membership rule or search order changes |
-
 ### Acquisition source
 
 `diagnostic_only` (#124, 2026-07-24).
@@ -529,12 +447,9 @@ precision.
 
 `exact_safe` (#924, #928).
 
-- **Conclusion:** the 158-sample, 14-target post-acquisition replay takes
-  21.5–21.7 s through XLSX publication, preserving all 2,212 rows and 5,167
-  diagnostics. Targeted MS2 reads only events that can reach a declared target:
-  one RAW admits 2,935 of 37,298 events; eight RAW go from 55.0 to 24.5 s warm
-  and 91.6 to 56.0 s cold. On USB HDD the 158-RAW run is storage-bound
-  (1,208 s). Thread- and process-per-target prototypes regress or break parity.
+- **Conclusion:** on USB HDD the 158-RAW Targeted run is storage-bound
+  (1,208 s). Thread- and process-per-target prototypes regress or break
+  parity.
 - **Reopen:** when the input population, physical binding, solver,
   publication contract, worker lifecycle or storage changes.
 
@@ -548,3 +463,5 @@ precision.
   midpoint rounding and signed zero; a few `Monoisotopic M/Z` trailer values
   move by 0.0001 Da, accepted without a conversion layer. Eight-RAW Targeted
   takes 22.4–23.6 s with 4.0.19 versus 15.4–15.9 s with 8.0.42, warm.
+- **Current state:** keep the formatted trailer API; the typed API changes
+  numeric precision.
