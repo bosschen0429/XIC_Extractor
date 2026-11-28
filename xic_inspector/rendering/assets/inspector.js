@@ -532,7 +532,7 @@
     if(aligned<curves.length&&alignedAvailable(item))return [aligned?`${aligned}/${curves.length} 段有對齊座標`:'無對齊座標'];
     return [];
   }
-  function originRefs(origin){return [...new Set(['method_refs','capture_refs','observation_refs'].flatMap(key=>Array.isArray(origin?.[key])?origin[key]:[]).filter(Boolean))];}
+  function originRefs(origin){return [...new Set(['capture_refs','observation_refs'].flatMap(key=>Array.isArray(origin?.[key])?origin[key]:[]).filter(Boolean))];}
   const injectionOrders=data.summary?.injection_order||{};
   const rel={axis:'raw',captures:{}};
   function relationshipModel(item){

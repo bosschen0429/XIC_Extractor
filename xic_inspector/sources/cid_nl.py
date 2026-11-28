@@ -91,9 +91,6 @@ def _candidate_ref(key: CandidateKey) -> str:
     return json.dumps(key, separators=(",", ":"))
 
 
-Linked = dict[str, tuple[dict[str, Any], set[CandidateKey]]]
-
-
 def build_item_evidence(
     evidence: ReviewEvidence,
     attempt_id: str,

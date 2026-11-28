@@ -70,7 +70,6 @@ def create_review_batch(tmp_path, sample_count=2, *, keep_curves=False):
                     "matrix_path": str(matrix),
                     "matrix_sha256": hashlib.sha256(matrix.read_bytes()).hexdigest(),
                     "samples": samples,
-                    "selection_evidence_capability": "recorded_decisions",
                     "neutral_loss_by_tag": NEUTRAL_LOSS_BY_TAG,
                 },
             )
@@ -122,7 +121,6 @@ def create_nearest_review_batch(tmp_path):
                     "matrix_path": str(matrix),
                     "matrix_sha256": hashlib.sha256(matrix.read_bytes()).hexdigest(),
                     "samples": samples,
-                    "selection_evidence_capability": "recorded_decisions",
                     "neutral_loss_by_tag": NEUTRAL_LOSS_BY_TAG,
                 },
             )

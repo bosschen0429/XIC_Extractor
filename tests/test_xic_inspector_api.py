@@ -793,7 +793,6 @@ def _create_nearest_mz_db(directory, rows):
                     "matrix_path": str(matrix),
                     "matrix_sha256": hashlib.sha256(matrix.read_bytes()).hexdigest(),
                     "samples": samples,
-                    "selection_evidence_capability": "recorded_decisions",
                 },
             )
         )
