@@ -13,12 +13,12 @@ their limits.
 | Decision | Owner | Tests |
 | --- | --- | --- |
 | Missing cell, group support gate, mapping (Untargeted) | `alignment.backfill.conservative` | [`test_alignment_conservative_backfill.py`](../../tests/test_alignment_conservative_backfill.py) |
-| Eligible questions, canonical subject, query RT and position basis | `alignment.backfill.cid_nl_planning` | [`test_untargeted_cid_nl_backfill_acquisition.py`](../../tests/test_untargeted_cid_nl_backfill_acquisition.py) |
+| Eligible questions, canonical subject, query RT and position basis | `alignment.backfill.cid_nl_planning` | |
 | Paired-offset and band localization, apex tolerance | `BandRtLocator.backfill_locations` | [`test_band_rt_location.py`](../../tests/test_band_rt_location.py) |
 | Method evidence reuse, search and competing attribution | `alignment.backfill.cid_nl_evidence` | [`test_cid_nl_multi_group_recovery.py`](../../tests/test_cid_nl_multi_group_recovery.py) |
-| Competing claims and physical view equivalence | `peak_detection.physical_peak_equivalence` | [`test_physical_peak_claim_completion.py`](../../tests/test_physical_peak_claim_completion.py), [`test_alignment_shoulder_and_backfill_contest.py`](../../tests/test_alignment_shoulder_and_backfill_contest.py) |
-| Cell value and no-write | `ProductionCellDecision` | [`test_alignment_cell_decision.py`](../../tests/test_alignment_cell_decision.py), [`test_cell_observations.py`](../../tests/test_cell_observations.py) |
-| Targeted reference group and recovery | `alignment.backfill.istd_anchored`, `extraction.targeted_istd_backfill` | [`test_targeted_product_projection.py`](../../tests/test_targeted_product_projection.py), [`test_targeted_output_boundary.py`](../../tests/test_targeted_output_boundary.py) |
+| Competing claims and physical view equivalence | `peak_detection.physical_peak_equivalence` | [`test_physical_peak_claim_completion.py`](../../tests/test_physical_peak_claim_completion.py) |
+| Cell value and no-write | `ProductionCellDecision` | [`test_alignment_cell_decision.py`](../../tests/test_alignment_cell_decision.py) |
+| Targeted reference group and recovery | `alignment.backfill.istd_anchored`, `extraction.targeted_istd_backfill` | |
 
 ## Boundaries Across Modules
 
@@ -53,9 +53,8 @@ their limits.
 - **Missing Discovery events prove nothing.** The Discovery scan range can be
   narrower than a peak, so the absence of a Discovery event is not proof of
   missing local CID-NL.
-- **One claim per peak.** Two queries can resolve the same physical peak;
-  without one winner the Matrix would count it twice. Same apex plus
-  overlapping windows is not enough to block a recovery, because same-apex
+- **One claim per peak.** Two queries can resolve the same physical peak,
+  and only one claim wins. Same apex plus overlapping windows is not enough to block a recovery, because same-apex
   windows can hold different ions.
 - **REJECT survives.** A cell whose initial assessment rejected missing MS1
   keeps that `REJECT` until the normal relation owner grants SUPPORT.

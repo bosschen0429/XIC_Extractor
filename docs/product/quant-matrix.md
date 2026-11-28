@@ -15,7 +15,7 @@ boundaries and reasons. For reading and curating the result, use the
 | Row inclusion, identity and Matrix rendering | `output.alignment` | [`test_alignment_tsv_writer.py`](../../tests/test_alignment_tsv_writer.py), [`test_untargeted_final_matrix_contract.py`](../../tests/test_untargeted_final_matrix_contract.py) |
 | Output levels | `output.alignment.output_levels` | [`test_alignment_output_levels.py`](../../tests/test_alignment_output_levels.py) |
 | Area policy | [Signal processing](signal-processing.md#boundary-and-area-owners) | |
-| Targeted row binding | [Targeted selection](targeted-selection.md#candidate-selection) | |
+| Targeted row binding | [Targeted selection](targeted-selection.md#where-each-decision-lives) | |
 
 ## Boundaries
 
@@ -41,15 +41,15 @@ boundaries and reasons. For reading and curating the result, use the
 
 ## Why It Works This Way
 
-- A censored area is published as observed, never imputed, so downstream
-  statistics see what was measured; publishing it does not change counted
-  detection or physical selection.
-- A row's m/z is decided once when the group is built, so Backfill searches and
-  the Matrix displays the same centre; a member's own `peak_mz`
-  ([accurate-mass reading](discovery.md#accurate-mass-reading)) can sit up to
-  10 ppm from it.
-- Owners without a clean integration do not train RT calibration, so values
-  and calibration anchors come from different eligibility checks.
+- A censored area is published as observed, never imputed; publishing it
+  does not change counted detection or physical selection.
+- A row's m/z is decided once when the group is built; Backfill searches
+  that same centre. A member's own m/z is its peak's `peak_mz`
+  ([accurate-mass reading](discovery.md#accurate-mass-reading)), because an
+  inferred precursor's product + loss can sit up to 10 ppm from the MS1 ion.
+- Owners without an integration, or with an apex on an integration
+  boundary, do not train RT calibration; cell values come from peak
+  integrations, not the anchor-eligibility flag.
 - The fast `validation-minimal` profile also writes the explanation report so
   a run can be reviewed without a rerun; it does not establish production
   readiness.

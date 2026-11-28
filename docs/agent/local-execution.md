@@ -99,10 +99,10 @@ The current command surface is:
 
     .venv\Scripts\python.exe -m scripts.run_alignment --help
 
-Output semantics live in docs/product/quant-matrix.md; cell decisions live in
-docs/product/decision-policy.md; preset
-compatibility lives in docs/product/presets.md. Task-specific paths and accepted
-parameter values stay in the Issue or validation owner.
+Output semantics, cell decisions and preset compatibility are owned by the
+code and tests that docs/product/quant-matrix.md, decision-policy.md and
+presets.md name. Task-specific paths and accepted parameter values stay in the
+Issue or validation owner.
 
 ### Replay only the stage you changed
 

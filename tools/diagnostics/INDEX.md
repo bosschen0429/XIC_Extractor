@@ -28,7 +28,7 @@ workflow owner rather than chaining similarly named commands.
 | Query measured candidates in a saved Discovery batch | `tools.diagnostics.grouping_experiment query` — no RAW or grouping; [details](grouping_experiment.py) |
 | Extract, discover, or align samples | [GUI and CLI user guides](../../docs/user/README.md) |
 | Inspect chromatograms | GUI **開啟 Inspector** or `xic-inspector`; [Workbench and review](../../docs/product/workbench.md) owns what review may mean |
-| Select Matrix features for downstream analysis | GUI **矩陣整理** or `xic-matrix-curation`; [Matrix Curation](../../docs/product/matrix-curation.md) owns the steps and output |
+| Select Matrix features for downstream analysis | GUI **矩陣整理** or `xic-matrix-curation`; `xic_extractor.matrix_curation` owns the steps and output; [Matrix Curation](../../docs/product/matrix-curation.md) keeps their boundaries |
 | Build a solvent-blank background library | `scripts.extract_blank_library`; `xic_extractor.discovery.blank_qualification` owns extraction and serialization |
 | Run tissue validation | `scripts.run_tissue_validation`; [execution settings](../../docs/agent/local-execution.md#validation-scale) own prerequisites |
 | Score one peak quantified in several Matrix rows | `tools.diagnostics.duplicate_quantification --alignment-dir <validation output>`; [Duplicate quantification](duplicate_quantification.py) |

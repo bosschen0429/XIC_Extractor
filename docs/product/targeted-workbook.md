@@ -13,10 +13,10 @@ label to users.
 
 | Decision | Owner | Tests |
 | --- | --- | --- |
-| Sheets, columns, formats | `output.workbook_builder` and its `sheet_*` modules | [`test_excel_sheets_contract.py`](../../tests/test_excel_sheets_contract.py), [`test_targeted_review_sheets.py`](../../tests/test_targeted_review_sheets.py) |
+| Sheets, columns, formats | `output.workbook_builder` and its `sheet_*` modules | [`test_excel_pipeline.py`](../../tests/test_excel_pipeline.py), [`test_excel_sheets_contract.py`](../../tests/test_excel_sheets_contract.py) |
 | `依據` and `疑點` labels and their look marks | `output.result_labels` | [`test_result_labels.py`](../../tests/test_result_labels.py) |
 | Worklist and 先看 order | `output.targeted_overview` | [`test_targeted_overview.py`](../../tests/test_targeted_overview.py) |
-| Saved-workbook reader | `xic_inspector.sources.targeted_workbook` | [`test_xic_inspector_targeted_workbook.py`](../../tests/test_xic_inspector_targeted_workbook.py), [`test_workbook_compare.py`](../../tests/test_workbook_compare.py) |
+| Saved-workbook reader | `xic_inspector.sources.targeted_workbook` | [`test_xic_inspector_targeted_workbook.py`](../../tests/test_xic_inspector_targeted_workbook.py) |
 
 ## Boundaries
 
@@ -43,8 +43,7 @@ label to users.
   result may be a wrong peak and a rare not-counted result may be a missed one.
   An outcome every sample shares is a batch fact.
 - **`面積` projects every saved Area**, zero, ND and blank included,
-  independent of counted detection, so in-sheet calculation sees the same
-  values; a withheld `不足以定量` value is blank, never zero or ND, and its
+  independent of counted detection; a withheld `不足以定量` value is blank, never zero or ND, and its
   diagnostic integral is not substituted.
 - **Every diagnostic event is kept** on the hidden `診斷事件` sheet for tracing
   a past decision, because the XIC view shows the peak but not why it was

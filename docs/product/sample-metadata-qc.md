@@ -14,7 +14,7 @@ lookup and matching rules; this page keeps the boundaries, reasons and limits.
 | Sequence-document matching | `xic_extractor.sample_metadata` | [`test_sample_metadata_sequence_parsing.py`](../../tests/test_sample_metadata_sequence_parsing.py) |
 | RAW analysis set, names and injection order | `raw_reader.read_analysis_set` | [`test_analysis_set.py`](../../tests/test_analysis_set.py) |
 | Groups | `xic_extractor.sample_metadata` | [`test_sample_groups.py`](../../tests/test_sample_groups.py) |
-| Targeted sample checks | `applications.targeted` | [`test_targeted_sample_metadata.py`](../../tests/test_targeted_sample_metadata.py) |
+| Targeted sample checks | `extraction.pipeline` | [`test_targeted_sample_metadata.py`](../../tests/test_targeted_sample_metadata.py) |
 | Injection timeline diagnostic | [`tools.diagnostics.build_injection_timeline`](../../tools/diagnostics/build_injection_timeline.py) | [`test_injection_timeline.py`](../../tests/test_injection_timeline.py) |
 
 ## Boundaries
@@ -45,9 +45,9 @@ batches.
 
 ## Why It Works This Way
 
-- **Acquisition timeline, not file times.** Copying or moving RAW files
-  changes filesystem times and directory order, never the vendor acquisition
-  record. Re-resolving order this way can change it relative to file times or
+- **Acquisition timeline, not file times.** Order comes from the copy-aware
+  acquisition timeline, not filesystem times, directory order or sequence row
+  numbers. Re-resolving order this way can change it relative to file times or
   documents; such a change needs a real-data expected-diff comparison, since
   header and order parity alone is engineering evidence.
 - **Unreadable RAW** fails only when it would be analyzed; other unreadable

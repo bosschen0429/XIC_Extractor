@@ -13,7 +13,7 @@ thresholds; this page keeps the principles, reasons, evidence and limits.
 | Decision | Owner | Tests |
 | --- | --- | --- |
 | Band linking across injections | `alignment.peak_band_linking` | [`test_peak_band_linking.py`](../../tests/test_peak_band_linking.py) |
-| Grouping runtime, drift seeds and relinking | `alignment.cid_nl_grouping` | [`test_elution_grouping_runtime.py`](../../tests/test_elution_grouping_runtime.py) |
+| Grouping runtime, drift seeds and relinking | `alignment.cid_nl_grouping` | [`test_cid_nl_initial_grouping.py`](../../tests/test_cid_nl_initial_grouping.py) |
 | Band consolidation | `alignment.band_identity` | [`test_band_identity.py`](../../tests/test_band_identity.py) |
 | Shape consistency | `alignment.shape_consistency` | [`test_shape_consistency.py`](../../tests/test_shape_consistency.py) |
 | Group identity, disposition and lineage | CrossSample | [`test_cross_sample_identity_lineage.py`](../../tests/test_cross_sample_identity_lineage.py), [`test_cross_sample_association_lineage.py`](../../tests/test_cross_sample_association_lineage.py) |
@@ -92,9 +92,9 @@ method support, and a found peak no writable value
   widen a gap, and missing injection order invents no links. Competitions are
   member facts that keep the measured alternate; no displayed ID decides a
   tie.
-- **Drift seeds merge first** when one joint fit explains them, so a compound
-  whose RT drifts with injection order is not cut into pieces; relinking uses
-  the seed's frozen drift, never a fit refitted to the peaks it would add.
+- **Drift seeds merge first** when one joint fit explains them; relinking
+  uses the seed's frozen drift, never a fit refitted to the peaks it would
+  add.
 
 ### Join groups and consolidate split bands
 

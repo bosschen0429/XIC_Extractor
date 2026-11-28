@@ -16,13 +16,16 @@ keeps the boundaries, reasons, evidence and limits. The
 
 | Decision | Owner | Tests |
 | --- | --- | --- |
-| Ion grouping, peaks, same-ion measurements, status | `discovery.ion_grouping`, `discovery.same_ion_peaks`, `discovery.pipeline` | [`test_discovery_ion_peaks.py`](../../tests/test_discovery_ion_peaks.py), [`test_discovery_raw_peak_assignment.py`](../../tests/test_discovery_raw_peak_assignment.py) |
-| Neutral-loss tolerance, precursor basis, inferred-precursor verification | `discovery.ms2_events`, `discovery.event_evidence` | [`test_discovery_ms2_events.py`](../../tests/test_discovery_ms2_events.py), [`test_discovery_input_source_precursor.py`](../../tests/test_discovery_input_source_precursor.py) |
-| Attachment, strict and set relations, admission | `discovery.cid_nl_search` | [`test_cid_nl_admission.py`](../../tests/test_cid_nl_admission.py) |
-| Physical measurement and accurate-mass reading | `discovery.ms1_capture` | [`test_discovery_ms1_capture.py`](../../tests/test_discovery_ms1_capture.py), [`test_discovery_physical_measurement.py`](../../tests/test_discovery_physical_measurement.py) |
+| Ion grouping | `discovery.ion_grouping` | [`test_discovery_ion_peaks.py`](../../tests/test_discovery_ion_peaks.py), [`test_discovery_raw_peak_assignment.py`](../../tests/test_discovery_raw_peak_assignment.py) |
+| Strict NL events, NL tolerance, precursor basis | `discovery.ms2_events` | [`test_discovery_ms2_events.py`](../../tests/test_discovery_ms2_events.py) |
+| Choices among events on one peak | `discovery.event_evidence` | [`test_discovery_scan_event_resolution.py`](../../tests/test_discovery_scan_event_resolution.py) |
+| Peak measurement, NL attachment, accurate-mass reading, admission | `discovery.ms1_capture` | [`test_discovery_ms1_capture.py`](../../tests/test_discovery_ms1_capture.py), [`test_discovery_physical_measurement.py`](../../tests/test_discovery_physical_measurement.py), [`test_cid_nl_admission.py`](../../tests/test_cid_nl_admission.py) |
+| Same-ion measurements in several windows | `discovery.same_ion_peaks` | |
+| Sample and batch run | `discovery.cid_nl_search`, `discovery.pipeline` | [`test_discovery_pipeline.py`](../../tests/test_discovery_pipeline.py) |
 | Blank qualification | `discovery.blank_qualification` | |
 | Batch file | `discovery.store` | [`test_discovery_store.py`](../../tests/test_discovery_store.py) |
-| Delta Mass matching and publication | `discovery.delta_mass_strategy`, `discovery.delta_mass_pipeline`, `discovery.delta_mass_publication` | [`test_delta_mass_method.py`](../../tests/test_delta_mass_method.py), [`test_delta_mass_presets.py`](../../tests/test_delta_mass_presets.py) |
+| Delta Mass matching | `discovery.delta_mass_strategy`, `discovery.delta_mass_pipeline` | [`test_delta_mass_method.py`](../../tests/test_delta_mass_method.py) |
+| Delta Mass publication | `discovery.delta_mass_publication` | [`test_delta_mass_entrypoint.py`](../../tests/test_delta_mass_entrypoint.py) |
 | Delta Mass review export and display | `tools.diagnostics.delta_mass_review`, `xic_inspector` | [`test_delta_mass_review.py`](../../tests/test_delta_mass_review.py), [`test_delta_mass_review_browser.py`](../../tests/test_delta_mass_review_browser.py) |
 
 ## CID-NL Peaks And Events

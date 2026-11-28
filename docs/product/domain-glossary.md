@@ -74,7 +74,7 @@ tests.
   in an assessment. It is not a cross-sample feature or a Matrix row.
 - `CID-NL alignment workset`: compatible method subjects scheduled together so
   their observations reach the same grouping decision. Workset membership is
-  computational scope, not chemical identity; see [Alignment](alignment.md).
+  computational scope, not chemical identity.
 - cell `status`: in the Alignment cell tables, the origin of the cell's peak
   (`detected` when this injection has its own CID-NL support for the peak,
   `backfilled` when the peak is MS1-only, whichever search found it),
@@ -232,7 +232,7 @@ stable because they identify existing data or public interfaces.
 
 | Word | Meaning | Not this word |
 | --- | --- | --- |
-| `backfill` | the bounded missing-cell revisit stage; each workflow's missing cell is defined in [Backfill](backfill.md) | — |
+| `backfill` | the bounded missing-cell revisit stage; each workflow's missing cell is defined by its [Backfill owner](backfill.md#where-each-decision-lives) | — |
 | `Matrix` | the finalized product-facing numeric feature-by-sample grid; see [Quant Matrix](quant-matrix.md) | a sample matrix; a pre-final cell collection |
 | `sample matrix` | the chemical background of a sample (clean standard, biological extract) | the product `Matrix` |
 | `SDO/LEK` | the lab's two-standard instrument-check set (SDO and LEK) | `SDOLEK` in prose |

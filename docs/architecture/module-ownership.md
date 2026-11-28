@@ -98,8 +98,8 @@ selection and `AuditTrail` before any Matrix change; activation rules are in
 - `peak_detection.evidence_semantics` is role-neutral and shared by candidate
   selection, product projection and Alignment, so changes there reach both
   paths. Targeted role policy is in `extraction.targeted_product_projection`;
-  writers consume `output.targeted_product_model`. Resolution order is in
-  [Targeted selection](../product/targeted-selection.md#candidate-selection).
+  writers consume `output.targeted_product_model`. Resolution order is owned by
+  `select_candidate_by_evidence`.
 - Peak detection has one path: physical segments from
   `peak_detection.physical_peak_evaluation`.
   `peak_detection/peak_selection.py` scores a supplied candidate set; Targeted

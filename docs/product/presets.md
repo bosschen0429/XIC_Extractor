@@ -34,7 +34,7 @@ CID-NL Discovery presets restore lock-mass (Easy-IC) coordinates by default,
 and downstream algorithms receive corrected masses rather than a second
 correction policy.
 
-- **Why positive polarity only.** The lock-mass ppm approximation is supported
+- **Positive polarity only.** The lock-mass ppm approximation is supported
   only for positive-polarity RAWs; other polarities keep vendor masses.
 - **What it is not.** The fixed baseline also moves normal scan-to-scan
   fluctuations: restoration is not absolute mass recalibration and does not

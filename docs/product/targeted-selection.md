@@ -13,11 +13,11 @@ the [Targeted guide](../user/targeted.md#看結果).
 
 | Decision | Owner | Tests |
 | --- | --- | --- |
-| Per-Target specificity (MS1 only, CID-NL, Delta Mass) | `configuration.targeted_identification` | [`test_targeted_specificity.py`](../../tests/test_targeted_specificity.py), [`test_targeted_delta_mass.py`](../../tests/test_targeted_delta_mass.py) |
-| Retained population comparison and retention uncertainty | `peak_detection.targeted_context` | [`test_targeted_peak_selection.py`](../../tests/test_targeted_peak_selection.py) |
+| Per-Target specificity (MS1 only, CID-NL, Delta Mass) | `configuration.targeted_identification` | [`test_targeted_specificity.py`](../../tests/test_targeted_specificity.py) |
+| Retained population comparison and retention uncertainty | `peak_detection.targeted_context` | [`test_target_extraction.py`](../../tests/test_target_extraction.py) |
 | Candidate assessment, recorded-precursor rule, scoring, MS2 window | `extraction.targeted_peak_selection` | [`test_targeted_peak_selection.py`](../../tests/test_targeted_peak_selection.py) |
 | Tie-break order | `select_candidate_by_evidence` | [`test_candidate_evidence_selection.py`](../../tests/test_candidate_evidence_selection.py) |
-| Batch selection among retained regions | `extraction.targeted_batch_selection` | [`test_targeted_production_workflow.py`](../../tests/test_targeted_production_workflow.py) |
+| Batch selection among retained regions | `extraction.targeted_batch_selection` | [`test_target_extraction.py`](../../tests/test_target_extraction.py) |
 | Paired-ISTD identity and rejection, counting, labels | `extraction.targeted_product_projection` (`paired_istd_positions`) | [`test_targeted_product_projection.py`](../../tests/test_targeted_product_projection.py) |
 | Row binding and cell subject; post-cell inclusion | `alignment.projection.target.pre_cell`, `post_cell` | [`test_target_pre_cell_projection.py`](../../tests/test_target_pre_cell_projection.py), [`test_target_post_cell_projection.py`](../../tests/test_target_post_cell_projection.py) |
 | Cell value or typed no-write | `ProductionCellDecision` | [`test_alignment_cell_decision.py`](../../tests/test_alignment_cell_decision.py) |
@@ -37,6 +37,16 @@ the [Targeted guide](../user/targeted.md#看結果).
 - **Retained candidates.** Every acquired candidate, method product and NL
   answer stays diagnostic evidence; rejected interpretations keep their curves
   and evaluations for inspection.
+- **Every Target, every sample.** Each configured Target is evaluated for
+  each selected analysis sample; sample names do not gate Targets or
+  paired-area references, and Untargeted neutral-loss selection does not
+  restrict the list.
+- **Counting needs a positive MS1 peak** (finite RT, positive area); without
+  one a row is never counted by implication. A configured ISTD's plausible
+  dropout can count as `detected_flagged`, while an analyte NL fail or missing
+  MS2 needs [paired-ISTD identity](#paired-istd-identity). Paired-ISTD RT
+  mismatch without strict NL support demotes candidate localization,
+  independently of counting.
 - **Review is not a second ranking.** Reason labels describe evidence; RT and
   score labels alone create no review action.
 
@@ -44,9 +54,9 @@ the [Targeted guide](../user/targeted.md#看結果).
 
 - **The whole acquisition is the candidate space.** An expected-RT window, DDA
   anchor crop or reacquisition never truncates the physical candidate
-  population, because expected RT is an identity prior, not a search window or
-  verified truth, and genuine drift must stay possible. There is no universal
-  0.75-minute or 20-minute acceptance rule.
+  population; expected RT is an identity prior, not a search window or
+  verified truth. There is no universal 0.75-minute or 20-minute acceptance
+  rule.
 - **Measurement, identity and integration uncertainty are separate
   decisions.** A complete region with acquired body support stays measurable
   despite a ragged or split top; top quality describes risk rather than erasing
@@ -68,8 +78,8 @@ the [Targeted guide](../user/targeted.md#看結果).
   current-sample identity support. Humans supply identities, pairings and
   expected RTs, which are not portable across batches or methods.
 - **Cross-sample drift is not added twice.** Displacement intervals come from
-  corroborated reference-linked bodies; adding the same drift again as a
-  symmetric allowance would accept alternate ion bands.
+  corroborated reference-linked bodies, and the same drift must not be added
+  again as a symmetric allowance.
 
 ### Candidate selection
 

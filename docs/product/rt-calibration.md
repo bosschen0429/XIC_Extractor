@@ -51,9 +51,9 @@ consumes the frame.
   A deficient fit is unavailable rather than replaced by a two-point line.
 - **Folds are merged locally.** In 85RAW two Tumor injections folded at one
   pair 0.04 min apart, where the offset drops from about +40 s to about 0 s.
-- **ISTDs are bounded landmarks.** Forcing the curve through every standard
-  would let one large or order-conflicting residual bend the map; the bound
-  limits influence and is not a confidence interval.
+- **ISTDs are bounded landmarks.** Large or order-conflicting standard
+  residuals stay visible rather than forcing the curve through every standard;
+  the bound limits influence and is not a confidence interval.
 - **Graded queries** let Backfill forecast outside the strong fit while
   keeping order and a unique inverse; a weak answer is a forecast, not
   extended strong support.
