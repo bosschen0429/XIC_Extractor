@@ -121,8 +121,6 @@ tests.
   a primary output.
 - `provenance`: the inputs, effective settings, runtime and decision path that
   identify how an artifact or decision was produced.
-- `evidence-chain packet`: source evidence assembled for review or approval.
-  The packet is evidence, not approval.
 - `RAW-tier evidence label`: the actual fixture or real-sample review used for
   a claim. CID-NL 8RAW/85RAW fixtures are not universal gates for other methods.
 
@@ -187,22 +185,12 @@ Keep these facts on separate axes:
 
 ## Product Authority Terms
 
-- `candidate/audit universe`: rows visible for review, audit or diagnosis; not
-  writable product output.
 - `authority`: the permission boundary for Matrix, workbook or value writes;
   [Writer Authority](decision-policy.md#writer-authority) owns how it is granted.
-- `validation evidence status`: a source-qualified claim about what a run or
-  evidence packet verified. Its Evidence labels are defined in the
-  [product validation contract](../agent/product-validation-contract.md#evidence-labels).
 - `activation contract`: the evidence, tests, authority and expected-diff
   conditions required before diagnostic or shadow behavior can affect values.
 - `parity`: a replacement preserves the declared observable contract unless an
   explicit expected diff authorizes a change.
-- `adjudication`: machine classification of a candidate. It routes work but is
-  not permission to write output.
-- `review packet`: a structured human-review surface, not free-form value entry.
-- `truth lockbox` (`lockbox`): independent peak-choice or area labels used to
-  evaluate automation. Lockbox labels never mutate product output.
 - `expected-diff`: explicit evidence that a public output change is intended,
   bounded and test-covered.
 
