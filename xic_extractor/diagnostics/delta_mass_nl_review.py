@@ -87,16 +87,16 @@ def assess_review_neutral_losses(
                 for seed in seeds
                 if seed.sample_stem == candidate.sample_stem
                 and seed.neutral_loss_tag == profile.tag
-                and abs(seed.precursor_mz - position.query_mz) <= tolerance
-                and lo <= seed.rt <= hi
+                and abs(seed.scan.precursor_mz - position.query_mz) <= tolerance
+                and lo <= seed.scan.rt_min <= hi
             )
             queries = tuple(
                 CidNlEventQuery(
-                    seed.assess_precursor_loss(settings.nl_tolerance_ppm),
-                    seed.rt,
-                    seed.ms1_precursor_observation.rt_min
-                    if seed.ms1_precursor_observation
-                    else seed.rt,
+                    seed.scan.assess_precursor_loss(settings.nl_tolerance_ppm),
+                    seed.scan.rt_min,
+                    seed.scan.ms1_precursor_observation.rt_min
+                    if seed.scan.ms1_precursor_observation
+                    else seed.scan.rt_min,
                 )
                 for seed in relevant
             )
@@ -122,17 +122,17 @@ def assess_review_neutral_losses(
                     if not assessment.supports_nl
                     else "unassigned_peak"
                 )
-                scan = spectra[seed.scan_number]
+                scan = spectra[seed.scan.scan_number]
                 base = max(scan.intensity, default=0.0)
                 matches.append(
                     ReviewNlMatch(
-                        seed.scan_number,
-                        assessment.reference_mz or seed.precursor_mz,
-                        seed.product_mz,
-                        seed.product_intensity / base if base > 0 else 0.0,
+                        seed.scan.scan_number,
+                        assessment.reference_mz or seed.scan.precursor_mz,
+                        seed.scan.product_mz,
+                        seed.scan.product_intensity / base if base > 0 else 0.0,
                         assessment.observed_loss_da,
                         assessment.observed_loss_error_ppm,
-                        assessment.reference_source or seed.precursor_mz_basis,
+                        assessment.reference_source or seed.scan.precursor_mz_basis,
                         status,
                     )
                 )

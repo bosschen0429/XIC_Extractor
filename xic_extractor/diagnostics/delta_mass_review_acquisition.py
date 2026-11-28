@@ -163,7 +163,7 @@ def acquire_delta_mass_review(
                                 scan, raw_file=raw_path, settings=nl_settings
                             )
                             if any(
-                                abs(seed.precursor_mz - mz) <= tolerance
+                                abs(seed.scan.precursor_mz - mz) <= tolerance
                                 for mz, tolerance in targets
                             )
                         )

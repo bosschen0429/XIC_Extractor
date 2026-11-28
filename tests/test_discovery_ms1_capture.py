@@ -15,6 +15,7 @@ from tests.discovery_ms1_capture_fixtures import (
     _OwnerBoundBatchRaw,
     _seed,
     _settings,
+    with_scan,
 )
 from tests.discovery_physical_measurement_fixtures import measured_peak_evaluations
 from xic_extractor.acquisition_contract import AcquisitionContractError
@@ -131,7 +132,7 @@ def test_discovery_verifies_inferred_seeds_after_ms1_without_moving_peak(
 
     group = _channel(
         tuple(
-            replace(
+            with_scan(
                 _seed(scan_number=number, rt=rt),
                 precursor_mz_basis="product_plus_neutral_loss",
                 observed_loss_error_ppm=None,
@@ -160,18 +161,20 @@ def test_discovery_verifies_inferred_seeds_after_ms1_without_moving_peak(
     candidate = _candidates_from_raw(raw, (group,), settings=settings)[0]
     assert len(batches) == 1 and len(batches[0]) == 1
     assert candidate.status == state
-    assert {event.precursor_mz_basis for event in candidate.located_events} == {
+    assert {event.scan.precursor_mz_basis for event in candidate.located_events} == {
         "product_plus_neutral_loss"
     }
     assert candidate.ms1_apex_rt == baseline.ms1_apex_rt
-    assert [event.scan_number for event in candidate.located_events] == [10, 11]
+    assert [event.scan.scan_number for event in candidate.located_events] == [10, 11]
     for event in candidate.located_events:
-        assert event.assess_precursor_loss(settings.nl_tolerance_ppm).status == status
-        assert event.ms1_precursor_observation == Ms1PrecursorObservation(
+        assert (
+            event.scan.assess_precursor_loss(settings.nl_tolerance_ppm).status == status
+        )
+        assert event.scan.ms1_precursor_observation == Ms1PrecursorObservation(
             9, parent_rt, masses
         )
-        assert event.observed_loss_error_ppm is None
-        assert event.precursor_mz == 500.0
+        assert event.scan.observed_loss_error_ppm is None
+        assert event.scan.precursor_mz == 500.0
 
 
 @pytest.mark.parametrize(
@@ -204,7 +207,7 @@ def test_parent_scan_on_a_neighbor_peak_does_not_support_this_peak(
     from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
     from xic_extractor.precursor_evidence import Ms1PrecursorObservation
 
-    seed = replace(
+    seed = with_scan(
         _seed(scan_number=10, rt=8.97),
         precursor_mz_basis="product_plus_neutral_loss",
         observed_loss_error_ppm=None,
@@ -369,7 +372,7 @@ def test_single_raw_basin_keeps_events_outside_quantitative_return(
 
     (peak,) = result.peaks
     assert peak.ms1_apex_rt - representative_event_rt(peak) == pytest.approx(0.26)
-    events = {item.event.scan_number: item for item in result.attachments}
+    events = {item.event.scan.scan_number: item for item in result.attachments}
     assert events[20].peak_id == peak.peak_id
     assert events[10].peak_id == peak.peak_id or (
         events[10].unattached_reason == "rt_outside_peak"
@@ -392,7 +395,7 @@ def test_capture_merges_candidates_inside_same_ms1_peak_boundary() -> None:
     assert candidate.best_ms2_scan_id == 20
     assert _scan_ids(candidate) == (10, 20)
     assert candidate.attached_event_count == 2
-    assert [event.rt for event in candidate.located_events] == pytest.approx(
+    assert [event.scan.rt_min for event in candidate.located_events] == pytest.approx(
         [7.80, 8.04]
     )
 
@@ -413,25 +416,27 @@ def test_verified_multitag_peak_persists_each_tags_best_scan(
             scan = 10 + tag_index * 10 + int(is_best)
             loss_error_da = 0.0001 if is_best else 0.0003
             seed = replace(
-                _seed(
-                    scan_number=scan,
-                    rt=9.01 if is_best else 9.0,
-                    product_mz=500.0 - loss - loss_error_da,
-                    product_intensity=(
-                        best_intensity if is_best or equal_intensity else 1000.0
+                with_scan(
+                    _seed(
+                        scan_number=scan,
+                        rt=9.01 if is_best else 9.0,
+                        product_mz=500.0 - loss - loss_error_da,
+                        product_intensity=(
+                            best_intensity if is_best or equal_intensity else 1000.0
+                        ),
+                        observed_loss_error_ppm=loss_error_da / loss * 1e6,
                     ),
-                    observed_loss_error_ppm=loss_error_da / loss * 1e6,
+                    configured_neutral_loss_da=loss,
+                    observed_neutral_loss_da=loss + loss_error_da,
+                    scan_precursor_mz=500.0,
+                    precursor_metadata=Ms2PrecursorMetadata(
+                        master_scan_number=scan - 1,
+                        charge=1,
+                        isolation_width_da=1.6,
+                        isolation_offset_da=0.0,
+                    ),
                 ),
                 neutral_loss_tag=tag,
-                configured_neutral_loss_da=loss,
-                observed_neutral_loss_da=loss + loss_error_da,
-                scan_precursor_mz=500.0,
-                precursor_metadata=Ms2PrecursorMetadata(
-                    master_scan_number=scan - 1,
-                    charge=1,
-                    isolation_width_da=1.6,
-                    isolation_offset_da=0.0,
-                ),
             )
             seeds.append(seed)
             if is_best:
@@ -447,7 +452,7 @@ def test_verified_multitag_peak_persists_each_tags_best_scan(
     candidate = candidates[0]
     assert candidate.matched_tag_names == ("dR", "R")
     assert _scan_ids(candidate) == (10, 11, 20, 21)
-    assert candidate.best_ms2_scan_id == expected_by_tag["dR"].scan_number
+    assert candidate.best_ms2_scan_id == expected_by_tag["dR"].scan.scan_number
     assert set(candidate.located_events) == set(seeds)
 
 
@@ -765,4 +770,4 @@ def _peak_raw(
 
 
 def _scan_ids(peak: DiscoveryPeak) -> tuple[int, ...]:
-    return tuple(sorted({event.scan_number for event in peak.located_events}))
+    return tuple(sorted({event.scan.scan_number for event in peak.located_events}))

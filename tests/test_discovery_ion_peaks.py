@@ -14,6 +14,7 @@ from tests.discovery_ms1_capture_fixtures import (
     _multi_tag_settings,
     _seed,
     _settings,
+    with_scan,
 )
 from tests.discovery_peak_fixtures import located_scan_ids
 from tests.discovery_physical_measurement_fixtures import (
@@ -39,7 +40,7 @@ def _capture(raw, seeds, settings: DiscoverySettings):
 
 
 def _events_by_scan(result):
-    return {item.event.scan_number: item for item in result.attachments}
+    return {item.event.scan.scan_number: item for item in result.attachments}
 
 
 def _two_peak_raw(*, first: float, second: float, sigma: float = 0.04) -> _FakeRaw:
@@ -108,13 +109,13 @@ def test_channels_never_chain_masses_beyond_the_tolerance(order) -> None:
 
     channels = build_discovery_ions(seeds, settings=settings)
 
-    assert [sorted(s.precursor_mz for s in c.events) for c in channels] == [
+    assert [sorted(s.scan.precursor_mz for s in c.events) for c in channels] == [
         [500.000, 500.004],
         [500.008],
     ]
     for channel in channels:
         for left, right in itertools.combinations(channel.events, 2):
-            assert within_ppm(left.precursor_mz, right.precursor_mz, 10.0)
+            assert within_ppm(left.scan.precursor_mz, right.scan.precursor_mz, 10.0)
 
 
 def test_coeluting_ions_within_the_tolerance_share_one_channel() -> None:
@@ -150,10 +151,12 @@ def test_multitag_events_of_one_ion_attach_to_one_peak() -> None:
     settings = _multi_tag_settings()
     seeds = tuple(
         replace(
-            _seed(scan_number=scan, rt=9.0 + 0.01 * index, product_mz=500.0 - loss),
+            with_scan(
+                _seed(scan_number=scan, rt=9.0 + 0.01 * index, product_mz=500.0 - loss),
+                configured_neutral_loss_da=loss,
+                observed_neutral_loss_da=loss,
+            ),
             neutral_loss_tag=tag,
-            configured_neutral_loss_da=loss,
-            observed_neutral_loss_da=loss,
         )
         for index, (scan, tag, loss) in enumerate(
             ((10, "dR", 116.047344), (20, "R", 132.0423), (30, "R", 132.0423))
@@ -175,7 +178,7 @@ def test_every_event_attaches_to_one_peak_or_records_why_not() -> None:
     raw = _two_peak_raw(first=7.6, second=8.2, sigma=0.03)
     seeds = (
         _seed(scan_number=10, rt=7.6),
-        replace(
+        with_scan(
             _seed(scan_number=20, rt=8.2),
             precursor_mz_basis="product_plus_neutral_loss",
         ),
@@ -214,20 +217,25 @@ def test_seed_order_does_not_change_peaks_or_events() -> None:
         random.Random(seed).shuffle(shuffled)
         result = _capture(raw, tuple(shuffled), settings)
         assert result.peaks == expected.peaks
-        assert sorted(result.attachments, key=lambda e: e.event.scan_number) == sorted(
-            expected.attachments, key=lambda e: e.event.scan_number
-        )
+        assert sorted(
+            result.attachments, key=lambda e: e.event.scan.scan_number
+        ) == sorted(expected.attachments, key=lambda e: e.event.scan.scan_number)
 
 
 def test_tag_order_does_not_change_peak_identity_or_count() -> None:
     seeds = tuple(
         replace(
-            _seed(
-                scan_number=scan, rt=rt, product_mz=500.0 - loss, product_intensity=i
+            with_scan(
+                _seed(
+                    scan_number=scan,
+                    rt=rt,
+                    product_mz=500.0 - loss,
+                    product_intensity=i,
+                ),
+                configured_neutral_loss_da=loss,
+                observed_neutral_loss_da=loss,
             ),
             neutral_loss_tag=tag,
-            configured_neutral_loss_da=loss,
-            observed_neutral_loss_da=loss,
         )
         for scan, rt, tag, loss, i in (
             (10, 7.6, "dR", 116.047344, 9e3),
@@ -323,7 +331,7 @@ def test_a_recentred_window_that_selects_another_peak_keeps_the_first() -> None:
         intensity=_gaussian(rt, center=9.00, sigma=0.03, height=1e4)
         + _gaussian(rt, center=9.40, sigma=0.03, height=3e3),
     )
-    inferred = replace(
+    inferred = with_scan(
         _seed(scan_number=12, rt=9.40),
         precursor_mz_basis="product_plus_neutral_loss",
         observed_loss_error_ppm=None,

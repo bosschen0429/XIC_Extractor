@@ -210,7 +210,10 @@ def test_publication_uses_final_peak_evidence_not_stale_selected_summary(tmp_pat
             candidate_ms2_evidence=replace(
                 second_answer,
                 best_product_evidence=replace(
-                    second_answer.best_product_evidence, scan_rt=outside
+                    second_answer.best_product_evidence,
+                    scan=replace(
+                        second_answer.best_product_evidence.scan, rt_min=outside
+                    ),
                 ),
             ),
         ),
@@ -345,8 +348,12 @@ def test_nl_event_outside_exact_target_precursor_is_not_target_evidence(
                 evidence,
                 best_product_evidence=replace(
                     product,
-                    precursor_mz=shifted_precursor,
-                    product_mz=shifted_precursor - product.observed_loss_da,
+                    scan=replace(
+                        product.scan,
+                        precursor_mz=shifted_precursor,
+                        product_mz=shifted_precursor
+                        - product.scan.observed_neutral_loss_da,
+                    ),
                 ),
             ),
         ),
@@ -364,8 +371,12 @@ def test_nl_event_outside_exact_target_precursor_is_not_target_evidence(
                 second_evidence,
                 best_product_evidence=replace(
                     second_product,
-                    precursor_mz=shifted_precursor,
-                    product_mz=shifted_precursor - second_product.observed_loss_da,
+                    scan=replace(
+                        second_product.scan,
+                        precursor_mz=shifted_precursor,
+                        product_mz=shifted_precursor
+                        - second_product.scan.observed_neutral_loss_da,
+                    ),
                 ),
             ),
         ),
@@ -405,7 +416,9 @@ def test_nl_event_outside_retained_peak_finalizes_without_direct_support(
             candidate_ms2_evidence=replace(
                 evidence,
                 best_scan_rt=outside_rt,
-                best_product_evidence=replace(product, scan_rt=outside_rt),
+                best_product_evidence=replace(
+                    product, scan=replace(product.scan, rt_min=outside_rt)
+                ),
             ),
         ),
         target,
@@ -518,9 +531,13 @@ def test_diagnostic_nl_evidence_finalizes_without_strict_support(
                 best_loss_ppm=loss_error_ppm,
                 best_product_evidence=replace(
                     product_evidence,
-                    product_mz=product_evidence.precursor_mz - observed_loss_da,
-                    observed_loss_da=observed_loss_da,
-                    observed_loss_error_ppm=loss_error_ppm,
+                    scan=replace(
+                        product_evidence.scan,
+                        product_mz=product_evidence.scan.precursor_mz
+                        - observed_loss_da,
+                        observed_neutral_loss_da=observed_loss_da,
+                        observed_loss_error_ppm=loss_error_ppm,
+                    ),
                 ),
             ),
         ),
@@ -569,9 +586,12 @@ def test_targeted_relation_uses_quadrature_for_retained_product(
                 best_loss_ppm=observed_loss_error_ppm,
                 best_product_evidence=replace(
                     product,
-                    product_mz=product.precursor_mz - observed_loss_da,
-                    observed_loss_da=observed_loss_da,
-                    observed_loss_error_ppm=observed_loss_error_ppm,
+                    scan=replace(
+                        product.scan,
+                        product_mz=product.scan.precursor_mz - observed_loss_da,
+                        observed_neutral_loss_da=observed_loss_da,
+                        observed_loss_error_ppm=observed_loss_error_ppm,
+                    ),
                 ),
             ),
         ),

@@ -43,12 +43,12 @@ def select_representative_event(
         key=lambda event: (
             tag_rank(event.neutral_loss_tag, settings=settings),
             *representative_order_within_tag(
-                product_intensity=event.product_intensity,
-                observed_loss_error_ppm=event.observed_loss_error_ppm,
-                rt=event.rt,
-                scan_number=event.scan_number,
+                product_intensity=event.scan.product_intensity,
+                observed_loss_error_ppm=event.scan.observed_loss_error_ppm,
+                rt=event.scan.rt_min,
+                scan_number=event.scan.scan_number,
                 neutral_loss_tag=event.neutral_loss_tag,
-                product_mz=event.product_mz,
+                product_mz=event.scan.product_mz,
             ),
         ),
     )
@@ -79,7 +79,7 @@ def representative_order_within_tag(
 def events_precursor_mz_basis(
     events: list[DiscoveryEvent],
 ) -> GroupPrecursorMzBasis:
-    values = {event.precursor_mz_basis for event in events}
+    values = {event.scan.precursor_mz_basis for event in events}
     if values == {"scan_precursor"}:
         return "scan_precursor"
     if values == {"scan_monoisotopic"}:
@@ -111,23 +111,25 @@ def resolve_discovery_scan_events(
     def rank(
         event: DiscoveryEvent,
     ) -> tuple[bool, float, float, int, float, float, str]:
-        assessment = event.assess_precursor_loss(settings.nl_tolerance_ppm)
+        assessment = event.scan.assess_precursor_loss(settings.nl_tolerance_ppm)
         error = assessment.observed_loss_error_ppm
         return (
             not assessment.supports_reference(precursor_reference_requirement),
             abs(error) if error is not None else float("inf"),
-            -event.product_intensity,
+            -event.scan.product_intensity,
             tag_precedence.get(event.neutral_loss_tag, len(tag_precedence)),
-            event.precursor_mz,
-            event.product_mz,
-            event.precursor_mz_basis,
+            event.scan.precursor_mz,
+            event.scan.product_mz,
+            event.scan.precursor_mz_basis,
         )
 
     by_event: dict[tuple[int, float], DiscoveryEvent] = {}
     for event in sorted(events, key=rank):
         key = (
-            event.scan_number,
-            event.configured_neutral_loss_da if preserve_configured_losses else 0.0,
+            event.scan.scan_number,
+            event.scan.configured_neutral_loss_da
+            if preserve_configured_losses
+            else 0.0,
         )
         by_event.setdefault(key, event)
     return tuple(by_event[key] for key in sorted(by_event))

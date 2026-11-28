@@ -174,7 +174,7 @@ def plan_cid_nl_mass_regions(
     def qualifies(event: DiscoveryEvent) -> bool:
         return (
             event.neutral_loss_tag in settings.selected_tag_names
-            and event.assess_precursor_loss(settings.nl_tolerance_ppm).supports_nl
+            and event.scan.assess_precursor_loss(settings.nl_tolerance_ppm).supports_nl
         )
 
     repeated = {
@@ -186,7 +186,7 @@ def plan_cid_nl_mass_regions(
     for event in events:
         if qualifies(event):
             mz = event_ion_mz(event)
-            rts_by_mz.setdefault(mz, set()).add(float(event.rt))
+            rts_by_mz.setdefault(mz, set()).add(float(event.scan.rt_min))
             samples_by_mz.setdefault(mz, set()).add(event.sample_stem)
     regions: list[tuple[list[float], set[float], set[str]]] = []
     right = 0.0

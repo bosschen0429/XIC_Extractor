@@ -18,19 +18,19 @@ def event_ion_mz(event: DiscoveryEvent) -> float:
     single parent-MS1 centroid; product + loss, read at MS2 resolution, is the
     fallback only when the parent scan reads no single ion.
     """
-    observation = event.ms1_precursor_observation
+    observation = event.scan.ms1_precursor_observation
     if (
-        event.precursor_mz_basis == "product_plus_neutral_loss"
+        event.scan.precursor_mz_basis == "product_plus_neutral_loss"
         and observation is not None
         and len(observation.centroid_mzs) == 1
     ):
         return observation.centroid_mzs[0]
-    return event.precursor_mz
+    return event.scan.precursor_mz
 
 
 def _measured_by_ms1(event: DiscoveryEvent) -> bool:
-    return event.precursor_mz_basis != "product_plus_neutral_loss" or (
-        event_ion_mz(event) != event.precursor_mz
+    return event.scan.precursor_mz_basis != "product_plus_neutral_loss" or (
+        event_ion_mz(event) != event.scan.precursor_mz
     )
 
 
@@ -68,7 +68,10 @@ def build_discovery_ions(
             members = tuple(
                 sorted(
                     ordered[start:stop],
-                    key=lambda event: (event.rt, *_event_order(event, settings)),
+                    key=lambda event: (
+                        event.scan.rt_min,
+                        *_event_order(event, settings),
+                    ),
                 )
             )
             representative = min(
@@ -76,7 +79,7 @@ def build_discovery_ions(
                 key=lambda event: (
                     not _measured_by_ms1(event),
                     tag_rank(event.neutral_loss_tag, settings=settings),
-                    -event.product_intensity,
+                    -event.scan.product_intensity,
                     _event_order(event, settings),
                 ),
             )
@@ -98,8 +101,8 @@ def _event_order(
     return (
         tag_rank(event.neutral_loss_tag, settings=settings),
         event.neutral_loss_tag,
-        event.rt,
-        event.scan_number,
-        event.precursor_mz,
-        event.product_mz,
+        event.scan.rt_min,
+        event.scan.scan_number,
+        event.scan.precursor_mz,
+        event.scan.product_mz,
     )

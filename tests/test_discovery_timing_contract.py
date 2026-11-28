@@ -9,6 +9,7 @@ import pytest
 from tests.discovery_ms1_capture_fixtures import (
     _multi_tag_settings,
     _seed,
+    with_scan,
 )
 from tests.discovery_physical_measurement_fixtures import _OwnerBoundBatchRaw
 from tests.discovery_pipeline_fixtures import _settings
@@ -46,10 +47,12 @@ def test_publication_timing_covers_the_published_tables(tmp_path: Path) -> None:
     source = spec.acquisition_inputs[0].acquisition_source
     seeds = tuple(
         replace(
-            _seed(scan_number=scan, rt=rt, product_mz=500.0 - loss),
+            with_scan(
+                _seed(scan_number=scan, rt=rt, product_mz=500.0 - loss),
+                configured_neutral_loss_da=loss,
+                observed_neutral_loss_da=loss,
+            ),
             neutral_loss_tag=tag,
-            configured_neutral_loss_da=loss,
-            observed_neutral_loss_da=loss,
         )
         for scan, rt, tag, loss in (
             (10, 7.78, "dR", 116.047344),

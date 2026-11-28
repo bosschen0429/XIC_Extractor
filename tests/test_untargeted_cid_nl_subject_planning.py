@@ -165,7 +165,10 @@ def test_production_batch_preserves_bounded_subject_membership(
     )
     assert permuted.subject_batch == batch.subject_batch
     assert (
-        tuple(representative_event(candidate).precursor_mz for candidate in candidates)
+        tuple(
+            representative_event(candidate).scan.precursor_mz
+            for candidate in candidates
+        )
         == masses
     )
     assert tuple(job.method_subject for job in batch.jobs) == (

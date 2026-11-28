@@ -72,7 +72,7 @@ def test_default_ms2_acquisition_uses_each_raw_span_without_fixed_ceiling() -> N
         seeds = collect_strict_nl_events(
             handle, raw_file=Path("span.raw"), settings=settings
         )
-        assert tuple(seed.rt for seed in seeds) == (start, end)
+        assert tuple(seed.scan.rt_min for seed in seeds) == (start, end)
         assert tuple(
             event.scan.rt
             for event in handle.iter_ms2_scans(start + 0.1, end)
@@ -998,12 +998,12 @@ def test_raw_monoisotopic_precursor_recovers_direct_nl_without_widening_isolatio
             ms2_precursor_tol_da=0.8,
         ),
     )
-    recovered = [s for s in seeds if abs(s.precursor_mz - 300.1605) < 0.0061]
+    recovered = [s for s in seeds if abs(s.scan.precursor_mz - 300.1605) < 0.0061]
     assert len(recovered) == 1
-    assert recovered[0].precursor_mz == mono
-    assert recovered[0].product_mz == product
-    assert recovered[0].precursor_mz_basis == "scan_monoisotopic"
-    assert recovered[0].scan_precursor_mz == selected
+    assert recovered[0].scan.precursor_mz == mono
+    assert recovered[0].scan.product_mz == product
+    assert recovered[0].scan.precursor_mz_basis == "scan_monoisotopic"
+    assert recovered[0].scan.scan_precursor_mz == selected
 
 
 def test_iter_ms2_scans_yields_parse_error_events() -> None:

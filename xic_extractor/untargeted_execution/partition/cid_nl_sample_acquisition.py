@@ -146,7 +146,8 @@ def assess_sample_regions(
         pending = _unresolved_intersection_peaks(scopes, peaks_by_subject, supports)
         if pending:
             declared = frozenset(
-                (ref.scan_number, ref.configured_neutral_loss_da) for ref in evidence
+                (ref.scan.scan_number, ref.scan.configured_neutral_loss_da)
+                for ref in evidence
             )
             new_refs, new_support, new_sets = _acquire_intersection_relations(
                 raw,
@@ -186,7 +187,8 @@ def assess_sample_regions(
         ambiguous = tuple(
             item
             for item in ambiguities
-            if item.evidence.configured_neutral_loss_da in subject.configured_losses
+            if item.evidence.scan.configured_neutral_loss_da
+            in subject.configured_losses
             and any(p in own for p in item.matched_candidates)
         )
         linked = {item.evidence for item in individual} | {
@@ -197,10 +199,12 @@ def assess_sample_regions(
             for item in evidence
             if item in linked
             or (
-                item.configured_neutral_loss_da in subject.configured_losses
+                item.scan.configured_neutral_loss_da in subject.configured_losses
                 and _within_ppm(
-                    item.assess_precursor_loss(settings.nl_tolerance_ppm).reference_mz
-                    or item.precursor_mz,
+                    item.scan.assess_precursor_loss(
+                        settings.nl_tolerance_ppm
+                    ).reference_mz
+                    or item.scan.precursor_mz,
                     subject.precursor_mz,
                     subject.precursor_tolerance_ppm,
                 )
@@ -220,7 +224,7 @@ def assess_sample_regions(
             technical_state="evaluated" if refs else "not_evaluated",
             supplemental_scan_keys=tuple(
                 sorted(
-                    (ref.scan_number, ref.configured_neutral_loss_da)
+                    (ref.scan.scan_number, ref.scan.configured_neutral_loss_da)
                     for ref in refs
                     if ref in additional_refs
                 )
@@ -250,9 +254,11 @@ def assess_sample_regions(
             source_candidate_ids=tuple(p.peak_id for p in candidates),
             strict_scan_count=len(
                 {
-                    item.scan_number
+                    item.scan.scan_number
                     for item in refs
-                    if item.assess_precursor_loss(settings.nl_tolerance_ppm).supports_nl
+                    if item.scan.assess_precursor_loss(
+                        settings.nl_tolerance_ppm
+                    ).supports_nl
                 }
             ),
             capture_evidence=captures,
@@ -320,7 +326,7 @@ def _acquire_intersection_relations(
             rt_min=rt_min,
             rt_max=rt_max,
         )
-        if (seed.scan_number, seed.configured_neutral_loss_da) not in declared
+        if (seed.scan.scan_number, seed.scan.configured_neutral_loss_da) not in declared
     )
     evidence: list[CidNlEvidenceObservation] = []
     supports: list[DdaCidNlPeakSupport] = []

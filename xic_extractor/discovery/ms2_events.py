@@ -18,6 +18,7 @@ from xic_extractor.mass_accuracy import (
 )
 from xic_extractor.ms2_scan_models import Ms2Scan, Ms2ScanEvent
 from xic_extractor.precursor_evidence import (
+    CidNlScan,
     MS1MassWindowSource,
     precursor_inference_bounds,
     recorded_precursor_references,
@@ -62,25 +63,30 @@ def read_parent_ms1_observations(
     """Attach fresh parent-MS1 facts without changing an event's search provenance."""
     windows: dict[int, tuple[int, float, float]] = {}
     for index, event in enumerate(events):
-        metadata = event.precursor_metadata
+        metadata = event.scan.precursor_metadata
         if (
-            event.precursor_mz_basis != "product_plus_neutral_loss"
+            event.scan.precursor_mz_basis != "product_plus_neutral_loss"
             or metadata is None
             or metadata.master_scan_number is None
         ):
             continue
-        radius = mz_tolerance_da(event.precursor_mz, tolerance_ppm)
+        radius = mz_tolerance_da(event.scan.precursor_mz, tolerance_ppm)
         windows[index] = (
             metadata.master_scan_number,
-            event.precursor_mz - radius,
-            event.precursor_mz + radius,
+            event.scan.precursor_mz - radius,
+            event.scan.precursor_mz + radius,
         )
     if not windows:
         return events
     requests = tuple(dict.fromkeys(windows.values()))
     observations = dict(zip(requests, raw.read_ms1_mass_windows(requests), strict=True))
     return tuple(
-        replace(event, ms1_precursor_observation=observations[windows[index]])
+        replace(
+            event,
+            scan=replace(
+                event.scan, ms1_precursor_observation=observations[windows[index]]
+            ),
+        )
         if index in windows
         else event
         for index, event in enumerate(events)
@@ -222,9 +228,9 @@ def _events_from_scan_profile(
         sorted(
             _dedupe_event_candidates(candidates),
             key=lambda event: (
-                event.precursor_mz,
-                event.product_mz,
-                event.scan_number,
+                event.scan.precursor_mz,
+                event.scan.product_mz,
+                event.scan.scan_number,
                 event.neutral_loss_tag,
             ),
         )
@@ -270,20 +276,22 @@ def _build_event(
     precursor_mz_basis: PrecursorMzBasis,
 ) -> DiscoveryEvent:
     return DiscoveryEvent(
+        scan=CidNlScan(
+            scan_number=scan.scan_number,
+            rt_min=scan.rt,
+            precursor_mz=precursor_mz,
+            product_mz=product_mz,
+            product_intensity=product_intensity,
+            configured_neutral_loss_da=neutral_loss_da,
+            observed_neutral_loss_da=observed_loss_da,
+            observed_loss_error_ppm=observed_loss_error_ppm,
+            scan_precursor_mz=scan.precursor_mz,
+            precursor_mz_basis=precursor_mz_basis,
+            precursor_metadata=scan.precursor_metadata,
+        ),
         raw_file=raw_file,
         sample_stem=raw_file.stem,
-        scan_number=scan.scan_number,
-        rt=scan.rt,
-        precursor_mz=precursor_mz,
-        product_mz=product_mz,
-        product_intensity=product_intensity,
         neutral_loss_tag=profile.tag,
-        configured_neutral_loss_da=neutral_loss_da,
-        observed_neutral_loss_da=observed_loss_da,
-        observed_loss_error_ppm=observed_loss_error_ppm,
-        scan_precursor_mz=scan.precursor_mz,
-        precursor_mz_basis=precursor_mz_basis,
-        precursor_metadata=scan.precursor_metadata,
     )
 
 
@@ -293,8 +301,8 @@ def _dedupe_event_candidates(
     best_by_key: dict[tuple[int, int, str], DiscoveryEvent] = {}
     for candidate in candidates:
         key = (
-            round(candidate.precursor_mz * 1_000_000),
-            round(candidate.product_mz * 1_000_000),
+            round(candidate.scan.precursor_mz * 1_000_000),
+            round(candidate.scan.product_mz * 1_000_000),
             candidate.neutral_loss_tag,
         )
         existing = best_by_key.get(key)
@@ -307,9 +315,9 @@ def _dedupe_event_candidates(
 
 def _event_candidate_rank(event: DiscoveryEvent) -> tuple[float, float, int]:
     return (
-        event.observed_loss_error_ppm
-        if event.observed_loss_error_ppm is not None
+        event.scan.observed_loss_error_ppm
+        if event.scan.observed_loss_error_ppm is not None
         else float("inf"),
-        -event.product_intensity,
-        event.scan_number,
+        -event.scan.product_intensity,
+        event.scan.scan_number,
     )

@@ -45,7 +45,9 @@ def _support_from_scans(
     evidence_refs: tuple[CidNlEvidenceObservation, ...] = (),
 ) -> CidNlChromatographicSupport:
     first = supports[0]
-    loss_by_observation = {ref: ref.configured_neutral_loss_da for ref in evidence_refs}
+    loss_by_observation = {
+        ref: ref.scan.configured_neutral_loss_da for ref in evidence_refs
+    }
     members = tuple(
         sorted(
             (
@@ -91,7 +93,7 @@ def _validated_scan_supports(
             "missing strict DDA scan support"
         )
     loss_by_observation = {
-        evidence: evidence.configured_neutral_loss_da for evidence in evidence_refs
+        evidence: evidence.scan.configured_neutral_loss_da for evidence in evidence_refs
     }
     scan_numbers = tuple(
         (

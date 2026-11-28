@@ -40,7 +40,7 @@ def test_scan_event_prefers_independent_direct_loss_over_stronger_inference(
         scan, raw_file=tmp_path / "S1.RAW", settings=settings
     )
     assert len(seeds) == 2
-    assert {seed.precursor_mz_basis for seed in seeds} == {
+    assert {seed.scan.precursor_mz_basis for seed in seeds} == {
         "scan_precursor",
         "product_plus_neutral_loss",
     }
@@ -48,7 +48,7 @@ def test_scan_event_prefers_independent_direct_loss_over_stronger_inference(
     reverse = resolve_discovery_scan_events(seeds[::-1], settings=settings)
     assert forward == reverse
     (event,) = forward
-    assert event.precursor_mz_basis == "scan_precursor"
-    assert event.product_mz == 383.9526
-    assert event.product_intensity == 11900.0
-    assert event.assess_precursor_loss(settings.nl_tolerance_ppm).supports_nl
+    assert event.scan.precursor_mz_basis == "scan_precursor"
+    assert event.scan.product_mz == 383.9526
+    assert event.scan.product_intensity == 11900.0
+    assert event.scan.assess_precursor_loss(settings.nl_tolerance_ppm).supports_nl

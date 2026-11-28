@@ -38,6 +38,7 @@ from xic_extractor.peak_detection.traces import (
     TraceGroup,
     targeted_trace_group,
 )
+from xic_extractor.precursor_evidence import CidNlScan
 from xic_extractor.xic_models import XICRequest, XICTrace
 
 _RAW_FILE = Path("synthetic/SampleA.raw")
@@ -255,17 +256,19 @@ def _discovery_settings(*, ms1_search_padding_min: float) -> DiscoverySettings:
 
 def _seed(*, scan_number: int, rt: float) -> DiscoveryEvent:
     return DiscoveryEvent(
+        scan=CidNlScan(
+            scan_number=scan_number,
+            rt_min=rt,
+            precursor_mz=500.0,
+            product_mz=500.0 - _NEUTRAL_LOSS_DA,
+            product_intensity=10_000.0,
+            configured_neutral_loss_da=_NEUTRAL_LOSS_DA,
+            observed_neutral_loss_da=_NEUTRAL_LOSS_DA,
+            observed_loss_error_ppm=0.0,
+        ),
         raw_file=_RAW_FILE,
         sample_stem="SampleA",
-        scan_number=scan_number,
-        rt=rt,
-        precursor_mz=500.0,
-        product_mz=500.0 - _NEUTRAL_LOSS_DA,
-        product_intensity=10_000.0,
         neutral_loss_tag="DNA_dR",
-        configured_neutral_loss_da=_NEUTRAL_LOSS_DA,
-        observed_neutral_loss_da=_NEUTRAL_LOSS_DA,
-        observed_loss_error_ppm=0.0,
     )
 
 
@@ -302,6 +305,6 @@ def _discovery_ms1_peak_probe(
     candidate: DiscoveryPeak,
 ) -> tuple[object, ...]:
     return (
-        representative_event(candidate).precursor_mz,
+        representative_event(candidate).scan.precursor_mz,
         candidate.ms1_apex_rt,
     )

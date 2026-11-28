@@ -1,6 +1,7 @@
 """Helpers shared by test_discovery_ms1_capture and other test modules."""
 
 from collections.abc import Sequence
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -10,6 +11,7 @@ from xic_extractor.configuration.cid_nl_profile import NeutralLossProfile
 from xic_extractor.discovery.ion_grouping import build_discovery_ions
 from xic_extractor.discovery.models import DiscoveryEvent
 from xic_extractor.discovery.settings import DiscoverySettings
+from xic_extractor.precursor_evidence import CidNlScan
 from xic_extractor.processing_identity import (
     AcquisitionSourceIdentity,
 )
@@ -58,6 +60,10 @@ def _channel(
     return build_discovery_ions(seeds, settings=_settings(**settings_overrides))[0]
 
 
+def with_scan(event: DiscoveryEvent, **facts) -> DiscoveryEvent:
+    return replace(event, scan=replace(event.scan, **facts))
+
+
 def _seed(
     *,
     scan_number: int,
@@ -68,17 +74,19 @@ def _seed(
     observed_loss_error_ppm: float = 0.0,
 ) -> DiscoveryEvent:
     return DiscoveryEvent(
+        scan=CidNlScan(
+            scan_number=scan_number,
+            rt_min=rt,
+            precursor_mz=precursor_mz,
+            product_mz=product_mz,
+            product_intensity=product_intensity,
+            configured_neutral_loss_da=NEUTRAL_LOSS_DA,
+            observed_neutral_loss_da=NEUTRAL_LOSS_DA,
+            observed_loss_error_ppm=observed_loss_error_ppm,
+        ),
         raw_file=RAW_FILE,
         sample_stem="TumorBC2312_DNA",
-        scan_number=scan_number,
-        rt=rt,
-        precursor_mz=precursor_mz,
-        product_mz=product_mz,
-        product_intensity=product_intensity,
         neutral_loss_tag="DNA_dR",
-        configured_neutral_loss_da=NEUTRAL_LOSS_DA,
-        observed_neutral_loss_da=NEUTRAL_LOSS_DA,
-        observed_loss_error_ppm=observed_loss_error_ppm,
     )
 
 

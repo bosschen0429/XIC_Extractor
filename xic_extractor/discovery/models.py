@@ -4,12 +4,8 @@ from dataclasses import field as dataclass_field
 from pathlib import Path
 from typing import Literal
 
-from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
 from xic_extractor.precursor_evidence import (
-    Ms1PrecursorObservation,
-    PrecursorLossAssessment,
-    assess_precursor_loss,
-    supports_direct_nl,
+    CidNlScan,
 )
 from xic_extractor.precursor_evidence import PrecursorMzBasis as PrecursorMzBasis
 
@@ -35,43 +31,9 @@ PEAK_STATUSES: tuple[PeakStatus, ...] = (
 class DiscoveryEvent:
     raw_file: Path
     sample_stem: str
-    scan_number: int
-    rt: float
-    precursor_mz: float
-    product_mz: float
-    product_intensity: float
     neutral_loss_tag: str
-    configured_neutral_loss_da: float
-    observed_neutral_loss_da: float
-    observed_loss_error_ppm: float | None
-    scan_precursor_mz: float | None = None
-    precursor_mz_basis: PrecursorMzBasis = "scan_precursor"
-    precursor_metadata: Ms2PrecursorMetadata | None = None
+    scan: CidNlScan
     acquisition_source_id: str = ""
-    ms1_precursor_observation: Ms1PrecursorObservation | None = None
-
-    def assess_precursor_loss(self, tolerance_ppm: float) -> PrecursorLossAssessment:
-        return assess_precursor_loss(
-            basis=self.precursor_mz_basis,
-            precursor_mz=self.precursor_mz,
-            product_mz=self.product_mz,
-            neutral_loss_da=self.configured_neutral_loss_da,
-            observed_loss_da=self.observed_neutral_loss_da,
-            observed_loss_error_ppm=self.observed_loss_error_ppm,
-            tolerance_ppm=tolerance_ppm,
-            selected_mz=self.scan_precursor_mz,
-            metadata=self.precursor_metadata,
-            ms1_observation=self.ms1_precursor_observation,
-        )
-
-    @property
-    def supports_direct_nl(self) -> bool:
-        return supports_direct_nl(
-            self.precursor_mz_basis,
-            self.precursor_mz,
-            self.scan_precursor_mz,
-            self.precursor_metadata,
-        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -160,8 +122,8 @@ def representative_event_rt(peak: DiscoveryPeak) -> float:
     """RT of the MS2 scan ``best_ms2_scan_id`` among the peak's located events."""
 
     for event in peak.located_events:
-        if event.scan_number == peak.best_ms2_scan_id:
-            return event.rt
+        if event.scan.scan_number == peak.best_ms2_scan_id:
+            return event.scan.rt_min
     raise ValueError(f"{peak.peak_id}: located events lack the representative scan")
 
 
@@ -174,11 +136,11 @@ def located_event_order(
         sorted(
             events,
             key=lambda event: (
-                event.scan_number,
+                event.scan.scan_number,
                 event.neutral_loss_tag,
-                event.precursor_mz,
-                event.product_mz,
-                event.precursor_mz_basis,
+                event.scan.precursor_mz,
+                event.scan.product_mz,
+                event.scan.precursor_mz_basis,
             ),
         )
     )

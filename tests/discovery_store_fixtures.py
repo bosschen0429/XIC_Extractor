@@ -28,6 +28,7 @@ from xic_extractor.discovery.store import (
     read_sample_peaks,
     write_sample_part,
 )
+from xic_extractor.precursor_evidence import CidNlScan
 from xic_extractor.processing_identity import (
     AcquisitionSourceIdentity,
     build_local_acquisition_source_identity,
@@ -62,21 +63,24 @@ def event(
 ) -> DiscoveryEvent:
     product_mz = precursor_mz - neutral_loss_da
     values: dict[str, Any] = {
-        "raw_file": raw_file or Path(f"{sample_stem}.raw"),
-        "sample_stem": sample_stem,
         "scan_number": scan_number,
-        "rt": rt,
+        "rt_min": rt,
         "precursor_mz": precursor_mz,
         "product_mz": product_mz,
         "product_intensity": 1000.0,
-        "neutral_loss_tag": neutral_loss_tag,
         "configured_neutral_loss_da": neutral_loss_da,
         "observed_neutral_loss_da": precursor_mz - product_mz,
         "observed_loss_error_ppm": 0.0,
         "scan_precursor_mz": precursor_mz,
     }
     values.update(overrides)
-    return DiscoveryEvent(**values)
+    return DiscoveryEvent(
+        raw_file=raw_file or Path(f"{sample_stem}.raw"),
+        sample_stem=sample_stem,
+        neutral_loss_tag=neutral_loss_tag,
+        acquisition_source_id=values.pop("acquisition_source_id", ""),
+        scan=CidNlScan(**values),
+    )
 
 
 def peak(

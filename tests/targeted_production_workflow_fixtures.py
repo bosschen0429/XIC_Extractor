@@ -45,6 +45,7 @@ from xic_extractor.peak_detection.physical_peak_evaluation import (
     prepare_physical_signal,
 )
 from xic_extractor.peak_detection.traces import Trace, targeted_trace_group
+from xic_extractor.precursor_evidence import CidNlScan
 from xic_extractor.processing_identity import (
     build_local_acquisition_source_identity,
 )
@@ -132,15 +133,20 @@ def production_case(
                             best_product_base_ratio=0.5,
                             alignment_source="region",
                             best_product_evidence=MS2ProductEvidence(
-                                scan_rt=1.5,
-                                precursor_mz=250.0,
-                                product_mz=134.0,
-                                product_intensity=500.0,
+                                scan=CidNlScan(
+                                    rt_min=1.5,
+                                    precursor_mz=250.0,
+                                    product_mz=134.0,
+                                    product_intensity=500.0,
+                                    observed_neutral_loss_da=116.0,
+                                    observed_loss_error_ppm=0.0,
+                                    scan_number=42,
+                                    configured_neutral_loss_da=target.neutral_loss_da
+                                    or 116.0,
+                                    scan_precursor_mz=250.0,
+                                ),
                                 product_base_ratio=0.5,
                                 target_product_ppm=0.0,
-                                observed_loss_da=116.0,
-                                observed_loss_error_ppm=0.0,
-                                scan_number=42,
                                 acquisition_source_id=source.acquisition_source_id,
                             ),
                         ),
@@ -199,7 +205,7 @@ def with_method_universe(
     products = (
         (product,)
         if product is not None
-        and abs(product.precursor_mz - target.mz) <= policy.precursor_tolerance_da
+        and abs(product.scan.precursor_mz - target.mz) <= policy.precursor_tolerance_da
         else ()
     )
     intervals = tuple(
@@ -212,11 +218,9 @@ def with_method_universe(
         candidate_intervals=intervals,
         event_queries=tuple(
             CidNlEventQuery(
-                item.assess_precursor_loss(
-                    target.neutral_loss_da or 116.0, policy.neutral_loss_tolerance_ppm
-                ),
-                item.scan_rt,
-                item.scan_rt,
+                item.scan.assess_precursor_loss(policy.neutral_loss_tolerance_ppm),
+                item.scan.rt_min,
+                item.scan.rt_min,
             )
             for item in products
         ),
@@ -231,16 +235,16 @@ def with_method_universe(
             tuple(
                 Ms2ScanEvent(
                     Ms2Scan(
-                        p.scan_number or 1,
-                        p.scan_rt,
-                        p.scan_precursor_mz or p.precursor_mz,
-                        np.array([p.product_mz]),
-                        np.array([p.product_intensity]),
-                        p.product_intensity / p.product_base_ratio,
-                        p.precursor_metadata,
+                        p.scan.scan_number or 1,
+                        p.scan.rt_min,
+                        p.scan.scan_precursor_mz or p.scan.precursor_mz,
+                        np.array([p.scan.product_mz]),
+                        np.array([p.scan.product_intensity]),
+                        p.scan.product_intensity / p.product_base_ratio,
+                        p.scan.precursor_metadata,
                     ),
                     None,
-                    p.scan_number or 1,
+                    p.scan.scan_number or 1,
                 )
                 for p in products
             ),

@@ -26,6 +26,7 @@ from xic_extractor.peak_detection.observations import (
     PeakObservation,
 )
 from xic_extractor.peak_detection.traces import Trace
+from xic_extractor.precursor_evidence import CidNlScan
 
 
 def cid_nl_peak(
@@ -86,16 +87,18 @@ def cid_nl_evidence(
     scan_rt_min: float,
 ) -> CidNlEvidenceObservation:
     return cid_nl_evidence_observation(
+        scan=CidNlScan(
+            scan_number=scan_number,
+            precursor_mz=PRECURSOR_MZ,
+            product_mz=PRODUCT_MZ,
+            configured_neutral_loss_da=NEUTRAL_LOSS_DA,
+            observed_neutral_loss_da=NEUTRAL_LOSS_DA,
+            observed_loss_error_ppm=0.0,
+            rt_min=scan_rt_min,
+            product_intensity=400.0,
+        ),
         sample=fixture.sample(sample_stem),
         acquisition_source=fixture.source(fixture.sample(sample_stem)),
-        scan_number=scan_number,
-        precursor_mz=PRECURSOR_MZ,
-        product_mz=PRODUCT_MZ,
-        configured_neutral_loss_da=NEUTRAL_LOSS_DA,
-        observed_neutral_loss_da=NEUTRAL_LOSS_DA,
-        observed_loss_error_ppm=0.0,
-        scan_rt_min=scan_rt_min,
-        product_intensity=400.0,
     )
 
 

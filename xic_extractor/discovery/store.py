@@ -35,7 +35,7 @@ from xic_extractor.discovery.models import (
 )
 from xic_extractor.mass_accuracy import absolute_ppm_error
 from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
-from xic_extractor.precursor_evidence import Ms1PrecursorObservation
+from xic_extractor.precursor_evidence import CidNlScan, Ms1PrecursorObservation
 from xic_extractor.processing_identity import AcquisitionSourceIdentity
 
 DISCOVERY_ARTIFACT_NAME = "discovery.sqlite"
@@ -339,20 +339,21 @@ def _event_row(
     sample_index: int, attachment: EventAttachment, peak_ids: Mapping[str, int]
 ) -> tuple[Any, ...]:
     event = attachment.event
-    metadata = event.precursor_metadata or Ms2PrecursorMetadata()
-    parent = event.ms1_precursor_observation
+    scan = event.scan
+    metadata = scan.precursor_metadata or Ms2PrecursorMetadata()
+    parent = scan.ms1_precursor_observation
     return (
         sample_index,
         peak_ids[attachment.peak_id] if attachment.peak_id else None,
         attachment.unattached_reason or None,
-        event.scan_number,
-        event.rt,
+        scan.scan_number,
+        scan.rt_min,
         event.neutral_loss_tag,
-        event.product_mz,
-        event.product_intensity,
-        event.precursor_mz,
-        event.precursor_mz_basis,
-        event.scan_precursor_mz,
+        scan.product_mz,
+        scan.product_intensity,
+        scan.precursor_mz,
+        scan.precursor_mz_basis,
+        scan.scan_precursor_mz,
         metadata.monoisotopic_mz,
         metadata.charge,
         metadata.isolation_width_da,
@@ -522,29 +523,31 @@ def event_from_row(row: Sequence[Any]) -> tuple[int | None, str, DiscoveryEvent]
         isolation_offset_da=offset,
     )
     event = DiscoveryEvent(
+        scan=CidNlScan(
+            scan_number=scan,
+            rt_min=rt,
+            precursor_mz=precursor_mz,
+            product_mz=product_mz,
+            product_intensity=intensity,
+            configured_neutral_loss_da=configured,
+            observed_neutral_loss_da=observed,
+            observed_loss_error_ppm=None
+            if basis == "product_plus_neutral_loss"
+            else absolute_ppm_error(observed, configured),
+            scan_precursor_mz=selected_mz,
+            precursor_mz_basis=basis,
+            precursor_metadata=None if metadata == Ms2PrecursorMetadata() else metadata,
+            ms1_precursor_observation=None
+            if parent_scan is None
+            else Ms1PrecursorObservation(
+                scan_number=parent_scan,
+                rt_min=parent_rt,
+                centroid_mzs=tuple(json.loads(centroids)),
+            ),
+        ),
         raw_file=Path(raw_file),
         sample_stem=stem,
-        scan_number=scan,
-        rt=rt,
-        precursor_mz=precursor_mz,
-        product_mz=product_mz,
-        product_intensity=intensity,
         neutral_loss_tag=tag,
-        configured_neutral_loss_da=configured,
-        observed_neutral_loss_da=observed,
-        observed_loss_error_ppm=None
-        if basis == "product_plus_neutral_loss"
-        else absolute_ppm_error(observed, configured),
-        scan_precursor_mz=selected_mz,
-        precursor_mz_basis=basis,
-        precursor_metadata=None if metadata == Ms2PrecursorMetadata() else metadata,
-        ms1_precursor_observation=None
-        if parent_scan is None
-        else Ms1PrecursorObservation(
-            scan_number=parent_scan,
-            rt_min=parent_rt,
-            centroid_mzs=tuple(json.loads(centroids)),
-        ),
     )
     return peak, reason or "", event
 

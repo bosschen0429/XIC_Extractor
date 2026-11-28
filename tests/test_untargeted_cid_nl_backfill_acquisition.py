@@ -532,9 +532,9 @@ def test_composite_backfill_resolves_one_event_per_scan_loss_across_references(
     assert len(assessment.candidate_peaks) == 1
     assert sorted(
         (
-            ref.scan_number,
-            ref.configured_neutral_loss_da,
-            ref.product_mz,
+            ref.scan.scan_number,
+            ref.scan.configured_neutral_loss_da,
+            ref.scan.product_mz,
         )
         for ref in assessment.evidence_observations
     ) == [
