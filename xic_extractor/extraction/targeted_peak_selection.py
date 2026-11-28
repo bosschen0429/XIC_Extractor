@@ -319,7 +319,8 @@ def targeted_physical_segmentation(
     target: Target, reference_rt: float | None
 ) -> PhysicalSegmentation:
     """An ISTD located by its reference keeps whole peaks; others keep every lobe."""
-    if target.is_istd and reference_rt is not None:
+    policy = targeted_physical_peak_policy(target, reference_rt)
+    if policy == PHYSICAL_PEAK_REFERENCE_POLICY:
         return "baseline_return"
     return "localized_valley"
 
