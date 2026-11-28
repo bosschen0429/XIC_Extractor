@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import math
 from dataclasses import replace
-from typing import Any
 
 import numpy as np
 from scipy.stats import fisher_exact
@@ -18,11 +17,13 @@ from xic_extractor.peak_detection.baseline import (
     asls_baseline_on_rt,
 )
 from xic_extractor.peak_detection.chrom_peak_segments import (
+    ChromPeakSegment,
     ChromPeakSegmentEnumeration,
     ChromPeakSegmentPolicy,
     enumerate_chrom_peak_segments,
     local_apex_prominence,
-    measure_chrom_peak_component,
+    locate_chrom_peaks,
+    measure_chrom_peak_components,
 )
 from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_extractor.peak_detection.ms1_morphology import (
@@ -239,25 +240,21 @@ def enumerate_physical_segment_universe(
                 min_prominence_noise_sigma=0.0,
             )
 
-        def enumerate_signal(policy: ChromPeakSegmentPolicy):
+        def enumerate_signal(
+            policy: ChromPeakSegmentPolicy,
+        ) -> ChromPeakSegmentEnumeration:
             if raw_components:
                 return ChromPeakSegmentEnumeration(
                     status="OK",
-                    segments=tuple(
-                        measure_chrom_peak_component(
-                            rt,
-                            signal,
-                            zero_baseline,
-                            start_index=c.start_index,
-                            end_index=c.end_index,
-                            policy=policy,
-                        )
-                        for c in raw_components
+                    segments=measure_chrom_peak_components(
+                        rt,
+                        signal,
+                        zero_baseline,
+                        components=tuple(
+                            (c.start_index, c.end_index) for c in raw_components
+                        ),
+                        policy=policy,
                     ),
-                    n_points=len(rt),
-                    morphology_trace_method=policy.morphology_trace_method,
-                    morphology_trace_window_points=policy.morphology_trace_window_points,
-                    morphology_trace_effective_points=policy.morphology_trace_window_points,
                 )
             return enumerate_chrom_peak_segments(
                 rt,
@@ -351,13 +348,10 @@ def _physical_segment_policy(
     profile: SignalProcessingProfile,
 ) -> ChromPeakSegmentPolicy:
     return ChromPeakSegmentPolicy(
-        morphology_trace_method="rt_envelope",
-        min_apex_fraction_of_context=0.0,
         morphology_trace_window_points=profile.window_points,
         morphology_min_sigma_rt=profile.boundary_min_sigma_rt,
         baseline_return_fraction=0.10,
         baseline_return_min_residual=0.0,
-        include_baseline_return_samples=True,
         clear_valley_max_fraction=0.50,
         min_prominence_noise_sigma=DISCOVERY_MIN_CONTRAST_SIGMA,
     )
@@ -381,15 +375,9 @@ def discovery_raw_peak_components(
         or len(rt) < 3
     ):
         return ()
-    enumeration = enumerate_chrom_peak_segments(
-        rt,
-        raw,
-        np.zeros_like(raw),
-        policy=_physical_segment_policy(profile),
-        acquired_intensity_values=raw,
+    peaks, valleys = locate_chrom_peaks(
+        rt, raw, policy=_physical_segment_policy(profile)
     )
-    peaks = enumeration.segments
-    valleys = enumeration.component_cut_indices
     return tuple(
         RawPeakComponent(
             start_index=valleys[index - 1] if index else 0,
@@ -1076,7 +1064,7 @@ def _finite_physical_float(value: object, *, field: str) -> float:
     return result
 
 
-def _physical_segment_from_chrom(segment: Any) -> PhysicalSegment:
+def _physical_segment_from_chrom(segment: ChromPeakSegment) -> PhysicalSegment:
     return PhysicalSegment(
         start_index=segment.interval.start_index,
         end_index=segment.interval.end_index,
@@ -1084,7 +1072,7 @@ def _physical_segment_from_chrom(segment: Any) -> PhysicalSegment:
         left_rt_min=segment.interval.rt_start_min,
         right_rt_min=segment.interval.rt_end_min,
         apex_rt_min=segment.apex_rt_min,
-        height=segment.morphology_apex_residual,
+        height=segment.apex_residual,
         scan_support_count=segment.interval.scan_count,
         area_counts_seconds=segment.area_baseline_corrected,
         evidence_sources=segment.evidence_sources,

@@ -45,7 +45,7 @@ def test_overlapping_queries_share_peak_population_and_prepare_once(monkeypatch)
 
     enumerate_segments = owner.enumerate_physical_segment_universe
     raw_split = physical_capture.discovery_raw_peak_components
-    measure = owner.measure_chrom_peak_component
+    measure = owner.measure_chrom_peak_components
     descriptor = owner._physical_raw_descriptor_projection
 
     def counted_raw_split(*args, **kwargs):
@@ -53,7 +53,7 @@ def test_overlapping_queries_share_peak_population_and_prepare_once(monkeypatch)
         return raw_split(*args, **kwargs)
 
     def counted_measure(*args, **kwargs):
-        counts["measure"] += 1
+        counts["measure"] += len(kwargs["components"])
         return measure(*args, **kwargs)
 
     def counted_descriptor(*args, **kwargs):
@@ -64,7 +64,7 @@ def test_overlapping_queries_share_peak_population_and_prepare_once(monkeypatch)
         physical_capture, "discovery_raw_peak_components", counted_raw_split
     )
     monkeypatch.setattr(population, "discovery_raw_peak_components", counted_raw_split)
-    monkeypatch.setattr(owner, "measure_chrom_peak_component", counted_measure)
+    monkeypatch.setattr(owner, "measure_chrom_peak_components", counted_measure)
     monkeypatch.setattr(
         owner, "_physical_raw_descriptor_projection", counted_descriptor
     )

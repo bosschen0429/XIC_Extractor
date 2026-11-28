@@ -7,7 +7,8 @@ import numpy as np
 from scipy.ndimage import gaussian_filter1d
 from scipy.signal import find_peaks, peak_prominences
 
-from xic_extractor.peak_detection.baseline import integrate_with_baseline
+from xic_extractor.peak_detection.baseline import bounded_trace_interval
+from xic_extractor.peak_detection.integration import integrate_area_counts_seconds
 from xic_extractor.peak_detection.ms1_morphology import (
     DEFAULT_GAUSSIAN15_WINDOW_POINTS,
     gaussian15_morphology_trace,
@@ -39,12 +40,9 @@ SEPARABLE_VALLEY_NOISE_SIGMA = 3.0
 class ChromPeakSegmentPolicy:
     min_scan_count: int = 3
     min_apex_residual: float = 5.0
-    min_apex_fraction_of_context: float = 0.05
     baseline_return_fraction: float = 0.02
     baseline_return_min_residual: float = 1.0
-    include_baseline_return_samples: bool = False
     clear_valley_max_fraction: float = 0.30
-    morphology_trace_method: str = "gaussian_15"
     morphology_trace_window_points: int = DEFAULT_GAUSSIAN15_WINDOW_POINTS
     morphology_min_sigma_rt: float = 0.0
     min_prominence_noise_sigma: float = 0.0
@@ -59,14 +57,21 @@ class ChromPeakSegmentPolicy:
 
 
 @dataclass(frozen=True)
+class LocatedChromPeak:
+    """Where one peak lies on the trace: its samples and its apex."""
+
+    interval: TraceInterval
+    apex_index: int
+    evidence_sources: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class ChromPeakSegment:
     interval: TraceInterval
     apex_index: int
     apex_rt_min: float
-    raw_apex_residual: float
-    morphology_apex_residual: float
+    apex_residual: float
     area_baseline_corrected: float
-    morphology_area_shadow: float
     evidence_sources: tuple[str, ...]
 
 
@@ -74,11 +79,6 @@ class ChromPeakSegment:
 class ChromPeakSegmentEnumeration:
     status: ChromPeakSegmentStatus
     segments: tuple[ChromPeakSegment, ...]
-    n_points: int
-    morphology_trace_method: str
-    morphology_trace_window_points: int
-    morphology_trace_effective_points: int
-    morphology_trace_values: tuple[float, ...] = ()
     component_cut_indices: tuple[int, ...] = ()
 
 
@@ -95,40 +95,46 @@ class _AdjacentPeakRelation:
     relation_class: Literal["clear_split", "shallow_valley"]
 
 
-def measure_chrom_peak_component(
+_SeedGroup = tuple[
+    tuple[_ApexSeed, ...],
+    _AdjacentPeakRelation | None,
+    _AdjacentPeakRelation | None,
+]
+
+
+def measure_chrom_peak_components(
     rt: np.ndarray,
     intensity: np.ndarray,
     baseline: np.ndarray,
     *,
-    start_index: int,
-    end_index: int,
+    components: tuple[tuple[int, int], ...],
     policy: ChromPeakSegmentPolicy,
-) -> ChromPeakSegment:
-    """Measure one already resolved valley basin with the existing boundary walk.
+) -> tuple[ChromPeakSegment, ...]:
+    """Measure already resolved valley basins with the existing boundary walk.
 
-    The component owner has chosen the peak. Do not enumerate a new coarse
-    population on this sub-context: a neighboring convolution lobe could move
-    its seed to the cut boundary and erase the acquired component.
+    Each ``(start_index, end_index)`` basin is a peak its owner has chosen. Do
+    not enumerate a new coarse population inside a basin: a neighboring
+    convolution lobe could move its seed to the cut boundary and erase the
+    acquired component.
     """
     residual = np.maximum(intensity - baseline, 0.0)
-    apex = start_index + int(np.argmax(residual[start_index:end_index]))
-    seed = _ApexSeed(
-        index=apex,
-        height=float(residual[apex]),
-        threshold=policy.baseline_return_threshold(float(residual[apex])),
-    )
-    return _segment_from_seed(
-        rt,
-        intensity,
-        baseline,
-        _morphology_trace(rt, residual, policy),
-        _trace_interval(rt, start_index, end_index),
-        seed=seed,
-        left_relation=None,
-        right_relation=None,
-        policy=policy,
-        envelope_seeds=(seed,),
-    )
+    segments = []
+    for start_index, end_index in components:
+        apex = start_index + int(np.argmax(residual[start_index:end_index]))
+        seed = _ApexSeed(
+            index=apex,
+            height=float(residual[apex]),
+            threshold=policy.baseline_return_threshold(float(residual[apex])),
+        )
+        located = _locate_peak(
+            rt,
+            residual,
+            _trace_interval(rt, start_index, end_index),
+            ((seed,), None, None),
+            policy,
+        )
+        segments.append(_measured_segment(rt, residual, located))
+    return tuple(segments)
 
 
 def enumerate_chrom_peak_segments(
@@ -136,27 +142,76 @@ def enumerate_chrom_peak_segments(
     intensity_values: np.ndarray,
     baseline_values: np.ndarray,
     *,
+    policy: ChromPeakSegmentPolicy,
     quantitation_context_rt_start: float | None = None,
     quantitation_context_rt_end: float | None = None,
-    policy: ChromPeakSegmentPolicy | None = None,
     acquired_intensity_values: np.ndarray | None = None,
 ) -> ChromPeakSegmentEnumeration:
-    """Enumerate diagnostic chromatographic peak segments in one XIC context.
+    """Enumerate chromatographic peak segments in one XIC context.
 
-    This does not select a product peak or mutate area behavior. It creates the
-    explicit peak-segment layer needed before model selection chooses which
-    segment should be integrated.
+    This does not select a product peak. It creates the explicit peak-segment
+    layer from which a caller chooses the segment to integrate.
     """
-    active_policy = policy or ChromPeakSegmentPolicy()
+    status, rt, residual, located, cut_indices = _locate_peaks(
+        rt_values,
+        intensity_values,
+        baseline_values,
+        policy=policy,
+        quantitation_context_rt_start=quantitation_context_rt_start,
+        quantitation_context_rt_end=quantitation_context_rt_end,
+        acquired_intensity_values=acquired_intensity_values,
+    )
+    return ChromPeakSegmentEnumeration(
+        status=status,
+        segments=tuple(_measured_segment(rt, residual, peak) for peak in located),
+        component_cut_indices=cut_indices,
+    )
+
+
+def locate_chrom_peaks(
+    rt_values: np.ndarray,
+    intensity_values: np.ndarray,
+    *,
+    policy: ChromPeakSegmentPolicy,
+) -> tuple[tuple[LocatedChromPeak, ...], tuple[int, ...]]:
+    """Peaks and the cuts between them on an acquired trace; nothing is measured."""
+    intensity = np.asarray(intensity_values, dtype=float)
+    _, _, _, located, cut_indices = _locate_peaks(
+        rt_values,
+        intensity,
+        np.zeros_like(intensity),
+        policy=policy,
+        acquired_intensity_values=intensity,
+    )
+    return located, cut_indices
+
+
+def _locate_peaks(
+    rt_values: np.ndarray,
+    intensity_values: np.ndarray,
+    baseline_values: np.ndarray,
+    *,
+    policy: ChromPeakSegmentPolicy,
+    quantitation_context_rt_start: float | None = None,
+    quantitation_context_rt_end: float | None = None,
+    acquired_intensity_values: np.ndarray | None = None,
+) -> tuple[
+    ChromPeakSegmentStatus,
+    np.ndarray,
+    np.ndarray,
+    tuple[LocatedChromPeak, ...],
+    tuple[int, ...],
+]:
+    """Status, RT, residual, located peaks and the cuts between them."""
     rt, intensity, baseline = _coerce_trace(
         rt_values,
         intensity_values,
         baseline_values,
     )
     if _is_malformed_trace(rt, intensity, baseline):
-        return _empty_result("MALFORMED_TRACE", rt, active_policy)
-    if len(rt) < active_policy.min_scan_count:
-        return _empty_result("WINDOW_TOO_SHORT", rt, active_policy)
+        return "MALFORMED_TRACE", rt, intensity, (), ()
+    if len(rt) < policy.min_scan_count:
+        return "WINDOW_TOO_SHORT", rt, intensity, (), ()
 
     context_interval = _context_interval(
         rt,
@@ -168,60 +223,36 @@ def enumerate_chrom_peak_segments(
         context_interval.start_index : context_interval.end_index
     ]
     if context_residual.size == 0 or float(np.max(context_residual)) <= 0.0:
-        return _empty_result("NO_SIGNAL", rt, active_policy)
+        return "NO_SIGNAL", rt, residual, (), ()
 
-    morphology_trace = _morphology_trace(rt, residual, active_policy)
-    morphology_effective_points = _morphology_trace_effective_points(
-        len(rt),
-        active_policy,
-    )
+    envelope = _rt_envelope_trace(rt, residual, policy)
     acquired = (
         intensity if acquired_intensity_values is None else acquired_intensity_values
     )
-    seeds = _apex_seeds(morphology_trace, context_interval, active_policy)
-    if active_policy.min_prominence_noise_sigma > 0.0:
+    seeds = _apex_seeds(envelope, context_interval, policy)
+    if policy.min_prominence_noise_sigma > 0.0:
         seeds = _supported_apex_seeds(
             seeds,
-            morphology_trace,
+            envelope,
             rt,
             acquired,
             context_interval,
-            active_policy,
+            policy,
         )
-    if not seeds and active_policy.morphology_trace_method == "rt_envelope":
-        seeds = _apex_seeds(residual, context_interval, active_policy)
-        if active_policy.min_prominence_noise_sigma > 0.0:
+    if not seeds:
+        seeds = _apex_seeds(residual, context_interval, policy)
+        if policy.min_prominence_noise_sigma > 0.0:
             seeds = _supported_apex_seeds(
-                seeds, residual, rt, acquired, context_interval, active_policy
+                seeds, residual, rt, acquired, context_interval, policy
             )
     if not seeds:
-        return ChromPeakSegmentEnumeration(
-            status="PEAK_NOT_FOUND",
-            segments=(),
-            n_points=len(rt),
-            morphology_trace_method=active_policy.morphology_trace_method,
-            morphology_trace_window_points=(
-                active_policy.morphology_trace_window_points
-            ),
-            morphology_trace_effective_points=morphology_effective_points,
-            morphology_trace_values=tuple(float(value) for value in morphology_trace),
-        )
+        return "PEAK_NOT_FOUND", rt, residual, (), ()
 
-    relations = _adjacent_relations(morphology_trace, seeds, active_policy)
-    groups: list[
-        tuple[
-            tuple[_ApexSeed, ...],
-            _AdjacentPeakRelation | None,
-            _AdjacentPeakRelation | None,
-        ]
-    ] = []
+    relations = _adjacent_relations(envelope, seeds, policy)
+    groups: list[_SeedGroup] = []
     group_start = 0
     for index in range(len(seeds)):
-        if (
-            active_policy.morphology_trace_method != "rt_envelope"
-            or index == len(seeds) - 1
-            or relations[index].relation_class == "clear_split"
-        ):
+        if index == len(seeds) - 1 or relations[index].relation_class == "clear_split":
             groups.append(
                 (
                     seeds[group_start : index + 1],
@@ -230,47 +261,31 @@ def enumerate_chrom_peak_segments(
                 )
             )
             group_start = index + 1
-    if active_policy.morphology_trace_method == "rt_envelope":
-        native_envelope = gaussian15_morphology_trace(
-            acquired, window_points=active_policy.morphology_trace_window_points
-        )
-        groups = [
-            part
-            for group in groups
-            for part in _split_at_separable_valleys(
-                group,
-                rt,
-                residual,
-                acquired,
-                native_envelope,
-                context_interval,
-                active_policy,
-            )
-        ]
-    segments = tuple(
-        _segment_from_seed(
-            rt,
-            intensity,
-            baseline,
-            morphology_trace,
-            context_interval,
-            seed=max(group_seeds, key=lambda item: (item.height, -item.index)),
-            left_relation=left_relation,
-            right_relation=right_relation,
-            policy=active_policy,
-            envelope_seeds=group_seeds,
-        )
-        for group_seeds, left_relation, right_relation in groups
+    native_envelope = gaussian15_morphology_trace(
+        acquired, window_points=policy.morphology_trace_window_points
     )
-    return ChromPeakSegmentEnumeration(
-        status="OK",
-        segments=segments,
-        n_points=len(rt),
-        morphology_trace_method=active_policy.morphology_trace_method,
-        morphology_trace_window_points=active_policy.morphology_trace_window_points,
-        morphology_trace_effective_points=morphology_effective_points,
-        morphology_trace_values=tuple(float(value) for value in morphology_trace),
-        component_cut_indices=tuple(
+    groups = [
+        part
+        for group in groups
+        for part in _split_at_separable_valleys(
+            group,
+            rt,
+            residual,
+            acquired,
+            native_envelope,
+            context_interval,
+            policy,
+        )
+    ]
+    return (
+        "OK",
+        rt,
+        residual,
+        tuple(
+            _locate_peak(rt, residual, context_interval, group, policy)
+            for group in groups
+        ),
+        tuple(
             relation.valley_index
             for _, _, relation in groups[:-1]
             if relation is not None
@@ -310,21 +325,6 @@ def _is_malformed_trace(
     return bool(np.any(np.diff(rt) <= 0.0))
 
 
-def _empty_result(
-    status: ChromPeakSegmentStatus,
-    rt: np.ndarray,
-    policy: ChromPeakSegmentPolicy,
-) -> ChromPeakSegmentEnumeration:
-    return ChromPeakSegmentEnumeration(
-        status=status,
-        segments=(),
-        n_points=len(rt) if rt.ndim == 1 else 0,
-        morphology_trace_method=policy.morphology_trace_method,
-        morphology_trace_window_points=policy.morphology_trace_window_points,
-        morphology_trace_effective_points=0,
-    )
-
-
 def _context_interval(
     rt: np.ndarray,
     rt_start: float | None,
@@ -343,26 +343,6 @@ def _context_interval(
         rt_end_min=float(rt[right - 1]),
         scan_count=right - left,
     )
-
-
-def _morphology_trace(
-    rt: np.ndarray,
-    residual: np.ndarray,
-    policy: ChromPeakSegmentPolicy,
-) -> np.ndarray:
-    window = _morphology_trace_effective_points(len(residual), policy)
-    if policy.morphology_trace_method == "gaussian_15":
-        if window <= 1:
-            return residual.copy()
-        return gaussian15_morphology_trace(residual, window_points=window)
-    if policy.morphology_trace_method == "smooth_15":
-        if window <= 1:
-            return residual.copy()
-        kernel = np.ones(window, dtype=float) / float(window)
-        return np.convolve(residual, kernel, mode="same")
-    if policy.morphology_trace_method == "rt_envelope":
-        return _rt_envelope_trace(rt, residual, policy)
-    return residual.copy()
 
 
 def _rt_envelope_trace(
@@ -397,28 +377,6 @@ def _rt_envelope_trace(
     return np.interp(rt, uniform_rt, uniform_envelope)
 
 
-def _morphology_trace_effective_points(
-    trace_length: int,
-    policy: ChromPeakSegmentPolicy,
-) -> int:
-    if trace_length <= 0:
-        return 0
-    if policy.morphology_trace_method not in {
-        "gaussian_15",
-        "smooth_15",
-        "rt_envelope",
-    }:
-        return 1
-    if policy.morphology_trace_window_points <= 1:
-        return 1
-    if trace_length < policy.morphology_trace_window_points:
-        return 1
-    window = min(policy.morphology_trace_window_points, trace_length)
-    if window % 2 == 0:
-        window -= 1
-    return max(window, 1)
-
-
 def _apex_seeds(
     morphology_trace: np.ndarray,
     context_interval: TraceInterval,
@@ -429,11 +387,6 @@ def _apex_seeds(
     ]
     if context.size == 0:
         return ()
-    max_context = float(np.max(context))
-    min_height = max(
-        policy.min_apex_residual,
-        max_context * policy.min_apex_fraction_of_context,
-    )
     peaks = _local_peak_indices(context)
     if policy.min_prominence_fraction_of_apex > 0:
         interior = [index for index in peaks if 0 < index < len(context) - 1]
@@ -455,7 +408,7 @@ def _apex_seeds(
             threshold=policy.baseline_return_threshold(float(context[local_index])),
         )
         for local_index in peaks
-        if float(context[local_index]) >= min_height
+        if float(context[local_index]) >= policy.min_apex_residual
     )
     return tuple(sorted(seeds, key=lambda seed: seed.index))
 
@@ -532,24 +485,14 @@ def _supported_apex_seeds(
 
 
 def _split_at_separable_valleys(
-    group: tuple[
-        tuple[_ApexSeed, ...],
-        _AdjacentPeakRelation | None,
-        _AdjacentPeakRelation | None,
-    ],
+    group: _SeedGroup,
     rt: np.ndarray,
     residual: np.ndarray,
     acquired: np.ndarray,
     native_envelope: np.ndarray,
     context: TraceInterval,
     policy: ChromPeakSegmentPolicy,
-) -> list[
-    tuple[
-        tuple[_ApexSeed, ...],
-        _AdjacentPeakRelation | None,
-        _AdjacentPeakRelation | None,
-    ]
-]:
+) -> list[_SeedGroup]:
     """Separate acquired lobes across sustained non-detection or measured valleys."""
     seeds, left_relation, right_relation = group
     start = left_relation.valley_index if left_relation else context.start_index
@@ -777,86 +720,57 @@ def local_apex_prominence(signal: np.ndarray, apex_index: int) -> float:
     return float(signal[apex_index]) - max(float(signal[0]), float(signal[-1]))
 
 
-def _segment_from_seed(
+def _locate_peak(
     rt: np.ndarray,
-    intensity: np.ndarray,
-    baseline: np.ndarray,
-    morphology_trace: np.ndarray,
+    residual: np.ndarray,
     context_interval: TraceInterval,
-    *,
-    seed: _ApexSeed,
-    left_relation: _AdjacentPeakRelation | None,
-    right_relation: _AdjacentPeakRelation | None,
+    group: _SeedGroup,
     policy: ChromPeakSegmentPolicy,
-    envelope_seeds: tuple[_ApexSeed, ...],
-) -> ChromPeakSegment:
-    boundary_signal = (
-        np.maximum(intensity - baseline, 0.0)
-        if policy.morphology_trace_method == "rt_envelope"
-        else morphology_trace
-    )
+) -> LocatedChromPeak:
+    """Walk one seed group out to its baseline return, keeping the return scans."""
+    seeds, left_relation, right_relation = group
     left, _ = _seed_interval_indices(
-        boundary_signal,
-        context_interval,
-        envelope_seeds[0],
-        left_relation,
-        right_relation,
-        policy,
+        residual, context_interval, seeds[0], left_relation, right_relation
     )
     _, right = _seed_interval_indices(
-        boundary_signal,
-        context_interval,
-        envelope_seeds[-1],
-        left_relation,
-        right_relation,
-        policy,
+        residual, context_interval, seeds[-1], left_relation, right_relation
     )
-    apex_index = seed.index
-    if policy.morphology_trace_method == "rt_envelope":
-        apex_index = left + int(np.argmax(boundary_signal[left:right]))
-        threshold = policy.baseline_return_threshold(float(boundary_signal[apex_index]))
-        basin_left, basin_right = left, right
-        while left < apex_index and boundary_signal[left] <= threshold:
-            left += 1
-        while right > apex_index + 1 and boundary_signal[right - 1] <= threshold:
-            right -= 1
-        if policy.include_baseline_return_samples:
-            left = max(basin_left, left - 1)
-            right = min(basin_right, right + 1)
-    relation_labels = _relation_labels(left_relation, right_relation)
-    interval = _trace_interval(rt, left, right)
-    area = integrate_with_baseline(
-        intensity,
-        rt,
-        interval.start_index,
-        interval.end_index,
-        baseline_values=baseline,
-    ).area_baseline_corrected
-    morphology_area = _positive_area(
-        morphology_trace,
-        rt,
-        interval.start_index,
-        interval.end_index,
+    apex_index = left + int(np.argmax(residual[left:right]))
+    threshold = policy.baseline_return_threshold(float(residual[apex_index]))
+    basin_left, basin_right = left, right
+    while left < apex_index and residual[left] <= threshold:
+        left += 1
+    while right > apex_index + 1 and residual[right - 1] <= threshold:
+        right -= 1
+    interval = _trace_interval(
+        rt, max(basin_left, left - 1), min(basin_right, right + 1)
     )
-    apex_residual = (
-        float(boundary_signal[apex_index])
-        if policy.morphology_trace_method == "rt_envelope"
-        else float(morphology_trace[apex_index])
-    )
-    return ChromPeakSegment(
+    return LocatedChromPeak(
         interval=interval,
         apex_index=apex_index,
-        apex_rt_min=float(rt[apex_index]),
-        raw_apex_residual=max(
-            0.0,
-            float(intensity[apex_index] - baseline[apex_index]),
-        ),
-        morphology_apex_residual=apex_residual,
-        area_baseline_corrected=area,
-        morphology_area_shadow=morphology_area,
         evidence_sources=_evidence_sources(
-            relation_labels, low_scan=interval.scan_count < policy.min_scan_count
+            _relation_labels(left_relation, right_relation),
+            low_scan=interval.scan_count < policy.min_scan_count,
         ),
+    )
+
+
+def _measured_segment(
+    rt: np.ndarray, residual: np.ndarray, peak: LocatedChromPeak
+) -> ChromPeakSegment:
+    return ChromPeakSegment(
+        interval=peak.interval,
+        apex_index=peak.apex_index,
+        apex_rt_min=float(rt[peak.apex_index]),
+        apex_residual=float(residual[peak.apex_index]),
+        area_baseline_corrected=integrate_area_counts_seconds(
+            residual,
+            rt,
+            *bounded_trace_interval(
+                peak.interval.start_index, peak.interval.end_index, len(rt)
+            ),
+        ),
+        evidence_sources=peak.evidence_sources,
     )
 
 
@@ -866,7 +780,6 @@ def _seed_interval_indices(
     seed: _ApexSeed,
     left_relation: _AdjacentPeakRelation | None,
     right_relation: _AdjacentPeakRelation | None,
-    policy: ChromPeakSegmentPolicy,
 ) -> tuple[int, int]:
     left = _left_baseline_boundary(
         morphology_trace,
@@ -880,9 +793,8 @@ def _seed_interval_indices(
         seed.threshold,
         context_interval,
     )
-    if policy.include_baseline_return_samples:
-        left = max(context_interval.start_index, left - 1)
-        right = min(context_interval.end_index, right + 1)
+    left = max(context_interval.start_index, left - 1)
+    right = min(context_interval.end_index, right + 1)
     if left_relation is not None:
         left = max(left, left_relation.valley_index)
     if right_relation is not None:
@@ -954,19 +866,6 @@ def _evidence_sources(
     if low_scan:
         sources.append("scan_support")
     return tuple(sources)
-
-
-def _positive_area(
-    values: np.ndarray,
-    rt: np.ndarray,
-    left: int,
-    right: int,
-) -> float:
-    segment = np.maximum(values[left:right], 0.0)
-    segment_rt = rt[left:right]
-    if len(segment) < 2:
-        return 0.0
-    return float(np.trapezoid(segment, segment_rt)) * 60.0
 
 
 def _safe_ratio(numerator: float, denominator: float) -> float:
