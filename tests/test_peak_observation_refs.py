@@ -226,7 +226,7 @@ def test_owner_boundary_between_scan_points_maps_to_selected_trace(
     )
     result = PeakDetectionResult(
         status="OK",
-        peak=peak,
+        selected_candidate=candidate,
         n_points=trace.scan_count,
         max_smoothed=480.0,
         n_prominent_peaks=1,

@@ -5,6 +5,7 @@ import numpy as np
 import pytest
 
 from tests.execution_fixtures import in_process_execution
+from tests.target_extraction_fixtures import candidate_for_peak
 from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence, NLResult
 from xic_extractor.extraction.result_models import ExtractionResult
@@ -34,7 +35,7 @@ def test_selected_candidate_warn_token_keeps_measured_loss_error() -> None:
     result = ExtractionResult(
         peak_result=PeakDetectionResult(
             status="NO_PEAK",
-            peak=None,
+            selected_candidate=None,
             n_points=0,
             max_smoothed=0.0,
             n_prominent_peaks=0,
@@ -71,7 +72,7 @@ def test_physical_unavailability_keeps_owner_reason_in_diagnostics(
     result = ExtractionResult(
         peak_result=PeakDetectionResult(
             status="NO_SIGNAL" if point_count == 21 else "PEAK_NOT_FOUND",
-            peak=None,
+            selected_candidate=None,
             n_points=point_count,
             max_smoothed=None,
             n_prominent_peaks=0,
@@ -134,13 +135,15 @@ def test_build_diagnostic_records_reports_selected_candidate_observed_loss() -> 
     result = ExtractionResult(
         peak_result=PeakDetectionResult(
             status="OK",
-            peak=PeakResult(
-                rt=9.0,
-                intensity=500.0,
-                intensity_smoothed=450.0,
-                area=100.0,
-                peak_start=8.9,
-                peak_end=9.2,
+            selected_candidate=candidate_for_peak(
+                PeakResult(
+                    rt=9.0,
+                    intensity=500.0,
+                    intensity_smoothed=450.0,
+                    area=100.0,
+                    peak_start=8.9,
+                    peak_end=9.2,
+                )
             ),
             n_points=12,
             max_smoothed=450.0,
@@ -174,13 +177,15 @@ def test_build_diagnostic_records_reports_product_probe_subcause() -> None:
     result = ExtractionResult(
         peak_result=PeakDetectionResult(
             status="OK",
-            peak=PeakResult(
-                rt=9.0,
-                intensity=500.0,
-                intensity_smoothed=450.0,
-                area=100.0,
-                peak_start=8.9,
-                peak_end=9.2,
+            selected_candidate=candidate_for_peak(
+                PeakResult(
+                    rt=9.0,
+                    intensity=500.0,
+                    intensity_smoothed=450.0,
+                    area=100.0,
+                    peak_start=8.9,
+                    peak_end=9.2,
+                )
             ),
             n_points=12,
             max_smoothed=450.0,

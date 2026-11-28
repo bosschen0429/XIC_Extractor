@@ -42,7 +42,7 @@ def test_targeted_area_column_and_reported_peak_area_use_ms1_morphology_area() -
     result = ExtractionResult(
         peak_result=PeakDetectionResult(
             status="OK",
-            peak=None,
+            selected_candidate=None,
             n_points=5,
             max_smoothed=950.0,
             n_prominent_peaks=1,
@@ -136,7 +136,7 @@ def test_missing_morphology_area_publishes_no_area_instead_of_raw_area() -> None
     result = ExtractionResult(
         peak_result=PeakDetectionResult(
             status="OK",
-            peak=None,
+            selected_candidate=None,
             n_points=5,
             max_smoothed=950.0,
             n_prominent_peaks=1,

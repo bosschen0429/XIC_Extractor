@@ -62,7 +62,7 @@ def _result(*, nl: NLResult | None = None) -> ExtractionResult:
     )
     peak_result = PeakDetectionResult(
         status="OK",
-        peak=peak,
+        selected_candidate=candidate,
         n_points=12,
         max_smoothed=450.0,
         n_prominent_peaks=1,
@@ -318,7 +318,7 @@ def test_csv_rows_preserve_no_peak_nd_projection() -> None:
     result = ExtractionResult(
         peak_result=PeakDetectionResult(
             status="NO_PEAK",
-            peak=None,
+            selected_candidate=None,
             n_points=4,
             max_smoothed=0.0,
             n_prominent_peaks=0,
@@ -348,7 +348,7 @@ def test_not_quantifiable_row_is_blank_not_zero_or_absence():
     result = _result()
     result = replace(
         result,
-        peak_result=replace(result.peak_result, peak=None, candidates=()),
+        peak_result=replace(result.peak_result, selected_candidate=None, candidates=()),
         selected_hypothesis=None,
         targeted_product_projection=TargetedProductProjection(
             "not_counted", False, "review_required", "finalized_not_quantifiable"

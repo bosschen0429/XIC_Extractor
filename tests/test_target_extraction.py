@@ -73,7 +73,7 @@ def test_credible_istd_anchor_rt_rejects_missing_or_hard_quality_peak() -> None:
     flagged = _candidate(rt=9.2, quality_flags=("too_broad",))
     no_peak = PeakDetectionResult(
         status="PEAK_NOT_FOUND",
-        peak=None,
+        selected_candidate=None,
         n_points=5,
         max_smoothed=10.0,
         n_prominent_peaks=0,

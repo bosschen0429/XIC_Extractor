@@ -58,7 +58,7 @@ def test_build_extraction_result_retains_unscored_peak() -> None:
     candidate = _candidate()
     peak_result = PeakDetectionResult(
         status="OK",
-        peak=candidate.peak,
+        selected_candidate=candidate,
         n_points=12,
         max_smoothed=1200.0,
         n_prominent_peaks=1,
@@ -94,7 +94,7 @@ def test_build_extraction_result_uses_typed_evidence_reason() -> None:
     typed_facts = _clean_typed_facts(candidate)
     peak_result = PeakDetectionResult(
         status="OK",
-        peak=candidate.peak,
+        selected_candidate=candidate,
         n_points=12,
         max_smoothed=1200.0,
         n_prominent_peaks=1,
@@ -228,7 +228,7 @@ def test_build_extraction_result_adds_targeted_product_projection() -> None:
     candidate = _candidate(quality_flags=())
     peak_result = PeakDetectionResult(
         status="OK",
-        peak=candidate.peak,
+        selected_candidate=candidate,
         n_points=12,
         max_smoothed=1200.0,
         n_prominent_peaks=1,
@@ -281,7 +281,7 @@ def test_istd_rt_conflict_inside_target_window_stays_counted() -> None:
     candidate = _candidate(quality_flags=())
     peak_result = PeakDetectionResult(
         status="OK",
-        peak=candidate.peak,
+        selected_candidate=candidate,
         n_points=12,
         max_smoothed=1200.0,
         n_prominent_peaks=1,
@@ -799,7 +799,7 @@ def _peak_result_with_candidate() -> PeakDetectionResult:
     candidate = _candidate()
     return PeakDetectionResult(
         status="OK",
-        peak=candidate.peak,
+        selected_candidate=candidate,
         n_points=12,
         max_smoothed=1200.0,
         n_prominent_peaks=1,
@@ -829,7 +829,7 @@ def _result_with_targeted_projection_semantics(
     candidate = _candidate(quality_flags=())
     peak_result = PeakDetectionResult(
         status="OK",
-        peak=candidate.peak,
+        selected_candidate=candidate,
         n_points=12,
         max_smoothed=1200.0,
         n_prominent_peaks=1,

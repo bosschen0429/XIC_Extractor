@@ -1,4 +1,5 @@
 from tests.result_assembly_fixtures import _target
+from tests.target_extraction_fixtures import candidate_for_peak
 from xic_extractor.extraction.anchors import paired_anchor_mismatch_diagnostic
 from xic_extractor.peak_detection.models import PeakDetectionResult, PeakResult
 
@@ -6,13 +7,15 @@ from xic_extractor.peak_detection.models import PeakDetectionResult, PeakResult
 def test_anchor_mismatch_is_diagnostic_without_changing_quantification() -> None:
     peak_result = PeakDetectionResult(
         status="OK",
-        peak=PeakResult(
-            rt=13.06,
-            intensity=5000.0,
-            intensity_smoothed=5000.0,
-            area=8000.0,
-            peak_start=12.9,
-            peak_end=13.2,
+        selected_candidate=candidate_for_peak(
+            PeakResult(
+                rt=13.06,
+                intensity=5000.0,
+                intensity_smoothed=5000.0,
+                area=8000.0,
+                peak_start=12.9,
+                peak_end=13.2,
+            )
         ),
         n_points=15,
         max_smoothed=5000.0,

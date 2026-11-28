@@ -82,7 +82,7 @@ class PeakCandidateScore:
 @dataclass(frozen=True)
 class PeakDetectionResult:
     status: PeakStatus
-    peak: PeakResult | None
+    selected_candidate: PeakCandidate | None
     n_points: int
     max_smoothed: float | None
     n_prominent_peaks: int
@@ -93,6 +93,14 @@ class PeakDetectionResult:
     candidate_scores: tuple[PeakCandidateScore, ...] = ()
     selection_reference_rt: float | None = None
     paired_istd_anchor_rt: float | None = None
+
+    @property
+    def peak(self) -> PeakResult | None:
+        return (
+            self.selected_candidate.peak
+            if self.selected_candidate is not None
+            else None
+        )
 
     def __deepcopy__(self, memo: dict[int, object]) -> PeakDetectionResult:
         return self

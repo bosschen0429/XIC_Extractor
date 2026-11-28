@@ -211,7 +211,7 @@ def selected_shape_metrics(
     peak_result: PeakDetectionResult,
 ) -> tuple[float, float | None] | None:
     """Return selected physical-signal shape and half-prominence width in minutes."""
-    candidate = selected_candidate(peak_result)
+    candidate = peak_result.selected_candidate
     prepared = prepared_result.prepared
     if candidate is None or prepared is None:
         return None
@@ -222,17 +222,8 @@ def selected_shape_metrics(
     )
 
 
-def selected_candidate(peak_result: PeakDetectionResult) -> PeakCandidate | None:
-    if peak_result.peak is None:
-        return None
-    for candidate in peak_result.candidates:
-        if candidate.peak == peak_result.peak:
-            return candidate
-    return None
-
-
 def is_credible_istd_peak(peak_result: PeakDetectionResult) -> bool:
-    candidate = selected_candidate(peak_result)
+    candidate = peak_result.selected_candidate
     if candidate is None:
         return False
     flags = tuple(str(flag) for flag in candidate.quality_flags)

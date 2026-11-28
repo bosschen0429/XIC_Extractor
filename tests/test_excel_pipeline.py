@@ -399,7 +399,7 @@ def _run_output(*, with_diagnostics: bool) -> RunOutput:
     )
     peak_result = PeakDetectionResult(
         status="OK",
-        peak=peak,
+        selected_candidate=candidate,
         n_points=12,
         max_smoothed=450.0,
         n_prominent_peaks=1,

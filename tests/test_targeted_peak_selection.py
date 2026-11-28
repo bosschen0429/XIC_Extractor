@@ -42,7 +42,7 @@ def test_build_production_peak_hypotheses_maps_selected_ms2_only(tmp_path) -> No
     rejected = _candidate(8.90)
     peak_result = PeakDetectionResult(
         status="OK",
-        peak=selected.peak,
+        selected_candidate=selected,
         n_points=11,
         max_smoothed=1200.0,
         n_prominent_peaks=2,
@@ -84,7 +84,7 @@ def test_selected_peak_hypothesis_returns_none_without_selected_candidate(
         target=_target(),
         peak_result=PeakDetectionResult(
             status="PEAK_NOT_FOUND",
-            peak=None,
+            selected_candidate=None,
             n_points=5,
             max_smoothed=10.0,
             n_prominent_peaks=0,
@@ -102,7 +102,7 @@ def test_build_production_peak_hypotheses_passes_no_ms2_detection_policy(
     candidate = _candidate(8.50)
     peak_result = PeakDetectionResult(
         status="OK",
-        peak=candidate.peak,
+        selected_candidate=candidate,
         n_points=11,
         max_smoothed=1200.0,
         n_prominent_peaks=1,
@@ -154,7 +154,7 @@ def test_selected_hypothesis_uses_final_peak_result_reason_when_score_is_stale(
     candidate = _candidate(8.50)
     peak_result = PeakDetectionResult(
         status="OK",
-        peak=candidate.peak,
+        selected_candidate=candidate,
         n_points=11,
         max_smoothed=1200.0,
         n_prominent_peaks=1,
@@ -246,7 +246,7 @@ def test_handoff_preserves_the_selected_candidate_through_workbook(
     second_ms2 = replace(_ms2_evidence(), best_scan_rt=second.peak.rt)
     peak_result = PeakDetectionResult(
         status="OK",
-        peak=selected.peak,
+        selected_candidate=selected,
         n_points=len(rt),
         max_smoothed=float(intensity.max()),
         n_prominent_peaks=2,
@@ -400,7 +400,7 @@ def test_build_production_peak_hypotheses_uses_config_baseline_method(
     intensity = np.asarray([10.0, 100.0, 20.0])
     peak_result = PeakDetectionResult(
         status="OK",
-        peak=candidate.peak,
+        selected_candidate=candidate,
         n_points=3,
         max_smoothed=1200.0,
         n_prominent_peaks=1,
