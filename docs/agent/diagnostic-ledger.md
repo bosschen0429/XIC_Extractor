@@ -31,67 +31,54 @@ none of these entries grants readiness or writer authority.
 
 ### Windows randomized TCP ports can fail at low connection counts
 
-`diagnostic_only` (2026-11-15). The first attempt of
-[CI run 43683214989](https://github.com/bosschen0429/XIC_Extractor/actions/runs/43683214989/attempts/1)
-failed loading `analysis.css` with `ERR_NO_BUFFER_SPACE` and no HTTP response.
-Its retained trace does not contain a native socket error, so attributing that
-specific CI failure to the allocator remains an inference.
+`diagnostic_only` (2026-11-15).
 
-The inspected [upstream reproduction](https://github.com/microsoft/playwright/issues/43545)
-isolated `SO_RANDOMIZE_PORT` locally on Windows build 22631.6491:
-ordinary phases completed 40,000 connections without error; randomized phases
-failed with Winsock 10055 after 7,062 and 12,540 attempts, with about 230 TCP rows.
-This reproduced the allocator defect independently of XIC, at low TCP occupancy.
-The original browser shard passed 57 cases both before and after mitigation,
-with sampled TCP counts below 503 and over 8 GiB of available memory. Neither run
-reproduced the browser error; these clean intervals do not prove its elimination.
+- **Conclusion:** Windows `SO_RANDOMIZE_PORT` can fail with Winsock 10055 at
+  low TCP occupancy, independently of XIC. The
+  [upstream reproduction](https://github.com/microsoft/playwright/issues/43545)
+  on build 22631.6491 completed 40,000 ordinary connections, but randomized
+  phases failed after 7,062 and 12,540 attempts with about 230 TCP rows.
+- **Not established:** that this caused the `ERR_NO_BUFFER_SPACE` in
+  [CI run 43683214989](https://github.com/bosschen0429/XIC_Extractor/actions/runs/43683214989/attempts/1).
+  Its trace has no native socket error. The browser shard passed 57 cases both
+  before and after mitigation (TCP counts below 503, over 8 GiB free) without
+  reproducing the error, so those clean runs do not prove its elimination.
+- **Current state:** Playwright 1.65.0
+  [disables `TcpPortRandomizationWin` by default](https://github.com/microsoft/playwright/pull/43605),
+  so the fixture launches the requested channel with no second browser or
+  custom switch. Bundled headless Chromium 158.0.8127.18, Chrome and Edge showed
+  the same 16 disabled features as an independent stock launch.
+- **Reopen:** after a Windows TCP stack or locked Chromium/Playwright update,
+  or another `ERR_NO_BUFFER_SPACE`. Use a native socket error and
+  contemporaneous resource counts; the error name alone does not prove
+  resource exhaustion.
 
-Playwright 1.65.0 [includes the mitigation in its own default feature list](https://github.com/microsoft/playwright/pull/43605).
-The fixture therefore launches the requested channel directly, without a
-second browser or a custom launch switch. On Windows, the fixture and an
-independent stock launch had the same 16 disabled features, including
-`TcpPortRandomizationWin`, for bundled headless Chromium 158.0.8127.18 and
-the locally installed Chrome and Edge channels.
-
-Evidence is under `output/browser-ci-analysis/`: `native-probe-result.json`,
-`shard-baseline/` and `shard-candidate/` hold the native comparison, live resource
-snapshots and Chromium NetLogs. Re-evaluate the mitigation after a Windows TCP
-stack or locked Chromium/Playwright update, or another `ERR_NO_BUFFER_SPACE`;
-use a native socket error and contemporaneous resource counts rather than
-assuming that the error name proves resource exhaustion.
+Artifacts: `output/browser-ci-analysis/`.
 
 ### Browser collection excludes unrelated test files
 
-`diagnostic_only`, `exact_safe` (2026-11-15). Replayed the full-collection policy
-and narrowed file candidates on the same checkout based on `e447a28e`, Python
-3.15.2, locked dependencies and `OPENBLAS_NUM_THREADS=1`. After one warm-up pair,
-three interleaved pairs gave process-start-through-collection-exit medians of
-3.891 seconds (range 3.890–3.932) and 1.520 seconds (1.513–1.528). This is about
-61% less local collection time, not an end-to-end CI speedup.
+`diagnostic_only`, `exact_safe` (2026-11-15); `e447a28e`.
 
-The full policy collected 4,763 cases before marker filtering; the six candidate
-files collected 330. Both retained exactly the same 169 browser node IDs. The
-three narrowed shards covered them once, without overlap, at 57/56/56 cases.
-Pytest, not the file-candidate scan, remains the membership oracle.
+- **Conclusion:** narrowing browser collection to candidate files keeps
+  exactly the same 169 browser node IDs. The full policy collected 4,763 cases
+  before marker filtering; the six candidate files collected 330. Local
+  process-start-through-collection-exit medians fell from 3.891 s to 1.520 s
+  over three interleaved pairs. Pytest, not the file-candidate scan, remains
+  the membership oracle.
+- **Not a CI speedup by itself:** hosted elapsed time follows the critical
+  path. Waiting for lint before dispatching tests regressed a whole run from
+  189 to 238 s (`43689952191`, `43702971655`) at identical browser coverage.
+- **Current state:** the plan runs independently of lint and Chromium runs in
+  five shards, as [the CI lane decision](../adr/0004-isolate-ci-lanes.md)
+  records. Hosted run `43705606879` at `54b7fc36` completed in 165 s with the
+  169 nodes executed once. Cumulative job time rose from 809 to 962 s: an
+  elapsed-time win, not a compute saving, and subject to runner and queue
+  variability.
+- **Reopen:** when marker discovery, collection, sharding or CI scheduling
+  changes. Keep local collection timings separate from runner startup, browser
+  execution and billing.
 
-Hosted runs with identical 169-case browser coverage showed that waiting for
-lint before dispatching tests regressed whole-run elapsed time from 189 to 238
-seconds (`43689952191` and `43702971655`). The 32-second lint prerequisite was
-on the critical path; local collection savings did not establish a CI speedup.
-Planning now runs separately from lint, and five isolated browser shards trade
-additional runner capacity for shorter elapsed time. Hosted run `43705606879`
-at `54b7fc36` completed in 165 seconds, with the same 169 browser node IDs
-executed once at 34/34/34/34/33 cases. The plan took 20 seconds; browser jobs
-took 103–126 seconds. Cumulative job time increased from the original baseline's
-809 to 962 seconds, so the elapsed-time win is not a compute-cost saving.
-These are hosted observations, not a guarantee against runner/queue variability;
-ordinary regression coverage also grew. Irrelevant browser jobs stay gated
-before VM allocation; only a successful plan can authorize the skip.
-
-Evidence is under `output/browser-ci-scheduling/collection-comparison.json`,
-the adjacent collection logs. Recheck parity and cost when
-marker discovery, collection, sharding or CI scheduling changes. Keep local
-collection timings separate from runner startup, browser execution and billing.
+Artifacts: `output/browser-ci-scheduling/`.
 
 ## Untargeted Method Evidence
 
