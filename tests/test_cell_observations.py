@@ -164,7 +164,6 @@ def test_predecessor_cells_keep_all_supports_with_deterministic_outside_witness(
                 assert relation.supporting_group_hypothesis_id == witness_id
                 assert cell.peak_observation is None and cell.peak_hypothesis is None
                 assert cell.physical_peak_key is None
-                assert cell.peak_hypothesis_id is None
         contents = {
             (
                 cell.group_hypothesis_id,

@@ -108,24 +108,6 @@ def validate_delimited_header(
     return header
 
 
-def read_tsv_required(
-    path: Path,
-    required_columns: Sequence[str],
-    *,
-    allow_missing_trailing_columns: Sequence[str] = (),
-) -> tuple[dict[str, str], ...]:
-    if not path.exists():
-        raise FileNotFoundError(str(path))
-    return tuple(
-        read_delimited_rows(
-            path,
-            required_columns=required_columns,
-            allow_missing_trailing_columns=allow_missing_trailing_columns,
-            encoding="utf-8-sig",
-        )
-    )
-
-
 def read_tsv_with_header(
     path: Path,
     *,
@@ -188,19 +170,6 @@ def file_sha256(path: Path, *, uppercase: bool = True) -> str:
     return value.upper() if uppercase else value
 
 
-def require_fields(
-    rows: Sequence[Mapping[str, Any]],
-    required_columns: Sequence[str],
-    path: Path,
-) -> None:
-    if not rows:
-        raise ValueError(f"{path} has no data rows")
-    fieldnames = set(rows[0])
-    missing = [column for column in required_columns if column not in fieldnames]
-    if missing:
-        raise ValueError(f"{path} is missing required columns: {missing}")
-
-
 def write_tsv(
     path: Path,
     rows: Iterable[Mapping[str, Any]],
@@ -258,35 +227,6 @@ def write_delimited_rows(
         )
 
 
-def render_delimited_rows(
-    rows: Sequence[Mapping[str, Any]],
-    fieldnames: Sequence[str],
-    *,
-    delimiter: str = ",",
-    extrasaction: Literal["ignore", "raise"] = "ignore",
-    formatter: Callable[[Any], str] | None = None,
-    lineterminator: str | None = None,
-) -> str:
-    output = io.StringIO(newline="")
-    writer = csv.DictWriter(
-        output,
-        **_delimited_writer_kwargs(
-            fieldnames,
-            delimiter=delimiter,
-            extrasaction=extrasaction,
-            lineterminator=lineterminator,
-        ),
-    )
-    _write_formatted_delimited_rows(
-        writer,
-        rows,
-        fieldnames,
-        extrasaction=extrasaction,
-        formatter=formatter,
-    )
-    return output.getvalue()
-
-
 def _delimited_writer_kwargs(
     fieldnames: Sequence[str],
     *,
@@ -336,18 +276,6 @@ def escape_excel_formula(value: str) -> str:
     return value
 
 
-def format_spreadsheet_value(value: object) -> str:
-    """Protect display-only text, retaining typed numbers and their precision.
-
-    Machine handoffs must preserve their original strings instead.
-    """
-    if value is None:
-        return ""
-    if isinstance(value, str):
-        return escape_excel_formula(value)
-    return str(value)
-
-
 def format_machine_float(value: float) -> str:
     """Format a machine-handoff float without losing binary precision.
 
@@ -389,41 +317,7 @@ def optional_float(value: object) -> float | None:
     return parsed if math.isfinite(parsed) else None
 
 
-def required_float(value: object, field: str, label: str) -> float:
-    parsed = optional_float(value)
-    if parsed is None:
-        raise ValueError(f"{label} has invalid {field}: {value!r}")
-    return parsed
-
-
-def bool_value(value: object) -> bool | None:
-    normalized = text_value(value).upper()
-    if normalized in {"TRUE", "T", "YES", "Y", "1"}:
-        return True
-    if normalized in {"FALSE", "F", "NO", "N", "0"}:
-        return False
-    return None
-
-
 def text_value(value: object) -> str:
     if value is None:
         return ""
     return str(value).strip()
-
-
-def split_semicolon_labels(value: object) -> list[str]:
-    return [part.strip() for part in text_value(value).split(";") if part.strip()]
-
-
-def required_indexes(
-    header: Sequence[object],
-    required_columns: Sequence[str],
-    sheet_name: str,
-) -> dict[str, int]:
-    indexes = {str(value).strip(): index for index, value in enumerate(header) if value}
-    missing = [column for column in required_columns if column not in indexes]
-    if missing:
-        raise ValueError(
-            f"{sheet_name}: missing required columns: {', '.join(missing)}"
-        )
-    return {column: indexes[column] for column in required_columns}

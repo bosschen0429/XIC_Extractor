@@ -83,7 +83,6 @@ def test_injection_coordinates_keep_context_in_the_raw_timeline() -> None:
     assert injections.stems == ("A", "B", "C", "D")
     assert injections.order("C") == 5
     assert injections.position("C") == 2
-    assert injections.order_gap("B", "C") == 3
     assert injections.position_gap("B", "C") == 1
     assert injections.around("A", 2) == ("B", "C")
     assert injections.around("D", 2) == ("B", "C")

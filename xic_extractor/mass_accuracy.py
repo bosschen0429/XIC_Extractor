@@ -142,27 +142,6 @@ def within_both_mz_tolerances(
     )
 
 
-def is_within_mz_tolerance(
-    observed_mz: float,
-    reference_mz: float,
-    *,
-    tolerance_ppm: float,
-    minimum_da: float = 0.0,
-    boundary_epsilon_ppm: float = PPM_BOUNDARY_EPSILON,
-) -> bool:
-    """Return whether ``observed_mz`` is within a ppm/mDa m/z tolerance."""
-
-    _require_finite_mz("observed_mz", observed_mz)
-    tolerance_da = mz_tolerance_da(
-        reference_mz,
-        tolerance_ppm,
-        minimum_da=minimum_da,
-    )
-    _require_non_negative_finite("boundary_epsilon_ppm", boundary_epsilon_ppm)
-    epsilon_da = reference_mz * boundary_epsilon_ppm * 1e-6
-    return abs(observed_mz - reference_mz) <= tolerance_da + epsilon_da
-
-
 def within_ppm(
     observed_mz: float,
     reference_mz: float,

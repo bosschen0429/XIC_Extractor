@@ -116,15 +116,6 @@ def test_overlapping_queries_share_peak_population_and_prepare_once(monkeypatch)
     )
     assert capture.initial_request_count == 1
     assert repeated.work_ordinal == left.work_ordinal
-    replay = capture.reselect(left, selection_subject_id="left-copy", query_rt_min=4.8)
-    assert (
-        replay.evaluation.answer.selected_segment
-        == left.evaluation.answer.selected_segment
-    )
-    assert (
-        replay.evaluation.answer.selected_segment.area_counts_seconds
-        == left.evaluation.answer.selected_segment.area_counts_seconds
-    )
     assert counts == {
         "prepare": 1,
         "enumerate": 1,

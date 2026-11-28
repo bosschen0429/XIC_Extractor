@@ -5,43 +5,15 @@ from pathlib import Path
 import pytest
 
 from xic_extractor.tabular_io import (
-    bool_value,
     file_sha256,
     format_diagnostic_value,
-    format_spreadsheet_value,
     optional_float,
     read_delimited_rows,
-    read_tsv_required,
     read_tsv_with_header,
-    render_delimited_rows,
-    required_indexes,
-    split_semicolon_labels,
     text_value,
     write_delimited_rows,
     write_tsv,
 )
-
-
-def test_spreadsheet_format_preserves_typed_numbers_and_empty_values() -> None:
-    row = {
-        "label": "=1+1",
-        "count": -2,
-        "offset": -0.123456789,
-        "optional": None,
-        "enabled": False,
-    }
-    text = render_delimited_rows(
-        [row], tuple(row), delimiter="\t", formatter=format_spreadsheet_value
-    )
-    assert list(csv.DictReader(text.splitlines(), delimiter="\t")) == [
-        {
-            "label": "'=1+1",
-            "count": "-2",
-            "offset": "-0.123456789",
-            "optional": "",
-            "enabled": "False",
-        }
-    ]
 
 
 def test_read_delimited_rows_fails_with_clear_missing_columns(
@@ -247,61 +219,8 @@ def test_write_delimited_rows_supports_csv_output(tmp_path: Path) -> None:
     ]
 
 
-def test_render_delimited_rows_uses_same_default_formatting() -> None:
-    text = render_delimited_rows(
-        (
-            {
-                "sample": "S1",
-                "present": True,
-                "missing": None,
-                "score": 1.23456789,
-            },
-        ),
-        ("sample", "present", "missing", "score"),
-    )
-
-    assert text == "sample,present,missing,score\r\nS1,TRUE,,1.23457\r\n"
-
-
-def test_render_delimited_rows_can_preserve_lf_line_terminator() -> None:
-    text = render_delimited_rows(
-        ({"sample": "S1", "value": 2.0},),
-        ("sample", "value"),
-        delimiter="\t",
-        lineterminator="\n",
-    )
-
-    assert text == "sample\tvalue\nS1\t2\n"
-
-
-def test_render_delimited_rows_can_raise_on_extra_fields() -> None:
-    with pytest.raises(ValueError, match="dict contains fields not in fieldnames"):
-        render_delimited_rows(
-            ({"sample": "S1", "unexpected": "value"},),
-            ("sample",),
-            extrasaction="raise",
-        )
-
-
 def test_format_diagnostic_value_hides_nan() -> None:
     assert format_diagnostic_value(float("nan")) == ""
-
-
-def test_read_tsv_required_accepts_utf8_sig_and_validates_columns(
-    tmp_path: Path,
-) -> None:
-    path = tmp_path / "rows.tsv"
-    path.write_text(
-        "\ufeffsample\ttarget\tvalue\nS1\tA\t1.2\n",
-        encoding="utf-8",
-    )
-
-    assert read_tsv_required(path, ("sample", "target")) == (
-        {"sample": "S1", "target": "A", "value": "1.2"},
-    )
-
-    with pytest.raises(ValueError, match="missing required columns: missing"):
-        read_tsv_required(path, ("sample", "missing"))
 
 
 def test_read_tsv_with_header_returns_header_and_rows(tmp_path: Path) -> None:
@@ -368,20 +287,5 @@ def test_shared_scalar_parsers_match_diagnostic_loader_contracts() -> None:
     assert optional_float("'-8.6973") == -8.6973
     assert optional_float(float("inf")) is None
     assert optional_float("not numeric") is None
-    assert bool_value("TRUE") is True
-    assert bool_value("yes") is True
-    assert bool_value("0") is False
-    assert bool_value("maybe") is None
     assert text_value(None) == ""
     assert text_value("  A  ") == "A"
-    assert split_semicolon_labels(" a ; ; b ") == ["a", "b"]
-
-
-def test_required_indexes_reports_sheet_and_missing_columns() -> None:
-    assert required_indexes(("Label", "m/z", None), ("Label", "m/z"), "Targets") == {
-        "Label": 0,
-        "m/z": 1,
-    }
-
-    with pytest.raises(ValueError, match="Targets.*missing required columns: Role"):
-        required_indexes(("Label",), ("Label", "Role"), "Targets")

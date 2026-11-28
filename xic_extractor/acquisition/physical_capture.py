@@ -66,7 +66,7 @@ class CapturedPhysicalPeak:
 class PhysicalPeakCapture:
     """Sample-local acquisition and physical results shared by method hits.
 
-    One instance answers one ``capture`` population; ``reselect`` extends it.
+    One instance answers one ``capture`` population.
     """
 
     def __init__(
@@ -236,22 +236,6 @@ class PhysicalPeakCapture:
             )
             self._next_work_ordinal += 1
         self._populations[request] = acquired, population, measurements
-
-    def reselect(
-        self,
-        captured: CapturedPhysicalPeak,
-        *,
-        selection_subject_id: str,
-        query_rt_min: float,
-    ) -> CapturedPhysicalPeak:
-        """Attach another NL event to an existing measurement; no science rerun."""
-        return self._lookup(
-            replace(
-                captured.search,
-                selection_subject_id=selection_subject_id,
-                query_rt_min=query_rt_min,
-            )
-        )
 
     def _lookup(self, search: PhysicalPeakSearch) -> CapturedPhysicalPeak:
         acquired, population, measurements = self._populations[search.request]

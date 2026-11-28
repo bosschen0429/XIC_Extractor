@@ -16,7 +16,6 @@ from xic_extractor.discovery.ion_grouping import build_discovery_ions
 from xic_extractor.discovery.ms1_capture import capture_ms1_peaks
 from xic_extractor.peak_detection.chrom_peak_segments import local_apex_prominence
 from xic_extractor.peak_detection.physical_peak_evaluation import (
-    discovery_raw_peak_context_edges,
     evaluate_physical_peak,
     prepare_physical_signal,
     unique_physical_segment_at_rt,
@@ -117,10 +116,6 @@ def test_shared_valley_does_not_lend_a_noise_components_segment_to_another_peak(
                 selection_policy_version=DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
             )
             is segment
-        )
-        assert discovery_raw_peak_context_edges(answer.segment_universe, query) == (
-            False,
-            False,
         )
         answers.append(answer)
     assert answers[0].answer.selected_segment != answers[1].answer.selected_segment

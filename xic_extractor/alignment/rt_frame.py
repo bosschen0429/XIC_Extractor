@@ -14,7 +14,6 @@ from typing import TYPE_CHECKING, Protocol
 
 from xic_extractor.alignment.drift_evidence import (
     DriftEvidenceLookup,
-    DriftPriorSource,
     KnownIstdOwnerLookup,
     KnownIstdReference,
 )
@@ -42,15 +41,6 @@ class RtFrame(Protocol):
     def sample_cohorts(self) -> Mapping[str, str]: ...
 
     @property
-    def has_coordinates(self) -> bool: ...
-
-    @property
-    def has_drift(self) -> bool: ...
-
-    @property
-    def drift_source(self) -> DriftPriorSource: ...
-
-    @property
     def known_identity_bindings(self) -> tuple[tuple[str, str], ...]: ...
 
     @property
@@ -71,14 +61,6 @@ class RtFrame(Protocol):
     ) -> float | None: ...
 
     def observed_rt_min(self, sample_stem: str, common_rt: float) -> float | None: ...
-
-    def calibrated_peak_region(
-        self, owner: SampleLocalMS1Owner
-    ) -> tuple[float | None, float, float | None] | None: ...
-
-    def membership_coordinate(
-        self, owner: SampleLocalMS1Owner
-    ) -> RtEstimate | None: ...
 
     def estimate_rt(
         self, sample_stem: str, observed_rt: float
@@ -101,8 +83,6 @@ class RtFrame(Protocol):
         left: SampleLocalMS1Owner,
         right: SampleLocalMS1Owner,
     ) -> bool: ...
-
-    def drift_injection_order_gap(self, left: str, right: str) -> int | None: ...
 
 
 @dataclass(frozen=True)
@@ -247,32 +227,6 @@ class SampleRtFrame:
         return replace(self, _coordinate_override=corrected_rt_min)
 
     @property
-    def has_coordinates(self) -> bool:
-        return (
-            self._sample_calibration is not None
-            or self._coordinate_override is not None
-        )
-
-    @property
-    def has_drift(self) -> bool:
-        return self._sample_calibration is not None or self._drift is not None
-
-    @property
-    def drift_source(self) -> DriftPriorSource:
-        if self._sample_calibration is not None:
-            return "batch_anchor_calibration"
-        if self._drift is None:
-            return "none"
-        source = self._drift.source
-        supported = {"targeted_istd_trend", "batch_istd_trend", "none"}
-        if source not in supported:
-            raise ValueError(
-                f"Unsupported drift prior source: {source}. Expected one of: "
-                + ", ".join(sorted(supported))
-            )
-        return source
-
-    @property
     def known_identity_bindings(self) -> tuple[tuple[str, str], ...]:
         return (
             tuple((owner, label) for owner, label, _ in self._drift.bindings)
@@ -308,13 +262,6 @@ class SampleRtFrame:
     ) -> bool:
         return isinstance(self._drift, KnownIstdOwnerLookup) and (
             self._drift.has_direct_reference_pair(left, right)
-        )
-
-    def drift_injection_order_gap(self, left: str, right: str) -> int | None:
-        return (
-            self._drift.injection_gap(left, right)
-            if isinstance(self._drift, DriftEvidenceLookup)
-            else None
         )
 
     def corrected_rt_min(self, owner: SampleLocalMS1Owner) -> float:
@@ -376,35 +323,6 @@ class SampleRtFrame:
                 sample_stem, common_rt
             )
         return None
-
-    def calibrated_peak_region(
-        self, owner: SampleLocalMS1Owner
-    ) -> tuple[float | None, float, float | None] | None:
-        """Map the apex and each supported measured edge, without extrapolation.
-
-        An unsupported edge is unknown, not the end of the measured peak.
-        Keep a supported apex in the common frame even when a tail extends
-        beyond the calibration span.
-        """
-        if self._sample_calibration is None:
-            return None
-        start, apex, end = (
-            self.calibrated_rt_min(owner.sample_stem, value)
-            for value in (
-                owner.peak.rt_left_min,
-                owner.peak.rt_apex_min,
-                owner.peak.rt_right_min,
-            )
-        )
-        if apex is None:
-            return None
-        return start, apex, end
-
-    def membership_coordinate(self, owner: SampleLocalMS1Owner) -> RtEstimate | None:
-        """Final membership consumes estimates without widening strong support."""
-        if self._coordinate_override is not None:
-            return RtEstimate(self._coordinate_override(owner), "diagnostic_override")
-        return self.estimate_rt(owner.sample_stem, owner.peak.rt_apex_min)
 
     def estimate_rt(self, sample_stem: str, observed_rt: float) -> RtEstimate | None:
         if self._sample_calibration is not None:

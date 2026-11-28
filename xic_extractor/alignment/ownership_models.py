@@ -90,12 +90,6 @@ class SampleLocalMS1Owner:
         return None
 
     @property
-    def all_events(self) -> tuple[IdentityEvent, ...]:
-        if self.primary_identity_event is None:
-            return self.supporting_events
-        return (self.primary_identity_event, *self.supporting_events)
-
-    @property
     def neutral_loss_tag(self) -> str:
         if self.primary_identity_event is None:
             return ""

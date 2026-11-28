@@ -23,15 +23,6 @@ def _require_columns(
             raise _config_error(path, None, column, "", "required column is missing")
 
 
-def _parse_int(path: Path, row_number: int | None, column: str, value: str) -> int:
-    try:
-        return int(value)
-    except ValueError as exc:
-        raise _config_error(
-            path, row_number, column, value, "must be an integer"
-        ) from exc
-
-
 def _parse_float(path: Path, row_number: int | None, column: str, value: str) -> float:
     try:
         parsed = float(value)

@@ -39,10 +39,6 @@ class TargetedRunner(Protocol):
 FinalizedTargetProductionResult: TypeAlias = FinalizedTargetApplicationResult
 
 
-class TargetedApplicationError(ValueError):
-    """Raised when a Targeted application invariant or population contract fails."""
-
-
 @dataclass(frozen=True)
 class TargetedApplicationRequest:
     """Headless application input; callbacks are lifecycle adapters, not science."""

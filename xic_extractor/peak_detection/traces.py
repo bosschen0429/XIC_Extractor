@@ -130,27 +130,3 @@ def targeted_trace_group(
         role=role,
         istd_pair=istd_pair,
     )
-
-
-def untargeted_trace_group(
-    trace: Trace,
-    *,
-    family_id: str,
-    expected_rt_min: float | None = None,
-    neutral_loss_tag: str = "",
-    precursor_mz: float | None = None,
-    product_mz: float | None = None,
-    observed_neutral_loss_da: float | None = None,
-) -> TraceGroup:
-    return TraceGroup(
-        trace_group_id="|".join((trace.sample_name, family_id, "untargeted")),
-        sample_name=trace.sample_name,
-        analysis_mode="untargeted",
-        context_id=family_id,
-        traces=(trace,),
-        expected_rt_min=expected_rt_min,
-        precursor_mz=trace.mz if precursor_mz is None else precursor_mz,
-        product_mz=product_mz,
-        neutral_loss_tag=neutral_loss_tag,
-        observed_neutral_loss_da=observed_neutral_loss_da,
-    )
