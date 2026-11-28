@@ -45,6 +45,8 @@ collections use other names and cannot cross the delivery seam as if final.
   an area in an established row; it does not establish the row or count as
   direct CID-NL support.
 - Inclusion and counting consume those completed answers, not raw cells.
+  `accepted_cell_count` counts cells accepted for numeric output, accepted
+  MS1-only cells included; it is not a direct-detection count.
 - Owners without an integration, or with an apex on an integration boundary,
   do not train the RT calibration. Cell decisions take values from peak
   integrations, not the anchor-eligibility flag.

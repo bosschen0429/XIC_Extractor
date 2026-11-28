@@ -63,6 +63,8 @@ Neither writer nor Inspector reruns scientific decisions.
 
 ## Content rules
 
+- Every reason code a projection can save has a label or is declared
+  hidden; an unknown code fails the write instead of disappearing.
 - Each result carries fixed labels, never generated sentences. `依據` holds
   exactly one label: the observation the saved result rests on. `疑點` holds
   zero or more labels joined by `、`: what is left uncertain. A label names an

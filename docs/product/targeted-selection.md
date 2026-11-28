@@ -136,7 +136,8 @@ candidate universe in the Targeted search scope, not a candidate-local best MS2
 product.
 
 - **Ranking priority.** Only positive, individually attributed CID-NL support
-  gets chemical priority. No MS2 and MS2 without qualified support are both
+  gets chemical priority. Paired-ISTD RT mismatch without strict NL support
+  demotes candidate localization, independently of counting. No MS2 and MS2 without qualified support are both
   unconfirmed; neither outranks the other. Without such support, physical and
   RT/ISTD evidence decide localization. Positive CID-NL is evidence, not
   permission to accept an incompatible chromatographic interpretation.
@@ -336,6 +337,16 @@ Duplicate target labels fail closed.
   [paired-ISTD position](#paired-istd-identity). A typed no-write clears the
   peak before rendering. Missing NL alone is not a writer veto; accepted
   MS1-only Untargeted cells follow the same distinction.
+- Every configured Target is evaluated for each selected analysis sample;
+  sample names do not gate Targets or paired-area references, and Untargeted
+  method-level neutral-loss selection does not restrict the list.
+- Positive MS1 means a finite selected RT and positive area; without it the
+  row or cell projects to an explicit no-peak or not-counted state, never
+  counted detection by implication.
+- A configured ISTD's plausible dropout can count as `detected_flagged`; an
+  analyte NL fail or missing MS2 needs [paired-ISTD identity](#paired-istd-identity).
+  This is count eligibility only: neither branch discards the cell decision's
+  value or manufactures one after a no-write.
 - Counting and review render one product projection, which counted detection
   belongs to; `count_no_ms2_as_detected` cannot override it. Shared evidence
   providers inform that state but do not choose it.
