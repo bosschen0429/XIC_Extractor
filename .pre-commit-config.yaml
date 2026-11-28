@@ -10,6 +10,13 @@ repos:
         files: ^((xic_extractor|scripts|tools|xic_inspector|xic_workbench|tests)/.*\.py|\.pre-commit-config\.yaml)$
         pass_filenames: false
 
+      - id: production-reachability
+        name: Reject symbols left without a production caller
+        entry: uv run --cache-dir .uv-cache python tools/diagnostics/production_reachability_census.py --base HEAD --staged
+        language: system
+        files: ^((xic_extractor|scripts|tools|xic_inspector|xic_workbench)/.*\.py|pyproject\.toml)$
+        pass_filenames: false
+
       - id: new-source-comments
         name: Reject source comments absent from HEAD
         entry: uv run --cache-dir .uv-cache python scripts/check_comments.py --base HEAD

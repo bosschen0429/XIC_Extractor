@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
-from tools.diagnostics.production_reachability_census import find_unreachable_symbols
+from tools.diagnostics.production_reachability_census import (
+    find_unreachable_symbols,
+    orphaned_since,
+)
 
 
 def _write(path: Path, text: str) -> None:
@@ -96,3 +100,73 @@ def test_import_alias_use_counts_for_the_original_name(tmp_path: Path) -> None:
 
     assert "called_through_alias" not in unreachable
     assert "imported_but_unused" in unreachable
+
+
+def test_tools_reach_only_the_diagnostics_package(tmp_path: Path) -> None:
+    _write(tmp_path / "pyproject.toml", "[project]\n")
+    _write(
+        tmp_path / "xic_extractor" / "diagnostics" / "review.py",
+        "def review():\n    return 1\n",
+    )
+    _write(tmp_path / "xic_extractor" / "model.py", "def tool_only():\n    return 2\n")
+    _write(
+        tmp_path / "tools" / "diagnostics" / "run.py",
+        "from xic_extractor.diagnostics.review import review\n"
+        "from xic_extractor.model import tool_only\n"
+        "\n"
+        "review()\n"
+        "tool_only()\n",
+    )
+
+    unreachable = {symbol.name for symbol in find_unreachable_symbols(tmp_path)}
+
+    assert unreachable == {"tool_only"}
+
+
+def _git(root: Path, *args: str) -> None:
+    subprocess.run(
+        ["git", "-c", "user.name=t", "-c", "user.email=t@t", *args],
+        cwd=root,
+        check=True,
+        capture_output=True,
+    )
+
+
+def test_base_comparison_fails_only_on_symbols_this_change_orphaned(
+    tmp_path: Path,
+) -> None:
+    _write(tmp_path / "pyproject.toml", "[project]\n")
+    _write(
+        tmp_path / "xic_extractor" / "stage.py",
+        "def kept():\n    return 1\n\ndef replaced():\n    return 2\n\n"
+        "def already_dead():\n    return 3\n",
+    )
+    _write(
+        tmp_path / "xic_workbench" / "view.py",
+        "from xic_extractor.stage import kept, replaced\n\nkept()\nreplaced()\n",
+    )
+    _git(tmp_path, "init", "-q")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-q", "-m", "base")
+
+    assert orphaned_since(tmp_path, "HEAD") == ()
+
+    _write(
+        tmp_path / "xic_workbench" / "view.py",
+        "from xic_extractor.stage import kept\n\nkept()\n",
+    )
+    _write(
+        tmp_path / "xic_extractor" / "added.py", "def never_called():\n    return 4\n"
+    )
+
+    assert {symbol.name for symbol in orphaned_since(tmp_path, "HEAD")} == {
+        "replaced",
+        "never_called",
+    }
+    assert orphaned_since(tmp_path, "HEAD", staged=True) == ()
+
+    _git(tmp_path, "add", "xic_workbench/view.py")
+
+    assert {
+        symbol.name for symbol in orphaned_since(tmp_path, "HEAD", staged=True)
+    } == {"replaced"}
