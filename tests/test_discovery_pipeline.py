@@ -767,6 +767,68 @@ def _run_discovery_batch(
     return _pipeline.run_discovery_batch(spec, **kwargs)
 
 
+@pytest.mark.parametrize(
+    "mode", ("read_failure", "open_failure", "cancel", "publication_failure")
+)
+def test_failed_sample_keeps_completed_parts_and_closes_its_raw(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str
+) -> None:
+    from xic_extractor.configuration.mass_recalibration import MassRecalibration
+    from xic_extractor.raw_reader import EXPECTED_THERMO_DLLS
+    from xic_extractor.raw_reader_errors import RawReaderOpenError
+
+    paths = (tmp_path / "observed.raw", tmp_path / "case.raw")
+    for path, content in zip(paths, ("success", mode), strict=True):
+        path.write_text(content)
+    dll_dir = tmp_path / "dll"
+    dll_dir.mkdir()
+    for name in EXPECTED_THERMO_DLLS:
+        (dll_dir / name).write_bytes(b"fake dll")
+    settings = _settings(
+        mass_recalibration=MassRecalibration.NONE, rt_min=7.5, rt_max=8.6
+    )
+    spec = _compiled_run_spec(paths, settings)
+    output_dir = tmp_path / "out"
+    output_dir.mkdir()
+    if mode == "publication_failure":
+        part_path(output_dir, "case").with_suffix(".sqlite.tmp").mkdir(parents=True)
+    openers = {
+        item.raw_path: vendor_fake_open_raw(
+            DiscoverySampleJob(
+                index,
+                output_dir,
+                settings,
+                spec.signal_processing_profile,
+                dll_dir,
+                item,
+            )
+        )
+        for index, item in enumerate(spec.acquisition_inputs)
+    }
+    monkeypatch.setattr(
+        "xic_extractor.raw_reader.open_raw",
+        lambda path, dll, **kwargs: openers[path](path, dll, **kwargs),
+    )
+
+    with pytest.raises((RuntimeError, OSError, RawReaderOpenError)) as caught:
+        _run_discovery_batch(
+            paths,
+            run_spec=spec,
+            settings=settings,
+            output_dir=output_dir,
+            dll_dir=dll_dir,
+        )
+
+    expected_text = {"publication_failure": "case", "cancel": "cancelled"}.get(
+        mode, "vendor"
+    )
+    assert expected_text in str(caught.value)
+    assert not (output_dir / "discovery.sqlite").exists()
+    assert part_path(output_dir, "observed").is_file()
+    for stem in ("observed", "case"):
+        assert (output_dir / f"{stem}.closed").read_text() == "disposed"
+
+
 @pytest.mark.parametrize("mode", ("success", "read_failure"))
 def test_process_worker_records_raw_open_through_its_production_opener(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str
