@@ -189,12 +189,16 @@ existing unique-channel matrix offline. One batch.
   master.
 - **Not drift:** 299.1553 is two fixed-RT components whose height ratio
   reverses between QC3 and QC5 (MS2 cosine 0.85-0.94 within, 0.61-0.73
-  across); keeping them apart is correct. 827.17 (15.08-15.58 min calibrated,
-  isomers about 0.3 min apart) and 288.0658 (front 15.12-15.24, rear
-  15.40-15.51; QC7's front owner at 15.236 sits in the rear row; most
-  single-peak samples, BenignfatBC1055 at 15.245 among them, sit between) form
-  one continuous RT band that any map only cuts somewhere: RT cannot assign
-  the middle samples. Three RT-only objectives (group model, evidence
+  across); keeping them apart is correct.
+- **RT cannot assign:** on the 85-sample selected worksets, 827.17 and
+  299.1553 owners form one continuous RT band (827.17: 15.08-15.58 min
+  calibrated, isomers about 0.3 min apart, one owner per sample) that either
+  map only cuts somewhere. For 288.0658, QC7's front-component owner (15.236
+  calibrated) sits in the rear row; double-peak samples put the front at
+  15.12-15.24 and the rear at 15.40-15.51, and most single-peak samples,
+  BenignfatBC1055 (15.245) among them, sit between. Isomers sharing the NL
+  have identical identity evidence in grouping, leaving only RT, shape and
+  region. Three RT-only objectives (group model, evidence
   acceptance, RT likelihood with a CRP prior and double-peak observations)
   each split 348.21 Y or merged isomer controls; MS2 fragment evidence is
   #1170.
@@ -329,7 +333,12 @@ anchors byte for byte.
   195.7 s with 1.1 GB more per composing worker; spool-read contention was not
   the main cost. Review-curve encoding costs about 8.4 s.
 - **Not established:** parent stack samples are biased toward GIL-releasing
-  code, so costs come from timed spans; one run each.
+  code, so costs come from timed spans; one run each. All 510 ISTD pairs exist
+  on both sides, so none of the removed Targeted paths ran (credibility gate,
+  elution-order check, cross-sample recovery, error on a failed RAW). The
+  explanation database differed in internal integer peak ids, renumbered by
+  the new partition order; its tables matched once peak references were
+  resolved to `physical_peak_key`, and it is not byte-identical.
 - **Reopen:** when partition packing, worker scheduling, Backfill planning,
   the ISTD reference, the RAW reader or where composition runs changes.
 
