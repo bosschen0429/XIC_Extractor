@@ -149,7 +149,7 @@ def test_actual_cli_entry_rejects_invalid_method_before_fingerprint_or_raw(
     )
     monkeypatch.setattr(
         cli_module,
-        "run_discovery",
+        "run_discovery_batch",
         lambda *_args, **_kwargs: pytest.fail("opened RAW for invalid method"),
     )
 

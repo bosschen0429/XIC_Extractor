@@ -4,19 +4,14 @@ import bisect
 import gzip
 import json
 from collections.abc import Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import numpy as np
 
 from xic_extractor.mass_accuracy import absolute_ppm_error, mz_window, signed_ppm_error
 from xic_extractor.raw_reader import open_raw
-
-if TYPE_CHECKING:
-    from xic_extractor.discovery.peak_binding import (
-        DiscoveryPeakPhysicalBinding,
-    )
 
 BLANK_BACKGROUND_LIBRARY_SCHEMA = "blank_background_library"
 
@@ -89,6 +84,27 @@ class BlankBackgroundLibrary:
 
         matches.sort(key=lambda x: abs(x[1]))
         return matches
+
+    def is_background(
+        self,
+        precursor_mz: float,
+        height: float,
+        *,
+        ppm_tol: float,
+        fold_change_threshold: float,
+    ) -> bool:
+        """Whether a peak of this height is system background.
+
+        A matched blank ion alone does not make it so: the peak is background
+        only when its height is below ``fold_change_threshold`` times that
+        ion's maximum blank intensity.
+        """
+        matches = self.match(precursor_mz, ppm_tol=ppm_tol)
+        if not matches:
+            return False
+        blank_intensity = matches[0][0].max_intensity
+        fold_change = height / blank_intensity if blank_intensity > 0 else 0.0
+        return fold_change < fold_change_threshold
 
     def save_json(self, path: Path) -> None:
         """Persist background library to JSON or JSON.GZ file."""
@@ -321,50 +337,3 @@ def resolve_background_library(
             if cached.is_file():
                 return BlankBackgroundLibrary.load_json(cached)
     return None
-
-
-def apply_blank_qualification_to_peaks(
-    bindings: Sequence[DiscoveryPeakPhysicalBinding],
-    library: BlankBackgroundLibrary | None,
-    *,
-    ppm_tol: float = 10.0,
-    fold_change_threshold: float = 3.0,
-) -> tuple[DiscoveryPeakPhysicalBinding, ...]:
-    """Mark peaks of pure background ions; a blank match alone does not.
-
-    A peak whose representative precursor matches a blank ion within ppm_tol
-    and whose height is below fold_change_threshold times the blank intensity
-    is system background and is not admitted. A higher peak keeps its
-    admission. A doubly charged reading is another ion, not background, and
-    keeps its status.
-    """
-    if library is None or not library.ions:
-        return tuple(bindings)
-
-    updated: list[DiscoveryPeakPhysicalBinding] = []
-    for binding in bindings:
-        candidate = binding.peak
-        if candidate.status == "doubly_charged":
-            updated.append(binding)
-            continue
-        matches = library.match(
-            binding.representative_event.precursor_mz, ppm_tol=ppm_tol
-        )
-        if not matches:
-            updated.append(binding)
-            continue
-
-        best_ion, _delta_ppm = matches[0]
-        blank_int = best_ion.max_intensity
-        segment = binding.physical_evaluation.answer.selected_segment
-        if segment is None:
-            raise ValueError(f"{candidate.peak_id}: a Discovery peak lacks its height")
-        tissue_height = float(segment.height)
-        fc = (tissue_height / blank_int) if blank_int > 0 else 0.0
-
-        if fc < fold_change_threshold:
-            updated.append(replace(binding, peak=replace(candidate, status="blank")))
-        else:
-            updated.append(binding)
-
-    return tuple(updated)

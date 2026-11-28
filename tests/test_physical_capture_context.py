@@ -14,6 +14,7 @@ from tests.discovery_ms1_capture_fixtures import (
     _settings,
 )
 from tests.discovery_peak_fixtures import located_scan_ids
+from tests.discovery_physical_measurement_fixtures import measured_peak_evaluations
 from xic_extractor.acquisition import physical_capture
 from xic_extractor.acquisition.physical_capture import (
     PhysicalPeakCapture,
@@ -236,20 +237,22 @@ def test_seed_grouping_order_and_duplicates_do_not_change_physical_peaks():
             ms1_centroid=lambda *_: None,
         )
         measured = list(result.peaks)
-        assert len(result.physical_bindings) == 2
-        assert {b.final_ordinal for b in result.physical_bindings} == {0, 1}
+        assert len(result.peaks) == 2
         assert sorted(c.ms1_apex_rt for c in measured) == pytest.approx([5.0, 5.15])
         assert {located_scan_ids(c) for c in measured} == {(10,), (11, 12)}
-        assert result.measurements.initial_request_count == 1
+        assert len(result.acquisition_batches[0].traces) == 1
         snapshot = sorted(
             (
                 located_scan_ids(c),
-                b.peak.ms1_apex_rt,
-                b.physical_evaluation.answer.selected_segment,
-                b.peak.status,
+                c.ms1_apex_rt,
+                evaluation.answer.selected_segment,
+                c.status,
             )
-            for b in result.physical_bindings
-            for c in (b.peak,)
+            for c, evaluation in zip(
+                result.peaks,
+                measured_peak_evaluations(result, TEST_PROFILE),
+                strict=True,
+            )
         )
         if previous is not None:
             assert snapshot == previous

@@ -266,3 +266,65 @@ def test_nucleoside_table_pairs_windows_with_tags_and_locates_bad_rows(tmp_path)
         path.write_text(header + row + "\n", encoding="utf-8")
         with pytest.raises(ValueError, match=message):
             read_nucleosides(path)
+
+
+@pytest.mark.parametrize("stored_order", [(0, 1), (1, 0)])
+def test_count_refuses_a_discovery_run_with_two_neutral_losses(
+    tmp_path, stored_order
+) -> None:
+    from tests.discovery_store_fixtures import (
+        SampleRecords,
+        attached,
+        event,
+        peak,
+        write_discovery,
+    )
+    from xic_extractor.diagnostics.nl_adduct_count_acquisition import count_run
+
+    losses = {"DNA_dR": 116.0474, "RNA_R": 132.0423}
+    peaks = (
+        peak("s", peak_mz=500.1, ms1_apex_rt=12.0, best_ms2_scan_id=1),
+        peak(
+            "s",
+            peak_mz=300.045,
+            ms1_apex_rt=8.0,
+            neutral_loss_tag="RNA_R",
+            best_ms2_scan_id=2,
+        ),
+    )
+    events = (
+        event("s", scan_number=1, rt=12.0, precursor_mz=500.1),
+        event(
+            "s",
+            scan_number=2,
+            rt=8.0,
+            precursor_mz=300.045,
+            neutral_loss_tag="RNA_R",
+            neutral_loss_da=132.0423,
+        ),
+    )
+    write_discovery(
+        tmp_path,
+        [
+            SampleRecords(
+                "s",
+                tmp_path / "s.raw",
+                peaks=[peaks[index] for index in stored_order],
+                attachments=[
+                    item
+                    for index in stored_order
+                    for item in attached(peaks[index], events[index])
+                ],
+            )
+        ],
+        neutral_loss_by_tag=losses,
+    )
+
+    with pytest.raises(ValueError, match="one neutral loss"):
+        count_run(
+            tmp_path,
+            dll_dir=tmp_path,
+            neutral_loss_by_tag=losses,
+            sugar_losses=losses,
+            nucleosides=[],
+        )

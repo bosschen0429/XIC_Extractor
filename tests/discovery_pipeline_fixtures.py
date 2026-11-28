@@ -9,6 +9,7 @@ import numpy as np
 
 from tests.cid_nl_raw_fixture import fake_acquisition_source
 from xic_extractor.configuration.cid_nl_profile import NeutralLossProfile
+from xic_extractor.configuration.execution_profile import in_process_execution
 from xic_extractor.configuration.mass_recalibration import (
     MassRecalibration,
     MassRecalibrationResult,
@@ -30,7 +31,7 @@ NEUTRAL_LOSS_DA = 116.0474
 
 def _settings(**overrides: object) -> DiscoverySettings:
     values = {
-        "neutral_loss_profile": NeutralLossProfile("DNA_dR", NEUTRAL_LOSS_DA),
+        "neutral_loss_profiles": (NeutralLossProfile("DNA_dR", NEUTRAL_LOSS_DA),),
         **overrides,
     }
     return DiscoverySettings(**cast(Any, values))
@@ -71,9 +72,12 @@ def _compiled_run_spec(raw_paths: tuple[Path, ...], settings: DiscoverySettings)
 
 
 def _run_discovery(raw_path: Path, **kwargs: Any) -> DiscoveryBatchOutputs:
+    """Discover one RAW in process."""
     settings = kwargs.pop("settings")
     spec = kwargs.pop("run_spec", None) or _compiled_run_spec((raw_path,), settings)
-    return _pipeline.run_discovery(spec, **kwargs)
+    return _pipeline.run_discovery_batch(
+        spec, execution=in_process_execution(), **kwargs
+    )
 
 
 def _read_csv(path: Path) -> list[dict[str, str]]:
@@ -258,30 +262,3 @@ def vendor_fake_open_raw(job):
         )
 
     return open_vendor
-
-
-def vendor_fake_discovery_opener(job, recorder):
-    open_vendor = vendor_fake_open_raw(job)
-
-    def open_sample(path, dll_dir):
-        return open_vendor(
-            path,
-            dll_dir,
-            expected_acquisition_source=job.acquisition_input.acquisition_source,
-            mass_recalibration=job.settings.mass_recalibration,
-            timing_recorder=recorder,
-        )
-
-    return open_sample
-
-
-def discover_vendor_fake_sample(job, *, timing_recorder, measurement_observer):
-    return _pipeline._discover_completed_sample(
-        settings=job.settings,
-        signal_processing_profile=job.signal_processing_profile,
-        dll_dir=job.dll_dir,
-        raw_opener=vendor_fake_discovery_opener(job, timing_recorder),
-        timing_recorder=timing_recorder,
-        measurement_observer=measurement_observer,
-        acquisition_input=job.acquisition_input,
-    )

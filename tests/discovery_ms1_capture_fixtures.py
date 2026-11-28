@@ -23,7 +23,7 @@ RAW_FILE = Path("C:/data/TumorBC2312_DNA.raw")
 
 def _settings(**overrides: float) -> DiscoverySettings:
     values = {
-        "neutral_loss_profile": NeutralLossProfile("DNA_dR", NEUTRAL_LOSS_DA),
+        "neutral_loss_profiles": (NeutralLossProfile("DNA_dR", NEUTRAL_LOSS_DA),),
         **overrides,
     }
     return DiscoverySettings(**values)

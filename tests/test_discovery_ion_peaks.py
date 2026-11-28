@@ -16,6 +16,9 @@ from tests.discovery_ms1_capture_fixtures import (
     _settings,
 )
 from tests.discovery_peak_fixtures import located_scan_ids
+from tests.discovery_physical_measurement_fixtures import (
+    measured_peak_evaluations,
+)
 from xic_extractor.discovery.ion_grouping import build_discovery_ions
 from xic_extractor.discovery.models import build_discovery_peak_id
 from xic_extractor.discovery.ms1_capture import capture_ms1_peaks
@@ -77,13 +80,17 @@ def test_isomers_at_one_mass_are_two_peaks_on_one_channel() -> None:
     assert channel.events == seeds
     assert len(result.peaks) == 2
     assert all(
-        binding.peak.peak_id
+        peak.peak_id
         == build_discovery_peak_id(
-            sample_stem=binding.peak.sample_stem,
+            sample_stem=peak.sample_stem,
             xic_mz=channel.mz,
-            peak_rt_min=binding.physical_evaluation.question.query_rt_min,
+            peak_rt_min=evaluation.question.query_rt_min,
         )
-        for binding in result.physical_bindings
+        for peak, evaluation in zip(
+            result.peaks,
+            measured_peak_evaluations(result, TEST_PROFILE),
+            strict=True,
+        )
     )
     events = _events_by_scan(result)
     assert events[10].peak_id != events[20].peak_id

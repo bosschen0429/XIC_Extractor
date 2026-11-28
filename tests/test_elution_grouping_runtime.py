@@ -47,7 +47,6 @@ def test_crowded_doublet_keeps_both_physical_peaks_and_local_cid_lineage(
     )
     settings = replace(
         _settings(),
-        neutral_loss_profile=None,
         rt_min=7.0,
         rt_max=10.0,
         precursor_mz_tolerance_ppm=20.0,
@@ -205,7 +204,6 @@ def test_review_only_input_supplies_each_physical_member_without_cid(
     )
     settings = replace(
         _settings(),
-        neutral_loss_profile=None,
         rt_min=7.0,
         rt_max=10.0,
         precursor_mz_tolerance_ppm=20.0,

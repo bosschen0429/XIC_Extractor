@@ -20,6 +20,7 @@ from tests.discovery_ms1_capture_fixtures import (
 from tests.discovery_peak_fixtures import representative_event
 from tests.discovery_physical_measurement_fixtures import (
     _OwnerBoundBatchRaw,
+    measured_peak_evaluations,
 )
 from tests.discovery_pipeline_fixtures import (
     _OwnerBoundFakeRawHandle,
@@ -32,6 +33,7 @@ from tests.discovery_store_fixtures import (
     stored_peaks,
     write_discovery,
 )
+from xic_extractor.configuration.execution_profile import in_process_execution
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
@@ -39,7 +41,7 @@ from xic_extractor.discovery.ion_grouping import build_discovery_ions
 from xic_extractor.discovery.ms1_capture import (
     capture_ms1_peaks,
 )
-from xic_extractor.discovery.pipeline import run_discovery
+from xic_extractor.discovery.pipeline import run_discovery_batch
 from xic_extractor.discovery.processing_run_spec_adapter import (
     compile_discovery_processing_run_spec,
 )
@@ -134,7 +136,7 @@ def test_recorded_mono_nl_match_keeps_distinct_inferred_physical_search(
         rt=rt,
         intensity=intensity,
     )
-    outputs = run_discovery(
+    outputs = _run_single(
         spec,
         output_dir=tmp_path / "out",
         dll_dir=tmp_path / "dll",
@@ -193,7 +195,7 @@ def test_pipeline_retains_each_seeded_physical_peak_from_one_rt_group(
         rt=rt,
         intensity=intensity,
     )
-    outputs = run_discovery(
+    outputs = _run_single(
         spec,
         output_dir=tmp_path / "out",
         dll_dir=tmp_path / "dll",
@@ -307,7 +309,7 @@ def test_discovery_retained_physical_peak_cardinality(
     assert sorted(c.ms1_apex_rt for c in valid) == pytest.approx(
         expected_apices, abs=0.06
     )
-    assert len(result.physical_bindings) == len(expected_apices)
+    assert len(result.peaks) == len(expected_apices)
     assert len(result.attachments) == len(seeds)
     if fixture_name == "discovery_same_peak_seeds":
         (peak,) = valid
@@ -322,7 +324,7 @@ def test_discovery_retained_physical_peak_cardinality(
         assert all(not event.peak_id for event in result.attachments)
     if representative_scan is not None:
         assert [c.best_ms2_scan_id for c in valid] == [representative_scan]
-        assert len(result.physical_bindings) == 1
+        assert len(result.peaks) == 1
 
 
 @pytest.mark.parametrize("combine_mode", ("union", "intersection"))
@@ -331,7 +333,7 @@ def test_merged_physical_candidate_round_trips_through_the_discovery_file(
     tmp_path: Path, combine_mode: str, fallback: bool, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from xic_extractor.discovery.ion_grouping import build_discovery_ions
-    from xic_extractor.discovery.strict_event_receipts import (
+    from xic_extractor.discovery.ms2_events import (
         read_parent_ms1_observations,
     )
 
@@ -413,19 +415,13 @@ def test_merged_physical_candidate_round_trips_through_the_discovery_file(
         ms1_centroid=lambda *_: None,
     )
     (candidate,) = result.peaks
-    (binding,) = result.physical_bindings
-    assert binding.peak is candidate
-    assert binding.final_ordinal == 0
     assert candidate.best_ms2_scan_id == 10
-    assert binding.representative_event.scan_number == 10
     if fallback:
         assert len(parent_batches) == 1 and len(parent_batches[0]) == 1
     assert candidate.admitted
     assert candidate.matched_tag_names == ("dR", "R")
     assert [event.scan_number for event in candidate.located_events] == [10, 20]
     assert {event.peak_id for event in result.attachments} == {candidate.peak_id}
-    evaluation = binding.physical_evaluation
-    assert evaluation.answer.selected_segment is not None
     (restored,) = stored_peaks(
         write_discovery(
             tmp_path,
@@ -530,7 +526,7 @@ def test_spec_bound_single_run_uses_compiled_acquisition_and_measures_once(
         counted_answer,
     )
 
-    outputs = run_discovery(
+    outputs = _run_single(
         spec,
         output_dir=tmp_path / "out",
         dll_dir=tmp_path / "dll",
@@ -560,7 +556,7 @@ def test_sparse_trace_outside_actual_context_reports_truthful_unavailable(
         intensity=np.asarray([100.0]),
     )
 
-    outputs = run_discovery(
+    outputs = _run_single(
         spec,
         output_dir=tmp_path / "out",
         dll_dir=tmp_path / "dll",
@@ -615,10 +611,9 @@ def test_short_discovery_request_reacquires_points_without_assuming_peak_support
         ms1_centroid=lambda *_: None,
     )
 
-    assert len(result.measurements.acquisition_batches) == 2
-    assert result.measurements.initial_request_count == 1
-    assert result.measurements.reacquisition_request_count == 1
-    first, reacquired = result.measurements.acquisition_batches
+    assert len(result.acquisition_batches) == 2
+    assert [len(batch.traces) for batch in result.acquisition_batches] == [1, 1]
+    first, reacquired = result.acquisition_batches
     assert first.traces[0].coordinate.trace_point_count < profile.window_points
     assert reacquired.traces[0].coordinate.trace_point_count >= profile.window_points
     if physical_state == "unavailable":
@@ -627,9 +622,8 @@ def test_short_discovery_request_reacquires_points_without_assuming_peak_support
             "insufficient_original_xic_support"
         }
         return
-    evaluation = result.physical_bindings[0].physical_evaluation
+    (evaluation,) = measured_peak_evaluations(result, profile)
     assert evaluation.state == physical_state
-    assert evaluation.prepared.profile == profile
     (candidate,) = result.peaks
     assert candidate.ms1_apex_rt == pytest.approx(12.15, abs=0.04)
 
@@ -660,12 +654,11 @@ def test_single_seed_discovery_acquires_complete_physical_context(
         ms1_centroid=lambda *_: None,
     )
 
-    assert result.measurements.reacquisition_request_count == 0
     candidate = result.peaks[0]
-    facts = result.physical_bindings[0].physical_evaluation.answer.selected_segment
+    facts = measured_peak_evaluations(result, profile)[0].answer.selected_segment
     assert candidate.ms1_apex_rt == pytest.approx(12.15, abs=0.04)
     assert facts is not None
-    (batch,) = result.measurements.acquisition_batches
+    (batch,) = result.acquisition_batches
     assert batch.traces[0].coordinate.request.rt_max - facts.right_rt_min >= 0.04
     full_trace_evaluation = evaluate_physical_peak(
         prepare_physical_signal(full_rt, full_intensity, profile=profile),
@@ -724,8 +717,7 @@ def test_product_inferred_single_seed_uses_widened_initial_context(
         ms1_centroid=lambda *_: None,
     )
 
-    assert result.measurements.reacquisition_request_count == 0
-    (batch,) = result.measurements.acquisition_batches
+    (batch,) = result.acquisition_batches
     request = batch.traces[0].coordinate.request
     assert request.rt_min == pytest.approx(11.463)
     assert request.rt_max == pytest.approx(12.663)
@@ -769,15 +761,14 @@ def test_strong_product_inferred_seed_group_uses_widened_initial_context(
         ms1_centroid=lambda *_: None,
     )
 
-    assert len(result.measurements.acquisition_batches) == 1
-    assert result.measurements.reacquisition_request_count == 0
-    initial = result.measurements.acquisition_batches[0]
+    assert len(result.acquisition_batches) == 1
+    initial = result.acquisition_batches[0]
     assert initial.traces[0].coordinate.trace_point_count >= profile.window_points
     initial_request = initial.traces[0].coordinate.request
     assert initial_request.rt_min == pytest.approx(11.463)
     assert initial_request.rt_max == pytest.approx(12.700)
     candidate = result.peaks[0]
-    question = result.physical_bindings[0].physical_evaluation.question
+    question = measured_peak_evaluations(result, profile)[0].question
     assert question.query_rt_min == pytest.approx(12.15, abs=0.04)
     assert candidate.ms1_apex_rt == pytest.approx(12.15, abs=0.04)
 
@@ -828,7 +819,7 @@ def test_qualification_survives_physical_fact_reuse(
         return
     (candidate,) = result.peaks
     assert candidate.status == "admitted"
-    assert result.measurements.reacquisition_request_count == 1
+    assert len(result.acquisition_batches) == 2
     assert raw.raw_chromatogram_call_count == 2
     assert qualifier.call_count == 1
     quality = qualifier.call_args.kwargs["signal_quality"]
@@ -874,9 +865,9 @@ def test_spec_bound_physical_owner_reuses_preparation_without_extra_acquisition(
         ms1_centroid=lambda *_: None,
     )
 
-    metrics = _acquisition_totals(result.measurements.acquisition_batches)
+    metrics = _acquisition_totals(result.acquisition_batches)
     assert preparation_count == 1
-    assert len(result.physical_bindings) == 1
+    assert len(result.peaks) == 1
     assert metrics.logical_xic_request_count == 1
     assert metrics.xic_batch_count == 1
     assert metrics.adapter_chromatogram_call_count == 1
@@ -952,7 +943,6 @@ def test_terminal_physical_truth_is_the_events_unattached_reason(
     )
 
     assert result.peaks == ()
-    assert result.physical_bindings == ()
     (event,) = result.attachments
     assert not event.peak_id
     assert event.unattached_reason == physical_reason
@@ -1016,7 +1006,7 @@ def test_discovery_publishes_physical_qualification(
         (event,) = result.attachments
         assert event.unattached_reason
         return
-    evaluation = result.physical_bindings[0].physical_evaluation
+    evaluation = measured_peak_evaluations(result, profile)[0]
     candidate = result.peaks[0]
     assert evaluation.state == "available"
     assert evaluation.answer.selected_segment is not None
@@ -1104,7 +1094,7 @@ def test_physical_fact_sharing_uses_one_raw_peak(
     assert [len(batch) for batch in raw.request_batches] == [1]
     assert prepare.call_count == 1
     assert evaluate.call_count == 1
-    assert len(result.physical_bindings) == 1
+    assert len(result.peaks) == 1
     if same_question:
         candidate = result.peaks[0]
         assert candidate.matched_tag_names == ("dR", "R")
@@ -1122,6 +1112,7 @@ def _inferred_apex_case(
     companion_basis: str | None = None,
     isotope_offsets: tuple[float, ...] = (),
     isotope_ratio: float = 0.5,
+    is_blank=None,
 ):
     raw_path = tmp_path / "TumorBC2312_DNA.raw"
     raw_path.write_bytes(b"owner-bound-discovery")
@@ -1176,6 +1167,7 @@ def _inferred_apex_case(
         settings=_capture_settings(),
         signal_processing_profile=SignalProcessingProfile(window_points=15),
         ms1_centroid=read_ion,
+        is_blank=is_blank,
     )
     return group, raw, result
 
@@ -1188,12 +1180,18 @@ def test_inferred_precursor_is_measured_once_in_the_window_of_its_apex_ion(
     )
 
     apex_mz = group.mz * (1 - 6e-6)
-    assert result.measurements.reacquisition_request_count == 0
-    assert result.measurements.remeasurement_request_count == 1
+    initial, recentred = result.acquisition_batches
+    assert len(initial.traces) == len(recentred.traces) == 1
+    initial_request = initial.traces[0].coordinate.request
+    recentred_request = recentred.traces[0].coordinate.request
+    assert (initial_request.rt_min, initial_request.rt_max) == (
+        recentred_request.rt_min,
+        recentred_request.rt_max,
+    )
     assert raw.request_batches[0][0].mz == pytest.approx(group.mz)
     assert raw.request_batches[-1][0].mz == pytest.approx(apex_mz)
     (candidate,) = result.peaks
-    assert result.physical_bindings[0].representative_event.precursor_mz == (group.mz)
+    assert representative_event(result.peaks[0]).precursor_mz == (group.mz)
     assert candidate.ms1_apex_mz == pytest.approx(apex_mz)
     assert candidate.peak_mz == pytest.approx(apex_mz)
     assert raw.request_batches[-1][0].mz == candidate.peak_mz
@@ -1231,7 +1229,7 @@ def test_pipeline_publishes_inferred_precursor_ms1_ion_from_raw_handle(
         rt=rt,
         intensity=100.0 + 10_000 * np.exp(-0.5 * ((rt - 10.0) / 0.05) ** 2),
     )
-    outputs = run_discovery(
+    outputs = _run_single(
         spec,
         output_dir=tmp_path / "out",
         dll_dir=tmp_path / "dll",
@@ -1255,7 +1253,7 @@ def test_inferred_precursor_meeting_two_ions_reports_no_ms1_ion(
     group, _raw, result = _inferred_apex_case(tmp_path, _two_ions)
 
     (candidate,) = result.peaks
-    assert result.physical_bindings[0].representative_event.precursor_mz == (group.mz)
+    assert representative_event(result.peaks[0]).precursor_mz == (group.mz)
     assert candidate.ms1_apex_mz is None
     assert candidate.status in {
         "admitted",
@@ -1271,24 +1269,26 @@ def test_selected_precursor_reports_no_ms1_ion(tmp_path: Path) -> None:
     )
 
     (candidate,) = result.peaks
-    assert result.physical_bindings[0].representative_event.precursor_mz == (group.mz)
+    assert representative_event(result.peaks[0]).precursor_mz == (group.mz)
     assert candidate.ms1_apex_mz is None
 
 
 def test_inferred_precursor_with_a_doubly_charged_isotope_is_held_for_review(
     tmp_path: Path,
 ) -> None:
+    def blank_is_not_asked(*_args: float) -> bool:
+        raise AssertionError("a doubly charged peak keeps its status")
+
     group, _raw, result = _inferred_apex_case(
         tmp_path,
         lambda inferred, _rt: inferred * (1 + 1e-6),
         isotope_offsets=(1.0033548 / 2,),
+        is_blank=blank_is_not_asked,
     )
 
     (candidate,) = result.peaks
-    assert result.physical_bindings[0].representative_event.precursor_mz == (group.mz)
+    assert representative_event(result.peaks[0]).precursor_mz == (group.mz)
     assert candidate.status == "doubly_charged"
-    (binding,) = result.physical_bindings
-    assert binding.peak.status == ("doubly_charged")
 
 
 @pytest.mark.parametrize(
@@ -1352,7 +1352,7 @@ def test_held_inferred_peak_remains_in_review(
             None,
         ),
     )
-    outputs = run_discovery(
+    outputs = _run_single(
         spec,
         output_dir=tmp_path / "out",
         dll_dir=tmp_path / "dll",
@@ -1414,7 +1414,7 @@ def test_a_selected_precursor_carries_a_peak_with_two_ions(
         (candidate,) = result.peaks
         assert [event.scan_number for event in candidate.located_events] == [10, 11]
         assert candidate.attached_event_count == 1
-        assert len(result.physical_bindings) == 1
+        assert len(result.peaks) == 1
         events = {item.event.scan_number: item for item in result.attachments}
         assert events[10].unattached_reason == "parent_ms1_unavailable"
         assert events[11].peak_id == candidate.peak_id
@@ -1465,9 +1465,7 @@ def test_inferred_precursor_rechecks_isotope_after_point_reacquisition(
         signal_processing_profile=profile,
         ms1_centroid=read_ion,
     )
-    first, reacquired, remeasured = result.measurements.acquisition_batches
-    assert result.measurements.reacquisition_request_count == 1
-    assert result.measurements.remeasurement_request_count == 1
+    first, reacquired, remeasured = result.acquisition_batches
     assert first.traces[0].coordinate.trace_point_count < profile.window_points
     assert reacquired.traces[0].coordinate.trace_point_count >= profile.window_points
     (remeasured_trace,) = remeasured.traces
@@ -1479,11 +1477,14 @@ def test_inferred_precursor_rechecks_isotope_after_point_reacquisition(
         reacquired.traces[0].coordinate.request.rt_min,
         reacquired.traces[0].coordinate.request.rt_max,
     )
-    (binding,) = result.physical_bindings
-    assert binding.physical_evaluation.state == "available"
+    (evaluation,) = measured_peak_evaluations(result, profile)
+    assert evaluation.state == "available"
     (candidate,) = result.peaks
     expected_state = "doubly_charged" if has_isotope else "no_nl_event"
     assert candidate.status == expected_state
     assert candidate.ms1_apex_mz == pytest.approx(apex_ion_mz)
-    assert binding.peak.status == expected_state
     assert len(readings) == 9
+
+
+def _run_single(run_spec, **kwargs):
+    return run_discovery_batch(run_spec, execution=in_process_execution(), **kwargs)

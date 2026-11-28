@@ -65,8 +65,7 @@ CREATE TABLE peaks (
     ms1_apex_rt REAL NOT NULL,
     neutral_loss_tag TEXT NOT NULL REFERENCES tags,
     representative_scan INTEGER NOT NULL,
-    status TEXT NOT NULL CHECK (status IN ({_STATUSES})),
-    evidence_score INTEGER NOT NULL
+    status TEXT NOT NULL CHECK (status IN ({_STATUSES}))
 ) STRICT;
 CREATE TABLE events (
     id INTEGER PRIMARY KEY,
@@ -135,7 +134,7 @@ CREATE TABLE delta_mass_features (
     PRIMARY KEY (sample, feature_id)
 ) STRICT, WITHOUT ROWID;
 CREATE VIEW discovery_peaks AS
-    SELECT p.id, p.peak_id, s.sample_stem, p.status, p.evidence_score,
+    SELECT p.id, p.peak_id, s.sample_stem, p.status,
         (SELECT COUNT(*) FROM events e
          WHERE e.peak = p.id AND e.unattached_reason IS NULL)
             AS attached_event_count,
@@ -309,7 +308,7 @@ def write_sample_part(
         for row_id, peak in enumerate(peaks, start=1):
             peak_ids[peak.peak_id] = row_id
             db.execute(
-                "INSERT INTO peaks VALUES (?,?,?,?,?,?,?,?,?,?)",
+                "INSERT INTO peaks VALUES (?,?,?,?,?,?,?,?,?)",
                 (
                     row_id,
                     peak.peak_id,
@@ -320,7 +319,6 @@ def write_sample_part(
                     peak.neutral_loss_tag,
                     peak.best_ms2_scan_id,
                     peak.status,
-                    peak.evidence_score,
                 ),
             )
         db.executemany(
@@ -388,7 +386,7 @@ def merge_sample_parts(target: Path, parts: Sequence[Path]) -> Path:
             db.execute(
                 "INSERT INTO peaks SELECT id+?,peak_id,sample,peak_mz,"
                 "ms1_apex_mz,ms1_apex_rt,neutral_loss_tag,representative_scan,"
-                "status,evidence_score FROM part.peaks",
+                "status FROM part.peaks",
                 (peak_offset,),
             )
             db.execute(
@@ -466,7 +464,6 @@ def read_peaks(
                 ms1_apex_rt=rt,
                 status=status,
                 ms1_apex_mz=apex_mz,
-                evidence_score=score,
                 matched_tag_names=tuple(json.loads(tags)),
             ),
         )
@@ -480,12 +477,11 @@ def read_peaks(
             rt,
             status,
             apex_mz,
-            score,
             attached,
             tags,
         ) in db.execute(
             "SELECT id,peak_id,sample_stem,peak_mz,neutral_loss_tag,"
-            "representative_scan,ms1_apex_rt,status,ms1_apex_mz,evidence_score,"
+            "representative_scan,ms1_apex_rt,status,ms1_apex_mz,"
             f"attached_event_count,matched_tag_names FROM discovery_peaks {where} "
             "ORDER BY id",
             parameters,

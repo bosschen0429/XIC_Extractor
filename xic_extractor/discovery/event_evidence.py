@@ -2,6 +2,7 @@
 
 from collections.abc import Iterable
 
+from xic_extractor.configuration.cid_nl_profile import PrecursorReferenceRequirement
 from xic_extractor.discovery.models import (
     DiscoveryEvent,
     GroupPrecursorMzBasis,
@@ -86,3 +87,47 @@ def events_precursor_mz_basis(
     if values == {"product_plus_neutral_loss"}:
         return "product_plus_neutral_loss"
     return "mixed"
+
+
+def resolve_discovery_scan_events(
+    events: tuple[DiscoveryEvent, ...],
+    *,
+    settings: DiscoverySettings,
+    preserve_configured_losses: bool = False,
+    precursor_reference_requirement: PrecursorReferenceRequirement = "independent_mass",
+) -> tuple[DiscoveryEvent, ...]:
+    """Resolve one evidence event per scan/loss after all parent facts are read.
+
+    The event table retains alternatives. The provider prefers independent NL
+    compatibility at the requested reference level, then loss accuracy and
+    intensity. An unresolved event remains available to the method owner
+    without gaining strict support.
+    The caller supplies one owner-bound acquisition batch.
+    """
+    tag_precedence = {
+        tag: index for index, tag in enumerate(settings.selected_tag_names)
+    }
+
+    def rank(
+        event: DiscoveryEvent,
+    ) -> tuple[bool, float, float, int, float, float, str]:
+        assessment = event.assess_precursor_loss(settings.nl_tolerance_ppm)
+        error = assessment.observed_loss_error_ppm
+        return (
+            not assessment.supports_reference(precursor_reference_requirement),
+            abs(error) if error is not None else float("inf"),
+            -event.product_intensity,
+            tag_precedence.get(event.neutral_loss_tag, len(tag_precedence)),
+            event.precursor_mz,
+            event.product_mz,
+            event.precursor_mz_basis,
+        )
+
+    by_event: dict[tuple[int, float], DiscoveryEvent] = {}
+    for event in sorted(events, key=rank):
+        key = (
+            event.scan_number,
+            event.configured_neutral_loss_da if preserve_configured_losses else 0.0,
+        )
+        by_event.setdefault(key, event)
+    return tuple(by_event[key] for key in sorted(by_event))

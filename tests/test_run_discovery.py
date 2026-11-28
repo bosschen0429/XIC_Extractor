@@ -37,6 +37,7 @@ def test_run_discovery_cli_passes_single_raw_settings(
         *,
         output_dir,
         dll_dir,
+        execution,
         timing_recorder=None,
     ):
         captured["output_dir"] = output_dir
@@ -46,7 +47,7 @@ def test_run_discovery_cli_passes_single_raw_settings(
             store=output_dir / "discovery.sqlite", sample_stems=(raw_path.stem,)
         )
 
-    monkeypatch.setattr(run_discovery, "run_discovery", _fake_run_discovery)
+    monkeypatch.setattr(run_discovery, "run_discovery_batch", _fake_run_discovery)
 
     code = run_discovery.main(
         [
@@ -77,8 +78,8 @@ def test_run_discovery_cli_passes_single_raw_settings(
     assert code == 0
     assert captured["output_dir"] == output_dir.resolve()
     settings = captured["run_spec"].settings
-    assert settings.neutral_loss_profile.tag == "DNA_dR"
-    assert settings.neutral_loss_profile.neutral_loss_da == 116.0474
+    assert settings.neutral_loss_profiles[0].tag == "DNA_dR"
+    assert settings.neutral_loss_profiles[0].neutral_loss_da == 116.0474
     assert len(settings.neutral_loss_profiles) == 1
     assert settings.ms2_precursor_tol_da == pytest.approx(0.75)
     assert settings.rt_min is None and settings.rt_max is None
@@ -462,7 +463,7 @@ def test_run_discovery_cli_returns_2_when_raw_reader_fails(
     def _raise_raw_reader_error(*_args, **_kwargs):
         raise RawReaderError("boom")
 
-    monkeypatch.setattr(run_discovery, "run_discovery", _raise_raw_reader_error)
+    monkeypatch.setattr(run_discovery, "run_discovery_batch", _raise_raw_reader_error)
 
     code = run_discovery.main(
         [

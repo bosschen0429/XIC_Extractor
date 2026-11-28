@@ -12,6 +12,7 @@ from tests.discovery_ms1_capture_fixtures import (
     _settings,
 )
 from tests.discovery_peak_fixtures import located_scan_ids
+from tests.discovery_physical_measurement_fixtures import measured_peak_evaluations
 from tests.discovery_store_fixtures import (
     SampleRecords,
     stored_peaks,
@@ -99,12 +100,12 @@ def test_post_measurement_centroids_do_not_decide_peak_identity(
     )
     assert len(published) == expected
     assert tuple(published) == result.peaks
-    assert len(result.physical_bindings) == expected
+    assert len(result.peaks) == expected
     assert sorted(
         scan for candidate in result.peaks for scan in located_scan_ids(candidate)
     ) == [10, 11, 12]
-    for binding in result.physical_bindings:
-        peak = binding.physical_evaluation.answer.selected_segment
+    for evaluation in measured_peak_evaluations(result, TEST_PROFILE):
+        peak = evaluation.answer.selected_segment
         assert peak is not None
         assert peak.area_counts_seconds == pytest.approx(
             1000 * 0.06 * np.sqrt(2 * np.pi) * 60, rel=0.06
@@ -195,7 +196,7 @@ def test_distinct_ions_in_overlapping_windows_stay_apart() -> None:
 
     assert sorted(located_scan_ids(peak) for peak in result.peaks) == [(10,), (11,)]
     areas = sorted(
-        binding.physical_evaluation.answer.selected_segment.area_counts_seconds
-        for binding in result.physical_bindings
+        evaluation.answer.selected_segment.area_counts_seconds
+        for evaluation in measured_peak_evaluations(result, TEST_PROFILE)
     )
     assert areas[0] == pytest.approx(0.13 * areas[1])

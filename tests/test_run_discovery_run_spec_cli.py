@@ -12,7 +12,6 @@ from tests.raw_header_fakes import install_fake_raw_headers
 from xic_extractor.configuration.execution_profile import ExecutionProfile
 from xic_extractor.discovery.sample_process_execution import (
     DiscoveryProcessExecutionError,
-    DiscoverySampleProcessError,
 )
 from xic_extractor.presets import (
     PresetTag,
@@ -56,19 +55,7 @@ def test_discovery_cli_reports_batch_execution_failure(
         assert (kwargs["timing_recorder"] is not None) is timing
         if workers == 1:
             raise RawReaderError("A.raw: unable to open RAW")
-        raise DiscoveryProcessExecutionError(
-            DiscoverySampleProcessError(
-                sample_index=0,
-                sample_stem="A",
-                raw_name="A.raw",
-                message="unable to open RAW",
-            ),
-            completed_sample_stems=(),
-            failed_sample_stems=("A",),
-            cancelled_job_count=0,
-            in_flight_job_count=1,
-            unsubmitted_job_count=0,
-        )
+        raise DiscoveryProcessExecutionError("A.raw: unable to open RAW")
 
     monkeypatch.setattr(run_discovery, "run_discovery_batch", fail_batch)
     args = [
@@ -96,8 +83,8 @@ def test_discovery_cli_reports_batch_execution_failure(
         ("raw-dir", 1, None, 1),
         ("raw-dir", 8, 1, 1),
         ("raw-dir", 1, 3, 3),
-        ("raw", 8, None, None),
-        ("raw", 8, 3, None),
+        ("raw", 8, None, 8),
+        ("raw", 8, 3, 3),
     ],
 )
 def test_discovery_cli_forwards_worker_budget_and_run_spec(
@@ -107,7 +94,7 @@ def test_discovery_cli_forwards_worker_budget_and_run_spec(
     input_mode: str,
     default_workers: int,
     override: int | None,
-    expected_workers: int | None,
+    expected_workers: int,
 ) -> None:
     raw_dir = tmp_path / "raws"
     raw_dir.mkdir()
@@ -131,7 +118,6 @@ def test_discovery_cli_forwards_worker_budget_and_run_spec(
             )
         ),
     )
-    monkeypatch.setattr(run_discovery, "run_discovery", capture_pipeline)
     monkeypatch.setattr(run_discovery, "run_discovery_batch", capture_pipeline)
     args = [
         f"--{input_mode}",
@@ -150,10 +136,7 @@ def test_discovery_cli_forwards_worker_budget_and_run_spec(
     assert tuple(item.raw_path for item in run_spec.acquisition_inputs) == (
         raw_paths if input_mode == "raw-dir" else raw_paths[:1]
     )
-    if expected_workers is None:
-        assert "execution" not in forwarded
-    else:
-        assert forwarded["execution"].parallel_workers == expected_workers
+    assert forwarded["execution"].parallel_workers == expected_workers
     assert (forwarded["timing_recorder"] is not None) is timing
     assert not run_spec.settings.enable_blank_qualification
     assert all(
@@ -201,7 +184,7 @@ def test_discovery_cli_runs_saved_method_with_only_explicit_tuning_overrides(
         observed.append(run_spec.settings)
         return SimpleNamespace(store=tmp_path / "discovery.sqlite")
 
-    monkeypatch.setattr(run_discovery, "run_discovery", capture_pipeline)
+    monkeypatch.setattr(run_discovery, "run_discovery_batch", capture_pipeline)
     assert (
         run_discovery.main(
             [
@@ -333,7 +316,7 @@ def test_run_discovery_main_propagates_unexpected_pipeline_value_error(
     def raise_pipeline_sentinel(*_args, **_kwargs):
         raise ValueError("pipeline sentinel must propagate")
 
-    monkeypatch.setattr(run_discovery, "run_discovery", raise_pipeline_sentinel)
+    monkeypatch.setattr(run_discovery, "run_discovery_batch", raise_pipeline_sentinel)
 
     with pytest.raises(ValueError, match="^pipeline sentinel must propagate$"):
         run_discovery.main(["--raw", str(raw_path), "--dll-dir", str(dll_dir)])

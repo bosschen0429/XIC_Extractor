@@ -2,14 +2,12 @@
 
 import sqlite3
 from contextlib import closing
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
 from tests.discovery_ms1_capture_fixtures import _seed
-from tests.discovery_peak_fixtures import _peak
 from tests.discovery_store_fixtures import (
     SampleRecords,
     acquisition_source,
@@ -19,10 +17,8 @@ from tests.discovery_store_fixtures import (
     write_discovery,
 )
 from xic_extractor.configuration.cid_nl_profile import NeutralLossProfile
-from xic_extractor.discovery.evidence_config import DEFAULT_EVIDENCE_PROFILE
 from xic_extractor.discovery.input_source import DiscoveryInputSource
 from xic_extractor.discovery.models import EventAttachment
-from xic_extractor.discovery.priority import order_discovery_peak_bindings
 from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.discovery.store import (
     DISCOVERY_ARTIFACT_NAME,
@@ -225,74 +221,12 @@ def test_input_source_refuses_a_delta_mass_file(tmp_path: Path) -> None:
         DiscoveryInputSource(read_discovery_batch(tmp_path / DISCOVERY_ARTIFACT_NAME))
 
 
-def test_peak_rows_follow_the_review_queue() -> None:
-    settings = DiscoverySettings(
-        neutral_loss_profile=NeutralLossProfile("DNA_dR", 116.0474)
-    )
-
-    def binding(
-        peak_id: str,
-        *,
-        status: str = "admitted",
-        attached: int = 2,
-        score: int = 50,
-        intensity: float = 1000.0,
-        event_rt: float = 7.84,
-    ) -> _OrderedBinding:
-        event = _seed(scan_number=6095, rt=event_rt, product_intensity=intensity)
-        return _OrderedBinding(
-            peak=_peak(
-                peak_id=peak_id,
-                status=status,
-                attached_event_count=attached,
-                evidence_score=score,
-                located_events=(event,),
-            ),
-            physical_evaluation=SimpleNamespace(
-                state="available",
-                answer=SimpleNamespace(
-                    selected_segment=SimpleNamespace(area_counts_seconds=1000.0)
-                ),
-            ),
-            final_ordinal=0,
-        )
-
-    ordered = order_discovery_peak_bindings(
-        (
-            binding("blank", status="blank", score=99),
-            binding("single", attached=1, score=90),
-            binding("far", event_rt=7.0, score=95),
-            binding("lead-weak", score=40),
-            binding("lead-strong", score=80),
-            binding("lead-strong-intense", score=80, intensity=5000.0),
-        ),
-        settings=settings,  # type: ignore[arg-type]
-    )
-
-    assert [item.peak.peak_id for item in ordered] == [
-        "lead-strong-intense",
-        "lead-strong",
-        "lead-weak",
-        "far",
-        "single",
-        "blank",
-    ]
-    assert [item.final_ordinal for item in ordered] == list(range(6))
-
-
-@dataclass(frozen=True)
-class _OrderedBinding:
-    peak: object
-    physical_evaluation: object
-    final_ordinal: int
-
-
 def test_discovery_settings_require_neutral_loss_profile() -> None:
     profile = NeutralLossProfile("DNA_dR", 116.0474)
 
-    settings = DiscoverySettings(neutral_loss_profile=profile)
+    settings = DiscoverySettings(neutral_loss_profiles=(profile,))
 
-    assert settings.neutral_loss_profile == profile
+    assert settings.neutral_loss_profiles[0] == profile
     assert settings.nl_tolerance_ppm == 10.0
     assert settings.precursor_mz_tolerance_ppm == 10.0
     assert settings.product_mz_tolerance_ppm == 20.0
@@ -301,4 +235,3 @@ def test_discovery_settings_require_neutral_loss_profile() -> None:
     assert settings.ms1_search_padding_min == 0.35
     assert settings.rt_min is None
     assert settings.rt_max is None
-    assert settings.evidence_profile == DEFAULT_EVIDENCE_PROFILE

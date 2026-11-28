@@ -24,9 +24,7 @@ from xic_extractor.discovery.local_ms1_features import (
     build_local_ms1_feature_table,
 )
 from xic_extractor.discovery.models import DiscoveryPeak
-from xic_extractor.discovery.sample_process_execution import (
-    raise_if_discovery_cancelled,
-)
+from xic_extractor.discovery.pipeline import raise_if_discovery_cancelled
 from xic_extractor.discovery.store import DiscoverySample, open_discovery, read_peaks
 from xic_extractor.mass_accuracy import absolute_ppm_error
 from xic_extractor.raw_reader import open_raw
@@ -216,16 +214,13 @@ def _fallback_matches(candidate: DeltaMassCandidate, row: DiscoveryPeak) -> bool
 def _best_fallback_match(
     candidate: DeltaMassCandidate, matches: list[DiscoveryPeak]
 ) -> DiscoveryPeak:
-    """Tie-break for multiple m/z/RT fallback matches (plan lines 836-838):
-    smallest absolute RT delta, then smallest absolute m/z ppm, then highest
-    ``evidence_score``."""
+    """The closest dR peak: smallest RT delta, then smallest m/z error."""
 
-    def _key(row: DiscoveryPeak) -> tuple[float, float, float, str]:
+    def _key(row: DiscoveryPeak) -> tuple[float, float, str]:
         rt_delta_sec = abs(row.ms1_apex_rt - candidate.base_rt_apex_min) * 60.0
         return (
             rt_delta_sec,
             _ppm_error(candidate, row.peak_mz),
-            -row.evidence_score,
             row.peak_id,
         )
 

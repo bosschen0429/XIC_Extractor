@@ -30,7 +30,6 @@ from xic_extractor.sample_metadata import SampleMetadata
 def scenario_settings(scenario: str, settings=None):
     return replace(
         settings or _settings(),
-        neutral_loss_profile=None,
         precursor_mz_tolerance_ppm=(
             5.0 if scenario == "cross_subject_recovery" else 1.0
         ),

@@ -512,7 +512,7 @@ def test_backfill_recovers_every_authorized_rt_group(
         support.pop("S4")
     authorized = (8.0,) if shared_support == "below-quorum" else (8.0, 12.0)
     centers = {**support, "Missing": recovery_peaks}
-    settings = replace(SETTINGS, neutral_loss_profile=None, rt_max=12.6)
+    settings = replace(SETTINGS, rt_max=12.6)
     paths = raw_paths(tmp_path, tuple(centers))
     raws = {
         stem: _gaussian_raw(values, rt_range=(7.4, 12.7, 2121))
@@ -587,7 +587,7 @@ def _shared_peak_raws(mz_separation_ppm, observed=("S1", "S2")):
 
 
 def _shared_peak_scenario(tmp_path, mz_separation_ppm, *, observed=("S1", "S2")):
-    settings = replace(SETTINGS, neutral_loss_profile=None, rt_max=8.6)
+    settings = replace(SETTINGS, rt_max=8.6)
     raws = _shared_peak_raws(mz_separation_ppm, observed)
     paths = raw_paths(tmp_path, tuple(raws))
     peaks = {}
@@ -638,7 +638,7 @@ def test_shared_ms1_only_backfill_peak_is_not_written_to_two_rows(
         stems = tuple(reversed(stems))
     first_mz = 500.0
     second_mz = first_mz * (1 + mz_separation_ppm * 1e-6)
-    settings = replace(SETTINGS, neutral_loss_profile=None, rt_max=8.6)
+    settings = replace(SETTINGS, rt_max=8.6)
     paths = raw_paths(tmp_path, stems)
     raws, peaks = {}, {}
     for stem in stems:
@@ -739,7 +739,7 @@ def test_batch_ms1_only_publishes_only_one_selected_peak_in_the_established_row(
             mass_recalibration=SETTINGS.mass_recalibration,
         )
         if composition
-        else replace(SETTINGS, neutral_loss_profile=None, rt_max=8.6)
+        else replace(SETTINGS, rt_max=8.6)
     )
     paths = raw_paths(tmp_path, tuple(centers))
     raws, peaks = {}, {}
@@ -793,7 +793,7 @@ def test_backfill_reaches_a_sample_whose_support_belongs_to_another_group(
 ):
     ms1_centers = {"S1": (8.0,), "S2": (8.0,), "Missing": (8.0, 9.6)}
     nl_centers = {"S1": (8.0,), "S2": (8.0,), "Missing": (9.6,)}
-    settings = replace(SETTINGS, neutral_loss_profile=None, rt_max=10.1)
+    settings = replace(SETTINGS, rt_max=10.1)
     paths = raw_paths(tmp_path, tuple(ms1_centers))
     raws = {
         stem: _gaussian_raw(
@@ -825,7 +825,7 @@ def test_backfill_reaches_a_sample_whose_support_belongs_to_another_group(
 def test_alignment_uses_configured_recovery_groups(tmp_path, monkeypatch):
     """Only the established band requests a Backfill; a distant singleton cannot."""
     centers = {"S1": (8.0,), "S2": (8.0,), "S3": (8.52,), "Missing": ()}
-    settings = replace(SETTINGS, neutral_loss_profile=None, rt_max=12.6)
+    settings = replace(SETTINGS, rt_max=12.6)
     paths = raw_paths(tmp_path, tuple(centers))
     raws = {
         stem: _gaussian_raw(values, rt_range=(7.4, 12.7, 2121))

@@ -26,7 +26,7 @@ from xic_extractor.untargeted_execution.partition.cid_nl_region_acquisition impo
 from xic_extractor.xic_models import XICRequest, XICTrace
 
 SETTINGS = DiscoverySettings(
-    neutral_loss_profile=NeutralLossProfile("DNA_dR", NEUTRAL_LOSS_DA),
+    neutral_loss_profiles=(NeutralLossProfile("DNA_dR", NEUTRAL_LOSS_DA),),
     precursor_mz_tolerance_ppm=20,
     rt_min=2.5,
     rt_max=3.5,

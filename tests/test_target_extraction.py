@@ -625,10 +625,10 @@ def test_target_identity_does_not_promote_coisolated_mass_compatibility(
 
 
 def test_targeted_scan_resolution_keeps_recorded_support_over_precise_inference():
-    from xic_extractor.discovery.ms2_events import discovery_events_from_scan
-    from xic_extractor.discovery.strict_event_receipts import (
+    from xic_extractor.discovery.event_evidence import (
         resolve_discovery_scan_events,
     )
+    from xic_extractor.discovery.ms2_events import discovery_events_from_scan
     from xic_extractor.extraction.targeted_peak_selection import (
         discovery_settings_for_loss,
     )

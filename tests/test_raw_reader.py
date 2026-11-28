@@ -51,7 +51,9 @@ def test_default_ms2_acquisition_uses_each_raw_span_without_fixed_ceiling() -> N
     from xic_extractor.discovery.settings import DiscoverySettings
     from xic_extractor.raw_reader import RawFileHandle
 
-    settings = DiscoverySettings(neutral_loss_profile=NeutralLossProfile("NL", 116.0))
+    settings = DiscoverySettings(
+        neutral_loss_profiles=(NeutralLossProfile("NL", 116.0),)
+    )
     for start, end in ((0.25, 65.0), (1.5, 1100.0)):
         raw = _FakeRaw(
             filters={
@@ -992,7 +994,7 @@ def test_raw_monoisotopic_precursor_recovers_direct_nl_without_widening_isolatio
         event.scan,
         raw_file=Path("TumorBC2312_DNA.raw"),
         settings=DiscoverySettings(
-            neutral_loss_profile=NeutralLossProfile("DNA_dR", 116.0474),
+            neutral_loss_profiles=(NeutralLossProfile("DNA_dR", 116.0474),),
             ms2_precursor_tol_da=0.8,
         ),
     )

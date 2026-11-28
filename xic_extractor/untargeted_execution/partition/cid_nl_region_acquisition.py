@@ -28,11 +28,11 @@ from xic_extractor.acquisition_contract import (
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
+from xic_extractor.discovery.event_evidence import resolve_discovery_scan_events
 from xic_extractor.discovery.ion_grouping import event_ion_mz
 from xic_extractor.discovery.models import DiscoveryEvent
 from xic_extractor.discovery.same_ion_peaks import group_same_ion_peaks
 from xic_extractor.discovery.settings import DiscoverySettings
-from xic_extractor.discovery.strict_event_receipts import resolve_discovery_scan_events
 from xic_extractor.mass_accuracy import mz_tolerance_da, mz_window, signed_ppm_error
 from xic_extractor.peak_detection.background_contrast import (
     CONTRAST_HALF_WINDOW_MIN,

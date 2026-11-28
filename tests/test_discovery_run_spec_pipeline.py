@@ -6,7 +6,6 @@ import pickle
 import sqlite3
 from concurrent.futures import Future
 from contextlib import closing
-from functools import partial
 from pathlib import Path
 
 import numpy as np
@@ -23,23 +22,12 @@ from xic_extractor.configuration.execution_profile import (
     ExecutionProfile,
     in_process_execution,
 )
-from xic_extractor.discovery.pipeline import (
-    discover_sample_for_process_job,
-    run_discovery_batch,
-)
+from xic_extractor.discovery.cid_nl_search import DiscoverySampleJob
+from xic_extractor.discovery.pipeline import run_discovery_batch
 from xic_extractor.discovery.processing_run_spec_adapter import (
     compile_discovery_processing_run_spec,
 )
-from xic_extractor.discovery.sample_process_execution import (
-    DiscoverySampleProcessJob,
-    run_discovery_sample_process_job,
-)
 from xic_extractor.xic_models import XICTrace
-
-_run_discovery_sample_process_job = partial(
-    run_discovery_sample_process_job,
-    discover_sample=discover_sample_for_process_job,
-)
 
 
 @pytest.mark.parametrize("workers", (1, 2))
@@ -48,7 +36,7 @@ def test_discovery_persists_feature_facts_and_measured_review_support(
     monkeypatch: pytest.MonkeyPatch,
     workers: int,
 ) -> None:
-    from xic_extractor.discovery import output_publication, pipeline
+    from xic_extractor.discovery import cid_nl_search
 
     paths = (tmp_path / "sample-a.raw", tmp_path / "sample-b.raw")
     for path in paths:
@@ -88,19 +76,18 @@ def test_discovery_persists_feature_facts_and_measured_review_support(
         for index, path in enumerate(paths)
     }
     captured = {}
-    publish_sample = output_publication.publish_discovery_batch_sample
+    publish_sample = cid_nl_search.publish_discovery_batch_sample
 
     def capture_publication(raw_path, candidates, events, **kwargs):
         captured[raw_path.stem] = (candidates, kwargs)
         return publish_sample(raw_path, candidates, events, **kwargs)
 
     monkeypatch.setattr(
-        output_publication, "publish_discovery_batch_sample", capture_publication
+        cid_nl_search, "publish_discovery_batch_sample", capture_publication
     )
     monkeypatch.setattr(
-        pipeline,
-        "_owner_bound_raw_opener",
-        lambda *_args: lambda path, _dll: handles[path],
+        "xic_extractor.raw_reader.open_raw",
+        lambda path, _dll, **_kwargs: handles[path],
     )
 
     class ImmediateExecutor:
@@ -184,13 +171,11 @@ def test_batch_serial_and_process_share_one_run_spec_and_sample_bindings(
         for index, path in enumerate(raw_paths)
     }
     monkeypatch.setattr(
-        "xic_extractor.discovery.pipeline._owner_bound_raw_opener",
-        lambda acquisition_source, _mass_recalibration, _recorder: (
-            lambda path, dll_dir: process_handles[path]
-        ),
+        "xic_extractor.raw_reader.open_raw",
+        lambda path, dll_dir, **_kwargs: process_handles[path],
     )
 
-    submitted_jobs: list[DiscoverySampleProcessJob] = []
+    submitted_jobs: list[DiscoverySampleJob] = []
     completed_worker_results = []
 
     class _SynchronousExecutor:
@@ -232,7 +217,6 @@ def test_batch_serial_and_process_share_one_run_spec_and_sample_bindings(
             pickle.loads,
             pickle.dumps(completed_worker_results[0]),
         ).result(timeout=30)
-    assert restored_result.sample_index == completed_worker_results[0].sample_index
     assert restored_result.publication == completed_worker_results[0].publication
 
 

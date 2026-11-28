@@ -25,6 +25,7 @@ from tests.cid_nl_raw_fixture import (
     _settings,
 )
 from tests.cid_nl_runtime_fixtures import install_runtime_raws
+from tests.discovery_physical_measurement_fixtures import measured_peak_evaluations
 from tests.discovery_store_fixtures import SampleRecords, write_discovery
 from tests.untargeted_cid_nl_batch_runtime_fixtures import _nearby_subject_candidates
 from tests.untargeted_partition_fixtures import (
@@ -133,7 +134,6 @@ def profile_replay(tmp_path, monkeypatch, request):
     precursor_mz = 307.1023254394531
     settings = replace(
         _settings() if method_mode == "single" else _multi_tag_settings(),
-        neutral_loss_profile=None,
         tag_combine_mode=method_mode,
         rt_min=13.1,
         rt_max=17.4 if separate_groups or family_precursor_delta else 13.4,
@@ -142,7 +142,6 @@ def profile_replay(tmp_path, monkeypatch, request):
     if family_context:
         settings = replace(
             settings,
-            neutral_loss_profile=None,
             product_mz_tolerance_ppm=1.0,
             rt_min=12.8,
         )
@@ -159,7 +158,6 @@ def profile_replay(tmp_path, monkeypatch, request):
     candidates = {}
     physical_peaks = {}
     source_records = {}
-    source_evidence = {}
     family_evaluations = {}
     for path, source in zip(paths, spec.acquisition_inputs, strict=True):
         import numpy as np
@@ -268,23 +266,20 @@ def profile_replay(tmp_path, monkeypatch, request):
             )
         )
         candidates[path.stem] = discovery.peaks
-        source_evidence.update(
-            (record.peak.peak_id, record) for record in discovery.physical_bindings
-        )
+        evaluations = measured_peak_evaluations(discovery, profile)
+        peak_evaluations = tuple(zip(discovery.peaks, evaluations, strict=True))
         source_records.update(
-            (record.peak.peak_id, record)
-            for record in discovery.physical_bindings
-            if record.peak.peak_id in {c.peak_id for c in candidates[path.stem]}
+            (peak.peak_id, evaluation) for peak, evaluation in peak_evaluations
         )
         if family_context:
             assert len(candidates[path.stem]) == 1
             assert all(True for candidate in candidates[path.stem])
             windows = [
                 (
-                    record.physical_evaluation.question.query_rt_min - padding_min,
-                    record.physical_evaluation.question.query_rt_min + padding_min,
+                    evaluation.question.query_rt_min - padding_min,
+                    evaluation.question.query_rt_min + padding_min,
                 )
-                for record in discovery.physical_bindings
+                for evaluation in evaluations
             ]
             if not family_precursor_delta:
                 ((window_min, window_max),) = windows
@@ -301,23 +296,23 @@ def profile_replay(tmp_path, monkeypatch, request):
             prepared = prepare_physical_signal(
                 raw.rt[start:end], raw.intensity[start:end], profile=profile
             )
-            for record in discovery.physical_bindings:
-                family_evaluations[record.peak.peak_id] = evaluate_physical_peak(
+            for peak, evaluation in peak_evaluations:
+                family_evaluations[peak.peak_id] = evaluate_physical_peak(
                     prepared,
-                    query_rt_min=record.physical_evaluation.question.query_rt_min,
+                    query_rt_min=evaluation.question.query_rt_min,
                     request_context_rt_start_min=rt_min,
                     request_context_rt_end_min=rt_max,
                 )
             family_peaks = {
-                family_evaluations[record.peak.peak_id].answer.selected_segment
-                for record in discovery.physical_bindings
+                family_evaluations[peak.peak_id].answer.selected_segment
+                for peak, _ in peak_evaluations
             }
             assert len(family_peaks) == 1
             assert None not in family_peaks
             continue
-        (record,) = discovery.physical_bindings
-        assert record.physical_evaluation.answer.selected_segment is not None
-        physical_peaks[path.stem] = record.physical_evaluation.answer.selected_segment
+        (evaluation,) = evaluations
+        assert evaluation.answer.selected_segment is not None
+        physical_peaks[path.stem] = evaluation.answer.selected_segment
     discovery_batch = read_discovery_batch(
         write_discovery(
             tmp_path / "discovery",
@@ -540,9 +535,7 @@ def profile_replay(tmp_path, monkeypatch, request):
                             )
                         )
                     else:
-                        assert (
-                            measured == source_records[candidate_id].physical_evaluation
-                        )
+                        assert measured == source_records[candidate_id]
         return result
 
     monkeypatch.setattr(bounded_owner, "execute_partition", checked_runtime)
@@ -608,7 +601,6 @@ def profile_replay(tmp_path, monkeypatch, request):
                 separate_groups=separate_groups,
                 source_raws=source_raws,
                 opened_raws=opened_raws,
-                source_evidence=source_evidence,
                 source_records=source_records,
                 physical_peaks=physical_peaks,
             ),
@@ -636,9 +628,7 @@ def profile_replay(tmp_path, monkeypatch, request):
 def _source_verification_inputs(tmp_path: Path):
     path = tmp_path / "S1.synthetic"
     path.write_bytes(b"source-verification:S1")
-    settings = replace(
-        _settings(), neutral_loss_profile=None, precursor_mz_tolerance_ppm=1.0
-    )
+    settings = replace(_settings(), precursor_mz_tolerance_ppm=1.0)
     raw, candidates = _nearby_subject_candidates(
         path,
         settings=settings,

@@ -13,9 +13,11 @@ from xic_extractor.discovery.settings import DiscoverySettings
 
 def _settings() -> DiscoverySettings:
     return DiscoverySettings(
-        neutral_loss_profile=NeutralLossProfile(
-            tag="DNA_dR",
-            neutral_loss_da=116.0474,
+        neutral_loss_profiles=(
+            NeutralLossProfile(
+                tag="DNA_dR",
+                neutral_loss_da=116.0474,
+            ),
         )
     )
 

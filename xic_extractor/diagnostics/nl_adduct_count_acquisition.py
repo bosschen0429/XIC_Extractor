@@ -63,13 +63,19 @@ def count_run(
     raw = batch.samples[sample].raw_file
     peaks = [p for p in read_sample_peaks(store, sample) if p.admitted]
     scans: dict[str, set[int]] = defaultdict(set)
-    loss = None
+    losses: set[float] = set()
     for peak in peaks:
         for event in peak.located_events:
             scans[peak.peak_id].add(event.scan_number)
-            loss = event.configured_neutral_loss_da
-    if loss is None:
+            losses.add(event.configured_neutral_loss_da)
+    if not losses:
         raise ValueError(f"{discovery_dir}: no event locates an admitted peak")
+    if len(losses) > 1:
+        raise ValueError(
+            f"{discovery_dir}: this count covers one neutral loss; "
+            f"the Discovery run has {sorted(losses)}"
+        )
+    (loss,) = losses
     same = [w for w, tag in nucleosides if tag in neutral_loss_by_tag]
     other = [w for w, tag in nucleosides if tag not in neutral_loss_by_tag]
 

@@ -41,9 +41,11 @@ def test_is_supported_alignment_discovery_accepts_single_and_multi_tag_settings(
         assert is_supported_alignment_discovery(recipe.discovery_settings) is True
 
     settings = DiscoverySettings(
-        neutral_loss_profile=NeutralLossProfile(
-            tag="DNA_dR",
-            neutral_loss_da=116.0474,
+        neutral_loss_profiles=(
+            NeutralLossProfile(
+                tag="DNA_dR",
+                neutral_loss_da=116.0474,
+            ),
         )
     )
     assert is_supported_alignment_discovery(settings) is True

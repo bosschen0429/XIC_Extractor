@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from dataclasses import replace
 from pathlib import Path
 from typing import Protocol
 
@@ -11,11 +12,13 @@ from xic_extractor.discovery.models import DiscoveryEvent, PrecursorMzBasis
 from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.mass_accuracy import (
     absolute_ppm_error,
+    mz_tolerance_da,
     neutral_loss_match,
     signed_ppm_errors,
 )
 from xic_extractor.ms2_scan_models import Ms2Scan, Ms2ScanEvent
 from xic_extractor.precursor_evidence import (
+    MS1MassWindowSource,
     precursor_inference_bounds,
     recorded_precursor_references,
 )
@@ -48,6 +51,40 @@ def collect_strict_nl_events(
         )
 
     return tuple(events)
+
+
+def read_parent_ms1_observations(
+    raw: MS1MassWindowSource,
+    events: tuple[DiscoveryEvent, ...],
+    *,
+    tolerance_ppm: float,
+) -> tuple[DiscoveryEvent, ...]:
+    """Attach fresh parent-MS1 facts without changing an event's search provenance."""
+    windows: dict[int, tuple[int, float, float]] = {}
+    for index, event in enumerate(events):
+        metadata = event.precursor_metadata
+        if (
+            event.precursor_mz_basis != "product_plus_neutral_loss"
+            or metadata is None
+            or metadata.master_scan_number is None
+        ):
+            continue
+        radius = mz_tolerance_da(event.precursor_mz, tolerance_ppm)
+        windows[index] = (
+            metadata.master_scan_number,
+            event.precursor_mz - radius,
+            event.precursor_mz + radius,
+        )
+    if not windows:
+        return events
+    requests = tuple(dict.fromkeys(windows.values()))
+    observations = dict(zip(requests, raw.read_ms1_mass_windows(requests), strict=True))
+    return tuple(
+        replace(event, ms1_precursor_observation=observations[windows[index]])
+        if index in windows
+        else event
+        for index, event in enumerate(events)
+    )
 
 
 def discovery_events_from_scan(

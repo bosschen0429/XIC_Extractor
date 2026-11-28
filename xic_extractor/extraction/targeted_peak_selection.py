@@ -661,7 +661,7 @@ def _discovery_method_products(
     window: Ms2Window, target: Target, seeds: tuple | None
 ) -> tuple[MS2ProductEvidence, ...]:
     """Adapt shared Discovery events, preserving their recorded/inferred basis."""
-    from xic_extractor.discovery.strict_event_receipts import (
+    from xic_extractor.discovery.event_evidence import (
         resolve_discovery_scan_events,
     )
 
