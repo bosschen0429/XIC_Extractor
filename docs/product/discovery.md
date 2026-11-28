@@ -180,9 +180,9 @@ A CID-NL mass reference has one basis; `mixed` summarizes a peak whose events
 differ. The method assumes singly charged ions and rejects known incompatible
 charge. A missing or zero vendor value is unavailable, not a measured zero.
 
-| Basis | Reference | Supports a strict relation |
+| Basis | Reference | Condition for a strict relation |
 | --- | --- | --- |
-| `scan_precursor` | The MS2 scan's selected isolation m/z | Yes |
+| `scan_precursor` | The MS2 scan's selected isolation m/z | — |
 | `scan_monoisotopic` | A distinguishable vendor-recorded monoisotopic m/z, independent of product + loss arithmetic | Only inside the recorded nominal isolation window; outside or unknown stays a mass-compatible candidate |
 | `product_plus_neutral_loss` | Inferred: product m/z plus the configured loss | Only after [verification](#inferred-precursor-verification) |
 
@@ -284,6 +284,8 @@ contract because the lab has no mature DIA method.
   configured loss on the same physical peak in the same sample. Different peaks
   or samples cannot pool evidence into AND support. One scan can support two
   different required losses without counting as two scans.
+
+### Assessment results
 
 | Result | Meaning |
 | --- | --- |
