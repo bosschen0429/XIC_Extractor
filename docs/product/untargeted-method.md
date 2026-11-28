@@ -2,44 +2,11 @@
 
 Untargeted analysis asks which sample-local observations can form comparable
 features across a batch, and which measurements can be delivered for those
-features. This page owns the method rationale and limits; the
+features. This page owns the literature basis of the method; the
 [user guide](../user/untargeted.md) owns running and reading a batch.
 Discovery, Alignment and bounded Backfill contribute evidence, but a candidate,
 a cross-sample correspondence and a published numeric value remain distinct
 results. Published features are not, by themselves, identified compounds.
-
-## Current Position
-
-- The Untargeted lane runs Discovery, Alignment and Backfill with conservative
-  primary-Matrix delivery. It is not a full LC-MS preprocessing,
-  normalization, artifact annotation, blank/background filtering or
-  batch-correction system.
-- Untargeted is the general application of the shared lifecycle; Targeted and
-  Untargeted share the capture, CrossSample, revisit and cell-decision
-  implementations and differ in search scope and output projection
-  ([Product Shape](domain-glossary.md#product-shape)). Every group qualifying
-  under the configured method stays eligible for Untargeted projection, whereas
-  Targeted keeps only its configured Target rows.
-- Product-facing `Matrix` output stays conservative: Backfill-only, ambiguous,
-  diagnostic and review-only evidence belongs in Review/Audit surfaces until a
-  writer path is explicitly contracted
-  ([Writer Authority](decision-policy.md#writer-authority)). Standard rows
-  require `established` disposition; disposition and row inclusion are
-  separate decisions ([row identity](quant-matrix.md#row-identity-and-display)).
-- Row order, m/z/RT display coordinates and Matrix text are display facts, not
-  canonical cell identity.
-- Exact equality to other tools' feature tables is not the success definition.
-  The method direction is owner-centered Backfill plus duplicate-claim control
-  while preserving a clean primary Matrix. The lane addresses false missingness,
-  RT-driven splitting and duplicate claims, and keeps Review/Audit separate.
-- Targeted ISTD recall is a useful benchmark, but a past 8RAW/85RAW result is an
-  evidence snapshot, not lasting product authority.
-- Untargeted LC-MS practice expects pooled QC, injection-order tracking,
-  blank/background handling, batch drift checks, sample-matrix-effect awareness,
-  missingness classification and artifact/adduct/isotope review. QC, blank,
-  calibrator, injection-order and batch metadata must become first-class inputs
-  before any QC correction, blank filtering or normalization can write values;
-  see [Sample metadata and QC](sample-metadata-qc.md).
 
 ## Literature Grounding
 
@@ -56,25 +23,6 @@ by itself:
 | Reviews of LC-MS/MS metabolite data mining list extracted-ion chromatograms, mass-defect filters, product-ion filters, neutral-loss filters, and isotope-pattern filters as complementary post-acquisition strategies ([Dhurjad et al. 2017](https://doi.org/10.4155/bio-2017-0046); [Zhang et al. 2009](https://doi.org/10.1002/jms.1610)). | CID-NL, HCD-PI, and Delta Mass fit the same broad class: configurable Discovery methods that find candidate features matching diagnostic evidence. |
 | Isotope-pattern and stable-isotope mass-shift filtering work shows that specific MS1 mass-shift/isotope patterns can mine candidate ions from complex LC-MS data ([Yang et al. 2009](https://doi.org/10.1021/ac900626d); [Uchida et al. 2013](https://doi.org/10.3390/ijms141019716)). | A Pt-specific delta-mass pattern is methodologically plausible as a first `delta_mass` pattern, but first-version hard gates should stay simple and evidence-based. |
 | XCMS `fillPeaks` integrates raw data inside aligned peak-group regions for samples missing a peak, and uses retention-time correction when available ([XCMS documentation](https://sneumann.github.io/xcms/reference/fillPeaks.chrom-methods.html)). Missing-value reviews warn that missing values arise from biological, technical, and preprocessing causes, and that filling/imputation choices can bias downstream analysis ([Wei et al. 2018](https://doi.org/10.1038/s41598-017-19120-0); [Hrydziuszko and Viant 2018/2019](https://pubmed.ncbi.nlm.nih.gov/30830398/)). | Backfill must mean an evidence-based revisit of raw traces or approved sidecars, not blind statistical imputation. Statistical imputation belongs downstream and must not be counted as detection. |
-
-## In Scope
-
-- Feature discovery and review surfaces.
-- Owner-centered alignment and Backfill evidence.
-- Conservative primary-matrix promotion rules.
-- Duplicate-claim and identity-family hygiene.
-- Targeted benchmark, replay, and expected-diff gates that validate the above.
-
-## Out Of Scope Until Activated
-
-- QC-based signal correction, SERRF-style correction, or post-acquisition
-  normalization.
-- Blank/background subtraction as a writer rule.
-- Sample-matrix-effect correction as a product claim.
-- Broad artifact/adduct/isotope/in-source fragment deconvolution. The optional
-  post-Alignment [same-compound collapse](matrix-curation.md#same-compound-collapse)
-  removes isotope, adduct and dimer rows from a curated copy of the Matrix only.
-- Treating review-only candidates as product matrix values.
 
 ## See Also
 

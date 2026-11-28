@@ -11,7 +11,7 @@ the cell decision do not fork per provider. Untargeted keeps every candidate
 qualifying under its configured evidence space; Targeted keeps only configured
 Targets. The [interpretation guide](../user/concepts.md#從-raw-到矩陣)
 explains the distinction; the [Untargeted method](untargeted-method.md) owns
-the literature basis and scope; the [Untargeted guide](../user/untargeted.md)
+the literature basis; the [Untargeted guide](../user/untargeted.md)
 owns commands and outputs.
 
 ## At A Glance
