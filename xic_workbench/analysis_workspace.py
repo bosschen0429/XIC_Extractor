@@ -235,7 +235,16 @@ class AnalysisWorkspace:
         return read_preferences(config_dir=self.config_dir)
 
     def state(self) -> dict[str, Any]:
-        state = json_value(self.jobs.state())
+        return self._present_jobs(self.jobs.state())
+
+    def start_job(self, kind: str, values: dict[str, Any]) -> dict[str, Any]:
+        return self._present_jobs(self.jobs.start(kind, values))
+
+    def cancel_job(self, job_id: str) -> dict[str, Any]:
+        return self._present_jobs(self.jobs.cancel(job_id))
+
+    def _present_jobs(self, snapshot: dict[str, Any]) -> dict[str, Any]:
+        state = json_value(snapshot)
         job = state.get("job")
         if (
             job is not None

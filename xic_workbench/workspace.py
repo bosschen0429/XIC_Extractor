@@ -140,7 +140,7 @@ class ReviewWorkspace:
     def start_analysis(self, kind: str, values: dict[str, Any]) -> dict[str, Any]:
         with self._lock:
             self._require_open()
-            started = self.analysis.jobs.start(kind, values)
+            started = self.analysis.start_job(kind, values)
             self._replace_job("已停止曲線載入，分析工作已開始。")
             return started
 

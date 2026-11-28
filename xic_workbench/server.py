@@ -389,7 +389,7 @@ def create_server(
                 )
                 return
             elif path == "/api/analysis/cancel":
-                result = workspace.analysis.jobs.cancel(values["job_id"])
+                result = workspace.analysis.cancel_job(values["job_id"])
             elif path == "/api/evidence-summary":
                 result = workspace.evidence_summary(values["source"])
             elif path == "/api/shutdown":

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import threading
-from pathlib import Path
 
 import pytest
 
@@ -149,10 +148,19 @@ def test_analysis_failure_and_cancel_retain_previous_published_results(
         try:
             jobs.start("targeted", {"settings": {}, "targets": sample_target_rows()})
             success = _terminal(jobs)["results"]["targeted"]
+            published = request("/api/analysis")[1]["results"]["targeted"]
+            (artifact,) = published["artifacts"]
+            assert request(artifact["url"])[:2] == (200, b"published-result")
             mode[0] = "fail"
-            running = jobs.start(
-                "targeted", {"settings": {}, "targets": sample_target_rows()}
+            status, running, _ = request(
+                "/api/analysis/start",
+                {
+                    "kind": "targeted",
+                    "values": {"settings": {}, "targets": sample_target_rows()},
+                },
             )
+            assert status == 202
+            assert running["results"]["targeted"] == published
             assert entered.wait(3)
             with pytest.raises(WorkspaceBusy):
                 jobs.start("samples", {})
@@ -172,13 +180,13 @@ def test_analysis_failure_and_cancel_retain_previous_published_results(
             )
             assert status == 200
             assert cancelling["job"]["status"] == "cancelling"
+            assert cancelling["results"]["targeted"] == published
             proceed.set()
             state = _terminal(jobs)
             assert state["job"]["status"] == "cancelled"
             assert state["results"]["targeted"] == success
-            assert (
-                Path(success["published_paths"][0]).read_bytes() == b"published-result"
-            )
+            assert request("/api/analysis")[1]["results"]["targeted"] == published
+            assert request(artifact["url"])[:2] == (200, b"published-result")
         finally:
             proceed.set()
 
