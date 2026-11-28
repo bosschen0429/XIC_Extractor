@@ -67,5 +67,5 @@ def test_extraction_config_default_factory_uses_shared_parallel_budget(
     )
 
     assert config.execution == execution_settings.ExecutionProfile(
-        parallel_workers=4, backend="thread", overlap_partitions=False
+        parallel_workers=4, backend="thread"
     )

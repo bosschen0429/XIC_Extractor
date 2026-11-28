@@ -3,4 +3,4 @@ from xic_extractor.configuration.execution_profile import ExecutionProfile
 
 def in_process_execution() -> ExecutionProfile:
     """Run everything in the calling process, for injected readers."""
-    return ExecutionProfile(backend="thread", overlap_partitions=False)
+    return ExecutionProfile(backend="thread")

@@ -11,8 +11,8 @@ writer, or publication authority.
 - Timing counts describe cost and locality only; they do not select a cell,
   value, state, or writer decision.
 
-How a run uses the machine has one owner, `ExecutionProfile`: worker budgets,
-process or thread backend, and whether Alignment overlaps partitions. CLI,
+How a run uses the machine has one owner, `ExecutionProfile`: worker budgets
+and process or thread backend. CLI,
 Workbench and diagnostic entries build one per run; Targeted settings resolve
 theirs in `configuration/settings.py`. Stages receive that value instead of
 worker arguments of their own. RAW header reads use the profile module's fixed

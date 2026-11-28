@@ -368,11 +368,7 @@ class UntargetedPartitionPipelineAdapter:
             sample_count=len(context.samples),
         )
         self._acquisition_workers = (
-            2
-            if execution.overlap_partitions
-            and len(subject_partitions) > 1
-            and execution.alignment_workers >= 2
-            else 1
+            2 if len(subject_partitions) > 1 and execution.alignment_workers >= 2 else 1
         )
         self._partition_raw_workers = (
             execution.alignment_workers
@@ -960,7 +956,6 @@ def execute_untargeted_plan(
             output_dir=output_dir,
             progress_callback=progress_callback,
             should_cancel=should_cancel,
-            pipeline_overlap=execution.overlap_partitions,
             acquisition_workers=adapter.acquisition_workers,
             store_factory=StreamedResultStore,
             acquisition_cleanup=adapter.close_process_worker_pools,
