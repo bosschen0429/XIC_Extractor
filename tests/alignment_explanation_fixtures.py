@@ -4,21 +4,12 @@
 def explanation_summary(values):
     """Complete persisted metadata for small diagnostic writer fixtures."""
     summary = {
-        "scientific_input_schema_version": "fixture",
-        "processing_algorithm_version": "fixture",
-        "processing_contract_version": "fixture",
         "processing_attempt_id": "fixture",
         "samples": [],
-        "acquisition_sources": [],
-        "matrix_row_count": 0,
         "matrix_path": "",
         "matrix_sha256": "",
-        "alignment_config": {},
         "neutral_loss_by_tag": {},
-        "selection_evidence_capability": "recorded_decisions",
-        "audit_availability": {},
         "sample_rt_calibration": None,
-        "injection_order": {},
         **values,
     }
     summary["samples"] = [

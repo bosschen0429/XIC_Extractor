@@ -70,7 +70,6 @@ def create_review_batch(tmp_path, sample_count=2, *, keep_curves=False):
                     "matrix_path": str(matrix),
                     "matrix_sha256": hashlib.sha256(matrix.read_bytes()).hexdigest(),
                     "samples": samples,
-                    "selection_evidence_capability": "recorded_decisions",
                     "neutral_loss_by_tag": NEUTRAL_LOSS_BY_TAG,
                 },
             )
@@ -122,7 +121,6 @@ def create_nearest_review_batch(tmp_path):
                     "matrix_path": str(matrix),
                     "matrix_sha256": hashlib.sha256(matrix.read_bytes()).hexdigest(),
                     "samples": samples,
-                    "selection_evidence_capability": "recorded_decisions",
                     "neutral_loss_by_tag": NEUTRAL_LOSS_BY_TAG,
                 },
             )
@@ -172,7 +170,6 @@ def add_witness(
     writer.add_terminal(
         candidate_id,
         sample_key,
-        variant="observed",
         hypothesis_id=hypothesis,
         physical_peak_key=peak,
     )
@@ -194,7 +191,6 @@ def create_inspector_report(
     attempt_id: str = "att-01",
     samples: list[dict[str, str]] | None = None,
     candidate: dict[str, Any] | None = None,
-    method_subject: dict[str, Any] | None = None,
     observed: bool = True,
     hypothesis_id: str = "hypothesis-01",
     group: dict[str, Any] | None = None,
@@ -235,13 +231,6 @@ def create_inspector_report(
     with ExplanationReportWriter(db_path) as writer:
         writer.declare_samples(samples)
         writer.add_peak(sid, "obs-01", (None, 1.0, None))
-        if (candidate or {}).get("method_subject_id") is not None:
-            writer.add_method_subject(
-                {
-                    "method_subject_id": candidate["method_subject_id"],
-                    **(method_subject or {}),
-                }
-            )
         writer.add_candidate(
             "C1", sid, precursor_mz=500.0, **{**discovery("C1"), **(candidate or {})}
         )
@@ -249,7 +238,6 @@ def create_inspector_report(
             writer.add_terminal(
                 "C1",
                 sid,
-                variant="observed",
                 hypothesis_id=hypothesis_id,
                 physical_peak_key="obs-01",
             )

@@ -331,7 +331,6 @@ def test_alignment_measurement_decides_admission_through_the_whole_run(
         children=children_of(completed.application_result),
         peaks_by_sample=loaded,
         matrix_path=matrix,
-        alignment_config=config,
         precursor_mz_by_candidate=representative_precursors(loaded),
         neutral_loss_by_tag=settings.neutral_loss_by_tag,
     )

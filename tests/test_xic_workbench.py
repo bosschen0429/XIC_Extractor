@@ -240,14 +240,13 @@ def test_review_overview_does_not_retain_decoded_cells_for_the_population(
         raise AssertionError("overview decoded cold scientific details")
 
     monkeypatch.setattr(alignment_explanation._Report, "cells", forbidden)
-    overview, rows = review_overview(report, summary)
+    overview = review_overview(report, summary)
 
     assert overview["matrix_count"] == 3
     assert overview["complete_count"] == 1
     assert overview["unresolved_count"] == 1
     assert overview["archive_count"] == 1
     assert [sample["numeric_count"] for sample in overview["samples"]] == [3] + [1] * 31
-    assert rows["z-priority"]["unresolved_count"] == 31
 
 
 def test_review_overview_separates_matrix_priority_and_internal_evidence(tmp_path):

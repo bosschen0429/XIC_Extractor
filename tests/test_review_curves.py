@@ -62,7 +62,6 @@ def test_cells_with_values_show_their_run_curves_without_raw(tmp_path, monkeypat
         **explanation_discovery_facts(completed),
         peaks_by_sample=candidates,
         matrix_path=matrix,
-        alignment_config=config,
     )
     peaks = {
         peak.physical_peak_key: peak

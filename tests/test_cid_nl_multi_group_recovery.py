@@ -696,17 +696,15 @@ def test_shared_ms1_only_backfill_peak_is_not_written_to_two_rows(
 
     evidence = read_review_evidence(output / "alignment_explanation.sqlite")
     competing = [
-        (cell, risk)
+        cell
         for group in evidence.groups.values()
         for cell in group.cells.values()
-        for risk in cell["membership_risks"]
-        if risk["phase"] == "initial"
-        and "accepted_competition" in risk["risk_flags"]
+        if "accepted_competition" in cell["risk_flags"]
         and cell["sample_key"] == "Missing"
     ]
     assert len(competing) == 1
-    ((cell, risk),) = competing
-    assert risk["alternative_partition"]
+    (cell,) = competing
+    assert cell["competition"]
     if mz_separation_ppm == 0 and not reverse and not sloped_background:
         from xic_inspector.api import SelectionRequest, prepare_report
 

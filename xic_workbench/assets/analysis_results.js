@@ -209,6 +209,11 @@ export function renderResults() {
 }
 async function openInspectorExport(source) {
   exportSource = source;
+  const alignment = /\.sqlite$/i.test(source);
+  for (const option of $("export-strategy").options)
+    option.hidden = alignment && option.value !== "query";
+  if (alignment) $("export-strategy").value = "query";
+  $("export-query").hidden = $("export-strategy").value !== "query";
   $("export-output").value = source.replace(
     /[\\/][^\\/]+$/,
     "/xic_inspector.html",

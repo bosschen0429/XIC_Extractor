@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import math
+from collections.abc import Iterable, Mapping
 from dataclasses import asdict
 from typing import TYPE_CHECKING, Any, cast
 
@@ -12,98 +12,43 @@ if TYPE_CHECKING:
         FinalGroupCellObservation,
     )
 
-RECORDED_ORIGINS = ("backfilled", "detected")
-SUPPORT_ORIGINS = frozenset((*RECORDED_ORIGINS, "unavailable"))
+SUPPORT_ORIGINS = frozenset(("detected", "backfilled", "unavailable"))
 
 
-def validate_membership_risks(risks: object) -> None:
-    """Validate declared optional facts at the persisted JSON boundary."""
+def competition_peers(
+    risks: Iterable[Mapping[str, Any]], sample_key: str
+) -> list[list[list[Any]]]:
+    """The peers each recorded alternative would give one cell's peak.
 
-    def strings(value: object) -> bool:
-        return isinstance(value, list) and all(isinstance(v, str) for v in value)
-
-    def owner(value: object) -> bool:
-        return (
-            isinstance(value, list)
-            and len(value) == 3
-            and isinstance(value[0], str)
-            and all(
-                isinstance(item, (int, float)) and not isinstance(item, bool)
-                for item in value[1:]
-            )
-        )
-
-    def owners(value: object) -> bool:
-        return isinstance(value, list) and all(owner(item) for item in value)
-
-    def partition(value: object) -> bool:
-        return isinstance(value, list) and all(owners(group) for group in value)
-
-    if not isinstance(risks, list):
-        raise ValueError("membership risks must be a list")
+    The peak is its full owner key (sample, measured m/z, native apex RT), so
+    another peak of the same sample is not mistaken for it. An empty entry
+    means the alternative leaves the peak out of this group. Alternatives are
+    compared configurations, not published features.
+    """
+    groups: list[list[list[Any]]] = []
     for risk in risks:
-        if not isinstance(risk, dict):
-            raise ValueError("membership risk must be an object")
-        valid = (
-            all(
-                isinstance(risk.get(key), str)
-                for key in ("status", "phase", "rt_basis", "evidence_basis")
-            )
-            and owners(risk.get("selected_owners"))
-            and all(
-                strings(risk.get(key)) for key in ("soft_contradictions", "risk_flags")
-            )
-        )
+        if not {"accepted_competition", "backfill_competition"}.intersection(
+            risk["risk_flags"]
+        ):
+            continue
+        selected = [list(owner) for owner in risk["selected_owners"]]
+        own = [owner for owner in selected if owner[0] == sample_key]
+        if len(own) != 1:
+            continue
+        peak = own[0]
         alternative = risk.get("alternative_partition")
-        equivalents = risk.get("equivalent_alternatives")
-        valid = (
-            valid
-            and (alternative is None or partition(alternative))
-            and isinstance(equivalents, list)
-            and all(partition(value) for value in equivalents)
-        )
-        estimate = risk.get("rt_estimate")
-        if estimate is not None:
-            if not isinstance(estimate, dict):
-                raise ValueError("membership risk RT estimate must be an object")
-            valid = valid and isinstance(estimate.get("method"), str)
-            for key in (
-                "rt_min",
-                "residual_spread_min",
-                "nearest_anchor_distance_min",
-                "outside_anchor_range_min",
-            ):
-                value = estimate.get(key)
-                if value is None and key != "rt_min":
-                    continue
-                valid = valid and (
-                    not isinstance(value, bool)
-                    and isinstance(value, (int, float))
-                    and math.isfinite(value)
-                )
-            count = estimate.get("anchor_count")
-            valid = valid and (count is None or (type(count) is int and count >= 0))
-            bounds = estimate.get("anchor_range_min")
-            valid = valid and (
-                bounds is None
-                or (
-                    isinstance(bounds, list)
-                    and len(bounds) == 2
-                    and all(
-                        not isinstance(v, bool)
-                        and isinstance(v, (int, float))
-                        and math.isfinite(v)
-                        for v in bounds
-                    )
-                    and bounds[0] <= bounds[1]
-                )
-            )
-            valid = valid and (
-                estimate.get("fit_status") is None
-                or isinstance(estimate["fit_status"], str)
-            )
-        if not valid:
-            raise ValueError("malformed membership risk fields")
+        for partition in [
+            *([alternative] if alternative is not None else []),
+            *risk.get("equivalent_alternatives", []),
+        ]:
+            members = [[list(owner) for owner in group] for group in partition]
+            group = next((group for group in members if peak in group), [peak])
+            if sorted(group) == sorted(selected):
+                continue
+            peers = [owner for owner in group if owner != peak]
+            if peers not in groups:
+                groups.append(peers)
+    return groups
 
 
 def group_attention(disposition: Any) -> bool:
@@ -118,11 +63,6 @@ def cell_attention(variant: Any, value: Any, risk_flagged: bool) -> str | None:
     if variant == "unresolved" and value is None:
         return "unresolved"
     return None
-
-
-def assessment_attention(method_result: Any) -> str | None:
-    """Why a recorded method assessment needs attention."""
-    return "HOLD" if method_result == "HOLD" else None
 
 
 def review_cell(decision: ProductionCellDecision) -> dict[str, Any]:

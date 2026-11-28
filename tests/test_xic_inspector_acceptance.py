@@ -78,7 +78,6 @@ def test_acceptance_a4_loads_only_selected_evidence(tmp_path, monkeypatch) -> No
         **explanation_discovery_facts(completed),
         peaks_by_sample=candidates,
         matrix_path=matrix,
-        alignment_config=config,
     )
     completed.close()
 
@@ -99,7 +98,7 @@ def test_acceptance_a4_loads_only_selected_evidence(tmp_path, monkeypatch) -> No
     out_html = tmp_path / "report.html"
     res = generate_report(
         report_path,
-        SelectionRequest(strategy="sample", limit=1),
+        SelectionRequest(strategy="query", review_scope="matrix", limit=1),
         out_html,
     )
     assert res.selected_count == 1
@@ -118,7 +117,6 @@ def test_cli_callable_emits_embedded_html(tmp_path, monkeypatch) -> None:
         **explanation_discovery_facts(completed),
         peaks_by_sample=candidates,
         matrix_path=matrix,
-        alignment_config=config,
     )
     completed.close()
 
@@ -130,12 +128,8 @@ def test_cli_callable_emits_embedded_html(tmp_path, monkeypatch) -> None:
             str(report_path),
             "--output",
             str(out_html),
-            "--strategy",
-            "sample",
             "--limit",
             "10",
-            "--seed",
-            "0",
             "--no-open",
         ]
     )
@@ -169,7 +163,6 @@ def test_acceptance_a7_cancel_and_atomic_replace(tmp_path, monkeypatch) -> None:
         **explanation_discovery_facts(completed),
         peaks_by_sample=candidates,
         matrix_path=matrix,
-        alignment_config=config,
     )
     completed.close()
 
@@ -179,7 +172,7 @@ def test_acceptance_a7_cancel_and_atomic_replace(tmp_path, monkeypatch) -> None:
     with pytest.raises(InspectorCancelled):
         generate_report(
             report_path,
-            SelectionRequest(strategy="sample"),
+            SelectionRequest(strategy="query", review_scope="matrix"),
             out_html,
             is_cancelled=lambda: True,
         )
@@ -238,7 +231,7 @@ def test_acceptance_a9_pipeline_shared_callable_handoff(tmp_path, monkeypatch) -
     out_html = tmp_path / "handoff.html"
     result = generate_report(
         locator.report_path,
-        SelectionRequest(strategy="sample", limit=5),
+        SelectionRequest(strategy="query", review_scope="matrix", limit=5),
         out_html,
         expected_source=locator,
     )

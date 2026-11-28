@@ -250,6 +250,7 @@ class SelectionRequest:
         if self.strategy == "query":
             has_filter = bool(
                 self.nearest_mz is not None
+                or self.review_scope != "all"
                 or self.sample_ids
                 or self.candidate_ids
                 or self.group_ids

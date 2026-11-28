@@ -22,10 +22,10 @@ from xic_extractor.alignment_explanation.writer import (
     ExplanationReportWriter,
 )
 from xic_extractor.output.alignment.tsv_writer import UntargetChildOutputs
+from xic_extractor.peak_detection.detector_invocations import GROUP_BACKFILL_DETECTOR
 from xic_extractor.rt_calibration_codec import rt_calibration_payload
 
 if TYPE_CHECKING:
-    from xic_extractor.alignment.config import AlignmentConfig
     from xic_extractor.alignment.result.application_result import (
         FinalizedUntargetApplicationResult,
     )
@@ -39,13 +39,6 @@ if TYPE_CHECKING:
     from xic_extractor.untargeted_execution.execution_result import (
         CompletedUntargetBatchWorkflowResult,
     )
-
-
-_RUN_CONTRACT_SUMMARY = {
-    "scientific_input_schema_version": "untargeted_cid_nl_real_data_inputs",
-    "processing_algorithm_version": "untargeted_cid_nl_real_data_algorithm",
-    "processing_contract_version": "untargeted_cid_nl_real_data_contract",
-}
 
 
 def _fields(value: Any, *names: str) -> dict[str, Any]:
@@ -133,13 +126,11 @@ def project_alignment_explanation_child(
     for terminal in core.terminal_subjects:
         key = terminal.candidate_id, terminal.sample_key
         if not isinstance(terminal, ObservedSearchSubject):
-            sink.add_terminal(*key, variant=terminal.variant)
             continue
         hypothesis = terminal.hypothesis
         ref = hypothesis.peak
         sink.add_terminal(
             *key,
-            variant=terminal.variant,
             hypothesis_id=hypothesis.hypothesis_id,
             physical_peak_key=locate(ref),
         )
@@ -289,7 +280,6 @@ def write_alignment_explanation(
     children: Sequence[FinalizedUntargetApplicationResult],
     peaks_by_sample: Mapping[str, Sequence[DiscoveryPeak]],
     matrix_path: Path,
-    alignment_config: AlignmentConfig,
     precursor_mz_by_candidate: Mapping[str, float],
     neutral_loss_by_tag: Mapping[str, float],
     ms1_apex_mz_by_candidate: Mapping[str, float] | None = None,
@@ -303,7 +293,6 @@ def write_alignment_explanation(
         path,
         completed=completed,
         peaks_by_sample=peaks_by_sample,
-        alignment_config=alignment_config,
         precursor_mz_by_candidate=precursor_mz_by_candidate,
         neutral_loss_by_tag=neutral_loss_by_tag,
         ms1_apex_mz_by_candidate=ms1_apex_mz_by_candidate,
@@ -360,7 +349,6 @@ def prepare_alignment_explanation(
     *,
     completed: CompletedUntargetBatchWorkflowResult,
     peaks_by_sample: Mapping[str, Sequence[DiscoveryPeak]],
-    alignment_config: AlignmentConfig,
     precursor_mz_by_candidate: Mapping[str, float],
     neutral_loss_by_tag: Mapping[str, float],
     ms1_apex_mz_by_candidate: Mapping[str, float] | None = None,
@@ -379,7 +367,6 @@ def prepare_alignment_explanation(
                 ms1_apex_mz_by_candidate,
             ),
         ),
-        alignment_config=alignment_config,
         calibration=frame.calibration_for_snapshot if frame is not None else None,
         progress_callback=progress_callback,
     ) as replay:
@@ -399,14 +386,13 @@ def prepare_batch_alignment_explanation(
     path: Path,
     batches: Sequence[ExplanationBatch],
     *,
-    alignment_config: AlignmentConfig,
     calibration: BatchRtCalibration | None,
     progress_callback: Callable[[Mapping[str, object]], None] | None = None,
 ) -> Iterator[BatchExplanationReplay]:
     """One report for independently aligned batches; the first is the reference.
 
-    Each batch declares its own samples, candidates, subjects, assessments and
-    initial groups; ``calibration`` is the run's replay calibration.
+    Each batch declares its own samples, candidates, Backfill support, exclusions
+    and member risks; ``calibration`` is the run's replay calibration.
     """
     with ExplanationReportWriter(path) as sink:
         samples = {
@@ -416,7 +402,11 @@ def prepare_batch_alignment_explanation(
         }
         sink.declare_samples(
             [
-                {"sample_key": sample.sample_name, "sample_stem": stem}
+                {
+                    "sample_key": sample.sample_name,
+                    "sample_stem": stem,
+                    "injection_order": sample.injection_order,
+                }
                 for stem, sample in samples.items()
             ]
         )
@@ -448,7 +438,7 @@ def prepare_batch_alignment_explanation(
             )
             return key
 
-        emitted_assessments: set[CidNlMethodAssessment] = set()
+        emitted_support: set[CidNlMethodAssessment] = set()
 
         def report_progress(stage: str, completed: int, total: int | None) -> None:
             if progress_callback is not None:
@@ -478,30 +468,19 @@ def prepare_batch_alignment_explanation(
             if completed_count % 256:
                 report_progress(stage, completed_count, total)
 
-        def emit_assessment(assessment: CidNlMethodAssessment) -> None:
-            content = assessment
-            if content in emitted_assessments:
+        def emit_backfill_support(assessment: CidNlMethodAssessment) -> None:
+            if (
+                assessment.detector_invocation_id != GROUP_BACKFILL_DETECTOR
+                or assessment.method_result != "SUPPORT"
+                or assessment in emitted_support
+            ):
                 return
-            sink.add_assessment(
-                {
-                    **_fields(
-                        content,
-                        "sample_key",
-                        "provider_id",
-                        "method_id",
-                        "method_version",
-                        "detector_invocation_id",
-                        "technical_state",
-                        "method_result",
-                        "reason_codes",
-                    ),
-                    "method_subject_id": content.method_subject.method_subject_id,
-                },
-                candidate_physical_peak_keys=tuple(
-                    locate(peak) for peak in assessment.candidate_peaks
-                ),
+            sink.add_backfill_support(
+                assessment.sample_key,
+                assessment.method_subject.method_subject_id,
+                tuple(locate(peak) for peak in assessment.candidate_peaks),
             )
-            emitted_assessments.add(content)
+            emitted_support.add(assessment)
 
         for batch in batches:
             completed = batch.completed
@@ -519,41 +498,22 @@ def prepare_batch_alignment_explanation(
                         precursor_mz=batch.precursor_mz_by_candidate[candidate.peak_id],
                         ms1_apex_mz=measured_mz.get(candidate.peak_id),
                         neutral_loss_tag=candidate.neutral_loss_tag,
-                        peak_status=candidate.status,
                         method_subject_id=subject_id,
                     )
-
-            for subject in phase_items("method_subjects", subjects.subjects):
-                sink.add_method_subject(
-                    {
-                        **_fields(
-                            subject,
-                            "method_subject_id",
-                            "subject_kind",
-                            "precursor_mz",
-                            "precursor_tolerance_ppm",
-                            "neutral_loss_da",
-                        ),
-                        "composition": asdict(subject.composition)
-                        if subject.composition
-                        else None,
-                    }
-                )
 
             for assessment in phase_items(
                 "method_assessments", completed.method_assessments
             ):
-                emit_assessment(assessment)
+                emit_backfill_support(assessment)
 
             for excluded in phase_items("exclusions", application.excluded_candidates):
                 key = excluded.candidate_id, excluded.sample_key
                 refs = (*excluded.method_assessments, *excluded.composite_assessments)
                 sink.add_exclusion(*key, excluded.reason_code)
                 for assessment in refs:
-                    emit_assessment(assessment)
+                    emit_backfill_support(assessment)
 
         child_count = 0
-        matrix_row_count = 0
         child_total = sum(
             len(batch.completed.application_result.child_outputs) for batch in batches
         )
@@ -564,7 +524,7 @@ def prepare_batch_alignment_explanation(
             label: Callable[[int], str],
             merge_into: Mapping[int, str],
         ) -> dict[int, str]:
-            nonlocal child_count, matrix_row_count
+            nonlocal child_count
             merged: dict[str, str] = {}
             final_groups: dict[int, str] = {}
             for name, args, kwargs in cast(
@@ -592,10 +552,8 @@ def prepare_batch_alignment_explanation(
                         final_groups[offset] = merged.get(args[0]) or args[0]
                 else:
                     group_id = merged.get(args[0]) or args[0]
-                    if name == "set_row_destination":
-                        if args[0] in merged:
-                            continue
-                        matrix_row_count += args[1] == "matrix"
+                    if name == "set_row_destination" and args[0] in merged:
+                        continue
                     getattr(sink, name)(group_id, *args[1:], **kwargs)
             child_count += 1
             if child_count % 256 == 0:
@@ -611,88 +569,36 @@ def prepare_batch_alignment_explanation(
                 for group in phase_items(
                     "initial_groups", batch.completed.initial_groups
                 ):
-                    inference_basis = (
-                        group.inference_basis
-                        if isinstance(group, CrossSamplePeakGroupHypothesis)
-                        else None
-                    )
-                    sink.add_initial_group(
-                        disposition=group.disposition,
-                        members=[
-                            {
-                                **_fields(
-                                    member, "sample_key", "subject_kind", "subject_id"
-                                ),
-                                "physical_peak_keys": [
-                                    locate(peak) for peak in member.physical_peaks
-                                ],
-                            }
+                    if not isinstance(group, CrossSamplePeakGroupHypothesis):
+                        continue
+                    risks = dict(group.member_risks)
+                    sink.add_member_risks(
+                        {
+                            (member.sample_key, member.subject_id): asdict(
+                                risks[member.subject_id]
+                            )
                             for member in group.member_subjects
-                        ],
-                        inference_basis=None
-                        if inference_basis is None
-                        else asdict(inference_basis),
-                        member_risks={
-                            owner_id: asdict(risk)
-                            for owner_id, risk in group.member_risks
+                            if member.subject_id in risks
                         }
-                        if isinstance(group, CrossSamplePeakGroupHypothesis)
-                        else None,
                     )
 
             report_progress("finalizing", sink.record_count, None)
             with Path(matrix_path).open("rb") as handle:
                 matrix_hash = hashlib.file_digest(handle, "sha256").hexdigest()
-            reference = batches[0].completed.application_result
-            summary: dict[str, Any] = {
-                **_RUN_CONTRACT_SUMMARY,
-                "processing_attempt_id": reference.processing_attempt_id,
-                "samples": [
-                    {
-                        "sample_stem": stem,
-                        "sample_key": (sample.sample_name),
-                    }
-                    for stem, sample in samples.items()
-                ],
-                "acquisition_sources": [
-                    asdict(source)
-                    for source in sorted(
-                        (
-                            source
-                            for batch in batches
-                            for source in (
-                                batch.completed.application_result.acquisition_sources
-                            )
-                        ),
-                        key=lambda source: source.acquisition_source_id,
-                    )
-                ],
-                "matrix_row_count": matrix_row_count,
-                "matrix_path": str(matrix_path),
+            summary = {
+                "processing_attempt_id": batches[
+                    0
+                ].completed.application_result.processing_attempt_id,
+                "matrix_path": matrix_path,
                 "matrix_sha256": matrix_hash,
-                "alignment_config": asdict(alignment_config),
-                "neutral_loss_by_tag": dict(
-                    sorted(
-                        (tag, loss)
-                        for batch in batches
-                        for tag, loss in batch.neutral_loss_by_tag.items()
-                    )
-                ),
-                "selection_evidence_capability": "recorded_decisions",
-                "audit_availability": {
-                    name: "recorded"
-                    if all(getattr(batch.completed, name) for batch in batches)
-                    else "unavailable"
-                    for name in ("method_assessments", "initial_groups")
+                "neutral_loss_by_tag": {
+                    tag: loss
+                    for batch in batches
+                    for tag, loss in batch.neutral_loss_by_tag.items()
                 },
-            }
-            summary["sample_rt_calibration"] = (
-                rt_calibration_payload(calibration) if calibration is not None else None
-            )
-            summary["injection_order"] = {
-                stem: sample.injection_order
-                for stem, sample in samples.items()
-                if sample.injection_order is not None
+                "sample_rt_calibration": rt_calibration_payload(calibration)
+                if calibration is not None
+                else None,
             }
             return sink.finalize(summary)
 

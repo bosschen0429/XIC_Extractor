@@ -519,6 +519,7 @@ def test_result_chooser_opens_batch_folders_and_report_files(
     alignment.mkdir(parents=True)
     report = alignment / EXPLANATION_ARTIFACT_NAME
     copyfile(original, report)
+    copyfile(original.with_name("matrix.tsv"), alignment / "matrix.tsv")
     chosen = str(batch if kind == "folder" else report)
     choices, calls = [chosen, ""], []
 
@@ -1838,9 +1839,20 @@ def test_untargeted_result_shows_one_matrix_and_groups_technical_files(
     expect(
         files.get_by_role("link", name="discovery_peaks.csv", exact=True)
     ).to_have_count(2)
-    expect(
-        card.get_by_role("button", name="自訂 Inspector 匯出", exact=True)
-    ).to_be_visible()
+    export = card.get_by_role("button", name="自訂 Inspector 匯出", exact=True)
+    expect(export).to_be_visible()
+    page.route(
+        "**/api/evidence-summary",
+        lambda route: route.fulfill(json={"samples": [{"sample_key": "A"}]}),
+    )
+    export.click()
+    expect(page.locator("#inspector-export-dialog")).to_be_visible()
+    strategy = page.locator("#export-strategy")
+    expect(strategy).to_have_value("query")
+    assert strategy.evaluate(
+        "select => [...select.options].filter(o => !o.hidden).map(o => o.value)"
+    ) == ["query"]
+    expect(page.locator("#export-query")).to_be_visible()
 
 
 def test_istd_warning_distinguishes_confirmation_from_signal(analysis_feedback):

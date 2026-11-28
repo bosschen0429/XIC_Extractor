@@ -150,7 +150,6 @@ def publish_untargeted_outputs(
                         output_dir / EXPLANATION_ARTIFACT_NAME,
                         completed=completed,
                         peaks_by_sample=inputs.peaks_by_sample,
-                        alignment_config=inputs.alignment_config,
                         ms1_apex_mz_by_candidate=inputs.ms1_apex_mz_by_candidate,
                         precursor_mz_by_candidate=inputs.precursor_mz_by_candidate,
                         neutral_loss_by_tag=inputs.neutral_loss_by_tag,
@@ -463,7 +462,6 @@ def _write_batch_explanation(
             )
             for (_batch_id, completed), item in zip(batches, inputs, strict=True)
         ],
-        alignment_config=inputs[0].alignment_config,
         calibration=calibration,
         progress_callback=progress_callback,
     ) as replay:

@@ -1,7 +1,6 @@
 """Compact review preserves decisions while omitting unrequested audit and curves."""
 
 import hashlib
-import json
 import sqlite3
 from typing import get_args
 
@@ -20,7 +19,6 @@ from tests.untargeted_partition_fixtures import children_of
 from xic_extractor.alignment.cell_decision.owner import CellOrigin
 from xic_extractor.alignment_explanation.errors import ExplanationError
 from xic_extractor.alignment_explanation.reader import (
-    read_alignment_explanation,
     read_explanation_metadata,
     read_review_evidence,
 )
@@ -66,14 +64,11 @@ def test_summary_from_an_older_format_is_rejected_without_conversion(
         **explanation_discovery_facts(completed),
         peaks_by_sample=candidates,
         matrix_path=matrix,
-        alignment_config=config,
     )
     with sqlite3.connect(source) as db:
-        summary = json.loads(db.execute("SELECT payload FROM run").fetchone()[0])
-        summary["query_index_version"] = 2
-        db.execute("UPDATE run SET payload=?", (json.dumps(summary),))
+        db.execute("ALTER TABLE run ADD COLUMN query_index_version INTEGER")
     before = source.read_bytes()
-    with pytest.raises(ExplanationError, match="rerun"):
+    with pytest.raises(ExplanationError, match="請重新執行 Alignment"):
         read_review_evidence(source)
     assert source.read_bytes() == before
 
@@ -87,10 +82,10 @@ def test_written_cell_origin_has_exactly_two_classes() -> None:
 @pytest.mark.parametrize(
     "stale_content",
     [
-        "UPDATE cells SET support_origin='discovery_support' "
-        "WHERE group_id=(SELECT MIN(group_id) FROM cells)",
+        "ALTER TABLE cells ADD COLUMN risks BLOB",
+        "DROP TRIGGER peaks_fixed",
     ],
-    ids=["previous-support-origin-vocabulary"],
+    ids=["previous-cell-columns", "missing-constraint"],
 )
 def test_explanation_from_an_older_alignment_is_rejected_on_open(
     tmp_path, monkeypatch, stale_content
@@ -105,7 +100,6 @@ def test_explanation_from_an_older_alignment_is_rejected_on_open(
         **explanation_discovery_facts(completed),
         peaks_by_sample=candidates,
         matrix_path=matrix,
-        alignment_config=config,
     )
     read_explanation_metadata(source)
     with sqlite3.connect(source) as db:
@@ -130,18 +124,6 @@ def test_explanation_from_an_older_alignment_is_rejected_on_open(
         ({"group_ids": ("row-α",), "sample_ids": ("S2",)}, (5, 3, 1, 0), ("C2@S2",)),
         ({"mz_min": 500, "offset": 1, "limit": 2}, (5, 5, 4, 0), ("C3@S1", "C5@S1")),
         ({"rt_min": 99}, (5, 5, 0, 2), ()),
-        (
-            {"strategy": "sample", "seed": 19, "limit": 4},
-            (5, 5, 5, 0),
-            ("C3@S1", "", "C5@S1", "C1@S1 C2@S2"),
-        ),
-        (
-            {"strategy": "sample", "sample_ids": ("S2",), "limit": 1},
-            (5, 3, 3, 0),
-            ("C2@S2",),
-        ),
-        ({"strategy": "attention", "limit": 2}, (5, 5, 3, 0), ("", "C5@S1")),
-        ({"strategy": "attention", "sample_ids": ("S2",)}, (5, 3, 2, 0), ("", "C2@S2")),
     ],
 )
 def test_review_selection_keeps_witness_scope_and_counts(
@@ -170,9 +152,7 @@ def test_review_selection_keeps_witness_scope_and_counts(
             writer.add_candidate(cid, sid, precursor_mz=mz, **discovery(cid))
             peak, peak_rt = ("unrelated", 99) if cid == "C5" else (cid + "-obs", rt)
             writer.add_peak(sid, peak, (None, peak_rt, None))
-            writer.add_terminal(
-                cid, sid, variant="observed", hypothesis_id=cid, physical_peak_key=peak
-            )
+            writer.add_terminal(cid, sid, hypothesis_id=cid, physical_peak_key=peak)
         for gid, rid, keys in (
             ("G1", "row-α", [("C1", "S1"), ("C2", "S2")]),
             ("G2", None, [("C3", "S1")]),
@@ -200,20 +180,12 @@ def test_review_selection_keeps_witness_scope_and_counts(
                         for sid in sorted({s for _, s in keys} or {"S2"})
                     ],
                 )
-        writer.add_initial_group(
-            disposition="completed",
-            members=[
-                witness_member("S1", "C1", "C1-obs"),
-                witness_member("S2", "C4", "C4-obs"),
-            ],
-        )
         writer.finalize(
             explanation_summary(
                 {
                     "neutral_loss_by_tag": NEUTRAL_LOSS_BY_TAG,
                     "matrix_path": str(matrix),
                     "matrix_sha256": hashlib.sha256(matrix.read_bytes()).hexdigest(),
-                    "selection_evidence_capability": "recorded_decisions",
                 },
             )
         )
@@ -247,14 +219,8 @@ def test_default_review_keeps_values_and_query_without_curves(
         **explanation_discovery_facts(completed),
         peaks_by_sample=candidates,
         matrix_path=matrix,
-        alignment_config=config,
     )
-    summary = read_alignment_explanation(report)
-    assert summary["retention"] == "review"
-    assert summary["plot_evidence_capability"] == "metadata_only"
     candidate_id = candidates["S1"][0].peak_id
-    detail = read_alignment_explanation(report, candidate_id=candidate_id)
-    assert all("artifact" not in row for row in detail["method_assessments"])
     expected = sorted(
         (
             decision.subject.canonical_sample.sample_name,
@@ -270,7 +236,6 @@ def test_default_review_keeps_values_and_query_without_curves(
         for row in _cells(report).values()
     )
     assert actual == expected
-    assert all("observation" not in row for row in _cells(report).values())
     result = generate_report(
         report,
         selection=SelectionRequest(strategy="query", candidate_ids=(candidate_id,)),
@@ -281,7 +246,7 @@ def test_default_review_keeps_values_and_query_without_curves(
     with sqlite3.connect(report) as db:
         db.execute("DROP INDEX cells_sample_apex")
         db.execute(f"ALTER TABLE cells DROP COLUMN {missing_cell_column}")
-    with pytest.raises(InspectorError, match="rerun") as exc:
+    with pytest.raises(InspectorError, match="請重新執行 Alignment") as exc:
         generate_report(
             report,
             selection=SelectionRequest(strategy="query", candidate_ids=(candidate_id,)),
@@ -323,45 +288,14 @@ def test_accepted_competition_roundtrip_keeps_sample_attribution_and_values(tmp_
         row["sample_id"]: row for item in payload["items"] for row in item["samples"]
     }
     stored = _cells(report)
-    assert stored["G1", "S1"]["membership_risks"] == []
-    risk = stored["G1", "S2"]["membership_risks"][0]
-    assert risk["alternative_partition"] == [
-        [["S1", 500.0, 1.0]],
-        [["S2", 500.0, 1.1], ["S3", 500.0, 1.2]],
-    ]
-    assert risk["rt_estimate"]["method"] == "median_shift"
+    assert stored["G1", "S1"]["competition"] == []
+    assert stored["G1", "S2"]["risk_flags"] == ["accepted_competition"]
+    assert stored["G1", "S2"]["competition"] == [[["S3", 500.0, 1.2]]]
     assert rows["S1"]["risk_labels"] == []
     assert "可能改與 S3 1.20 min 同組" in rows["S2"]["risk_labels"]
     assert rows["S1"]["quantitative_value"] == 1000.0
     assert rows["S2"]["quantitative_value"] == 2000.0
     assert matrix.read_bytes() == original
-
-
-@pytest.mark.parametrize(
-    "field,value",
-    (
-        ("alternative_partition", ["not-a-group"]),
-        ("soft_contradictions", "shape_disagreement"),
-        ("rt_estimate", "median_shift"),
-        ("rt_estimate", {"method": "median_shift", "rt_min": True}),
-    ),
-)
-def test_persisted_membership_fields_reject_wrong_types(tmp_path, field, value):
-    import zlib
-
-    report, _ = _competition_review_report(tmp_path)
-    with sqlite3.connect(report) as db:
-        member, payload = db.execute(
-            "SELECT id,accepted_risk FROM members WHERE accepted_risk IS NOT NULL"
-        ).fetchone()
-        risk = json.loads(zlib.decompress(payload))
-        risk[field] = value
-        db.execute(
-            "UPDATE members SET accepted_risk=? WHERE id=?",
-            (zlib.compress(json.dumps(risk).encode()), member),
-        )
-    with pytest.raises((ExplanationError, ValueError), match="membership risk"):
-        read_review_evidence(report)
 
 
 def test_production_publication_automatically_includes_recorded_risk(
@@ -436,11 +370,9 @@ def test_production_publication_automatically_includes_recorded_risk(
     )
     assert outputs.evidence is not None
     assert outputs.evidence.matrix_path == outputs.matrix_tsv
-    evidence = read_review_evidence(outputs.evidence.report_path)
-    assert evidence.summary["retention"] == "review"
     cells = list(_cells(outputs.evidence.report_path).values())
     assert len(cells) == 2
-    assert sum(bool(cell["membership_risks"]) for cell in cells) == 1
+    assert sum(bool(cell["risk_flags"]) for cell in cells) == 1
     assert all(cell["value"] > 0 for cell in cells)
 
 
@@ -488,7 +420,7 @@ def test_named_cells_preserve_values_and_details_across_input_order(tmp_path):
 
 def test_named_cells_reject_duplicate_group_sample(tmp_path):
     path = tmp_path / "duplicate.sqlite"
-    with pytest.raises(ValueError, match="duplicate review cell"):
+    with pytest.raises(sqlite3.IntegrityError, match="UNIQUE constraint failed: cells"):
         with ExplanationReportWriter(path) as writer:
             writer.declare_samples([{"sample_key": "S1", "sample_stem": "S1"}])
             writer.add_final_group(
