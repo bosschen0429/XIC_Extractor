@@ -58,16 +58,9 @@ tests.
 ## Evidence Terms
 
 - `Trace`: intensity over retention time for a feature, target or candidate.
-- `PeakHypothesis`: a peak-picking candidate on one trace: a proposed peak, RT
-  window and integration basis before capture binds the selected peak.
-- `MeasuredPeakHypothesis`: one captured physical peak (`PeakObservation`) and
-  the method that proposes it (DDA CID-NL or MS1 observation). Targeted and
-  Untargeted share it after capture; its peak is the only holder of the
-  measurement.
 - `selected hypothesis`: the chosen `PeakHypothesis` and its audit context.
   Selection identifies the candidate a projection uses; it does not by itself
   grant counted detection or writer authority.
-- `EvidenceVector`: structured evidence used for scoring or model selection.
 - `IntegrationResult`: selected boundaries, area and integration diagnostics.
 - `DecisionRecord`: audit record of how evidence, gates, tie-breaks and
   projection authority produced a decision. It is not an LC-MS `Trace` and not
@@ -82,9 +75,6 @@ tests.
 - `CID-NL alignment workset`: compatible method subjects scheduled together so
   their observations reach the same grouping decision. Workset membership is
   computational scope, not chemical identity; see [Alignment](alignment.md).
-- `ProductionCellDecision`: the cell decision's value or typed no-write, with
-  its selected integration and provenance. Observations do not select delivered
-  values themselves. The Alignment writers read it directly.
 - cell `status`: in the Alignment cell tables, the origin of the cell's peak
   (`detected` when this injection has its own CID-NL support for the peak,
   `backfilled` when the peak is MS1-only, whichever search found it),
