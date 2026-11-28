@@ -6,13 +6,13 @@ from tests.alignment_drift_evidence_fixtures import (
     _known_reference_workbook,
 )
 from tests.owner_peak_fixtures import with_peak
+from tests.rt_calibration_fixtures import calibration_from_knots
 from xic_extractor.alignment.drift_evidence import (
     DriftEvidenceLookup,
     SampleDriftEvidence,
 )
 from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.alignment.sample_rt_calibration import (
-    BatchRtCalibration,
     BatchRtCalibrationAccumulator,
 )
 from xic_extractor.configuration.models import Target
@@ -66,7 +66,7 @@ def test_measured_istd_binding_uses_observed_peak_not_expected_rt() -> None:
         )
     bootstrap = base.with_sources(known_istd_reference=reference).bind_owners(owners)
     frozen = bootstrap.with_sample_calibration(
-        BatchRtCalibration.from_coordinate_knots(
+        calibration_from_knots(
             (
                 ("early", ((7.2, 7.0), (12.2, 12.0))),
                 ("late", ((8.2, 7.0), (13.2, 12.0))),

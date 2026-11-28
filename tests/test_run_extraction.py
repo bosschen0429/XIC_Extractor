@@ -6,13 +6,13 @@ from unittest.mock import Mock
 
 import pytest
 
+from tests.execution_fixtures import in_process_execution
 from xic_extractor.applications.targeted.application import TargetedApplicationExecution
 from xic_extractor.applications.targeted.output_boundary import (
     TargetedOutputBoundaryError,
 )
 from xic_extractor.configuration.execution_profile import (
     ExecutionProfile,
-    in_process_execution,
 )
 from xic_extractor.configuration.loader import PreparedTargetedConfig
 from xic_extractor.configuration.models import ConfigError, ExtractionConfig, Target

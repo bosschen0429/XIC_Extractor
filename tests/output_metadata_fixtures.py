@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from xic_extractor.configuration.execution_profile import in_process_execution
+from tests.execution_fixtures import in_process_execution
 from xic_extractor.configuration.models import ExtractionConfig
 
 

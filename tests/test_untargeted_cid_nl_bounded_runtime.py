@@ -27,6 +27,7 @@ from tests.cid_nl_raw_fixture import (
     _FakeThermoRaw,
 )
 from tests.discovery_peak_fixtures import representative_event
+from tests.execution_fixtures import in_process_execution
 from tests.untargeted_alignment_entry_fixtures import (
     PUBLISHED_TABLES,
     SETTINGS,
@@ -49,7 +50,6 @@ from tests.untargeted_partition_fixtures import (
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.configuration.execution_profile import (
     ExecutionProfile,
-    in_process_execution,
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     mint_untargeted_cid_nl_method_subject,

@@ -10,6 +10,7 @@ from tests.alignment_explanation_fixtures import (
     explanation_discovery_facts,
     explanation_summary,
     run_alignment_fixture,
+    write_alignment_explanation,
 )
 from tests.explanation_review_fixtures import (
     _competition_review_report,
@@ -25,9 +26,6 @@ from xic_extractor.alignment_explanation.reader import (
 from xic_extractor.alignment_explanation.review import SUPPORT_ORIGINS
 from xic_extractor.alignment_explanation.writer import (
     ExplanationReportWriter,
-)
-from xic_extractor.applications.untargeted.alignment_explanation_projection import (
-    write_alignment_explanation,
 )
 from xic_extractor.injection_timeline import InjectionSequence
 from xic_inspector.api import (

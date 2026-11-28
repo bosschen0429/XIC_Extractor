@@ -6,9 +6,9 @@ import pytest
 from tests.analysis_set_fixtures import (
     header,
 )
+from tests.execution_fixtures import in_process_execution
 from xic_extractor import raw_reader_errors
 from xic_extractor.analysis_set import discover_raw_files, select_analysis_set
-from xic_extractor.configuration.execution_profile import in_process_execution
 from xic_extractor.injection_timeline import (
     PerturbationPolicy,
     build_injection_timeline,

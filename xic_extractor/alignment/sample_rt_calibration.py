@@ -191,20 +191,6 @@ class BatchRtCalibration:
     knots: tuple[CalibrationKnot, ...]
     samples: Mapping[str, SampleRtCalibration]
 
-    @classmethod
-    def from_coordinate_knots(
-        cls, knots_by_sample: Sequence[tuple[str, tuple[tuple[float, float], ...]]]
-    ) -> BatchRtCalibration:
-        """Retain an already chosen map without claiming a new fit."""
-        return cls(
-            policy=RtCalibrationPolicy(),
-            knots=(),
-            samples={
-                sample: SampleRtCalibration(sample, "calibrated", knots)
-                for sample, knots in knots_by_sample
-            },
-        )
-
     def corrected_rt_min(self, owner: SampleLocalMS1Owner) -> float:
         """Use a bounded sample calibration, retaining raw RT outside its span."""
         return self.common_rt_min(owner.sample_stem, owner.peak.rt_apex_min)

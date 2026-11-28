@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.execution_fixtures import in_process_execution
 from xic_extractor.configuration import execution_profile as execution_settings
-from xic_extractor.configuration.execution_profile import in_process_execution
 from xic_extractor.configuration.models import ExtractionConfig
 
 

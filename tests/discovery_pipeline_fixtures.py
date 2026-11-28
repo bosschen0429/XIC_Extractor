@@ -8,8 +8,8 @@ from typing import Any, cast
 import numpy as np
 
 from tests.cid_nl_raw_fixture import fake_acquisition_source
+from tests.execution_fixtures import in_process_execution
 from xic_extractor.configuration.cid_nl_profile import NeutralLossProfile
-from xic_extractor.configuration.execution_profile import in_process_execution
 from xic_extractor.configuration.mass_recalibration import (
     MassRecalibration,
     MassRecalibrationResult,

@@ -229,14 +229,12 @@ def test_alignment_measurement_decides_admission_through_the_whole_run(
     """Discovery admits Clean2's peak and Alignment measures it again. A flat
     trace there holds no available peak, so the peak does not enter Alignment;
     an overlapping trace keeps the peak and its cell carries the review."""
+    from tests.alignment_explanation_fixtures import write_alignment_explanation
     from tests.alignment_pipeline_helpers import render
     from tests.cid_nl_runtime_fixtures import (
         load_plan_inputs,
         persist_discovery_batch,
         representative_precursors,
-    )
-    from xic_extractor.applications.untargeted.alignment_explanation_projection import (
-        write_alignment_explanation,
     )
 
     stems = ("Clean1", "Clean2")

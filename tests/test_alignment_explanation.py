@@ -14,6 +14,7 @@ from tests.alignment_explanation_fixtures import (
     explanation_discovery_facts,
     explanation_summary,
     run_alignment_fixture,
+    write_alignment_explanation,
 )
 from tests.untargeted_partition_fixtures import children_of
 from xic_extractor.alignment.result.application_result import (
@@ -31,9 +32,6 @@ from xic_extractor.alignment_explanation.reader import (
 )
 from xic_extractor.alignment_explanation.writer import (
     ExplanationReportWriter,
-)
-from xic_extractor.applications.untargeted.alignment_explanation_projection import (
-    write_alignment_explanation,
 )
 from xic_extractor.execution.result_store import StreamedResultStore
 from xic_extractor.immutable_sequence import ImmutableSequence

@@ -38,11 +38,6 @@ class ExecutionProfile:
     overlap_partitions: bool = True
 
 
-def in_process_execution() -> ExecutionProfile:
-    """Run everything in the calling process, for injected readers and tests."""
-    return ExecutionProfile(backend="thread", overlap_partitions=False)
-
-
 def load_execution_profile(
     *,
     parallel_workers: int | None = None,

@@ -37,6 +37,7 @@ from tests.owner_peak_fixtures import trace_peak
 from tests.processing_identity_no_raw_fixture import (
     build_processing_identity_no_raw_fixture,
 )
+from tests.rt_calibration_fixtures import calibration_from_knots
 from tests.untargeted_alignment_entry_fixtures import (
     SETTINGS,
     discover,
@@ -296,7 +297,6 @@ def test_backfill_query_and_empty_completion_keep_sample_rt_separate_from_group(
     tmp_path, monkeypatch, empty
 ):
     from xic_extractor.alignment.cid_nl_initial_grouping import regroup_cid_nl_grouping
-    from xic_extractor.alignment.sample_rt_calibration import BatchRtCalibration
     from xic_extractor.untargeted_execution.partition_composition import (
         group_acquired_partition,
     )
@@ -340,7 +340,7 @@ def test_backfill_query_and_empty_completion_keep_sample_rt_separate_from_group(
     )
     install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
     config = AlignmentConfig()
-    calibration = BatchRtCalibration.from_coordinate_knots(
+    calibration = calibration_from_knots(
         tuple(
             (stem, ((7.0 + offset, 7.0), (20.0 + offset, 20.0)))
             for stem, offset in shifts.items()

@@ -10,6 +10,7 @@ import pytest
 
 from tests.alignment_pipeline_helpers import _owner
 from tests.owner_peak_fixtures import with_peak
+from tests.rt_calibration_fixtures import calibration_from_knots
 from xic_extractor.alignment.band_grouping import group_peak_bands
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.grouping_workflow import (
@@ -17,7 +18,6 @@ from xic_extractor.alignment.grouping_workflow import (
 )
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 from xic_extractor.alignment.rt_frame import SampleRtFrame
-from xic_extractor.alignment.sample_rt_calibration import BatchRtCalibration
 from xic_extractor.configuration.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
 )
@@ -359,7 +359,7 @@ def test_grouping_uses_corrected_coordinates_for_separated_bands(
 
     owners = tuple(owner for group in groups for owner in group.owners)
     frame = SampleRtFrame(injections=InjectionSequence({f"S{i}": i for i in range(12)}))
-    calibration = BatchRtCalibration.from_coordinate_knots(
+    calibration = calibration_from_knots(
         tuple(
             (
                 owner.sample_stem,

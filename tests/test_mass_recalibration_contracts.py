@@ -70,12 +70,12 @@ def test_alignment_metadata_keeps_two_samples_probe_results(tmp_path, monkeypatc
     from tests.alignment_pipeline_helpers import candidate_id
     from tests.cid_nl_raw_fixture import _settings
     from tests.discovery_store_fixtures import single_peak_sample, write_discovery
+    from tests.execution_fixtures import in_process_execution
     from xic_extractor.alignment import AlignmentConfig
     from xic_extractor.applications.untargeted import application
     from xic_extractor.applications.untargeted.request import UntargetedRequest
     from xic_extractor.configuration.execution_profile import (
         UntargetedExecutionPolicy,
-        in_process_execution,
     )
     from xic_extractor.configuration.mass_recalibration import (
         MassRecalibrationResult,
