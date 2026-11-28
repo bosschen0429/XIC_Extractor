@@ -1,17 +1,20 @@
 # Presets
 
 Presets are named Discovery methods with their effective tuning and the
-retained Alignment runtime option. Presets are reproducibility and public
-behavior surfaces; a preset is not product authority by itself. Code lives in
-[`xic_extractor/presets/`](../../xic_extractor/presets/) and built-in TOML files
-in [`xic_extractor/presets/data/`](../../xic_extractor/presets/data/).
+retained Alignment runtime option. They are reproducibility and public
+behavior surfaces; a preset is not product authority by itself.
+
+| Question | Rule | Detail |
+| --- | --- | --- |
+| What does a preset hold? | Method intent only, no paths or worker counts. | [Contract](#contract) |
+| Are RAW masses corrected? | CID-NL presets default to lock-mass restoration. | [RAW mass recalibration](#raw-mass-recalibration) |
+| How do multi-tag presets combine? | OR or AND on one physical peak. | [CID-NL recipe binding](#cid-nl-recipe-binding) |
 
 ## Contract
 
-- Changing a default preset or silent resolver behavior changes public
-  behavior. It needs
-  [expected-diff framing](../agent/product-validation-contract.md#expected-diff-contract),
-  focused tests and relevant evidence.
+- Changing a default preset or silent resolver behavior is a public change
+  needing [expected-diff framing](../agent/product-validation-contract.md#expected-diff-contract),
+  focused tests and evidence.
 - Targeted and Untargeted processing use the shared physical signal owner;
   peak detection has no selectable mode.
 - A preset run is reproducible from documented CLI/config surfaces and run
@@ -19,23 +22,21 @@ in [`xic_extractor/presets/data/`](../../xic_extractor/presets/data/).
 - The TOML format carries method intent only: no RAW/output paths, worker
   counts or application state. `source` is derived on load and is never a TOML
   field or scientific identity.
-- `serialize_preset` and `save_preset` own portable export. Export resolves the
-  effective values, writes the existing TOML shape, and validates it through the
-  same parser intake uses. Tag order and combination are preserved, and an
-  invalid method leaves an existing destination intact.
-- Preset names carry no readiness claim. A successful run of any preset does
-  not assert product readiness.
+- Portable export resolves the effective values, writes the TOML shape and
+  validates it through the same parser intake uses. Tag order and combination
+  are preserved, and an invalid method leaves an existing destination intact.
+- Neither a preset name nor a successful preset run claims readiness.
 - A tag name contains no `;`: Discovery tables join a peak's tag names with
   it, so Alignment could not read such a name back.
 - A method label can wrap a strategy family for usability: `pt_pattern` means
   `delta_mass(pattern_id=pt)`. The preset layer never turns a label into a new
-  primitive strategy or ProductWriter authority.
+  primitive strategy or writer authority.
 
 ## RAW Mass Recalibration
 
 CID-NL Discovery presets default to `easy_ic_restore` when
-`[discovery].mass_recalibration` is absent. `DiscoverySettings` and
-`ExtractionConfig` use the same default for new execution.
+`[discovery].mass_recalibration` is absent; Discovery and extraction settings
+use the same default for new execution.
 
 The RAW adapter takes the median finite LM Correction from MS1 scans with
 Number of LM Found > 0 as each file's baseline. Each scan's shift in ppm is
@@ -69,13 +70,10 @@ the `samples` table of `discovery.sqlite`, the Alignment
 Saved `easy_ic_probe` results keep their original `a + b * LM` formula; a probe
 policy without its saved fit cannot be replayed and raises a read error.
 Re-analysis must select restoration or `none` explicitly. Direct `open_raw`
-callers default to `none`; QC and blank-library acquisition are unchanged.
-The built-in Pt Delta Mass presets select `easy_ic_restore` before feature
-construction. Their MS1 index, partner matching and XICs use the same restored
-coordinates. Delta Mass methods created in the Workbench write `easy_ic_restore`
-explicitly; a hand-written Delta Mass preset that omits the key still uses
-`none`. Delta Mass sidecars retain the per-sample restoration
-results; review reuses those results instead of estimating new baselines.
+callers default to `none`. Delta Mass methods created in the Workbench write
+`easy_ic_restore` explicitly; a hand-written Delta Mass preset that omits the
+key uses `none`. The built-in Pt presets restore before building features
+([Pt presets](discovery.md#pt-presets)).
 
 ## CID-NL Recipe Binding
 
@@ -90,13 +88,12 @@ invocation schema.
 | `full` | RAW -> Discovery -> finalized CID-NL batch -> canonical Matrix writer |
 | `align_only` | Existing Discovery index -> finalized CID-NL batch -> canonical Matrix writer |
 
-Multi-tag CID-NL presets combine tags by `union` (OR) or `intersection` (AND):
-
-- OR accepts any configured tag on the same physical peak.
-- AND requires every configured tag on that peak within one sample.
-- Alignment and Backfill apply the same requirement.
-- Different tag hits across samples can share a row when the physical peak
-  compatibility gates pass. Labels alone never establish identity.
+Multi-tag CID-NL presets combine tags by `union` (OR) or `intersection` (AND)
+on one physical peak within one sample
+([composite methods](discovery.md#cid-nl-support-relations)); Alignment and
+Backfill apply the same requirement. Different tag hits across samples can
+share a row when the physical compatibility gates pass; labels alone never
+establish identity.
 
 A built-in Alignment preset emits `alignment_backfill_cell_evidence.tsv` where
 the runner contract requires it.
@@ -105,11 +102,8 @@ publication.
 
 Normal Alignment rejects methods outside this CID-NL route. The Delta Mass
 Discovery path owns the Pt and Pt + CID-NL composite presets, and CID-NL
-binders reject them. Normal recipes reject the retired Standard Peak and
-Backfill-expansion keys; no replacement publication choice is exposed.
-
-A `[discovery]` table that still sets the removed `resolver_mode` key is
-rejected with a message naming it.
+binders reject them. Retired keys (Standard Peak, Backfill expansion,
+`resolver_mode`) are rejected by name.
 
 ## Delta Mass Parameters
 
@@ -123,10 +117,10 @@ profile. Export preserves the nested settings. See
 
 ## Tissue Validation Defaults
 
-The 8RAW validation set is a subset of the 85RAW tissue cohort. Both use the
-same `dna_dr` method and effective settings, including disabled blank
-qualification. Dataset selection changes the sample scope, not the method, and
-the runner keeps no second scientific preset. An explicit `--blank-library`
+The 8RAW validation set is a subset of the 85RAW tissue cohort, with the same
+`dna_dr` method and settings, blank qualification disabled; dataset selection
+changes the sample scope, not the method, and the runner keeps no second
+preset. An explicit `--blank-library`
 binds the same library in Discovery and Alignment; its suitability must be
 established separately. ISTD input follows the normal Alignment targets CSV,
 and resolved inputs are shown before RAW work. See
@@ -134,13 +128,18 @@ and resolved inputs are shown before RAW work. See
 
 ## Verification
 
-- `tests/test_presets_loader.py`, `tests/test_presets_builtins.py`,
-  `tests/test_presets_apply.py`, `tests/test_presets_serialization.py`
-- `tests/test_delta_mass_presets.py`
-- `tests/test_raw_mass_recalibration.py`, `tests/test_mass_recalibration_contracts.py`
+`tests/test_presets_loader.py`, `tests/test_presets_builtins.py`,
+`tests/test_presets_apply.py`, `tests/test_presets_serialization.py`,
+`tests/test_delta_mass_presets.py`, `tests/test_raw_mass_recalibration.py`,
+`tests/test_mass_recalibration_contracts.py`.
 
-## See Also
+See also [Parameter settings](../agent/local-execution.md) ·
+[Discovery](discovery.md) · [Signal processing](signal-processing.md) ·
+[Diagnostic ledger](../agent/diagnostic-ledger.md)
 
-- [Parameter settings](../agent/local-execution.md)
-- [Discovery](discovery.md) | [Signal processing](signal-processing.md)
-- [Diagnostic ledger](../agent/diagnostic-ledger.md)
+## Where The Code Lives
+
+| Rule | Module |
+| --- | --- |
+| Loader, binders, export (`serialize_preset`, `save_preset`); built-in TOML in [`data/`](../../xic_extractor/presets/data/) | [`xic_extractor/presets/`](../../xic_extractor/presets/) |
+| Default policy for new execution | `DiscoverySettings`, `ExtractionConfig` |
