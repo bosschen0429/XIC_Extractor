@@ -25,6 +25,7 @@ from tests.cid_nl_raw_fixture import (
     _settings,
 )
 from tests.cid_nl_runtime_fixtures import install_runtime_raws
+from tests.discovery_physical_measurement_fixtures import measured_peak_evaluations
 from tests.discovery_store_fixtures import SampleRecords, write_discovery
 from tests.untargeted_cid_nl_batch_runtime_fixtures import _nearby_subject_candidates
 from tests.untargeted_partition_fixtures import (
@@ -265,9 +266,8 @@ def profile_replay(tmp_path, monkeypatch, request):
             )
         )
         candidates[path.stem] = discovery.peaks
-        peak_evaluations = tuple(
-            zip(discovery.peaks, discovery.evaluations, strict=True)
-        )
+        evaluations = measured_peak_evaluations(discovery, profile)
+        peak_evaluations = tuple(zip(discovery.peaks, evaluations, strict=True))
         source_records.update(
             (peak.peak_id, evaluation) for peak, evaluation in peak_evaluations
         )
@@ -279,7 +279,7 @@ def profile_replay(tmp_path, monkeypatch, request):
                     evaluation.question.query_rt_min - padding_min,
                     evaluation.question.query_rt_min + padding_min,
                 )
-                for evaluation in discovery.evaluations
+                for evaluation in evaluations
             ]
             if not family_precursor_delta:
                 ((window_min, window_max),) = windows
@@ -310,7 +310,7 @@ def profile_replay(tmp_path, monkeypatch, request):
             assert len(family_peaks) == 1
             assert None not in family_peaks
             continue
-        (evaluation,) = discovery.evaluations
+        (evaluation,) = evaluations
         assert evaluation.answer.selected_segment is not None
         physical_peaks[path.stem] = evaluation.answer.selected_segment
     discovery_batch = read_discovery_batch(

@@ -11,6 +11,7 @@ from tests.discovery_ms1_capture_fixtures import (
     _settings,
 )
 from tests.discovery_peak_fixtures import representative_event
+from tests.discovery_physical_measurement_fixtures import measured_peak_evaluations
 from xic_extractor.discovery.ion_grouping import build_discovery_ions
 from xic_extractor.discovery.ms1_capture import capture_ms1_peaks
 from xic_extractor.peak_detection.chrom_peak_segments import local_apex_prominence
@@ -60,10 +61,10 @@ def test_bounded_capture_recovers_a_tail_window_without_admitting_a_far_tail_nl(
     assert len(result.peaks) == 1
     candidate = result.peaks[0]
     assert candidate.ms1_apex_rt == pytest.approx(5.0, abs=0.03)
-    facts = result.evaluations[0].answer.selected_segment
+    facts = measured_peak_evaluations(result, TEST_PROFILE)[0].answer.selected_segment
     assert facts.right_rt_min + 0.1 < representative_event(candidate).rt
     assert candidate.status == "no_nl_event"
-    assert result.reacquisition_request_count == 1
+    assert len(result.acquisition_batches) == 2
 
 
 def test_raw_zero_valley_keeps_a_smaller_nl_peak_separate_from_bigger_neighbor():

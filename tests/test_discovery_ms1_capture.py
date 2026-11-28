@@ -16,6 +16,7 @@ from tests.discovery_ms1_capture_fixtures import (
     _seed,
     _settings,
 )
+from tests.discovery_physical_measurement_fixtures import measured_peak_evaluations
 from xic_extractor.acquisition_contract import AcquisitionContractError
 from xic_extractor.discovery.ion_grouping import build_discovery_ions
 from xic_extractor.discovery.models import (
@@ -291,7 +292,7 @@ def test_ms1_peak_fields_are_filled_from_physical_facts() -> None:
         ms1_centroid=lambda *_: None,
     )
     (candidate,) = result.peaks
-    (evaluation,) = result.evaluations
+    (evaluation,) = measured_peak_evaluations(result, TEST_PROFILE)
     facts = evaluation.answer.selected_segment
     assert facts is not None
     assert candidate.ms1_apex_rt == pytest.approx(7.91)
@@ -657,8 +658,7 @@ def test_owner_acquisition_reads_overlapping_windows_once_with_exact_traces(
     batches = result.acquisition_batches
     runtime_metrics = _acquisition_totals(batches)
     acquired = [trace for batch in batches for trace in batch.traces]
-    assert result.initial_request_count == 2
-    assert result.reacquisition_request_count == 2
+    assert [len(batch.traces) for batch in batches] == [2, 2]
     assert runtime_metrics.logical_xic_request_count == 4
     assert runtime_metrics.adapter_chromatogram_call_count == 2
     for item in acquired:

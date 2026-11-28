@@ -73,19 +73,11 @@ class DiscoveryMs1Source(BatchXICAdapter, MS1MassWindowSource, Protocol):
 
 @dataclass(frozen=True, slots=True)
 class Ms1Capture:
-    """One sample's peaks, every event's attachment and the XIC reads behind them.
-
-    ``evaluations`` holds each peak's own measurement, in peak order. It stays
-    in the Discovery process; Alignment measures the peak again from RAW.
-    """
+    """One sample's peaks, every event's attachment and the XIC reads behind them."""
 
     peaks: tuple[DiscoveryPeak, ...]
     attachments: tuple[EventAttachment, ...]
-    evaluations: tuple[PhysicalPeakEvaluation, ...]
     acquisition_batches: tuple[TraceAcquisitionBatch, ...]
-    initial_request_count: int
-    reacquisition_request_count: int
-    remeasurement_request_count: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -140,11 +132,10 @@ def capture_ms1_peaks(
         located.setdefault(captured.work_ordinal, []).append(event)
         first_measurement.setdefault(captured.work_ordinal, captured)
 
-    ion_peaks = _ion_peaks(
-        physical_capture, first_measurement, located, ms1_centroid=ms1_centroid
-    )
     peaks: list[DiscoveryPeak] = []
-    for ion_peak in ion_peaks:
+    for ion_peak in _ion_peaks(
+        physical_capture, first_measurement, located, ms1_centroid=ms1_centroid
+    ):
         peak, peak_attachments = _discovery_peak(
             ion_peak, settings=settings, is_blank=is_blank
         )
@@ -153,11 +144,7 @@ def capture_ms1_peaks(
     return Ms1Capture(
         peaks=tuple(peaks),
         attachments=tuple(attachments),
-        evaluations=tuple(item.measurement.evaluation for item in ion_peaks),
         acquisition_batches=tuple(physical_capture.acquisition_batches),
-        initial_request_count=physical_capture.initial_request_count,
-        reacquisition_request_count=physical_capture.reacquisition_request_count,
-        remeasurement_request_count=physical_capture.remeasurement_request_count,
     )
 
 
