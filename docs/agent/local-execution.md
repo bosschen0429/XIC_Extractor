@@ -24,7 +24,6 @@ keep source changes and evidence in this checkout and ignored output/.
 Check a worktree after setup changes or an environment failure with:
 
     uv run --cache-dir .uv-cache --no-project python scripts/bootstrap_worktree.py --check --local --json
-    .venv\Scripts\python.exe -m scripts.agent_sandbox_doctor --strict --probe-write
 
 Bootstrap a new worktree once with:
 
