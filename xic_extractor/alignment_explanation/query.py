@@ -162,8 +162,8 @@ class ReviewQuery:
                 parameters[name] = bound
         return (
             f"WITH {_SCOPED}, "
-            f"selected AS (SELECT * FROM scoped WHERE {selected}), "
-            "matched AS (SELECT item, MAX(rt IS NOT NULL) AS has_rt, "
+            f"selected AS MATERIALIZED (SELECT * FROM scoped WHERE {selected}), "
+            "matched AS MATERIALIZED (SELECT item, MAX(rt IS NOT NULL) AS has_rt, "
             "(:rt_min IS NULL AND :rt_max IS NULL) OR MAX(rt IS NOT NULL "
             "AND (:rt_min IS NULL OR rt >= :rt_min) "
             "AND (:rt_max IS NULL OR rt <= :rt_max)) AS in_rt "
@@ -205,27 +205,28 @@ class ReviewQuery:
             rt_max=rt_max,
         )
         order = "sort_key" if review_scope == "all" else _PRIORITY
-        page = [
-            row[0]
-            for row in self._db.execute(
-                f"{matched} SELECT item FROM matched JOIN selected USING (item) "
-                f"WHERE in_rt ORDER BY {order} LIMIT :limit OFFSET :offset",
-                {**parameters, "limit": limit, "offset": offset},
-            )
-        ]
-        count, without_rt = self._db.execute(
-            f"{matched} SELECT COUNT(*) FILTER (WHERE in_rt), "
-            "COUNT(*) FILTER (WHERE NOT has_rt) FROM matched",
-            parameters,
-        ).fetchone()
+        rows = self._db.execute(
+            f"{matched} SELECT total.matched, total.without_rt, page.item FROM ("
+            "SELECT COUNT(*) FILTER (WHERE in_rt) AS matched, "
+            "COUNT(*) FILTER (WHERE NOT has_rt) AS without_rt FROM matched) total "
+            "LEFT JOIN (SELECT item, ROW_NUMBER() OVER win AS place "
+            "FROM matched JOIN selected USING (item) WHERE in_rt "
+            f"WINDOW win AS (ORDER BY {order}) "
+            "ORDER BY place LIMIT :limit OFFSET :offset) page ON 1 ORDER BY page.place",
+            {**parameters, "limit": limit, "offset": offset},
+        ).fetchall()
+        count, without_rt, _ = rows[0]
         filtered = rt_min is not None or rt_max is not None
         return (
-            page,
-            self._db.execute("SELECT COUNT(*) FROM review_items").fetchone()[0],
+            [item for _, _, item in rows if item is not None],
+            self._run_total(),
             self._eligible(parameters),
             count,
             without_rt if filtered else 0,
         )
+
+    def _run_total(self) -> int:
+        return self._db.execute("SELECT COUNT(*) FROM review_items").fetchone()[0]
 
     def nearest_page(
         self,
@@ -242,41 +243,40 @@ class ReviewQuery:
         matched, parameters = self._matched(
             scope, review_scope=review_scope, removed=removed, **criteria
         )
-        _, run_total, eligible, population, missing_rt = self.page(
-            scope, review_scope=review_scope, removed=removed, **criteria, limit=0
-        )
-        ranked = (
+        rows = self._db.execute(
             f"{matched}, first AS (SELECT item, mz FROM ("
             "SELECT item, mz, ROW_NUMBER() OVER ("
             "PARTITION BY item ORDER BY candidate_id, sample_key) AS witness_order "
             f"FROM review_witnesses WHERE {_IN_SAMPLES} "
             "AND item IN (SELECT item FROM matched WHERE in_rt)) "
             "WHERE witness_order = 1), "
-            "ranked AS (SELECT item, abs(mz - :mz) AS distance, sort_key "
-            "FROM first JOIN selected USING (item) WHERE mz > 0 AND mz < 9e999)"
+            "ranked AS MATERIALIZED (SELECT item, abs(mz - :mz) AS distance, sort_key "
+            "FROM first JOIN selected USING (item) WHERE mz > 0 AND mz < 9e999) "
+            "SELECT total.matched, total.without_rt, "
+            "(SELECT COUNT(*) FROM ranked), page.item, page.distance FROM ("
+            "SELECT COUNT(*) FILTER (WHERE in_rt) AS matched, "
+            "COUNT(*) FILTER (WHERE NOT has_rt) AS without_rt FROM matched) total "
+            "LEFT JOIN (SELECT item, distance, sort_key FROM ranked "
+            "ORDER BY distance, sort_key, item LIMIT :limit OFFSET :offset) page ON 1 "
+            "ORDER BY page.distance, page.sort_key, page.item",
+            {**parameters, "mz": mz, "limit": limit, "offset": offset},
+        ).fetchall()
+        population, without_rt, ranked_count, _, _ = rows[0]
+        distances = {item: distance for *_, item, distance in rows if item is not None}
+        filtered = (
+            criteria.get("rt_min") is not None or criteria.get("rt_max") is not None
         )
-        parameters = {**parameters, "mz": mz}
-        distances = dict(
-            self._db.execute(
-                f"{ranked} SELECT item, distance FROM ranked "
-                "ORDER BY distance, sort_key, item LIMIT :limit OFFSET :offset",
-                {**parameters, "limit": limit, "offset": offset},
-            )
-        )
-        (ranked_count,) = self._db.execute(
-            f"{ranked} SELECT COUNT(*) FROM ranked", parameters
-        ).fetchone()
-        if criteria.get("rt_min") is None and criteria.get("rt_max") is None:
+        if not filtered:
             population = self._eligible(
                 parameters,
                 f" AND item IN (SELECT item FROM scoped WHERE {_SCOPES[review_scope]})",
             )
         return (
             list(distances),
-            run_total,
-            eligible,
+            self._run_total(),
+            self._eligible(parameters),
             ranked_count,
-            missing_rt,
+            without_rt if filtered else 0,
             population - ranked_count,
             distances,
         )
