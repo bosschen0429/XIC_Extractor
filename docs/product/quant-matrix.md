@@ -59,7 +59,7 @@ collections use other names and cannot cross the delivery seam as if final.
   a past validation packet cannot authorize current values. Changing selected
   values needs the owning product contract and method-appropriate evidence.
 - The default `production` Matrix artifact is `alignment_matrix.tsv`; every
-  level also writes the [RT anchor table](rt-calibration.md#rt-anchor-table).
+  level also writes the [RT anchor table](rt-calibration.md#where-each-decision-lives).
   Alignment's method-neutral per-cell evidence is
   `alignment_explanation.sqlite`, published after the Matrix
   ([retained evidence](workbench.md#retained-evidence-and-diagnostics)).

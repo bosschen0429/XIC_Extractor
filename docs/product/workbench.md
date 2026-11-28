@@ -180,7 +180,7 @@ It cannot authorize a writer or prove readiness.
   Matrix can remain without a report.
 - **Aligned time.** Plots replay the final frozen calibration, never the
   bootstrap ISTD-reference fit; curves, apex and bounds use the same
-  [graded query](rt-calibration.md#graded-query-support). A sample with no
+  [graded query](rt-calibration.md#why-it-works-this-way). A sample with no
   estimate shows raw RT, labelled as such. Injection order is kept
   independently of ISTD-reference provenance. Display alignment cannot repair
   grouping built without the intended ISTD input.

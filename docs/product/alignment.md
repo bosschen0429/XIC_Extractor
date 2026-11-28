@@ -136,7 +136,7 @@ or in measured RT where the calibration supplies no bounded answer.
   full-band precursor span (capped at 10 ppm).
 - An under-equilibrated injection's peaks before 8.5 min first move to where
   they would elute without its
-  [early-segment shift](rt-calibration.md#early-segment-of-an-under-equilibrated-injection).
+  [early-segment shift](rt-calibration.md#why-it-works-this-way).
 - A band with at least six members and two direct peaks can seed its own
   [drift fit](rt-calibration.md#drift-beyond-the-map). In final grouping, seeds
   that one joint fit explains merge first: two seeds join when, after removing
