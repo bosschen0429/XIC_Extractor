@@ -6,13 +6,6 @@ ions that the solvent and the system emit in every injection.
 `--help` and the starter recipe (`--new`) describe the inputs, and the code and
 its tests own the tolerances, ranking and windows.
 
-| Decision | Owner | Tests |
-| --- | --- | --- |
-| Target protection and timed cuts | `exclusion_list.selection` | [`test_exclusion_list_selection.py`](../../tests/test_exclusion_list_selection.py) |
-| Background ranking and RT windows | `exclusion_list.background` | [`test_exclusion_list_background.py`](../../tests/test_exclusion_list_background.py) |
-| Recipe | `exclusion_list.recipe` | [`test_exclusion_list_recipe.py`](../../tests/test_exclusion_list_recipe.py) |
-| Build and CSV export | `exclusion_list.build`, `exclusion_list.export` | [`test_exclusion_list_cli.py`](../../tests/test_exclusion_list_cli.py) |
-
 ## Targets Always Win
 
 A row must never stop an ion that a method is meant to fragment. The

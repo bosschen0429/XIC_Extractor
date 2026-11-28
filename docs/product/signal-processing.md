@@ -5,17 +5,6 @@ qualification, boundaries and area. The code and its tests own the formula,
 parameters, thresholds and failure codes. Targeted measurement policy on top of
 these physical answers is in [Targeted Selection](targeted-selection.md).
 
-## Where Each Decision Lives
-
-| Decision | Owner | Tests |
-| --- | --- | --- |
-| Canonical profile and its parameters | `configuration.signal_processing_profile` | [`test_signal_processing_profile.py`](../../tests/test_signal_processing_profile.py) |
-| RT-aware AsLS baseline | `peak_detection.baseline` | [`test_baseline.py`](../../tests/test_baseline.py), [`test_baseline_integration.py`](../../tests/test_baseline_integration.py) |
-| Segments, separable valleys, envelopes | `peak_detection.chrom_peak_segments` | [`test_chrom_peak_segments.py`](../../tests/test_chrom_peak_segments.py) |
-| Qualification, boundaries, censored clusters, local relief, integration | `peak_detection.physical_peak_evaluation` | [`test_physical_peak_evaluation_behavior.py`](../../tests/test_physical_peak_evaluation_behavior.py) |
-| Short-scale noise and SNR | `peak_detection.signal_quality` | [`test_signal_quality.py`](../../tests/test_signal_quality.py) |
-| Shape-identity smoothing | `peak_detection.ms1_shape_identity` | |
-
 ## Canonical Signal
 
 Boundary detection, area, intensity, scan support and relative-shape

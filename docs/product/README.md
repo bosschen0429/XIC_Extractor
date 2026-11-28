@@ -54,9 +54,10 @@ If a topic page conflicts with an owner below, the owner wins.
 - **Evidence labels** are defined in the
   [product validation contract](../agent/product-validation-contract.md#evidence-labels).
 - **Writer authority**: see [Writer Authority](decision-policy.md#writer-authority).
-- **Where Each Decision Lives** tables name the owner module and its tests;
-  the code and tests are the executable contract, and topic pages keep only
-  boundaries, reasons, evidence and limits.
+- The code and its tests are the executable contract;
+  [module-ownership.md](../architecture/module-ownership.md) says which module
+  owns a behavior. Topic pages keep only boundaries, reasons, evidence and
+  limits.
 
 ## Writing Standard
 

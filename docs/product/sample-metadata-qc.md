@@ -6,17 +6,6 @@ surfaces because they affect ordering, grouping, review interpretation and
 future activation gates. The code and its tests own the schema, role words,
 lookup and matching rules; this page keeps the boundaries, reasons and limits.
 
-## Where Each Decision Lives
-
-| Decision | Owner | Tests |
-| --- | --- | --- |
-| Identity, roles, parsing, earlier role names | `xic_extractor.sample_metadata` | [`test_sample_metadata.py`](../../tests/test_sample_metadata.py), [`test_sample_metadata_auto_derivation.py`](../../tests/test_sample_metadata_auto_derivation.py) |
-| Sequence-document matching | `xic_extractor.sample_metadata` | [`test_sample_metadata_sequence_parsing.py`](../../tests/test_sample_metadata_sequence_parsing.py) |
-| RAW analysis set, names and injection order | `raw_reader.read_analysis_set` | [`test_analysis_set.py`](../../tests/test_analysis_set.py) |
-| Groups | `xic_extractor.sample_metadata` | [`test_sample_groups.py`](../../tests/test_sample_groups.py) |
-| Targeted sample checks | `extraction.pipeline` | [`test_targeted_sample_metadata.py`](../../tests/test_targeted_sample_metadata.py) |
-| Injection timeline diagnostic | [`tools.diagnostics.build_injection_timeline`](../../tools/diagnostics/build_injection_timeline.py) | [`test_injection_timeline.py`](../../tests/test_injection_timeline.py) |
-
 ## Boundaries
 
 - **Identity is the exact `sample_name`.** Order, role, batch, group and

@@ -9,19 +9,6 @@ tolerances, ranking order, label codes and position rules; this page keeps the
 boundaries, reasons and limits. For operation and result reading, start with
 the [Targeted guide](../user/targeted.md#看結果).
 
-## Where Each Decision Lives
-
-| Decision | Owner | Tests |
-| --- | --- | --- |
-| Per-Target specificity (MS1 only, CID-NL, Delta Mass) | `configuration.targeted_identification` | [`test_targeted_specificity.py`](../../tests/test_targeted_specificity.py) |
-| Retained population comparison and retention uncertainty | `peak_detection.targeted_context` | [`test_target_extraction.py`](../../tests/test_target_extraction.py) |
-| Candidate assessment, recorded-precursor rule, scoring, MS2 window | `extraction.targeted_peak_selection` | [`test_targeted_peak_selection.py`](../../tests/test_targeted_peak_selection.py) |
-| Tie-break order | `select_candidate_by_evidence` | [`test_candidate_evidence_selection.py`](../../tests/test_candidate_evidence_selection.py) |
-| Batch selection among retained regions | `extraction.targeted_batch_selection` | [`test_target_extraction.py`](../../tests/test_target_extraction.py) |
-| Paired-ISTD identity and rejection, counting, labels | `extraction.targeted_product_projection` (`paired_istd_positions`) | [`test_targeted_product_projection.py`](../../tests/test_targeted_product_projection.py) |
-| Row binding and cell subject; post-cell inclusion | `alignment.projection.target.pre_cell`, `post_cell` | [`test_target_pre_cell_projection.py`](../../tests/test_target_pre_cell_projection.py), [`test_target_post_cell_projection.py`](../../tests/test_target_post_cell_projection.py) |
-| Cell value or typed no-write | `ProductionCellDecision` | [`test_alignment_cell_decision.py`](../../tests/test_alignment_cell_decision.py) |
-
 ## Boundaries
 
 - **One lifecycle.** Targeted reuses the shared capture, grouping, Backfill

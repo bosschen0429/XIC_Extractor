@@ -232,7 +232,7 @@ stable because they identify existing data or public interfaces.
 
 | Word | Meaning | Not this word |
 | --- | --- | --- |
-| `backfill` | the bounded missing-cell revisit stage; each workflow's missing cell is defined by its [Backfill owner](backfill.md#where-each-decision-lives) | — |
+| `backfill` | the bounded missing-cell revisit stage; each workflow's missing cell is defined by the Backfill code; see [Backfill](backfill.md) | — |
 | `Matrix` | the finalized product-facing numeric feature-by-sample grid; see [Quant Matrix](quant-matrix.md) | a sample matrix; a pre-final cell collection |
 | `sample matrix` | the chemical background of a sample (clean standard, biological extract) | the product `Matrix` |
 | `SDO/LEK` | the lab's two-standard instrument-check set (SDO and LEK) | `SDOLEK` in prose |

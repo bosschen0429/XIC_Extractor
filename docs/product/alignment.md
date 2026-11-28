@@ -8,18 +8,6 @@ RT, and similar local shapes can support comparison, but none alone proves
 identity. The code and its tests own the link radius, costs, merge rules and
 thresholds; this page keeps the principles, reasons, evidence and limits.
 
-## Where Each Decision Lives
-
-| Decision | Owner | Tests |
-| --- | --- | --- |
-| Band linking across injections | `alignment.peak_band_linking` | [`test_peak_band_linking.py`](../../tests/test_peak_band_linking.py) |
-| Grouping runtime, drift seeds and relinking | `alignment.cid_nl_grouping` | [`test_cid_nl_initial_grouping.py`](../../tests/test_cid_nl_initial_grouping.py) |
-| Band consolidation | `alignment.band_identity` | [`test_band_identity.py`](../../tests/test_band_identity.py) |
-| Shape consistency | `alignment.shape_consistency` | [`test_shape_consistency.py`](../../tests/test_shape_consistency.py) |
-| Group identity, disposition and lineage | CrossSample | [`test_cross_sample_identity_lineage.py`](../../tests/test_cross_sample_identity_lineage.py), [`test_cross_sample_association_lineage.py`](../../tests/test_cross_sample_association_lineage.py) |
-| RT coordinates | [RT calibration](rt-calibration.md) | |
-| Missing-sample revisit | [Backfill](backfill.md#where-each-decision-lives) | |
-
 ## Terms
 
 | Term | Meaning in this document |

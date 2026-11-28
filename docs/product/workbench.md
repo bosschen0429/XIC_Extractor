@@ -8,18 +8,6 @@ page owns what review may and may not mean. The
 [Untargeted guide](../user/untargeted.md) own operation, `--help` owns command
 arguments, and the code and its tests own layout, views and interactions.
 
-## Where Each Decision Lives
-
-| Decision | Owner | Tests |
-| --- | --- | --- |
-| Launch, routes, setup and analysis jobs | `xic_workbench` | [`test_xic_workbench.py`](../../tests/test_xic_workbench.py), [`test_workbench_analysis.py`](../../tests/test_workbench_analysis.py), [`test_workbench_browser.py`](../../tests/test_workbench_browser.py) |
-| Saved review curves and RAW reads for the rest | `xic_workbench.review_curves`, `acquisition.review_xics` | [`test_review_curves.py`](../../tests/test_review_curves.py), [`test_xic_inspector_targeted_workbook.py`](../../tests/test_xic_inspector_targeted_workbook.py) |
-| Targeted and Untargeted adapters | `xic_workbench` | [`test_workbench_config.py`](../../tests/test_workbench_config.py), [`test_workbench_targeted.py`](../../tests/test_workbench_targeted.py), [`test_workbench_untargeted.py`](../../tests/test_workbench_untargeted.py) |
-| Offline report layout and interaction | `xic_inspector` | [`test_xic_inspector_html.py`](../../tests/test_xic_inspector_html.py), [`test_xic_inspector_curve_bundle.py`](../../tests/test_xic_inspector_curve_bundle.py) |
-| Inspector reads no RAW and is not imported by scientific packages | `xic_inspector` | [`test_xic_inspector_import_boundary.py`](../../tests/test_xic_inspector_import_boundary.py) |
-| Targeted reading order and 先看 counts | `summarize_targeted_results` | [`test_targeted_overview.py`](../../tests/test_targeted_overview.py) |
-| Frozen build resources | `packaging/xic_extractor.spec` | [`test_pyinstaller_spec.py`](../../tests/test_pyinstaller_spec.py) |
-
 ## Boundaries
 
 - **One path.** The GUI and script CLIs call the same application and

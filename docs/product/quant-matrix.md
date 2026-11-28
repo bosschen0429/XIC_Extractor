@@ -7,16 +7,6 @@ tests own the files, columns, status values and row rules; this page keeps the
 boundaries and reasons. For reading and curating the result, use the
 [user guide](../user/untargeted.md#整理矩陣).
 
-## Where Each Decision Lives
-
-| Decision | Owner | Tests |
-| --- | --- | --- |
-| Cell value or typed no-write | `ProductionCellDecision` | [`test_alignment_cell_decision.py`](../../tests/test_alignment_cell_decision.py) |
-| Row inclusion, identity and Matrix rendering | `output.alignment` | [`test_alignment_tsv_writer.py`](../../tests/test_alignment_tsv_writer.py), [`test_untargeted_final_matrix_contract.py`](../../tests/test_untargeted_final_matrix_contract.py) |
-| Output levels | `output.alignment.output_levels` | [`test_alignment_output_levels.py`](../../tests/test_alignment_output_levels.py) |
-| Area policy | [Signal processing](signal-processing.md#boundary-and-area-owners) | |
-| Targeted row binding | [Targeted selection](targeted-selection.md#where-each-decision-lives) | |
-
 ## Boundaries
 
 - **Final only.** The type name `Matrix` is reserved for the finalized shape;

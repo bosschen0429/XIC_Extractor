@@ -8,17 +8,6 @@ decisions, counted detection, peak identity or the source Matrix. The
 and its tests own each step's rules, thresholds and output columns. This page
 keeps the boundaries, reasons and limits no single module states.
 
-## Where Each Decision Lives
-
-| Decision | Owner | Tests |
-| --- | --- | --- |
-| Step order, preview and export, output tables and summary | `matrix_curation.export` (`STEPS`), `matrix_curation.steps` | [`test_matrix_curation.py`](../../tests/test_matrix_curation.py) |
-| Same-compound relations, evidence checks, representatives, ion families | `matrix_curation.same_compound` | [`test_same_compound.py`](../../tests/test_same_compound.py) |
-| Known nucleoside windows | `matrix_curation.known_nucleosides`, [built-in DNA dR list](../../xic_extractor/configuration/data/dna_dr_nucleosides.tsv) | [`test_matrix_curation.py`](../../tests/test_matrix_curation.py) |
-| Finite-value fraction | `matrix_curation.finite_fraction` | [`test_matrix_curation.py`](../../tests/test_matrix_curation.py) |
-| Internal-standard protection | `matrix_curation.istd` | [`test_same_compound.py`](../../tests/test_same_compound.py) |
-| Sample data sources | `matrix_curation.source`, `xic_workbench.matrix_curation` | [`test_analysis_curation_session.py`](../../tests/test_analysis_curation_session.py) |
-
 ## Boundaries
 
 - **Row selection only.** The kept Matrix is a row selection of a finalized

@@ -9,15 +9,6 @@ columns, labels and formats; this page keeps the boundaries and reasons. The
 [Targeted guide](../user/targeted.md#excel-結果) explains every column and
 label to users.
 
-## Where Each Decision Lives
-
-| Decision | Owner | Tests |
-| --- | --- | --- |
-| Sheets, columns, formats | `output.workbook_builder` and its `sheet_*` modules | [`test_excel_pipeline.py`](../../tests/test_excel_pipeline.py), [`test_excel_sheets_contract.py`](../../tests/test_excel_sheets_contract.py) |
-| `依據` and `疑點` labels and their look marks | `output.result_labels` | [`test_result_labels.py`](../../tests/test_result_labels.py) |
-| Worklist and 先看 order | `output.targeted_overview` | [`test_targeted_overview.py`](../../tests/test_targeted_overview.py) |
-| Saved-workbook reader | `xic_inspector.sources.targeted_workbook` | [`test_xic_inspector_targeted_workbook.py`](../../tests/test_xic_inspector_targeted_workbook.py) |
-
 ## Boundaries
 
 - **Readers bind named headers**, not column positions or a layout tag; human

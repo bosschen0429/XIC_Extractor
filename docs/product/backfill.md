@@ -8,18 +8,6 @@ The code and its tests own how each step works; this page keeps what no single
 module states: the boundaries across modules, the reasons behind them, and
 their limits.
 
-## Where Each Decision Lives
-
-| Decision | Owner | Tests |
-| --- | --- | --- |
-| Missing cell, group support gate, mapping (Untargeted) | `alignment.backfill.conservative` | [`test_alignment_conservative_backfill.py`](../../tests/test_alignment_conservative_backfill.py) |
-| Eligible questions, canonical subject, query RT and position basis | `alignment.backfill.cid_nl_planning` | |
-| Paired-offset and band localization, apex tolerance | `BandRtLocator.backfill_locations` | [`test_band_rt_location.py`](../../tests/test_band_rt_location.py) |
-| Method evidence reuse, search and competing attribution | `alignment.backfill.cid_nl_evidence` | [`test_cid_nl_multi_group_recovery.py`](../../tests/test_cid_nl_multi_group_recovery.py) |
-| Competing claims and physical view equivalence | `peak_detection.physical_peak_equivalence` | [`test_physical_peak_claim_completion.py`](../../tests/test_physical_peak_claim_completion.py) |
-| Cell value and no-write | `ProductionCellDecision` | [`test_alignment_cell_decision.py`](../../tests/test_alignment_cell_decision.py) |
-| Targeted reference group and recovery | `alignment.backfill.istd_anchored`, `extraction.targeted_istd_backfill` | |
-
 ## Boundaries Across Modules
 
 - **No new evidence.** A Backfill candidate never adds a direct SUPPORT vote,

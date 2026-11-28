@@ -8,18 +8,6 @@ thresholds, voting rules and output columns; this page keeps the boundaries,
 reasons, evidence and limits. [Alignment](alignment.md) describes how grouping
 consumes the frame.
 
-## Where Each Decision Lives
-
-| Decision | Owner | Tests |
-| --- | --- | --- |
-| Anchor observations both models read | `alignment.rt_anchors` | [`test_rt_anchors.py`](../../tests/test_rt_anchors.py) |
-| Knots, robust LOESS fit, ISTD landmark bound, graded query, RT anchor table | `alignment.sample_rt_calibration` | [`test_sample_rt_calibration.py`](../../tests/test_sample_rt_calibration.py) |
-| Known-ISTD RT correspondence | `alignment.drift_evidence` | [`test_alignment_drift_evidence.py`](../../tests/test_alignment_drift_evidence.py) |
-| Early segment of an under-equilibrated injection | `alignment.early_segment_shift` | [`test_early_segment_shift.py`](../../tests/test_early_segment_shift.py) |
-| Batch drift model (B, M, coefficients) | `alignment.rt_drift` | [`test_rt_drift.py`](../../tests/test_rt_drift.py) |
-| Declared batches and their pairing | `alignment.batch_correspondence` | [`test_batch_correspondence.py`](../../tests/test_batch_correspondence.py) |
-| Frozen map access for consumers | `SampleRtFrame` | |
-
 ## Boundaries
 
 - **Frozen once.** Each batch gets one frozen map from fixed bootstrap anchors;

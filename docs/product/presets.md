@@ -6,14 +6,6 @@ behavior surfaces; a preset is not product authority by itself. The code, the
 built-in TOML files and their tests own keys, defaults and routes; this page
 keeps the boundaries, reasons and limits.
 
-## Where Each Decision Lives
-
-| Decision | Owner | Tests |
-| --- | --- | --- |
-| Loading, binding, export | [`xic_extractor/presets/`](../../xic_extractor/presets/) | [`test_presets_loader.py`](../../tests/test_presets_loader.py), [`test_presets_apply.py`](../../tests/test_presets_apply.py), [`test_presets_serialization.py`](../../tests/test_presets_serialization.py) |
-| Built-in methods and every numeric choice | [`xic_extractor/presets/data/`](../../xic_extractor/presets/data/) | [`test_presets_builtins.py`](../../tests/test_presets_builtins.py), [`test_delta_mass_presets.py`](../../tests/test_delta_mass_presets.py) |
-| RAW mass recalibration | `configuration.mass_recalibration`, `raw_mass_recalibration` | [`test_raw_mass_recalibration.py`](../../tests/test_raw_mass_recalibration.py), [`test_mass_recalibration_contracts.py`](../../tests/test_mass_recalibration_contracts.py) |
-
 ## Boundaries
 
 - **Intent only.** A preset holds method intent: no paths, worker counts or
