@@ -210,23 +210,20 @@ It cannot authorize a writer or prove readiness.
 
 ## Browser and desktop boundaries
 
-- An offline report embeds data, not another round of template input: escape
-  every less-than sign in serialized JSON and substitute tokens in one pass, or
-  a value can end a script or become a host placeholder. SVG references stay
-  local to their mounted plot; a modal's tooltip belongs in the dialog's top
-  layer, not the main plot's stacking context.
-- The loopback server reuses HTTP connections for assets and status polls. It
-  closes a connection with an unread or unsupported body rather than parse its
-  tail as the next request, consumes a bounded body before rejecting its
-  headers to avoid a Windows reset during upload, and never acknowledges an
-  undelivered completion. The private launcher capability stays valid after the
-  browser loses its cookie.
-- State-file reads and writes are serialized: an outstanding Windows read can
-  deny replacement, and concurrent read-modify-write can lose an edit.
-  Read-only previews do not hold that lock.
-- `packaging/xic_extractor.spec` defines the frozen-build resource and
-  entry-point contract. Source tests verify the Python and resource contract
-  only; a frozen release is verified only by its artifact build and smoke run.
+Constraints the code does not state:
+
+- Offline report tokens are substituted in one pass, or a value can become a
+  host placeholder. SVG references stay local to their mounted plot; a modal's
+  tooltip belongs in the dialog's top layer, not the plot's stacking context.
+- The loopback server closes a connection with an unread or unsupported body
+  rather than parse its tail as the next request, consumes a bounded body
+  before rejecting its headers to avoid a Windows reset during upload, and
+  never acknowledges an undelivered completion.
+- State-file reads and writes are serialized because an outstanding Windows
+  read can deny replacement and concurrent read-modify-write can lose an edit;
+  read-only previews do not hold that lock.
+- A frozen release is verified only by its artifact build and smoke run;
+  source tests cover the Python and resource contract.
 
 ## Verification
 
