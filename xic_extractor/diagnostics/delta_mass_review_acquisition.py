@@ -27,9 +27,11 @@ from xic_extractor.diagnostics.delta_mass_review_data import (
     ReviewSpectrum,
 )
 from xic_extractor.discovery.models import DiscoveryEvent
-from xic_extractor.discovery.ms2_events import discovery_events_from_scan
+from xic_extractor.discovery.ms2_events import (
+    discovery_events_from_scan,
+    read_parent_ms1_observations,
+)
 from xic_extractor.discovery.store import DISCOVERY_ARTIFACT_NAME, open_discovery
-from xic_extractor.discovery.strict_event_receipts import read_parent_ms1_observations
 from xic_extractor.evidence.pt_envelope import EnvelopeTrace, compare_pt_envelope
 from xic_extractor.mass_accuracy import mz_tolerance_da
 from xic_extractor.peak_detection.cid_nl_method_assessment import (

@@ -18,10 +18,10 @@ from tests.cid_nl_raw_fixture import (
 def test_scan_event_prefers_independent_direct_loss_over_stronger_inference(
     tmp_path: Path, reverse_products: bool
 ) -> None:
-    from xic_extractor.discovery.ms2_events import discovery_events_from_scan
-    from xic_extractor.discovery.strict_event_receipts import (
+    from xic_extractor.discovery.event_evidence import (
         resolve_discovery_scan_events,
     )
+    from xic_extractor.discovery.ms2_events import discovery_events_from_scan
 
     source_raw = _FakeRaw((8.0,))
     products = (383.9526, 383.9826)

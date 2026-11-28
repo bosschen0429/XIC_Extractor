@@ -111,7 +111,6 @@ class DiscoveryPeak:
     ms1_apex_rt: float
     status: PeakStatus
     ms1_apex_mz: float | None = None
-    evidence_score: int = 0
     matched_tag_names: tuple[str, ...] = ()
     located_events: tuple[DiscoveryEvent, ...] = dataclass_field(
         default=(), compare=False

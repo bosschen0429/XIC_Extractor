@@ -87,7 +87,6 @@ def peak(
     neutral_loss_tag: str = "DNA_dR",
     best_ms2_scan_id: int = 1,
     status: str = "admitted",
-    evidence_score: int = 80,
     peak_id: str | None = None,
     **overrides: Any,
 ) -> DiscoveryPeak:
@@ -100,7 +99,6 @@ def peak(
         "attached_event_count": 0,
         "ms1_apex_rt": ms1_apex_rt,
         "status": status,
-        "evidence_score": evidence_score,
     }
     values.update(overrides)
     return DiscoveryPeak(**values)

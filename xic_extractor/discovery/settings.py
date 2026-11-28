@@ -8,15 +8,10 @@ from xic_extractor.configuration.cid_nl_profile import (
     NeutralLossProfile,
 )
 from xic_extractor.configuration.mass_recalibration import MassRecalibration
-from xic_extractor.discovery.evidence_config import (
-    DEFAULT_EVIDENCE_PROFILE,
-    DiscoveryEvidenceProfile,
-)
 
 
 @dataclass(frozen=True)
 class DiscoverySettings:
-    neutral_loss_profile: NeutralLossProfile | None = None
     neutral_loss_profiles: tuple[NeutralLossProfile, ...] = ()
     selected_tag_names: tuple[str, ...] = ()
     tag_combine_mode: Literal["single", "union", "intersection"] = "single"
@@ -33,7 +28,6 @@ class DiscoverySettings:
     ms1_search_padding_min: float = 0.35
     rt_min: float | None = None
     rt_max: float | None = None
-    evidence_profile: DiscoveryEvidenceProfile = DEFAULT_EVIDENCE_PROFILE
     enable_blank_qualification: bool = False
     blank_library_path: str | None = None
     blank_ppm_tol: float = 10.0
@@ -41,20 +35,11 @@ class DiscoverySettings:
     mass_recalibration: MassRecalibration = MassRecalibration.EASY_IC_RESTORE
 
     def __post_init__(self) -> None:
-        profiles = self.neutral_loss_profiles
-        if self.neutral_loss_profile is not None and (
-            not profiles or self.neutral_loss_profile != profiles[0]
-        ):
-            profiles = (self.neutral_loss_profile,) + profiles
-        object.__setattr__(self, "neutral_loss_profiles", profiles)
-        object.__setattr__(
-            self, "neutral_loss_profile", profiles[0] if profiles else None
-        )
         if not self.selected_tag_names:
             object.__setattr__(
                 self,
                 "selected_tag_names",
-                tuple(profile.tag for profile in profiles),
+                tuple(profile.tag for profile in self.neutral_loss_profiles),
             )
 
     @property

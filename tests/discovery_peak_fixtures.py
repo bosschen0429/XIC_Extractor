@@ -15,7 +15,6 @@ def _peak(**overrides: object) -> DiscoveryPeak:
         attached_event_count=1,
         ms1_apex_rt=7.841234,
         status="admitted",
-        evidence_score=50,
         matched_tag_names=("DNA_dR",),
     )
     return replace(peak, **overrides)  # type: ignore[arg-type]

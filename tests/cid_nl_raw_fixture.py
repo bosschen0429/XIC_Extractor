@@ -16,9 +16,11 @@ from xic_extractor.discovery.ion_grouping import build_discovery_ions
 from xic_extractor.discovery.ms1_capture import (
     capture_ms1_peaks,
 )
-from xic_extractor.discovery.ms2_events import collect_strict_nl_events
+from xic_extractor.discovery.ms2_events import (
+    collect_strict_nl_events,
+    read_parent_ms1_observations,
+)
 from xic_extractor.discovery.settings import DiscoverySettings
-from xic_extractor.discovery.strict_event_receipts import read_parent_ms1_observations
 from xic_extractor.mass_accuracy import mz_window
 from xic_extractor.ms2_scan_models import Ms2Scan, Ms2ScanEvent
 from xic_extractor.processing_identity import (
@@ -90,7 +92,7 @@ def fake_acquisition_source() -> AcquisitionSourceIdentity:
 
 def _settings() -> DiscoverySettings:
     return DiscoverySettings(
-        neutral_loss_profile=NeutralLossProfile("DNA_dR", NEUTRAL_LOSS_DA),
+        neutral_loss_profiles=(NeutralLossProfile("DNA_dR", NEUTRAL_LOSS_DA),),
         rt_min=7.5,
         rt_max=8.6,
         ms1_search_padding_min=0.20,

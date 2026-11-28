@@ -17,7 +17,6 @@ from tests.discovery_ms1_capture_fixtures import (
     _settings,
 )
 from xic_extractor.acquisition_contract import AcquisitionContractError
-from xic_extractor.discovery.evidence_score import score_discovery_evidence
 from xic_extractor.discovery.ion_grouping import build_discovery_ions
 from xic_extractor.discovery.models import (
     DiscoveryIon,
@@ -275,8 +274,7 @@ def test_capture_clamps_ms1_search_rt_min_to_zero() -> None:
     assert result.peaks == ()
 
 
-@pytest.mark.parametrize("scans_target", [10, 1000])
-def test_ms1_peak_fields_are_filled_from_physical_facts(scans_target: int) -> None:
+def test_ms1_peak_fields_are_filled_from_physical_facts() -> None:
     group = _channel(
         (
             _seed(scan_number=10, rt=7.80, product_intensity=3000.0),
@@ -284,42 +282,20 @@ def test_ms1_peak_fields_are_filled_from_physical_facts(scans_target: int) -> No
         )
     )
     raw = _peak_raw(center=7.91, height=900.0)
-    settings = _settings()
-    settings = replace(
-        settings,
-        evidence_profile=replace(
-            settings.evidence_profile,
-            thresholds=replace(
-                settings.evidence_profile.thresholds, scan_support_target=scans_target
-            ),
-        ),
-    )
     result = capture_ms1_peaks(
         raw,
         (group,),
         acquisition_source=raw.acquisition_source,
         signal_processing_profile=TEST_PROFILE,
-        settings=settings,
+        settings=_settings(),
         ms1_centroid=lambda *_: None,
     )
     (candidate,) = result.peaks
-    (binding,) = result.physical_bindings
-    facts = binding.physical_evaluation.answer.selected_segment
+    (evaluation,) = result.evaluations
+    facts = evaluation.answer.selected_segment
     assert facts is not None
     assert candidate.ms1_apex_rt == pytest.approx(7.91)
     assert candidate.ms1_apex_rt == facts.apex_rt_min
-    assert candidate.evidence_score == score_discovery_evidence(
-        attached_event_count=2,
-        ms1_event_delta_min=candidate.ms1_apex_rt - 7.90,
-        ms2_product_max_intensity=9000.0,
-        ms1_area=facts.area_counts_seconds,
-        ms1_scan_support_score=min(1.0, facts.scan_support_count / scans_target),
-        settings=settings,
-    )
-    if scans_target == 10:
-        assert facts.scan_support_count >= scans_target
-    else:
-        assert 0 < facts.scan_support_count < scans_target
     assert candidate.ms1_apex_rt - representative_event_rt(candidate) == (
         pytest.approx(0.01)
     )
@@ -597,17 +573,11 @@ def test_owner_acquisition_shares_identical_contexts_and_preserves_separate_wind
         ms1_centroid=lambda *_: None,
     )
 
-    measurements = result.measurements
-    runtime_metrics = _acquisition_totals(measurements.acquisition_batches)
-    assert measurements.input_ion_count == 3
-    assert measurements.input_event_count == 3
+    runtime_metrics = _acquisition_totals(result.acquisition_batches)
     assert runtime_metrics.logical_xic_request_count == 2
     assert runtime_metrics.xic_batch_count == 1
     assert runtime_metrics.adapter_chromatogram_call_count == 2
     assert runtime_metrics.trace_point_count == 42
-    assert measurements.exact_scan_window_count == 2
-    assert measurements.predicted_chunked_call_count == 2
-    assert measurements.batch_max_requests == 256
     assert [len(batch) for batch in raw.request_batches] == [2]
     assert raw.request_batches[0][0] != raw.request_batches[0][1]
 
@@ -642,15 +612,12 @@ def test_owner_acquisition_batches_distinct_contexts_at_256(
         ms1_centroid=lambda *_: None,
     )
 
-    metrics = _acquisition_totals(result.measurements.acquisition_batches)
+    metrics = _acquisition_totals(result.acquisition_batches)
     assert [len(batch) for batch in raw.request_batches] == [256, 1]
     assert metrics.logical_xic_request_count == 257
     assert metrics.xic_batch_count == 2
     assert metrics.adapter_chromatogram_call_count == 2
     assert metrics.trace_point_count == 5397
-    assert result.measurements.exact_scan_window_count == 1
-    assert result.measurements.predicted_chunked_call_count == 2
-    assert result.measurements.batch_max_requests == 256
 
 
 def test_owner_acquisition_reads_overlapping_windows_once_with_exact_traces(
@@ -687,13 +654,12 @@ def test_owner_acquisition_reads_overlapping_windows_once_with_exact_traces(
         ms1_centroid=lambda *_: None,
     )
 
-    batches = result.measurements.acquisition_batches
+    batches = result.acquisition_batches
     runtime_metrics = _acquisition_totals(batches)
     acquired = [trace for batch in batches for trace in batch.traces]
-    assert result.measurements.initial_request_count == 2
-    assert result.measurements.reacquisition_request_count == 2
+    assert result.initial_request_count == 2
+    assert result.reacquisition_request_count == 2
     assert runtime_metrics.logical_xic_request_count == 4
-    assert result.measurements.exact_scan_window_count == 4
     assert runtime_metrics.adapter_chromatogram_call_count == 2
     for item in acquired:
         exact = raw.exact_trace(item.coordinate.request)
@@ -770,7 +736,7 @@ def _candidates_from_raw(
 ) -> tuple[DiscoveryPeak, ...]:
     """Read parent MS1 and regroup by ion as the CID-NL search does."""
     from xic_extractor.discovery.ion_grouping import build_discovery_ions
-    from xic_extractor.discovery.strict_event_receipts import (
+    from xic_extractor.discovery.ms2_events import (
         read_parent_ms1_observations,
     )
 

@@ -244,7 +244,7 @@ def _integration_probe(hypothesis: PeakHypothesis) -> IntegrationResult:
 
 def _discovery_settings(*, ms1_search_padding_min: float) -> DiscoverySettings:
     return DiscoverySettings(
-        neutral_loss_profile=NeutralLossProfile("DNA_dR", _NEUTRAL_LOSS_DA),
+        neutral_loss_profiles=(NeutralLossProfile("DNA_dR", _NEUTRAL_LOSS_DA),),
         ms1_search_padding_min=ms1_search_padding_min,
     )
 

@@ -108,9 +108,7 @@ def test_production_batch_preserves_bounded_subject_membership(
 ) -> None:
     raw_path = tmp_path / "S1.synthetic"
     raw_path.write_bytes(b"production-batch:S1")
-    settings = replace(
-        _settings(), neutral_loss_profile=None, precursor_mz_tolerance_ppm=ppm
-    )
+    settings = replace(_settings(), precursor_mz_tolerance_ppm=ppm)
     from xic_extractor.configuration.cid_nl_profile import NeutralLossProfile
 
     candidates = tuple(

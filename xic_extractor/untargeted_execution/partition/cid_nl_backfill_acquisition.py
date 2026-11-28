@@ -20,8 +20,8 @@ from xic_extractor.alignment.cid_nl_inputs import UntargetedCidNlBackfillInput
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
+from xic_extractor.discovery.event_evidence import resolve_discovery_scan_events
 from xic_extractor.discovery.settings import DiscoverySettings
-from xic_extractor.discovery.strict_event_receipts import resolve_discovery_scan_events
 from xic_extractor.mass_accuracy import within_ppm
 from xic_extractor.peak_detection.cid_nl_candidate_set_relation import (
     DdaCidNlCandidateSetRelation,

@@ -60,10 +60,10 @@ def test_bounded_capture_recovers_a_tail_window_without_admitting_a_far_tail_nl(
     assert len(result.peaks) == 1
     candidate = result.peaks[0]
     assert candidate.ms1_apex_rt == pytest.approx(5.0, abs=0.03)
-    facts = result.physical_bindings[0].physical_evaluation.answer.selected_segment
+    facts = result.evaluations[0].answer.selected_segment
     assert facts.right_rt_min + 0.1 < representative_event(candidate).rt
     assert candidate.status == "no_nl_event"
-    assert result.measurements.reacquisition_request_count == 1
+    assert result.reacquisition_request_count == 1
 
 
 def test_raw_zero_valley_keeps_a_smaller_nl_peak_separate_from_bigger_neighbor():

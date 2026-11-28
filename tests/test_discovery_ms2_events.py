@@ -410,7 +410,7 @@ def test_multi_profile_seeds_of_one_ion_share_one_channel() -> None:
 
 def _settings(**overrides: float) -> DiscoverySettings:
     values = {
-        "neutral_loss_profile": NeutralLossProfile("DNA_dR", NEUTRAL_LOSS_DA),
+        "neutral_loss_profiles": (NeutralLossProfile("DNA_dR", NEUTRAL_LOSS_DA),),
         **overrides,
     }
     return DiscoverySettings(**values)

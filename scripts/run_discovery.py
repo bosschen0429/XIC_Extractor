@@ -12,7 +12,7 @@ from xic_extractor.configuration.models import ConfigError
 from xic_extractor.discovery.blank_qualification import (
     extract_blank_background_library,
 )
-from xic_extractor.discovery.pipeline import run_discovery, run_discovery_batch
+from xic_extractor.discovery.pipeline import run_discovery_batch
 from xic_extractor.discovery.processing_run_spec_adapter import (
     compile_discovery_processing_run_spec,
 )
@@ -125,23 +125,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(_bounded_run_spec_error(exc), file=sys.stderr)
         return 2
     try:
-        if raw_path is not None:
-            single_outputs = run_discovery(
-                run_spec,
-                output_dir=output_dir,
-                dll_dir=dll_dir,
-                timing_recorder=timing_recorder,
-            )
-            print(f"Discovery: {single_outputs.store}")
-        else:
-            batch_outputs = run_discovery_batch(
-                run_spec,
-                output_dir=output_dir,
-                dll_dir=dll_dir,
-                execution=execution_profile,
-                timing_recorder=timing_recorder,
-            )
-            print(f"Discovery: {batch_outputs.store}")
+        outputs = run_discovery_batch(
+            run_spec,
+            output_dir=output_dir,
+            dll_dir=dll_dir,
+            execution=execution_profile,
+            timing_recorder=timing_recorder,
+        )
+        print(f"Discovery: {outputs.store}")
     except (RawReaderError, DiscoveryProcessExecutionError) as exc:
         print(str(exc), file=sys.stderr)
         return 2
@@ -352,11 +343,13 @@ def _discovery_settings(args: argparse.Namespace) -> DiscoverySettings:
         ).discovery_settings
     elif args.feature_list is None:
         settings = DiscoverySettings(
-            neutral_loss_profile=NeutralLossProfile(
-                tag=args.neutral_loss_tag or "DNA_dR",
-                neutral_loss_da=args.neutral_loss_da
-                if args.neutral_loss_da is not None
-                else 116.0474,
+            neutral_loss_profiles=(
+                NeutralLossProfile(
+                    tag=args.neutral_loss_tag or "DNA_dR",
+                    neutral_loss_da=args.neutral_loss_da
+                    if args.neutral_loss_da is not None
+                    else 116.0474,
+                ),
             ),
             tag_combine_mode="single",
             **common,

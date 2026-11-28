@@ -163,9 +163,11 @@ def test_neutral_loss_mass_is_rejected_before_fingerprint(
     raw_path = tmp_path / "sample.raw"
     raw_path.write_bytes(b"not fingerprinted")
     settings = DiscoverySettings(
-        neutral_loss_profile=NeutralLossProfile(
-            "invalid",
-            invalid,  # type: ignore[arg-type]
+        neutral_loss_profiles=(
+            NeutralLossProfile(
+                "invalid",
+                invalid,  # type: ignore[arg-type]
+            ),
         )
     )
     monkeypatch.setattr(
@@ -257,7 +259,6 @@ def test_run_identity_does_not_inherit_packaged_blank_library(
     monkeypatch.setattr(blank, "_CACHED_DEFAULT_LIBRARY", None)
     settings = replace(
         _settings(),
-        neutral_loss_profile=None,
         enable_blank_qualification=True,
         blank_library_path=None,
     )
@@ -289,9 +290,7 @@ def test_bound_blank_snapshot_controls_each_sample_after_library_mutation(
         raw.write_bytes(name.encode())
         paths.append(raw)
         _write_bound_library(directory / "blank_library.json", intensity)
-    settings = replace(
-        _settings(), neutral_loss_profile=None, enable_blank_qualification=True
-    )
+    settings = replace(_settings(), enable_blank_qualification=True)
     spec = _compile_paths(tuple(paths), settings=settings)
     for path, intensity in zip(paths, (1.0, 1000.0), strict=True):
         _write_bound_library(path.parent / "blank_library.json", intensity)

@@ -478,7 +478,7 @@ def prepare_sample_method_seeds(
     raw: Any, window: Ms2Window, targets: list[Target]
 ) -> dict[float, tuple]:
     """Read shared parent facts once; retain alternatives for each target's mass."""
-    from xic_extractor.discovery.strict_event_receipts import (
+    from xic_extractor.discovery.ms2_events import (
         read_parent_ms1_observations,
     )
 

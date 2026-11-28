@@ -257,14 +257,14 @@ Physical trace context and precursor-identity confidence are separate. A
 `product_mz + neutral_loss` group starts with the configured RT context. When
 that trace is too short for the signal profile, Discovery reacquires context
 only when at least two MS2 seeds agree and their maximum product intensity
-reaches the profile's high-intensity threshold. Reacquisition keeps the
+reaches 100,000. Reacquisition keeps the
 original query m/z and tolerance. It answers the physical peak question; it
 does not upgrade precursor identity or grant Matrix authority.
 
 ### Shared measurements
 
 - Distinct ions can share one MS2 scan. Sharing a scan does not make their
-  peaks duplicates; evidence scoring ranks them without deleting either.
+  peaks duplicates; both are kept.
 - One ion's XIC can contain several physical peaks. Events are partitioned by the
   physical owner's peak selection. Events outside or between peaks stay in the
   event table with their reason and do not support another peak.

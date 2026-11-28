@@ -1,10 +1,8 @@
-from dataclasses import dataclass, replace
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
-from tests.discovery_peak_fixtures import _peak
 from xic_extractor.discovery.blank_qualification import (
     BlankBackgroundIon,
     BlankBackgroundLibrary,
@@ -186,12 +184,11 @@ def test_discovery_only_filters_background_when_explicitly_enabled(
     from xic_extractor.discovery.blank_qualification import (
         BlankBackgroundIon,
         BlankBackgroundLibrary,
+        deserialize_background_library,
     )
-    from xic_extractor.discovery.pipeline import _apply_blank_qualification_if_enabled
     from xic_extractor.discovery.processing_run_spec_adapter import (
         compile_discovery_processing_run_spec,
     )
-    from xic_extractor.execution.timing import TimingRecorder
 
     lib = BlankBackgroundLibrary(
         ions=(
@@ -211,30 +208,6 @@ def test_discovery_only_filters_background_when_explicitly_enabled(
         min_intensity=25000.0,
         source_blanks=("B1",),
     )
-
-    def peak(precursor_mz: float, height: float) -> _Binding:
-        return _Binding(
-            peak=_peak(
-                sample_stem="test",
-                peak_mz=precursor_mz,
-                attached_event_count=2,
-            ),
-            physical_evaluation=SimpleNamespace(
-                answer=SimpleNamespace(
-                    selected_segment=SimpleNamespace(
-                        height=height, area_counts_seconds=height
-                    )
-                )
-            ),
-            representative_event=SimpleNamespace(precursor_mz=precursor_mz),
-        )
-
-    c_background = peak(300.1002, 80000.0)
-    c_override = peak(400.2001, 400000.0)
-    c_clean = peak(550.3000, 150000.0)
-    c_doubly = peak(300.1001, 80000.0)
-    c_doubly = replace(c_doubly, peak=replace(c_doubly.peak, status="doubly_charged"))
-
     raw = tmp_path / "test.raw"
     raw.write_bytes(b"sample")
     lib.save_json(tmp_path / "blank_library.json")
@@ -248,21 +221,31 @@ def test_discovery_only_filters_background_when_explicitly_enabled(
         (raw,),
         discovery_settings=settings,
     )
-    assert (spec.acquisition_inputs[0].blank_library_content is not None) is enabled
-    qualified = _apply_blank_qualification_if_enabled(
-        (c_background, c_override, c_clean, c_doubly),
-        settings=settings,
-        timing_recorder=TimingRecorder.disabled("discovery"),
-        sample_stem="test",
-        acquisition_input=spec.acquisition_inputs[0],
-    )
-
-    if not enabled:
-        assert qualified == (c_background, c_override, c_clean, c_doubly)
+    content = spec.acquisition_inputs[0].blank_library_content
+    assert settings.enable_blank_qualification is enabled
+    assert (content is not None) is enabled
+    if content is None:
         return
 
-    assert qualified[0].peak == replace(c_background.peak, status="blank")
-    assert qualified[1:] == (c_override, c_clean, c_doubly)
+    bound = deserialize_background_library(content)
+    background = {
+        name: bound.is_background(
+            precursor_mz,
+            height,
+            ppm_tol=settings.blank_ppm_tol,
+            fold_change_threshold=settings.blank_fold_change_threshold,
+        )
+        for name, precursor_mz, height in (
+            ("below three times the blank", 300.1002, 80000.0),
+            ("above three times the blank", 400.2001, 400000.0),
+            ("no blank ion", 550.3000, 150000.0),
+        )
+    }
+    assert background == {
+        "below three times the blank": True,
+        "above three times the blank": False,
+        "no blank ion": False,
+    }
 
 
 def test_blank_library_gzip_serialization(tmp_path: Path) -> None:
@@ -425,7 +408,7 @@ def test_run_discovery_blank_dir_uses_current_blank_content(
     mock_outputs = MagicMock()
     mock_outputs.peaks_csv = Path("dummy.csv")
     monkeypatch.setattr(
-        "scripts.run_discovery.run_discovery",
+        "scripts.run_discovery.run_discovery_batch",
         lambda *args, **kwargs: mock_outputs,
     )
 
@@ -469,7 +452,6 @@ def test_run_discovery_explicit_disable_skips_blank_directory(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from types import SimpleNamespace
 
     from scripts.run_discovery import main
 
@@ -502,7 +484,7 @@ def test_run_discovery_explicit_disable_skips_blank_directory(
         "scripts.run_discovery.compile_discovery_processing_run_spec",
         compile_spec,
     )
-    monkeypatch.setattr("scripts.run_discovery.run_discovery", discover)
+    monkeypatch.setattr("scripts.run_discovery.run_discovery_batch", discover)
     assert (
         main(
             [
@@ -522,10 +504,3 @@ def test_run_discovery_explicit_disable_skips_blank_directory(
     assert len(settings_seen) == 2
     assert all(not settings.enable_blank_qualification for settings in settings_seen)
     assert not (output / "blank_library.json").exists()
-
-
-@dataclass(frozen=True)
-class _Binding:
-    peak: object
-    physical_evaluation: object
-    representative_event: object

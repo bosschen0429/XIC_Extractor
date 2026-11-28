@@ -71,7 +71,7 @@ def test_settings_validation_local_imports_keep_forbidden_modules_absent() -> No
                 return None
 
         settings = DiscoverySettings(
-            neutral_loss_profile=NeutralLossProfile("DNA_dR", 116.0474)
+            neutral_loss_profiles=(NeutralLossProfile("DNA_dR", 116.0474),)
         )
         sys.meta_path.insert(0, Blocker())
         owner.validate_cid_nl_discovery_settings(settings)
