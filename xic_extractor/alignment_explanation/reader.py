@@ -11,6 +11,7 @@ import json
 import sqlite3
 from collections import defaultdict
 from collections.abc import Iterable, Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -360,10 +361,13 @@ def read_review_evidence(
         )
 
 
-def read_explanation_metadata(path: Path) -> dict[str, Any]:
-    """Read the run without computing report-wide counts."""
+@contextmanager
+def open_explanation_run(
+    path: str | Path,
+) -> Iterator[tuple[sqlite3.Connection, dict[str, Any]]]:
+    """Keep metadata and the rows selected from it on the same open report."""
     with open_readonly(path) as connection:
-        return read_run(connection)
+        yield connection, read_run(connection)
 
 
 @dataclass(frozen=True, slots=True)
@@ -517,14 +521,20 @@ def read_row_cell_values(
 ) -> Iterator[tuple[str, str, float | None, str, float | None]]:
     """Read owner value, support origin and selected apex of the given rows."""
     with open_readonly(path, expected_attempt_id=expected_attempt_id) as db:
-        yield from db.execute(
-            "SELECT g.feature_id,s.sample_key,c.value,c.support_origin,c.apex_rt_min "
-            "FROM cells c JOIN groups g ON g.id=c.group_id "
-            "JOIN samples s ON s.id=c.sample "
-            "WHERE g.feature_id IN (SELECT value FROM json_each(?)) "
-            "ORDER BY c.group_id,c.sample",
-            (json.dumps(list(feature_ids)),),
-        )
+        yield from query_row_cell_values(db, feature_ids)
+
+
+def query_row_cell_values(
+    db: sqlite3.Connection, feature_ids: Iterable[str]
+) -> Iterator[tuple[str, str, float | None, str, float | None]]:
+    yield from db.execute(
+        "SELECT g.feature_id,s.sample_key,c.value,c.support_origin,c.apex_rt_min "
+        "FROM cells c JOIN groups g ON g.id=c.group_id "
+        "JOIN samples s ON s.id=c.sample "
+        "WHERE g.feature_id IN (SELECT value FROM json_each(?)) "
+        "ORDER BY c.group_id,c.sample",
+        (json.dumps(list(feature_ids)),),
+    )
 
 
 def read_alignment_explanation(
@@ -535,8 +545,7 @@ def read_alignment_explanation(
     A candidate is read with its terminal peak and exclusion; the groups it
     explains are read with their result rows and cells.
     """
-    with open_readonly(path) as connection:
-        summary = read_run(connection)
+    with open_explanation_run(path) as (connection, summary):
         if candidate_id is None:
             return {**summary, **read_counts(connection)}
         report = _Report(connection, summary, candidate_id=candidate_id)

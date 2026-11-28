@@ -573,11 +573,9 @@ def test_atomic_publication_preserves_ms1_peak_and_no_peak(
     output_level: str,
 ) -> None:
     """Areas scale 1:2:3:4 with the synthetic intensity factor."""
-    from xic_extractor.alignment_explanation.published_cells import (
-        read_published_cells,
-    )
     from xic_extractor.alignment_explanation.reader import read_review_evidence
     from xic_extractor.diagnostics.duplicate_quantification import (
+        read_published_cells,
         summarize_duplicate_quantification,
     )
 
@@ -659,8 +657,8 @@ def test_paired_batch_publication_binds_matrix_review_and_sqlite(tmp_path, monke
         BatchIstd,
         pair_grouped_batches,
     )
-    from xic_extractor.alignment_explanation.published_cells import read_published_cells
     from xic_extractor.alignment_explanation.reader import read_review_evidence
+    from xic_extractor.diagnostics.duplicate_quantification import read_published_cells
 
     stems = ("Old1", "Old2", "New1", "New2", "New3")
     paths = raw_paths(tmp_path, stems)

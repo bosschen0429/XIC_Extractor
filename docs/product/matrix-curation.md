@@ -21,7 +21,9 @@ keeps the boundaries, reasons and limits no single module states.
 - **Internal standards are always kept**, at every step.
 - **Labels are not identity.** A nucleoside label means a window match; an
   ion-form label is evidence-compatible, not identified; `feature_id` is scoped
-  to its Matrix.
+  to its Matrix. Steps that use the run's explanation require its Matrix
+  SHA-256 and, when declared, its processing attempt to match. Steps that use
+  only the Matrix do not require an explanation.
 - **A folder without its summary is an incomplete export.**
 
 ## Why It Works This Way

@@ -20,7 +20,7 @@ from tests.untargeted_partition_fixtures import children_of
 from xic_extractor.alignment.cell_decision.owner import CellOrigin
 from xic_extractor.alignment_explanation.errors import ExplanationError
 from xic_extractor.alignment_explanation.reader import (
-    read_explanation_metadata,
+    read_alignment_explanation,
     read_review_evidence,
 )
 from xic_extractor.alignment_explanation.review import SUPPORT_ORIGINS
@@ -99,11 +99,11 @@ def test_explanation_from_an_older_alignment_is_rejected_on_open(
         peaks_by_sample=candidates,
         matrix_path=matrix,
     )
-    read_explanation_metadata(source)
+    read_alignment_explanation(source)
     with sqlite3.connect(source) as db:
         db.execute(stale_content)
     with pytest.raises(ExplanationError, match="請重新執行 Alignment"):
-        read_explanation_metadata(source)
+        read_alignment_explanation(source)
     with pytest.raises(ExplanationError, match="請重新執行 Alignment"):
         read_review_evidence(source)
 

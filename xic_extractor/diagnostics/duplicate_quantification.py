@@ -7,12 +7,47 @@ This is a screening oracle over published values, not chemical identity.
 
 from __future__ import annotations
 
+import json
 from collections import Counter, defaultdict
 from collections.abc import Iterable, Mapping, Sequence
+from pathlib import Path
 from typing import Any
 
-from xic_extractor.alignment_explanation.published_cells import PublishedCell
+from xic_extractor.alignment_explanation.published_cells import (
+    PublishedCell,
+    read_matrix_evidence,
+)
+from xic_extractor.alignment_explanation.storage import EXPLANATION_ARTIFACT_NAME
 from xic_extractor.mass_accuracy import signed_ppm_error
+from xic_extractor.output.alignment.matrix_output_contract import (
+    MATRIX_NAME,
+    RUN_METADATA_NAME,
+    locate_matrix_identity,
+    read_matrix_identities,
+)
+from xic_extractor.tabular_io import read_tsv_with_header_snapshot
+
+
+def read_published_cells(alignment_dir: Path) -> tuple[PublishedCell, ...]:
+    """Read the Matrix row identities and their bound numeric cells for screening."""
+    run_path = alignment_dir / RUN_METADATA_NAME
+    run = json.loads(run_path.read_text(encoding="utf-8")) if run_path.is_file() else {}
+    header, matrix, digest = read_tsv_with_header_snapshot(
+        alignment_dir / MATRIX_NAME, required_columns=("Mz", "RT"), encoding="utf-8-sig"
+    )
+    identities = read_matrix_identities(
+        locate_matrix_identity(alignment_dir, run),
+        matrix_header=header,
+        matrix_rows=matrix,
+        matrix_digest=digest,
+    )
+    _, cells = read_matrix_evidence(
+        alignment_dir / EXPLANATION_ARTIFACT_NAME,
+        digest,
+        identities,
+        expected_attempt_id=run.get("processing_attempt_id"),
+    )
+    return cells
 
 
 def summarize_duplicate_quantification(

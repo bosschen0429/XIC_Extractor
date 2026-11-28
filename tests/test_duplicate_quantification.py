@@ -3,11 +3,9 @@ import pytest
 from tests.duplicate_quantification_fixtures import (
     publish_owner_run,
 )
-from xic_extractor.alignment_explanation.published_cells import (
-    PublishedCell,
-    read_published_cells,
-)
+from xic_extractor.alignment_explanation.published_cells import PublishedCell
 from xic_extractor.diagnostics.duplicate_quantification import (
+    read_published_cells,
     summarize_duplicate_quantification,
 )
 

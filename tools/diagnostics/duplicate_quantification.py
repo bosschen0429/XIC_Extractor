@@ -16,10 +16,8 @@ import json
 from collections.abc import Sequence
 from pathlib import Path
 
-from xic_extractor.alignment_explanation.published_cells import (
-    read_published_cells,
-)
 from xic_extractor.diagnostics.duplicate_quantification import (
+    read_published_cells,
     summarize_duplicate_quantification,
 )
 
