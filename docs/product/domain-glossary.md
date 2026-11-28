@@ -4,6 +4,15 @@ This file is the single stable vocabulary owner for XIC Extractor. Internal
 type names belong in their module docstrings; volatile status, counts and
 blockers belong in Issues and PRs.
 
+| Section | Defines |
+| --- | --- |
+| [Product Shape](#product-shape) | The shared lifecycle and how Targeted and Untargeted use it |
+| [Evidence Terms](#evidence-terms) | Traces, hypotheses, groups, cells and Discovery records; missing versus absent |
+| [LC-MS/MS Terms](#lc-msms-terms) | Instrument, method and RT-calibration vocabulary |
+| [Product Authority Terms](#product-authority-terms) | Authority, evidence status and expected-diff words |
+| [Lane Boundaries](#lane-boundaries) | What each workflow may share or must keep apart |
+| [One Word, One Meaning](#one-word-one-meaning) | Reserved words, forbidden synonyms and preserved spellings |
+
 ## Product Shape
 
 XIC Extractor is an LC-MS evidence and model-selection system. Peak choice,
@@ -36,8 +45,9 @@ core:
   groups, and projects established groups into the feature-by-sample Matrix for
   downstream preprocessing, calibration and statistics.
 - Targeted supplies an exact target list. It retains one fixed output row per
-  target and discards unrelated groups from that delivery. It does not need a
-  second capture, grouping, Backfill or cell-decision core.
+  target and discards unrelated groups from that delivery. Target lists and
+  method settings constrain the shared lifecycle; they create no second
+  capture, peak-identity, grouping, Backfill or cell-decision core.
 
 Shared does not mean method-blind: downstream owners can use typed provider
 provenance or an explicit provider strategy when the science requires it.
@@ -86,22 +96,14 @@ tests.
   counts, reasons and review routing. It never selects the cell value.
 - `feature_id`: in Alignment output, the report-scoped `F000001` label of one
   published group. It carries no identity across reports.
-- `Discovery ion`: one sample's CID-NL events grouped by their MS1-measured ion
-  within the precursor tolerance; tag, product and RT never split it. Its
-  `xic_mz` is the XIC center, read before acquisition.
-- `Discovery peak`: one physical MS1 peak on one ion's XIC, one row of the
-  `peaks` table in `discovery.sqlite`, identified by `peak_id`. Its `status` decides whether
-  it enters Alignment; its `peak_mz` is the peak's ion mass and the center of
-  the window that measured it (the apex reading
-  of an inferred precursor, else `xic_mz`), the one mass every consumer reads.
-- `Discovery event`: one strict NL event (MS2 scan, tag and product), one row
-  of the `events` table in `discovery.sqlite`. It names the peak it locates and records why it
-  does not attach there, or the physical reason it locates none.
+- `Discovery ion`, `Discovery peak`, `Discovery event`: one sample's CID-NL
+  events grouped by MS1-measured ion (XIC center `xic_mz`); one physical MS1
+  peak on that ion's XIC (`peak_id`, mass `peak_mz`, `status`); one strict NL
+  event (MS2 scan, tag and product). [Discovery](discovery.md#ions-peaks-and-events)
+  owns their rules.
 - `final Matrix`: the immutable grid produced after cell and row-inclusion
   decisions close. Pre-final collections use other names and cannot cross the
   Matrix interface.
-- `ProductWriter`: the exclusive approved code path for product-matrix
-  mutations; see [Writer Authority](decision-policy.md#writer-authority).
 - `Discovery record`: a retained sample-local observation and its
   qualification. A Discovery peak row is not by itself a feature for
   cross-sample grouping.
@@ -126,10 +128,9 @@ tests.
 
 Evidence providers include CID-NL, HCD-PI, Delta Mass, RT/iRT, MS1 shape,
 standards, library matches, trace overlays, review labels and future models.
-`delta_mass` is the Discovery strategy family for MS1 mass-difference
-patterns; `pt` / `Pt pattern` is its first concrete pattern; `pt_pattern` is a
-method or preset label. Composites such as `pt_pattern + cid_nl(dR)` intersect
-providers and do not become product authority by themselves.
+`pt_pattern` is a method or preset label for the first `delta_mass` pattern
+(`pt`, see Pt pattern below). Composites such as `pt_pattern + cid_nl(dR)`
+intersect providers and do not become product authority by themselves.
 
 ### Missing, absent and failed
 
@@ -214,8 +215,6 @@ selected area and counted detection.
 
 Targeted lane:
 
-- Target lists and method settings constrain the shared lifecycle; they do not
-  create a separate peak-identity or Backfill system.
 - The Targeted workbook is its own delivery contract. It does not require an
   analytical downstream reader when no such consumer exists.
 - Limited Targeted rescue produces `detected_flagged` only where explicitly
