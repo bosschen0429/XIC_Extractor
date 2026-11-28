@@ -25,6 +25,7 @@ from xic_extractor.peak_detection.chrom_peak_segments import (
     locate_chrom_peaks,
     measure_chrom_peak_components,
 )
+from xic_extractor.peak_detection.integration import integrate_area_counts_seconds
 from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_extractor.peak_detection.ms1_morphology import (
     canonical_gaussian_signal_traces,
@@ -509,8 +510,7 @@ def _censoring_aware_segments(
             apex_rt_min=float(rt[apex]),
             height=float(signal[apex]),
             scan_support_count=right - left,
-            area_counts_seconds=float(np.trapezoid(raw[left:right], rt[left:right]))
-            * 60.0,
+            area_counts_seconds=integrate_area_counts_seconds(raw, rt, left, right),
             evidence_sources=("local_hit_density_enrichment", "near_detection_limit"),
             raw_component=(
                 RawPeakComponent(
@@ -947,7 +947,7 @@ def _physical_raw_descriptor_projection(
     if len(rt) < 2 or len(raw) != len(rt):
         raise ValueError("selected physical segment cannot mint a raw descriptor")
     raw_apex_offset = int(np.argmax(raw))
-    raw_area_counts_seconds = float(np.trapezoid(raw, rt)) * 60.0
+    raw_area_counts_seconds = integrate_area_counts_seconds(raw, rt, 0, len(rt))
     censored = "near_detection_limit" in selected.evidence_sources
     return IntegrationResult(
         rt_left_min=selected.left_rt_min,

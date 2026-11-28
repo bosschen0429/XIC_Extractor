@@ -195,7 +195,9 @@ def integrate_asls_baseline(
     segment_rt = rt[left_index:right_index]
     baseline_segment = full_baseline[left_index:right_index]
     corrected = np.maximum(segment - baseline_segment, 0.0)
-    corrected_area = _area_counts_seconds(corrected, segment_rt)
+    corrected_area = integrate_area_counts_seconds(
+        corrected, segment_rt, 0, len(corrected)
+    )
     raw_area = integrate_area_counts_seconds(intensity, rt, left_index, right_index)
     _baseline_values, residual_mad = compute_asls_residual_mad(
         intensity,
@@ -265,10 +267,6 @@ def bounded_trace_interval(
     bounded_left = max(0, min(left_index, n_points - 2))
     bounded_right = max(bounded_left + 2, min(right_index, n_points))
     return bounded_left, bounded_right
-
-
-def _area_counts_seconds(values: np.ndarray, rt_values: np.ndarray) -> float:
-    return float(np.trapezoid(values, rt_values)) * 60.0
 
 
 def compute_asls_residual_mad(
