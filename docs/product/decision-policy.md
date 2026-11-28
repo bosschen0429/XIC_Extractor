@@ -277,8 +277,8 @@ seed-quality feature, not same-peak proof.
 
 ## Decision Records
 
-A new or promoted decision path must emit or preserve enough to reconstruct
-its policy:
+New or promoted decision paths should emit or preserve enough information to
+reconstruct the policy:
 
 | Field class | Examples |
 | --- | --- |
