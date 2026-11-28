@@ -12,6 +12,7 @@ from typing import Any, Literal
 
 from xic_extractor.alignment_explanation.storage import (
     EXPLANATION_ARTIFACT_NAME,
+    require_matrix_binding,
 )
 from xic_inspector.errors import InspectorCancelled as InspectorCancelled
 from xic_inspector.errors import InspectorError as InspectorError
@@ -437,13 +438,21 @@ def prepare_report(
             raise InspectorError(4, f"Bound matrix file missing: {matrix_file}")
         with matrix_file.open("rb") as handle:
             actual_matrix_sha256 = hashlib.file_digest(handle, "sha256").hexdigest()
-        expected_matrix_sha256 = summary.get("matrix_sha256")
-        if actual_matrix_sha256 != expected_matrix_sha256:
-            raise InspectorError(
-                4,
-                f"Matrix SHA-256 mismatch: expected {expected_matrix_sha256}, "
-                f"got {actual_matrix_sha256}",
+        try:
+            require_matrix_binding(
+                summary,
+                actual_matrix_sha256,
+                expected_attempt_id=expected_source.processing_attempt_id
+                if isinstance(expected_source, EvidenceLocator)
+                else None,
             )
+        except ExplanationError as exc:
+            message = (
+                f"Source does not match expected_source contract: {exc}"
+                if expected_source
+                else str(exc)
+            )
+            raise InspectorError(4, message, cause=exc) from exc
         source_locator = EvidenceLocator(
             report_path=report_path,
             matrix_path=matrix_file,
@@ -456,7 +465,6 @@ def prepare_report(
         if (
             expected_source.report_path.resolve() != src.report_path
             or expected_source.matrix_path.resolve() != src.matrix_path
-            or expected_source.processing_attempt_id != src.processing_attempt_id
         ):
             raise InspectorError(4, "Source does not match expected_source contract")
 

@@ -52,7 +52,10 @@ from xic_extractor.matrix_curation.steps import (
     StepResult,
     StepTable,
 )
-from xic_extractor.output.alignment.matrix_output_contract import read_matrix_identities
+from xic_extractor.output.alignment.matrix_output_contract import (
+    MatrixRowIdentity,
+    read_matrix_identities,
+)
 from xic_extractor.sample_metadata import (
     SAMPLE_METADATA_COLUMNS,
     SAMPLE_METADATA_SCHEMA_VERSION,
@@ -82,24 +85,6 @@ DECISION_KEY_COLUMNS = (
 )
 
 
-def _run_evidence(source: CurationSource) -> tuple[dict[str, Any], str]:
-    """Published method metadata, or why the explanation is unavailable."""
-    from xic_extractor.alignment_explanation.errors import ExplanationError
-    from xic_extractor.alignment_explanation.reader import (
-        read_explanation_metadata,
-    )
-
-    if source.explanation_path is None:
-        return {}, (
-            f"資料夾中沒有 {EXPLANATION_ARTIFACT_NAME}，無法取得每格的直接偵測證據；"
-            "請重新執行 Alignment 產生新輸出。"
-        )
-    try:
-        return read_explanation_metadata(source.explanation_path), ""
-    except ExplanationError as exc:
-        return {}, f"無法讀取 {EXPLANATION_ARTIFACT_NAME}：{exc}"
-
-
 def _curation_inputs(
     source: CurationSource,
     binding: SampleBinding,
@@ -107,7 +92,8 @@ def _curation_inputs(
     selected_list: Path | None,
     *,
     matrix_digest: str | None = None,
-) -> CurationInputs:
+    cell_rows: Sequence[MatrixRowIdentity] = (),
+) -> tuple[CurationInputs, tuple[dict[str, CellEvidence], ...]]:
     reference = (
         NucleosideList(selected_list, f"自訂清單：{selected_list.name}")
         if selected_list
@@ -115,13 +101,36 @@ def _curation_inputs(
     )
     lookup = KNOWN_NUCLEOSIDES_STEP in steps and reference is None
     if not lookup and not any(step.needs_cell_evidence for step in steps):
-        return CurationInputs(binding, nucleoside_list=reference)
-    metadata, problem = _run_evidence(source)
-    if lookup and (builtin := method_nucleosides(metadata.get("neutral_loss_by_tag"))):
-        digest = matrix_digest or file_sha256(source.matrix_path)
-        if digest.lower() == metadata.get("matrix_sha256"):
-            reference = builtin
-    return CurationInputs(binding, problem, reference)
+        return CurationInputs(binding, nucleoside_list=reference), ()
+    if source.explanation_path is None:
+        problem = (
+            f"資料夾中沒有 {EXPLANATION_ARTIFACT_NAME}，無法取得每格的直接偵測證據；"
+            "請重新執行 Alignment 產生新輸出。"
+        )
+        return CurationInputs(binding, problem, reference), ()
+    from xic_extractor.alignment_explanation.errors import ExplanationError
+    from xic_extractor.alignment_explanation.published_cells import read_matrix_evidence
+
+    try:
+        metadata, published_cells = read_matrix_evidence(
+            source.explanation_path,
+            matrix_digest or file_sha256(source.matrix_path),
+            cell_rows,
+            expected_attempt_id=source.processing_attempt_id,
+        )
+    except ExplanationError as exc:
+        return CurationInputs(
+            binding, f"無法讀取 {EXPLANATION_ARTIFACT_NAME}：{exc}", reference
+        ), ()
+    if lookup:
+        reference = method_nucleosides(metadata.get("neutral_loss_by_tag"))
+    cells: tuple[dict[str, CellEvidence], ...] = tuple({} for _ in cell_rows)
+    for cell in published_cells:
+        if cell.value is not None:
+            cells[cell.row - 1][cell.sample] = CellEvidence(
+                origin=cell.origin, value=cell.value, apex_rt_min=cell.apex_rt_min
+            )
+    return CurationInputs(binding, nucleoside_list=reference), cells
 
 
 def read_run_istd(source: CurationSource) -> tuple[MzRtWindow, ...] | None:
@@ -132,29 +141,6 @@ def read_run_istd(source: CurationSource) -> tuple[MzRtWindow, ...] | None:
         return windows_from_target_snapshot(source.target_snapshot)
     except ValueError:
         return None
-
-
-def load_cell_evidence(
-    source: CurationSource, features: Sequence[FeatureIdentity]
-) -> tuple[dict[str, CellEvidence], ...]:
-    """Published cells of each Matrix row, keyed by explanation sample."""
-    from xic_extractor.alignment_explanation.published_cells import (
-        read_published_cells,
-    )
-
-    by_feature: dict[str, dict[str, CellEvidence]] = {
-        feature.feature_id: {} for feature in features
-    }
-    for cell in read_published_cells(source.source_dir):
-        row = by_feature.get(cell.feature_id)
-        if row is None or cell.value is None:
-            continue
-        row[cell.sample] = CellEvidence(
-            origin=cell.origin,
-            value=cell.value,
-            apex_rt_min=cell.apex_rt_min,
-        )
-    return tuple(by_feature[feature.feature_id] for feature in features)
 
 
 def default_output_dir(source: CurationSource) -> Path:
@@ -240,7 +226,7 @@ def describe_steps(
             path=source.matrix_path,
             required_columns=("Mz", "RT"),
         )
-    inputs = _curation_inputs(
+    inputs, _ = _curation_inputs(
         source,
         bind_samples(header[2:], metadata, missing=missing_samples),
         STEPS,
@@ -342,8 +328,13 @@ def prepare_matrix_curation(
         header[2:], sample_metadata, missing="找不到樣本資料；請選擇樣本資料 TSV。"
     )
     needs_cells = any(step.needs_cell_evidence for step in enabled)
-    inputs = _curation_inputs(
-        source, binding, enabled, nucleoside_list, matrix_digest=matrix_digest
+    inputs, cells = _curation_inputs(
+        source,
+        binding,
+        enabled,
+        nucleoside_list,
+        matrix_digest=matrix_digest,
+        cell_rows=identities if needs_cells else (),
     )
     for step in enabled:
         reason = step.unavailable_reason(inputs)
@@ -371,7 +362,7 @@ def prepare_matrix_curation(
         values=values,
         features=features,
         nucleoside_windows=read_nucleoside_list(enabled_list) if enabled_list else (),
-        cells=load_cell_evidence(source, features) if needs_cells else None,
+        cells=cells if needs_cells else None,
     )
     windows = tuple(istd_windows or ())
     istd_labels = [

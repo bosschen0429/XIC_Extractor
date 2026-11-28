@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -12,6 +13,7 @@ from tests.matrix_curation_fixtures import (
     alignment_output,
     sample_payload,
     sample_rows,
+    write_cell_evidence,
 )
 from xic_extractor.sample_metadata import SAMPLE_METADATA_COLUMNS
 from xic_extractor.tabular_io import read_tsv_with_header, write_tsv
@@ -76,6 +78,51 @@ def _write_features(tmp_path, observations):
         encoding="utf-8",
     )
     return matrix
+
+
+@pytest.mark.parametrize(
+    "same_matrix", [False, True], ids=["different-matrix", "different-attempt"]
+)
+def test_foreign_explanation_cannot_supply_cells_to_matrix_curation(
+    tmp_path, same_matrix, capsys
+):
+    from scripts.run_matrix_curation import main
+    from xic_extractor.alignment_explanation.errors import ExplanationError
+    from xic_extractor.diagnostics.duplicate_quantification import read_published_cells
+    from xic_extractor.matrix_curation.steps import CellEvidence
+    from xic_workbench.matrix_curation import describe_source
+
+    a, b = tmp_path / "A", tmp_path / "B"
+    a.mkdir()
+    b.mkdir()
+    _write_features(a, [(300.0, 2.0)])
+    _write_features(b, [(300.0 if same_matrix else 400.0, 2.0)])
+    if same_matrix:
+        run = a / "alignment_run_metadata.json"
+        metadata = json.loads(run.read_text("utf-8"))
+        run.write_text(json.dumps({**metadata, "processing_attempt_id": "A"}), "utf-8")
+    report = write_cell_evidence(
+        b, {"F000001": {"S": CellEvidence("detected", 1.0, 2.0)}}, attempt_id="B"
+    )
+    assert [(c.feature_id, c.sample, c.value) for c in read_published_cells(b)] == [
+        ("F000001", "S", 1.0)
+    ]
+    shutil.copyfile(report, a / report.name)
+
+    output = tmp_path / "curated"
+    status = main(
+        ["--source-dir", str(a), "--same-compound", "--output-dir", str(output)]
+    )
+    assert status == 2
+    assert not output.exists()
+    expected = "不同的分析" if same_matrix else "SHA-256"
+    assert expected in capsys.readouterr().err
+    steps = describe_source(tmp_path, {"source_dir": str(a)})["steps"]
+    assert expected in next(
+        s["unavailable_reason"] for s in steps if s["key"] == "same_compound"
+    )
+    with pytest.raises(ExplanationError, match=expected):
+        read_published_cells(a)
 
 
 def test_cli_excludes_only_matching_nucleosides_without_sample_data(tmp_path):

@@ -9,12 +9,63 @@ import sys
 from pathlib import Path
 
 from tests.matrix_review_fixtures import current_matrix_review_row
+from xic_extractor.matrix_curation.steps import CellEvidence
 from xic_extractor.output.alignment.matrix_output_contract import (
     MATRIX_REVIEW_COLUMNS,
 )
 from xic_extractor.tabular_io import write_tsv
 
 SAMPLES = ("S1", "S2", "S3", "QC", "Blank", "Excluded")
+
+
+def write_cell_evidence(
+    folder: Path,
+    by_feature: dict[str, dict[str, CellEvidence]],
+    *,
+    attempt_id: str = "fixture",
+) -> Path:
+    """Publish scalar evidence bound to this fixture's Matrix."""
+    from tests.alignment_explanation_fixtures import explanation_summary
+    from xic_extractor.alignment_explanation.writer import ExplanationReportWriter
+    from xic_extractor.tabular_io import file_sha256
+
+    matrix = folder / "alignment_matrix.tsv"
+    report = folder / "alignment_explanation.sqlite"
+    samples = [
+        {"sample_key": key, "sample_stem": key}
+        for key in sorted({k for cells in by_feature.values() for k in cells})
+    ]
+    with ExplanationReportWriter(report) as writer:
+        writer.declare_samples(samples)
+        for feature, cells in by_feature.items():
+            writer.add_final_group(
+                feature, feature_id=feature, disposition="recorded", members=[]
+            )
+            writer.set_row_destination(feature, "matrix")
+            writer.add_cells(
+                feature,
+                [
+                    {
+                        "sample_key": key,
+                        "variant": "numeric",
+                        "value": cell.value,
+                        "support_origin": cell.origin,
+                        "apex_rt_min": cell.apex_rt_min,
+                    }
+                    for key, cell in cells.items()
+                ],
+            )
+        writer.finalize(
+            explanation_summary(
+                {
+                    "processing_attempt_id": attempt_id,
+                    "matrix_path": matrix,
+                    "matrix_sha256": file_sha256(matrix, uppercase=False),
+                    "samples": samples,
+                }
+            )
+        )
+    return report
 
 
 def alignment_output(folder: Path, *, raw_dir: Path | None = None) -> Path:

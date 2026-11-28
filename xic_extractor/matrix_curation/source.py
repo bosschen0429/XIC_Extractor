@@ -23,6 +23,7 @@ class CurationSource:
     raw_dir: Path | None = None
     explanation_path: Path | None = None
     target_snapshot: str | None = None
+    processing_attempt_id: str | None = None
 
 
 def locate_curation_source(source_dir: Path) -> CurationSource:
@@ -49,4 +50,5 @@ def locate_curation_source(source_dir: Path) -> CurationSource:
         raw_dir=raw_dir,
         explanation_path=explanation if explanation.is_file() else None,
         target_snapshot=snapshot if isinstance(snapshot, str) else None,
+        processing_attempt_id=run.get("processing_attempt_id"),
     )

@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from tests.matrix_curation_fixtures import write_cell_evidence
 from tests.matrix_review_fixtures import current_matrix_review_row
 from xic_extractor.matrix_curation.istd import windows_from_target_snapshot
 from xic_extractor.matrix_curation.mass_rt_windows import MzRtWindow, mz_rt_window
@@ -961,7 +962,7 @@ def test_istd_window_uses_range_or_expected_rt():
 STUDY = ("S1", "S2", "S3")
 
 
-def _curation_folder(folder: Path) -> Path:
+def _curation_folder(folder: Path, *, with_cells: bool = True) -> Path:
     """A Matrix whose protonated row fails finite fraction; its adduct passes."""
     folder.mkdir(parents=True)
     rows = (
@@ -986,6 +987,16 @@ def _curation_folder(folder: Path) -> Path:
         )
     write_tsv(folder / "alignment_matrix.tsv", matrix, ("Mz", "RT", *STUDY))
     write_tsv(folder / "alignment_review.tsv", review, MATRIX_REVIEW_COLUMNS)
+    if with_cells:
+        write_cell_evidence(
+            folder,
+            {
+                "F000001": row("F000001", 300.0, samples=STUDY)[1],
+                "F000002": row("F000002", 321.981944, scale=0.5, samples=STUDY)[1],
+                "F000003": row("F000003", 500.0, base_rt=20.0, samples=STUDY)[1],
+                "F000004": {},
+            },
+        )
     return folder
 
 
@@ -1006,27 +1017,6 @@ def _samples(path: Path) -> Path:
         SAMPLE_METADATA_COLUMNS,
     )
     return path
-
-
-@pytest.fixture
-def synthetic_cells(monkeypatch):
-    """Per-cell evidence for _curation_folder, as the explanation would give it."""
-    by_feature = {
-        "F000001": row("F000001", 300.0)[1],
-        "F000002": row("F000002", 321.981944, scale=0.5)[1],
-        "F000003": row("F000003", 500.0, base_rt=20.0)[1],
-        "F000004": {},
-    }
-    monkeypatch.setattr(
-        "xic_extractor.matrix_curation.export._run_evidence",
-        lambda source: ({}, ""),
-    )
-    monkeypatch.setattr(
-        "xic_extractor.matrix_curation.export.load_cell_evidence",
-        lambda source, features: tuple(
-            by_feature[feature.feature_id] for feature in features
-        ),
-    )
 
 
 def _export(tmp_path, name, steps, istd=None, *, nucleoside_list=None):
@@ -1052,9 +1042,7 @@ def _export(tmp_path, name, steps, istd=None, *, nucleoside_list=None):
     )
 
 
-def test_a_row_that_absorbed_a_listed_nucleoside_leaves_with_it(
-    tmp_path, synthetic_cells
-):
+def test_a_row_that_absorbed_a_listed_nucleoside_leaves_with_it(tmp_path):
     _curation_folder(tmp_path / "alignment")
     _samples(tmp_path / "samples.tsv")
     listing = tmp_path / "windows.tsv"
@@ -1075,9 +1063,7 @@ def test_a_row_that_absorbed_a_listed_nucleoside_leaves_with_it(
     assert decisions["F000003"]["decision"] == "keep"
 
 
-def test_nucleoside_removal_is_attributed_only_to_rows_entering_the_step(
-    tmp_path, synthetic_cells
-):
+def test_nucleoside_removal_is_attributed_only_to_rows_entering_the_step(tmp_path):
     _curation_folder(tmp_path / "alignment")
     _samples(tmp_path / "samples.tsv")
     listing = tmp_path / "windows.tsv"
@@ -1125,9 +1111,7 @@ def test_nucleoside_removal_is_attributed_only_to_rows_entering_the_step(
     assert alone["F000002"]["decision"] == "keep"
 
 
-def test_export_excludes_unassigned_derivative_without_inventing_a_parent(
-    tmp_path, monkeypatch
-):
+def test_export_excludes_unassigned_derivative_without_inventing_a_parent(tmp_path):
     source = tmp_path / "alignment"
     source.mkdir()
     feature_rows = (
@@ -1156,12 +1140,8 @@ def test_export_excludes_unassigned_derivative_without_inventing_a_parent(
     write_tsv(source / "alignment_matrix.tsv", matrix, ("Mz", "RT", *STUDY))
     write_tsv(source / "alignment_review.tsv", review, MATRIX_REVIEW_COLUMNS)
     _samples(tmp_path / "samples.tsv")
-    monkeypatch.setattr(
-        "xic_extractor.matrix_curation.export._run_evidence", lambda source: ({}, "")
-    )
-    monkeypatch.setattr(
-        "xic_extractor.matrix_curation.export.load_cell_evidence",
-        lambda source, features: tuple(cells for _, cells in feature_rows),
+    write_cell_evidence(
+        source, {feature.feature_id: cells for feature, cells in feature_rows}
     )
 
     output, decisions, summary = _export(tmp_path, "curated", {"same_compound": {}})
@@ -1180,7 +1160,7 @@ def test_export_excludes_unassigned_derivative_without_inventing_a_parent(
 
 
 def test_derivatives_are_removed_before_feature_filtering_and_istd_is_protected(
-    tmp_path, synthetic_cells
+    tmp_path,
 ):
     _curation_folder(tmp_path / "alignment")
     _samples(tmp_path / "samples.tsv")
@@ -1251,7 +1231,7 @@ def test_same_compound_is_unavailable_without_the_run_explanation(tmp_path):
     from tests.matrix_curation_fixtures import _run
     from xic_workbench.matrix_curation import describe_source
 
-    source = _curation_folder(tmp_path / "alignment")
+    source = _curation_folder(tmp_path / "alignment", with_cells=False)
     samples = _samples(tmp_path / "samples.tsv")
     steps = {
         step["key"]: step["unavailable_reason"]

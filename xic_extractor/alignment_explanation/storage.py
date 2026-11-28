@@ -13,7 +13,7 @@ import json
 import sqlite3
 import struct
 import zlib
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Mapping
 from contextlib import closing, contextmanager
 from functools import cache
 from pathlib import Path
@@ -279,6 +279,28 @@ def read_run(connection: sqlite3.Connection) -> dict[str, Any]:
             )
         ],
     }
+
+
+def require_matrix_binding(
+    summary: Mapping[str, Any],
+    matrix_digest: str,
+    *,
+    expected_attempt_id: str | None = None,
+) -> None:
+    """Admit this explanation for the Matrix bytes and, when known, its run."""
+    actual = matrix_digest.lower()
+    expected = summary.get("matrix_sha256")
+    if actual != expected:
+        raise ExplanationError(
+            f"Matrix SHA-256 mismatch: expected {expected}, got {actual}"
+        )
+    if (
+        expected_attempt_id is not None
+        and summary["processing_attempt_id"] != expected_attempt_id
+    ):
+        raise ExplanationError(
+            "解釋檔屬於不同的分析結果（processing_attempt_id 不符）。"
+        )
 
 
 def read_counts(connection: sqlite3.Connection) -> dict[str, Any]:
