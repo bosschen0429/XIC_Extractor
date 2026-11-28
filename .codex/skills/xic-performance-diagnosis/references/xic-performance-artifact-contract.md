@@ -97,9 +97,12 @@ description does not replace or weaken the workflow verdict.
 
 Choose the oracle before an edit or an accepted paired-performance claim:
 
-- byte-identical public artifacts, or parity of the published Matrix;
-- focused tests for the boundary the change touches (crop, fallback, worker
-  ordering, replay reuse, cache invalidation, writer);
+- byte-identical public artifacts or stable normalized hashes;
+- published matrix, review queue, and matrix-identity parity;
+- manifest/input SHA parity;
+- workbook/report schema and public sheet parity;
+- focused tests for crop boundaries, fallbacks, worker ordering, replay reuse,
+  cache invalidation, and writers;
 - the [Expected-Diff Contract](../../../../docs/agent/product-validation-contract.md#expected-diff-contract)
   for an intentional semantic change.
 
