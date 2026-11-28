@@ -20,11 +20,7 @@ grouping consumes the frame.
 
 ## Calibration Contract
 
-### Anchor qualification
-
-Bootstrap links peaks in measured RT. Established bands supply measured anchors
-from direct, quantifiable members; bootstrap membership is not final
-membership.
+### Mechanisms
 
 | Mechanism | Current source and use |
 | --- | --- |
@@ -33,6 +29,12 @@ membership.
 | Batch drift model | Frozen batch state (B), sample shift (M) and drift anchors, measured on the same reference population; see [Drift beyond the map](#drift-beyond-the-map). |
 | Band | Links measured member peaks in injection order; the final band supplies sample-local Backfill coordinates. |
 | Calibration diagnostic | Uses the same fit owner with detected-cell inputs and an interleaved held-out comparison. Its files do not alter production results. |
+
+### Anchor qualification
+
+Bootstrap links peaks in measured RT. Established bands supply measured anchors
+from direct, quantifiable members; bootstrap membership is not final
+membership.
 
 - **Known ISTD.** A target-list ISTD takes each sample's apex from its
   Discovery peaks without reading RAW: a peak at the target's m/z, carrying an
