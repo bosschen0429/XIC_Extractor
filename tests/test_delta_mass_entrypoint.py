@@ -236,7 +236,7 @@ def test_raw_cli_preserves_sample_attribution_and_batches_trace_acquisition(
         == 0
     )
     with (output / "delta_mass_candidates.csv").open(
-        newline="", encoding="utf-8"
+        newline="", encoding="utf-8-sig"
     ) as handle:
         rows = list(csv.DictReader(handle))
     assert [(r["sample"], float(r["mz"]), float(r["height"])) for r in rows] == [
@@ -411,7 +411,7 @@ def test_cid_nl_join_records_unmatched_reason_and_reproduces_from_published_tabl
         candidates=joined,
         features={},
     )
-    with outputs.candidates_csv.open(newline="", encoding="utf-8") as handle:
+    with outputs.candidates_csv.open(newline="", encoding="utf-8-sig") as handle:
         published = list(csv.DictReader(handle))
     assert [r["cid_nl_peak_id"] for r in published] == ["matched", "", "", ""]
     rejoined = delta_mass_pipeline._join_cid_nl(

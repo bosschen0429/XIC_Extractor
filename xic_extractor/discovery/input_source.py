@@ -45,6 +45,11 @@ class DiscoveryInputSource(Mapping[str, tuple[DiscoveryPeak, ...]]):
     """
 
     def __init__(self, batch: DiscoveryBatchInput):
+        if any(s.acquisition_source is None for s in batch.samples.values()):
+            raise ValueError(
+                f"{batch.path}: not a CID-NL Discovery output; "
+                "Alignment reads the discovery.sqlite of a CID-NL Discovery run"
+            )
         self.batch = batch
         self.locations: dict[str, CandidateLocation] = {}
         self.ms1_apex_mz_by_candidate: dict[str, float] = {}

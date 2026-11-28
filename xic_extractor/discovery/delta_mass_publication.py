@@ -81,6 +81,7 @@ def write_delta_mass_outputs(
             for row in read_delta_mass_table(store)
         ],
         DELTA_MASS_TABLE_COLUMNS,
+        encoding="utf-8-sig",
     )
     return DeltaMassDiscoveryOutputs(store, table, len(established))
 

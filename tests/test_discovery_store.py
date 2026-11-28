@@ -12,6 +12,7 @@ from tests.discovery_ms1_capture_fixtures import _seed
 from tests.discovery_peak_fixtures import _peak
 from tests.discovery_store_fixtures import (
     SampleRecords,
+    acquisition_source,
     peak,
     stored_events,
     stored_peaks,
@@ -193,7 +194,10 @@ def test_input_source_keeps_unadmitted_peaks_out_of_features(tmp_path: Path) -> 
             peak(stem, peak_id=f"{stem}-{index}", status=status, best_ms2_scan_id=index)
             for index, status in enumerate(statuses, start=1)
         ]
-        return _sample(stem, peaks)
+        return replace(
+            _sample(stem, peaks),
+            acquisition_source=acquisition_source(tmp_path / "sources", stem),
+        )
 
     source = DiscoveryInputSource(
         read_discovery_batch(
@@ -210,6 +214,15 @@ def test_input_source_keeps_unadmitted_peaks_out_of_features(tmp_path: Path) -> 
     assert source.feature_candidate_ids() == ("S1-1",)
     assert {c.peak_id for c in source["S1"]} == {"S1-1", "S1-2", "S1-3"}
     assert len(source["S2"]) == 1
+
+
+def test_input_source_refuses_a_delta_mass_file(tmp_path: Path) -> None:
+    from tests.delta_mass_review_fixtures import write_discovery as write_delta_mass
+
+    write_delta_mass(tmp_path)
+
+    with pytest.raises(ValueError, match="not a CID-NL Discovery output"):
+        DiscoveryInputSource(read_discovery_batch(tmp_path / DISCOVERY_ARTIFACT_NAME))
 
 
 def test_peak_rows_follow_the_review_queue() -> None:

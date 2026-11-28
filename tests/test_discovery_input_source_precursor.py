@@ -9,7 +9,11 @@ import pytest
 
 from tests.discovery_ms1_capture_fixtures import _seed
 from tests.discovery_peak_fixtures import _peak
-from tests.discovery_store_fixtures import SampleRecords, write_discovery
+from tests.discovery_store_fixtures import (
+    SampleRecords,
+    acquisition_source,
+    write_discovery,
+)
 from xic_extractor.discovery.input_source import DiscoveryInputSource
 from xic_extractor.discovery.models import EventAttachment
 from xic_extractor.discovery.store import read_discovery_batch
@@ -49,6 +53,9 @@ def test_representative_precursor_follows_discovery_choice_within_one_scan(
                         raw_path.stem,
                         raw_path,
                         peaks=(peak,),
+                        acquisition_source=acquisition_source(
+                            tmp_path / "sources", raw_path.stem
+                        ),
                         attachments=(
                             EventAttachment(event=weaker, peak_id=peak.peak_id),
                             EventAttachment(

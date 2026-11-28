@@ -117,7 +117,7 @@ def test_complete_diagnostic_routes_keep_candidates_sample_bound_without_matrix(
         "second.raw",
     ]
     with Path(result["delta_mass"]["candidates_csv"]).open(
-        encoding="utf-8", newline=""
+        encoding="utf-8-sig", newline=""
     ) as handle:
         candidates = list(csv.DictReader(handle))
     assert [(r["sample"], float(r["mz"])) for r in candidates] == [
