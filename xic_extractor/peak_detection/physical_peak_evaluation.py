@@ -44,6 +44,7 @@ from xic_extractor.peak_detection.physical_peak_models import (
     PhysicalPeakQuestion,
     PhysicalPeakState,
     PhysicalSegment,
+    PhysicalSegmentation,
     PhysicalSegmentUniverse,
     PreparedSignal,
     PreparedSignalProjection,
@@ -185,11 +186,19 @@ def enumerate_physical_segment_universe(
     *,
     request_context_rt_start_min: float | None = None,
     request_context_rt_end_min: float | None = None,
-    selection_policy_version: str = PHYSICAL_PEAK_POINT_POLICY,
+    segmentation: PhysicalSegmentation = "baseline_return",
     discovery_components: tuple[RawPeakComponent, ...] | None = None,
 ) -> PhysicalSegmentUniverse:
-    if selection_policy_version not in _PHYSICAL_PEAK_SELECTION_POLICIES:
-        raise ValueError("unsupported physical peak selection policy")
+    """Segment one prepared XIC the way its caller asks; no peak is selected.
+
+    ``baseline_return`` walks each supported apex out to its return to
+    baseline. ``localized_valley`` also cuts at localized valleys and keeps
+    every lobe, however many. ``raw_basin`` measures the basins located on
+    the acquired signal: ``discovery_components``, or those found here.
+    Sparse hit clusters replace their fragments except under
+    ``localized_valley``; a peak clipped by the trace edge is walked again at
+    the noise level except under ``raw_basin``.
+    """
     context_start, context_end = _physical_owner_context(
         prepared_result,
         request_context_rt_start_min=request_context_rt_start_min,
@@ -206,7 +215,7 @@ def enumerate_physical_segment_universe(
         acquired = np.asarray(prepared.raw, dtype=float)
         zero_baseline = np.zeros_like(signal)
         segment_policy = _physical_segment_policy(prepared.profile)
-        if selection_policy_version == DISCOVERY_PHYSICAL_PEAK_POINT_POLICY:
+        if segmentation == "raw_basin":
             raw_components = (
                 discovery_components
                 if discovery_components is not None
@@ -214,7 +223,7 @@ def enumerate_physical_segment_universe(
                     prepared.rt, prepared.raw, prepared.profile
                 )
             )
-        if selection_policy_version == PHYSICAL_PEAK_ENVELOPE_POLICY:
+        if segmentation == "localized_valley":
             segment_policy = replace(
                 segment_policy,
                 clear_valley_max_fraction=1 - LOCALIZED_VALLEY_MIN_DROP_FRACTION,
@@ -252,7 +261,7 @@ def enumerate_physical_segment_universe(
         enumeration = enumerate_signal(segment_policy)
         if enumeration.status == "OK":
             segments = enumeration.segments
-            if selection_policy_version != DISCOVERY_PHYSICAL_PEAK_POINT_POLICY and any(
+            if segmentation != "raw_basin" and any(
                 s.interval.start_index == 0 or s.interval.end_index == len(rt)
                 for s in segments
             ):
@@ -267,12 +276,8 @@ def enumerate_physical_segment_universe(
                 )
                 alternatives = {s.apex_index: s for s in near_baseline.segments}
                 recovered = []
-                for index, segment in enumerate(segments):
-                    alternative = (
-                        near_baseline.segments[index]
-                        if raw_components
-                        else alternatives.get(segment.apex_index)
-                    )
+                for segment in segments:
+                    alternative = alternatives.get(segment.apex_index)
                     interval = segment.interval
                     if (
                         (interval.start_index == 0 or interval.end_index == len(rt))
@@ -297,17 +302,14 @@ def enumerate_physical_segment_universe(
                     _physical_segment_from_chrom(segment) for segment in segments
                 )
             )
-            if selection_policy_version != PHYSICAL_PEAK_ENVELOPE_POLICY:
+            if segmentation != "localized_valley":
                 physical_segments = _censoring_aware_segments(
                     prepared, physical_segments
                 )
-            if (
-                selection_policy_version != PHYSICAL_PEAK_ENVELOPE_POLICY
-                and len(physical_segments) > prepared.profile.segment_universe_limit
-            ):
-                state = "unavailable"
-                reason = "segment_universe_too_large"
-                physical_segments = ()
+                if len(physical_segments) > prepared.profile.segment_universe_limit:
+                    state = "unavailable"
+                    reason = "segment_universe_too_large"
+                    physical_segments = ()
         elif enumeration.status == "NO_SIGNAL":
             state, reason = "unavailable", "no_signal_above_baseline"
         elif enumeration.status == "PEAK_NOT_FOUND":
@@ -850,6 +852,7 @@ def evaluate_physical_peak(
     request_context_rt_end_min: float | None = None,
     selection_policy_version: str = PHYSICAL_PEAK_POINT_POLICY,
     search_rt_window: tuple[float, float] | None = None,
+    segmentation: PhysicalSegmentation = "baseline_return",
 ) -> PhysicalPeakEvaluation:
     """Answer one workflow-neutral physical question from owner-derived context."""
 
@@ -857,7 +860,7 @@ def evaluate_physical_peak(
         prepared_result,
         request_context_rt_start_min=request_context_rt_start_min,
         request_context_rt_end_min=request_context_rt_end_min,
-        selection_policy_version=selection_policy_version,
+        segmentation=segmentation,
     )
     question = mint_physical_peak_question(
         prepared_result.projection,

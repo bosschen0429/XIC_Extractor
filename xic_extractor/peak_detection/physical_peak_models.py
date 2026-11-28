@@ -11,6 +11,7 @@ from xic_extractor.configuration.signal_processing_profile import (
 from xic_extractor.peak_detection.integration_result import IntegrationResult
 
 PhysicalPeakState = Literal["available", "unavailable", "failed"]
+PhysicalSegmentation = Literal["baseline_return", "localized_valley", "raw_basin"]
 PHYSICAL_PEAK_POINT_POLICY = "baseline_peak_contains_query"
 PHYSICAL_PEAK_REFERENCE_POLICY = "reference_localized_contour_peak"
 PHYSICAL_PEAK_ENVELOPE_POLICY = "localized_total_envelope"

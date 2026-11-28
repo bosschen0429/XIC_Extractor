@@ -72,7 +72,7 @@ def assess_targeted_delta_mass(
         )
         universe = enumerate_physical_segment_universe(
             prepared,
-            selection_policy_version=PHYSICAL_PEAK_ENVELOPE_POLICY,
+            segmentation="localized_valley",
             request_context_rt_start_min=trace.rt_min,
             request_context_rt_end_min=trace.rt_max,
         )

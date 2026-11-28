@@ -88,7 +88,7 @@ def physical_peak_result(
     """Select from the Targeted physical-segment population of one trace."""
     prepared = prepare_physical_signal(rt, intensity)
     universe = enumerate_physical_segment_universe(
-        prepared, selection_policy_version=PHYSICAL_PEAK_ENVELOPE_POLICY
+        prepared, segmentation="localized_valley"
     )
     return select_peak_and_area(
         physical_candidates_result(

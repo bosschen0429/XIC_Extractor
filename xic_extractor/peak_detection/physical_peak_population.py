@@ -114,7 +114,7 @@ def measure_physical_peak_population(
         prepared,
         request_context_rt_start_min=context_rt_start_min,
         request_context_rt_end_min=context_rt_end_min,
-        selection_policy_version=DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
+        segmentation="raw_basin",
         discovery_components=components,
     )
     return PhysicalPeakPopulation(

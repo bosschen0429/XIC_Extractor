@@ -4,6 +4,21 @@ from __future__ import annotations
 
 import numpy as np
 
+from xic_extractor.peak_detection.physical_peak_models import (
+    DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
+    PHYSICAL_PEAK_ENVELOPE_POLICY,
+    PhysicalSegmentation,
+)
+
+
+def segmentation_for(policy: str) -> PhysicalSegmentation:
+    """The segmentation production pairs with a selection policy."""
+    if policy == DISCOVERY_PHYSICAL_PEAK_POINT_POLICY:
+        return "raw_basin"
+    if policy == PHYSICAL_PEAK_ENVELOPE_POLICY:
+        return "localized_valley"
+    return "baseline_return"
+
 
 def _context_sensitive_trace() -> tuple[np.ndarray, np.ndarray]:
     raw = np.asarray(

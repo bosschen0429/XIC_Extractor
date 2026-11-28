@@ -11,6 +11,7 @@ from tests.physical_peak_evaluation_fixtures import (
     _context_sensitive_trace,
     _overlapping_triplet_trace,
     _short_peak_with_separate_noise_hits,
+    segmentation_for,
 )
 from xic_extractor.configuration.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
@@ -338,6 +339,7 @@ def test_supported_short_peak_survives_noise_hits_and_persistence(
         prepared,
         query_rt_min=rt[apex_index],
         selection_policy_version=policy,
+        segmentation=segmentation_for(policy),
     )
     assert result.state == "available"
     assert result.answer.selected_segment is not None and result.integration is not None
@@ -387,8 +389,10 @@ def test_retired_point_policy_is_rejected() -> None:
     rt, raw = _context_sensitive_trace()
     prepared = prepare_physical_signal(rt, raw)
     with pytest.raises(ValueError, match="unsupported physical peak selection policy"):
-        enumerate_physical_segment_universe(
-            prepared, selection_policy_version="unsupported_point_policy"
+        evaluate_physical_peak(
+            prepared,
+            query_rt_min=float(rt[len(rt) // 2]),
+            selection_policy_version="unsupported_point_policy",
         )
 
 
@@ -582,6 +586,7 @@ def test_censored_hit_cluster_uses_observed_area_and_persists_warning(
         prepare_physical_signal(rt, raw),
         query_rt_min=2.0,
         selection_policy_version=policy,
+        segmentation=segmentation_for(policy),
     )
     assert result.state == "available"
     assert result.answer.selected_segment is not None and result.integration is not None
@@ -591,14 +596,16 @@ def test_censored_hit_cluster_uses_observed_area_and_persists_warning(
         np.trapezoid(raw, rt) * 60
     )
     assert "near_detection_limit" in result.integration.boundary_sources
+    other_policy = (
+        DISCOVERY_PHYSICAL_PEAK_POINT_POLICY
+        if policy == PHYSICAL_PEAK_POINT_POLICY
+        else PHYSICAL_PEAK_POINT_POLICY
+    )
     other = evaluate_physical_peak(
         prepare_physical_signal(rt, raw),
         query_rt_min=2.0,
-        selection_policy_version=(
-            DISCOVERY_PHYSICAL_PEAK_POINT_POLICY
-            if policy == PHYSICAL_PEAK_POINT_POLICY
-            else PHYSICAL_PEAK_POINT_POLICY
-        ),
+        selection_policy_version=other_policy,
+        segmentation=segmentation_for(other_policy),
     )
     assert other.state == result.state
     assert other.answer.selected_segment == result.answer.selected_segment
@@ -617,6 +624,7 @@ def test_stationary_sparse_hits_do_not_establish_a_censored_peak(policy) -> None
         prepare_physical_signal(rt, raw),
         query_rt_min=2.0,
         selection_policy_version=policy,
+        segmentation=segmentation_for(policy),
     )
     assert result.state == "unavailable"
     assert result.answer.selected_segment is None
@@ -639,6 +647,7 @@ def test_strong_continuous_peak_with_sparse_tail_keeps_original_segment(
         request_context_rt_start_min=0.5,
         request_context_rt_end_min=3.5,
         selection_policy_version=policy,
+        segmentation=segmentation_for(policy),
     )
     assert result.state == "available" and result.reason == ""
     assert result.answer.selected_segment is not None and result.integration is not None
@@ -696,6 +705,7 @@ def test_compact_continuous_doublet_keeps_component_areas(
             prepared,
             query_rt_min=center,
             selection_policy_version=policy,
+            segmentation=segmentation_for(policy),
         )
         assert result.state == "available"
         assert (
@@ -717,6 +727,7 @@ def test_compact_continuous_doublet_keeps_component_areas(
             focused_prepared,
             query_rt_min=center,
             selection_policy_version=policy,
+            segmentation=segmentation_for(policy),
         )
         assert (
             focused.state == "available" and focused.answer.selected_segment is not None
@@ -747,6 +758,7 @@ def test_continuous_peak_with_isolated_dropouts_keeps_morphology_area(
         prepared,
         query_rt_min=4.0,
         selection_policy_version=policy,
+        segmentation=segmentation_for(policy),
     )
     assert result.state == "available"
     assert result.answer.selected_segment is not None and result.integration is not None
@@ -901,6 +913,7 @@ def test_whole_trend_has_matching_target_and_discovery_facts(
             prepared,
             query_rt_min=5.0,
             selection_policy_version=policy,
+            segmentation=segmentation_for(policy),
         )
         for policy in (PHYSICAL_PEAK_POINT_POLICY, DISCOVERY_PHYSICAL_PEAK_POINT_POLICY)
     ]
@@ -948,6 +961,7 @@ def test_sparse_stationary_background_is_not_a_peak(
         prepare_physical_signal(rt, raw),
         query_rt_min=5.0,
         selection_policy_version=policy,
+        segmentation=segmentation_for(policy),
     )
     assert result.state == "unavailable"
     assert result.answer.selected_segment is None and result.integration is None
@@ -973,6 +987,7 @@ def test_acquired_peak_top_not_low_alternating_neighbors_supplies_support(
         prepared,
         query_rt_min=5.0,
         selection_policy_version=policy,
+        segmentation=segmentation_for(policy),
     )
     if not background_fragments:
         assert result.state == "unavailable"
@@ -1009,6 +1024,7 @@ def test_overlapping_components_keep_one_unflagged_envelope(
             prepared,
             query_rt_min=5.0,
             selection_policy_version=policy,
+            segmentation=segmentation_for(policy),
         )
         for policy in (
             PHYSICAL_PEAK_POINT_POLICY,
@@ -1112,6 +1128,7 @@ def test_background_component_generator_respects_query_ownership_policy(
         prepared,
         query_rt_min=5.0,
         selection_policy_version=policy,
+        segmentation=segmentation_for(policy),
     )
     if policy == DISCOVERY_PHYSICAL_PEAK_POINT_POLICY and slope:
         assert int(np.argmax(raw)) == len(raw) - 1
@@ -1145,6 +1162,7 @@ def test_sparse_isolated_peak_has_the_same_contrast_limit_in_both_policies(
         prepared,
         query_rt_min=1.5,
         selection_policy_version=DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
+        segmentation="raw_basin",
     )
     assert old.state == new.state == "unavailable"
     assert old.reason == new.reason == "insufficient_local_peak_contrast"
@@ -1176,6 +1194,7 @@ def test_current_discovery_qualification_persists_exactly(
             prepared,
             query_rt_min=query,
             selection_policy_version=policy,
+            segmentation=segmentation_for(policy),
         )
         assert answer.state == ("unavailable" if background else "available")
         if background:
@@ -1225,6 +1244,7 @@ def test_other_peak_support_cannot_backfill_a_singleton_or_resolve_ambiguity(
         prepare_physical_signal(rt, raw),
         query_rt_min=2.0,
         selection_policy_version=policy,
+        segmentation=segmentation_for(policy),
     )
     assert result.state == "unavailable"
     assert result.reason == reason
@@ -1328,6 +1348,7 @@ def test_tenth_height_return_uses_canonical_apex_not_coarse_envelope(sigma) -> N
         prepared,
         query_rt_min=2.0,
         selection_policy_version=DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
+        segmentation="raw_basin",
     )
     assert peak.state == "available" and peak.answer.selected_segment is not None
     assert peak.answer.selected_segment.left_rt_min == rt[left]
@@ -1339,6 +1360,7 @@ def test_tenth_height_return_uses_canonical_apex_not_coarse_envelope(sigma) -> N
         prepared,
         query_rt_min=float(rt[right + 1]),
         selection_policy_version=DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
+        segmentation="raw_basin",
     )
     assert tail.state == "available"
     assert _measurement(tail) == _measurement(peak)
@@ -1370,6 +1392,7 @@ def test_backfill_selects_only_one_complete_peak(
         request_context_rt_start_min=0.0,
         request_context_rt_end_min=4.0,
         selection_policy_version=policy,
+        segmentation=segmentation_for(policy),
     )
     assert result.state == ("unavailable" if expected == "ambiguous" else expected)
     if expected == "ambiguous":
@@ -1530,6 +1553,7 @@ def test_shared_owner_closes_observed_tail_at_measurement_noise(
         request_context_rt_start_min=7.96988,
         request_context_rt_end_min=9.96988,
         selection_policy_version=policy,
+        segmentation=segmentation_for(policy),
     )
     assert result.reason == expected_reason
     if not expected_reason:
@@ -1563,6 +1587,7 @@ def test_backfill_prefers_the_one_peak_containing_the_group_rt(
         request_context_rt_start_min=0.0,
         request_context_rt_end_min=4.0,
         selection_policy_version=policy,
+        segmentation=segmentation_for(policy),
     )
     assert result.reason == expected_reason
     if not expected_reason:
@@ -1624,6 +1649,7 @@ def test_middle_query_selects_the_unresolved_envelope_not_a_component(
             prepared,
             query_rt_min=10.9,
             selection_policy_version=policy,
+            segmentation=segmentation_for(policy),
         )
         for policy in (PHYSICAL_PEAK_POINT_POLICY, DISCOVERY_PHYSICAL_PEAK_POINT_POLICY)
     ]
