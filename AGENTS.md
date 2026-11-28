@@ -54,8 +54,9 @@ XIC-specific task routing and invariants; global rules own general defaults.
   [Module Naming](docs/architecture-contract.md#module-naming).
 - **Runtime:** use this worktree's documented Python runner. Run output stays in
   ignored `output/`; a tracked artifact needs a current consumer.
-- **Performance:** use `xic-performance-diagnosis` for timing, locality or
-  performance comparisons.
+- **Performance:** follow
+  [`xic-performance-diagnosis`](.codex/skills/xic-performance-diagnosis/SKILL.md)
+  for timing, locality or performance comparisons.
 - **Evidence:** say what the check actually established. For scientific or
   readiness claims, use the [evidence labels](docs/agent/product-validation-contract.md#evidence-labels).
 - **Merge:** acceptance evidence and hosted checks on the final remote SHA

@@ -176,9 +176,3 @@ On Windows the cache path budget is measured below the run directory: a
 141-character prefix plus a 48-character cache path leaves 70 of the 259
 usable characters for longer installations and batch names. Paths distribute
 entries; the stored namespace, key and numeric content identify the fact.
-
-## Shell Traps
-
-The Windows examples above use PowerShell. Match the syntax to the active
-shell; formal RAW validation still requires Windows Native. Keep run outputs
-under ignored `output/` and local inputs under ignored `local_validation_artifacts/`.

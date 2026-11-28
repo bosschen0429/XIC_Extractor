@@ -41,9 +41,8 @@ final change only affects documentation.
 
 ## Before Push
 
-- Confirm the branch and what is staged, run the checks the diff affects, and
-  report their actual results. `.github/workflows/ci.yml` owns the full command
-  set; hosted checks on the final remote SHA decide merge readiness.
+- `.github/workflows/ci.yml` owns the full command set; hosted checks on the
+  final remote SHA decide merge readiness.
 - Generated output stays in ignored `output/`. Check a clean checkout only when
   packaging, installation, CI or tracked generated files change.
 

@@ -78,12 +78,6 @@ is itself a product contract. Otherwise, timeouts serve only as hang watchdogs.
 
 ## Test Placement
 
-Pytest discovery and dependencies are owned by pyproject.toml. Keep tests under
-tests/test_*.py and name them after observable behavior. Use tmp_path for files,
-function-scoped fixtures by default, and tests/fixtures for reusable payloads.
-Split a file when it accumulates unrelated responsibilities; line count alone
-is not the contract.
-
 Keep shared domain builders in a fixture module, such as
 `tests/membership_fixtures.py`, rather than importing another test's private
 helper. State synthetic evidence defaults there; cases changing evidence
@@ -183,18 +177,11 @@ browser evidence follows the full-lifecycle policy above. Concurrent sessions us
 distinct numbered directories. `PYTEST_DEBUG_TEMPROOT` and `--basetemp` allow explicit
 overrides; do not share a fixed `--basetemp` across concurrent runs.
 
-Run the narrowest existing tests that can falsify the change, then expand in
-proportion to affected consumers and public surfaces. The complete hosted
-command surface lives in .github/workflows/ci.yml; do not cache its command list
-here.
+When a run fails, the expected value keeps its independent source: do not
+regenerate it from the failing implementation. A selection with no eligible
+tests is a skip, not evidence of correctness, even when the selector exits
+successfully. Use a known relevant pytest node when the change still needs
+verification.
 
-When a run fails, start with its failing node and full failure block, then read
-the fixture and expected-value source. Re-run that node after the fix; expand
-only for affected consumers. Do not regenerate expected values from the failing
-implementation. A selection with no eligible tests is a skip, not evidence of
-correctness, even when the selector exits successfully. Use a known relevant
-pytest node when the change still needs verification.
-
-Report commands actually run, skipped evidence, and remaining risk. A missing
-stable oracle is an unknown to resolve, not a reason to add a test that only
-checks structure.
+A missing stable oracle is an unknown to resolve, not a reason to add a test
+that only checks structure.

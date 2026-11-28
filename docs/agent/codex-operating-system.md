@@ -8,8 +8,7 @@ currently uses.
 - `AGENTS.md`: always-on invariants and pointers to the right document.
 - `docs/agent/`: detailed rules, read when the task needs them.
 - `.codex/skills/`: XIC workflows with domain-specific mechanics.
-- `.codex/rules/xic-safety.rules`: destructive Git protection, covered by
-  `tests/test_config_codex_rules.py`.
+- `.codex/rules/xic-safety.rules`: destructive Git protection.
 
 Environment diagnosis belongs to `scripts/agent_sandbox_doctor.py`. Host
 permissions and global hooks are host-owned; a repository edit does not change
@@ -35,8 +34,8 @@ and accidentally tracked local config. Then check by what changed:
 | When a skill triggers or stops | Representative positive and negative scenarios |
 | Executable rule, config, script or sandbox | The real interface and its focused tests |
 
-For the retained rules or environment diagnostic:
+For the environment diagnostic:
 
 ```powershell
-.venv\Scripts\python.exe -m pytest tests\test_agent_sandbox_doctor.py tests\test_config_codex_rules.py -q
+.venv\Scripts\python.exe -m pytest tests\test_agent_sandbox_doctor.py -q
 ```

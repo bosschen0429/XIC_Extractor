@@ -56,7 +56,7 @@ XIC_Extractor/
 │   ├── ui-design.md              UI 設計與呈現原則
 │   └── project-layout.md      本檔
 ├── config/                    未追蹤的本機狀態與設定範本；公開 Targeted 範例在 xic_extractor/configuration/data/
-├── .github/                   CI 與 issue／PR 範本
+├── .github/                   CI 與 issue 範本
 ├── .codex/                    Repo 的 agent skill 與規則
 ├── pyproject.toml             套件、依賴、已安裝 CLI、測試與 import-linter 依賴限制
 ├── packaging/                 Windows 打包：PyInstaller spec 與 app icon
