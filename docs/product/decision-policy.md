@@ -55,10 +55,14 @@ questions:
 
 ## Writer Authority
 
+Only the decision owner selects a cell's value and state. A writer renders that
+decision; it does not recompute it, and it does not take a value or state from
+review rows, manifests, counts or diagnostics.
+
 The Targeted workbook and the Untargeted Matrix are published only by their
-workflow writers, under
-[Writer Transaction Authority](../architecture-contract.md#writer-transaction-authority).
-Writers render finalized cell decisions; they never recompute them.
+workflow writers; Targeted and Untargeted keep their own writers. Output is
+published only after the write completed; a failed write leaves the previous
+output in place.
 
 Evidence providers, candidate rows, write-ready labels, quality blockers,
 sidecars, replays, review packets, galleries and diagnostics can explain or
@@ -340,4 +344,4 @@ contract.
 - [Targeted selection](targeted-selection.md)
 - [Backfill](backfill.md)
 - [Alignment](alignment.md)
-- [Architecture contract](../architecture-contract.md)
+- [Architecture](../architecture/README.md)

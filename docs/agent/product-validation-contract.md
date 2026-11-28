@@ -1,6 +1,7 @@
 # Product Validation Contract
 
-This file owns readiness claims, expected differences and validation discipline.
+This file owns readiness claims, public contracts, expected differences and
+validation discipline.
 How evidence is interpreted is in [`docs/product/`](../product/README.md).
 
 Ordinary regression verification does not need this file. Read it when a change
@@ -27,10 +28,33 @@ are evidence, never authority.
 Candidate rows, diagnostic sidecars, quality explanations, round-trip oracles,
 ISTD comparisons, and review packets are evidence or routing inputs. They never
 grant writer authority; only the workflow writers described in
-[Writer Transaction Authority](../architecture-contract.md#writer-transaction-authority)
+[Writer Authority](../product/decision-policy.md#writer-authority)
 publish values. No readiness word by itself grants Matrix, selected-value, or
 counted-detection authority, and tests passing alone never establish production
 readiness.
+
+## Public Contracts
+
+A command is public when declared in `[project.scripts]` or named by an explicit
+product/downstream contract. Being under `scripts/`, runnable, imported, tested,
+or packaged is not sufficient.
+
+Treat these as public unless an approved change says otherwise:
+
+- declared console scripts and contract-bearing commands
+- `xic_extractor.extractor.run`
+- `scripts.csv_to_excel.run`
+- config keys and example/default settings
+- TSV/CSV schemas
+- workbook sheets, order, hidden states, and columns
+- HTML report path naming and run metadata keys
+- persisted identifiers and matrix row/cell identity
+- domain-selected peaks, areas, values, and counted detections
+- cross-repository handoff schemas and contracts
+
+Preserve public contracts unless an approved change names the consumer,
+observable delta and rollback. When changing a public entry point, show its
+inputs, outputs and key failures with existing tests or a minimal example.
 
 ## Expected-Diff Contract
 

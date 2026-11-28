@@ -775,7 +775,7 @@ def test_marker_intersection_without_owned_expression_keeps_caller_markers(
             "docs/user/assets/targeted-workspace.png",
             {"packaging_build", "browser_e2e"},
         ),
-        ("docs/architecture-contract.md", set()),
+        ("docs/architecture/README.md", set()),
         ("README.md", set()),
         ("pyproject.toml.example", set()),
         (".codex/skills/foo/SKILL.md", set()),
@@ -795,7 +795,7 @@ def test_local_run_skips_markers_unrelated_to_the_change(
     monkeypatch.setattr(
         test_selection,
         "changed_paths",
-        lambda base, head=None: ["docs/architecture-contract.md"],
+        lambda base, head=None: ["docs/architecture/README.md"],
     )
     monkeypatch.setattr(
         test_selection,

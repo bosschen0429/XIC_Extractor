@@ -5,7 +5,7 @@ Windows 應用程式的操作說明在[使用者入口](../user/README.md)。
 - [從原始碼執行、CLI 與驗證](command-line.md)
 - [產品方法、結果契約與限制](../product/README.md)
 - [共用核心解說](core-modules-explainer.html)與[系統分工](system-guide.html)
-- [Repo 結構](../project-layout.md#repository-tree)與[架構與閱讀程式](../architecture-contract.md#reading-the-code)
+- [Repo 結構](../project-layout.md#repository-tree)與[架構與閱讀程式](../architecture/README.md)
 - [開發環境與 RAW 執行規則](../agent/local-execution.md)
 
 這些是 repo 維護與進階操作文件，不隨 Windows 應用程式 ZIP 提供。

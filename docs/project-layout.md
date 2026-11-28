@@ -5,7 +5,7 @@
 
 ## Repository Tree
 
-省略個別實作檔案。執行入口與責任見[架構導覽](architecture-contract.md#reading-the-code)。
+省略個別實作檔案。執行入口與責任見[架構導覽](architecture/README.md)。
 
 ```text
 XIC_Extractor/
@@ -54,7 +54,7 @@ XIC_Extractor/
 │   ├── agent/                 按任務讀的執行、驗證與交付規則；含診斷結論 ledger
 │   ├── adr/                   已採納的架構決策與其理由
 │   ├── development/           從原始碼執行、CLI 與維護者解說頁；不隨 ZIP 提供
-│   ├── architecture-contract.md  程式入口、責任與依賴方向
+│   ├── architecture/          程式入口、核心模型、模組責任、依賴方向與執行；README.md 是索引
 │   ├── ui-design.md              UI 設計與呈現原則
 │   └── project-layout.md      本檔
 ├── config/                    未追蹤的本機狀態與設定範本；公開 Targeted 範例在 xic_extractor/configuration/data/
@@ -68,7 +68,7 @@ XIC_Extractor/
 
 `xic_extractor/output/` 是輸出**程式**；根目錄 `output/` 是不追蹤的執行**產物**。
 `alignment/` 同時容納演算法、流程、I/O 與交付 adapter，不是純計算層；正式 owner 見
-[責任表](architecture-contract.md#ownership-map)。`docs/` 根目錄只放上面三份文件。
+[模組責任](architecture/module-ownership.md)。`docs/` 根目錄只放 `ui-design.md` 與本檔。
 
 ## 新檔案放哪裡
 
@@ -88,8 +88,14 @@ Repo root 留給專案級設定、必要入口與主要目錄。Git、套件與�
    schema/data 隨讀它的 package 安裝。不因資料是 JSON 就另建 schema。
 8. 小型驗證輸入或 fixture → 放在讀它的程式或 `tests/fixtures/` 旁，必須有現存 consumer。
 
-命名規則見 [Module Naming](architecture-contract.md#module-naming)；日期、Issue
-編號與施工 phase 不能當路徑或 schema 名稱。
+命名規則見 [Module Naming](#module-naming)。
+
+## Module Naming
+
+模組與命令以它提供的能力命名，讀者不需要知道開發歷史：`quant_matrix_export`，
+不是 `phase7` 或 `issue367_bundle`。識別字、schema 名稱與 artifact 名稱不帶版本
+後綴：內容改變時沿用名稱，意義改變時換新名稱。日期、Issue、PR 與 ticket 編號，
+以及施工 phase，都不能當識別字、路徑或 schema 名稱。這條規則不要求順手改掉無關的舊名稱。
 
 ## 文件放哪裡
 
@@ -98,7 +104,7 @@ Repo root 留給專案級設定、必要入口與主要目錄。Git、套件與�
 | 產品行為與科學規則 | `docs/product/<topic>.md` |
 | Readiness 與 expected-diff | `docs/agent/product-validation-contract.md` |
 | Writer authority | [`decision-policy.md`](product/decision-policy.md#writer-authority) |
-| 架構與依賴 | `docs/architecture-contract.md` |
+| 架構與依賴 | `docs/architecture/` |
 | UI 設計原則 | `docs/ui-design.md` |
 | 診斷結論與重跑條件 | `docs/agent/diagnostic-ledger.md` |
 | 要做的事：計畫、acceptance、未決的產品決策 | GitHub Issue |

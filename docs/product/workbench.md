@@ -260,4 +260,4 @@ previews do not hold that mutable-state lock.
 
 - [Targeted workbook](targeted-workbook.md) | [Quant Matrix](quant-matrix.md) | [Matrix Curation](matrix-curation.md)
 - [Presets](presets.md) | [Sample metadata](sample-metadata-qc.md)
-- [Architecture contract](../architecture-contract.md#dependency-direction)
+- [Dependency direction](../architecture/dependency-direction.md)

@@ -22,14 +22,18 @@ commit a dated snapshot as a second registry.
 
 ## What Is Public
 
-[Public Contracts](../architecture-contract.md#public-contracts) defines a
-public command. Use [Module Naming](../architecture-contract.md#module-naming)
+[Public Contracts](product-validation-contract.md#public-contracts) defines a
+public command. Use [Module Naming](../project-layout.md#module-naming)
 for module, command, help and artifact names.
 
 ## Diagnostic Boundaries
 
-[Diagnostics Contract](../architecture-contract.md#diagnostics-contract) owns
-where diagnostic code lives and what a diagnostic writer may do.
+`tools/diagnostics/` is maintained code. CLIs parse and orchestrate; reusable
+loading, models, summaries, plotting and writers live in
+`xic_extractor/diagnostics/`. Scientific models do not import diagnostic readers
+or writers. Diagnostic writers render; they never recompute evidence or rescan
+RAW. Gate diagnostics emit a machine-readable status and reason. Optional
+diagnostics use sidecars instead of changing established schemas.
 
 RAW-reading diagnostics require an explicit acquisition owner, call-cost model,
 cache/locality boundary and method-appropriate oracle. Similar CLI flags are not

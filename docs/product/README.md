@@ -4,7 +4,7 @@ Reference pages for the scientific rules, trade-offs and domain language behind
 XIC results — what the code and tests cannot explain on their own. Audience:
 maintainers, reviewers and agents changing product behavior. For operation and
 conceptual guides, use the [user guide index](../user/README.md); for module
-responsibilities, the [architecture reading guide](../architecture-contract.md#reading-the-code);
+responsibilities, the [architecture index](../architecture/README.md);
 for task rules, [AGENTS.md](../../AGENTS.md). Terms are defined once in the
 [Domain Glossary](domain-glossary.md).
 
@@ -31,7 +31,7 @@ conceptual journey.
 Topic pages summarize durable rules but do not replace their upstream owners.
 If a topic page conflicts with an owner below, the owner wins.
 
-- [Architecture contract](../architecture-contract.md)
+- [Architecture](../architecture/README.md)
 - [Product validation contract](../agent/product-validation-contract.md)
 
 ## Contributor Rules

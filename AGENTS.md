@@ -9,11 +9,12 @@ XIC-specific task routing and invariants; global rules own general defaults.
 | Python runner, worktree setup, RAW/DLL, validation scale, environment failure | [`local-execution.md`](docs/agent/local-execution.md) |
 | Product terminology | [`domain-glossary.md`](docs/product/domain-glossary.md) |
 | Product behavior or method evidence | [`docs/product/README.md`](docs/product/README.md) |
-| Readiness claim, scientific decision, or change to published values | [`product-validation-contract.md`](docs/agent/product-validation-contract.md) and [Writer Authority](docs/product/decision-policy.md#writer-authority) |
+| Readiness claim, scientific decision, public contract or change to published values | [`product-validation-contract.md`](docs/agent/product-validation-contract.md) and [Writer Authority](docs/product/decision-policy.md#writer-authority) |
 | Choosing, adding or running tests; UI demonstration | [`testing.md`](docs/agent/testing.md) |
-| Owner boundary, persisted schema, runtime lifecycle, write authority, public contract | [`architecture-contract.md`](docs/architecture-contract.md) |
+| Which module owns a behavior | [`module-ownership.md`](docs/architecture/module-ownership.md) |
+| Scheduling, workers, pools or timing | [`runtime-execution.md`](docs/architecture/runtime-execution.md) |
 | UI information hierarchy, interactions, wording, styling or theme roles | [`ui-design.md`](docs/ui-design.md) |
-| Imports in startup-sensitive or lightweight readers | [Dependency Direction](docs/architecture-contract.md#dependency-direction) |
+| Imports in startup-sensitive or lightweight readers | [`dependency-direction.md`](docs/architecture/dependency-direction.md) |
 | Issue scope, implementation completion, push, PR or review | [`delivery.md`](docs/agent/delivery.md) |
 | Untargeted output as test input | [Replay only the stage you changed](docs/agent/local-execution.md#replay-only-the-stage-you-changed) from a capture whose upstream stages match current code; regenerate with the [8RAW runner](docs/agent/local-execution.md#validation-scale) only for what no replay covers. Other runs under `output/` are not current-format input |
 | Scripts and diagnostics | [`script-tool-lifecycle.md`](docs/agent/script-tool-lifecycle.md) to add or retire one; [`INDEX.md`](tools/diagnostics/INDEX.md) to pick one; [`diagnostic-ledger.md`](docs/agent/diagnostic-ledger.md) before repeating evidence |
@@ -33,8 +34,8 @@ XIC-specific task routing and invariants; global rules own general defaults.
   read current source for exact text and negative claims.
 - **Core model:** one concept, one representation, one source. Name the concept
   a new class, column or value belongs to before adding it; see
-  [Core Model](docs/architecture-contract.md#core-model) and
-  [Change Locality](docs/architecture-contract.md#change-locality).
+  [Core Model](docs/architecture/core-model.md) and
+  [Change Locality](docs/architecture/core-model.md#change-locality).
 - **Change scope:** Merge duplication and remove what a change replaces in the
   same delivery; add no feature, abstraction, defensive branch or document the
   task does not need.
@@ -51,7 +52,7 @@ XIC-specific task routing and invariants; global rules own general defaults.
 - **Current state only:** code, comments, tests and docs describe current
   behavior and non-obvious constraints. History stays in Git and PRs.
 - **Module naming:** name modules for their capability, following
-  [Module Naming](docs/architecture-contract.md#module-naming).
+  [Module Naming](docs/project-layout.md#module-naming).
 - **Runtime:** use this worktree's documented Python runner. Run output stays in
   ignored `output/`; a tracked artifact needs a current consumer.
 - **Performance:** follow
