@@ -102,7 +102,8 @@ normalized local three-point differences in the original signal. Failure gives
   deepest minimum in the envelope; an earlier 10% return can be more
   conservative than the valley. Unlike whole-contour prominence, this relief
   cannot borrow height from a distant trough; the half-top core still uses
-  whole-interval prominence.
+  whole-interval prominence, and this numerator neither moves that core nor
+  changes the noise estimator.
 - **Noise.** Each interior point is compared with linear interpolation between
   its neighbors, using actual RT spacing and the coefficient norm, which
   removes constant and linear background; on a uniform grid this is
