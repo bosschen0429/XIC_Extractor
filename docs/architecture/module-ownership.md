@@ -99,7 +99,7 @@ selection and `AuditTrail` before any Matrix change; activation rules are in
   selection, product projection and Alignment, so changes there reach both
   paths. Targeted role policy is in `extraction.targeted_product_projection`;
   writers consume `output.targeted_product_model`. Resolution order is in
-  [`decision-policy.md`](../product/decision-policy.md).
+  [Targeted selection](../product/targeted-selection.md#candidate-selection).
 - Peak detection has one path: physical segments from
   `peak_detection.physical_peak_evaluation`.
   `peak_detection/peak_selection.py` scores a supplied candidate set; Targeted

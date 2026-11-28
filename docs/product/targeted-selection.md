@@ -141,6 +141,11 @@ product.
   unconfirmed; neither outranks the other. Without such support, physical and
   RT/ISTD evidence decide localization. Positive CID-NL is evidence, not
   permission to accept an incompatible chromatographic interpretation.
+- **Tie-break.** Typed chemical support, role/reference localization and
+  selection evidence tier come first, then blocker count, then trace
+  strength, quality, RT distance and abundance; diagnostic scores do not
+  reselect the peak
+  ([`test_candidate_evidence_selection.py`](../../tests/test_candidate_evidence_selection.py)).
 - **Nearby candidate.** For an analyte without an ISTD pair, a complete nearby
   candidate is not displaced only by denser MS2 support on a distant isomer.
   This is not a hard RT exclusion and grants no identity from RT.

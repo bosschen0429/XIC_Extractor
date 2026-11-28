@@ -28,8 +28,8 @@ discovery, grouping and Matrix delivery. Separate entry points and writers do
 not justify duplicate capture, peak identity, cross-sample, revisit or
 cell-decision owners. The scientific lifecycle is in the
 [Domain Glossary](../product/domain-glossary.md#product-shape),
-[`alignment.md`](../product/alignment.md), [`backfill.md`](../product/backfill.md)
-and [`decision-policy.md`](../product/decision-policy.md).
+[`alignment.md`](../product/alignment.md) and
+[`backfill.md`](../product/backfill.md).
 
 ## Topics
 

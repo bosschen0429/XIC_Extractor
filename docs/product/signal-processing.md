@@ -392,7 +392,8 @@ default is scan-rate sensitive, so other windows are method parameters
   merges or grants authority.
 - Morphology supplies boundary and shape evidence, not identity. RT, target
   window, MS2/NL opportunity, CID-NL evidence and cross-sample gates decide
-  acceptance ([decision policy](decision-policy.md)).
+  acceptance ([Targeted selection](targeted-selection.md),
+  [Alignment](alignment.md)).
 
 ## Where The Code Lives
 
