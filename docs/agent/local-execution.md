@@ -24,7 +24,6 @@ keep source changes and evidence in this checkout and ignored output/.
 Check a worktree after setup changes or an environment failure with:
 
     uv run --cache-dir .uv-cache --no-project python scripts/bootstrap_worktree.py --check --local --json
-    .venv\Scripts\python.exe -m scripts.agent_sandbox_doctor --strict --probe-write
 
 Bootstrap a new worktree once with:
 
@@ -100,10 +99,10 @@ The current command surface is:
 
     .venv\Scripts\python.exe -m scripts.run_alignment --help
 
-Output semantics live in docs/product/quant-matrix.md; cell decisions live in
-docs/product/decision-policy.md; preset
-compatibility lives in docs/product/presets.md. Task-specific paths and accepted
-parameter values stay in the Issue or validation owner.
+Output semantics, cell decisions and preset compatibility are owned by the
+code and tests that docs/product/quant-matrix.md, decision-policy.md and
+presets.md name. Task-specific paths and accepted parameter values stay in the
+Issue or validation owner.
 
 ### Replay only the stage you changed
 
@@ -176,9 +175,3 @@ On Windows the cache path budget is measured below the run directory: a
 141-character prefix plus a 48-character cache path leaves 70 of the 259
 usable characters for longer installations and batch names. Paths distribute
 entries; the stored namespace, key and numeric content identify the fact.
-
-## Shell Traps
-
-The Windows examples above use PowerShell. Match the syntax to the active
-shell; formal RAW validation still requires Windows Native. Keep run outputs
-under ignored `output/` and local inputs under ignored `local_validation_artifacts/`.

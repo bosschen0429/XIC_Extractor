@@ -18,8 +18,8 @@ Files used by the [user guides](../README.md) and the developer maps.
   The other four are drawn from one Alignment run's grouping snapshot (an
   Alignment run with `--save-grouping-inputs`) by
   `tools/rt_drift_guide_figures.py`; the page names that run's injection
-  count. Redraw them when `docs/product/rt-calibration.md#drift-beyond-the-map`
-  changes, then update the numbers the page quotes from them:
+  count. Redraw them when the RT drift model changes (`alignment.rt_drift`), then
+  update the numbers the page quotes from them:
 
   ```powershell
   .venv\Scripts\python.exe -m tools.rt_drift_guide_figures output/<run>/grouping-inputs.json.gz

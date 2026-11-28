@@ -80,7 +80,7 @@
       ],
       "sources": [
         {
-          "path": "docs/architecture-contract.md",
+          "path": "docs/architecture/README.md",
           "line": 49,
           "end_line": 73
         },

@@ -1,6 +1,6 @@
 ---
 name: xic-performance-diagnosis
-description: Diagnose XIC performance from timing and parity artifacts before optimization. Use for missing timing baselines, bottlenecks, performance comparisons, RAW/XIC locality, worker budgets, performance regressions, or fast-mode review.
+description: Diagnose XIC performance from timing and parity artifacts before optimization. Use for missing timing baselines, bottlenecks, performance comparisons, RAW/XIC locality, worker budgets, or performance regressions.
 ---
 
 # XIC Performance Diagnosis
@@ -48,7 +48,6 @@ public outputs, selected values, counts, identities, or schemas when applicable:
 
 - `exact_safe`: output-preserving cost or worker-budget changes.
 - `expected_diff`: intentional semantic changes with an expected-diff owner.
-- `fast_mode_candidate`: explicit opt-in alternate semantics preserving defaults.
 - `diagnostic_only`: measurement without product behavior changes.
 
 Tests or speed alone do not grant writer, Matrix, workbook, or export
@@ -76,7 +75,3 @@ diagnosis reports the scoped action without changing files.
 Update the diagnostic ledger only when a durable conclusion changes or prevents
 a known repeat. Reuse an applicable conclusion; otherwise no entry is required.
 The ledger remains the durable performance-conclusion owner.
-
-Routing scenarios live in `evals/trigger-cases.md`; candidate-disposition
-pressure scenarios live in `evals/pressure-cases.md`. These are manual fixtures,
-not observed agent behavior or automated acceptance.

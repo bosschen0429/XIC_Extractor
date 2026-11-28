@@ -2,144 +2,47 @@
 
 The quant matrix delivers finalized feature × sample numeric values for
 downstream analysis. A published area, counted detection and chemical identity
-are different facts; a blank cell is not an inferred zero. For how to read and
-curate the result, use the [user guide](../user/untargeted.md#整理矩陣).
-This page owns Matrix content, cell-decision and publication rules.
-
-The type name `Matrix` is reserved for this finalized canonical shape. Owner
-observations,
-Backfill results, consolidation snapshots, and provisional cell collections
-use different typed names. These pre-final collections cannot cross the
-delivery seam as if they were already final.
-
-## Contract
-
-### Matrix content
-
-- The primary matrix exposes numeric product values and a stable user-facing
-  row/sample structure. The primary matrix does not expose diagnostic evidence
-  columns.
-- Identity, row-basis, source, evidence, and review details belong in
-  sidecars unless an explicit public schema says otherwise.
-- [Signal processing](signal-processing.md#boundary-and-area-owners)
-  owns the area policy.
-- A finite positive observed censored physical area may supply the numeric
-  value. Preserve its observed censored source and the retained
-  `near_detection_limit` or truncation evidence; do not impute missing signal.
-  Numeric publication alone does not change counted-detection or physical
-  selection policy.
-
-### Cell decision
-
-- Direct observations and Backfill observations are different evidence
-  states.
-- Backfill supplies an observation under an established Target or group.
-- Target projection constructs its explicit subject before cell decision.
-- Untarget cell decision consumes completed Feature × Sample evidence first.
-  Matrix projection then assigns output identities and wraps the unchanged
-  value/no-write payload and selected integration in `ProductionCellDecision`.
-  The Alignment TSV writers render those decisions directly; a cell `status`
-  is `detected`, `backfilled`, or the cell's no-write reason. `detected`
-  means this injection has its own CID-NL support for the peak; `backfilled`
-  means the peak is MS1-only, whether the first capture or a later Backfill
-  search found it. A `backfilled` peak can supply an area in an established
-  row; it does not establish the row or count as direct CID-NL support.
-- Inclusion and counting consume those completed answers, not raw cells.
-
-Owners without an integration or with an apex on an integration boundary do
-not train the RT calibration. Cell decisions take values from peak
-integrations, not the anchor-eligibility flag.
-
-### Matrix publication
-
-- Normal Matrix publication consumes the live Alignment cell decisions and
-  projection owners, without a separate promotion or closeout chain.
-- Only the workflow writer publishes values; see [Writer Authority](decision-policy.md#writer-authority).
-  A past validation packet cannot authorize current values.
-- Changes to selected values require the owning product contract and
-  method-appropriate evidence.
-
-The default `production` Matrix artifact is `alignment_matrix.tsv`; every level
-also writes the [RT anchor table](rt-calibration.md#rt-anchor-table). Alignment's
-method-neutral per-cell evidence is `alignment_explanation.sqlite`, published
-after the Matrix; see [retained evidence](workbench.md#retained-evidence-and-diagnostics).
-Identity, review, provenance, Backfill evidence, HTML and workbook artifacts
-remain explicit machine, validation, diagnostic or compatibility outputs.
-
-All renderers (TSV, XLSX, HTML) format one finalized decision set from the live
-cell-decision owner. A renderer cannot rebuild competing values, statuses,
-counts or row inclusion from raw cells. The output files share one atomic
-temp-write, replace and rollback transaction. Diagnostic sidecars can preserve
-raw evidence but never supply competing production decisions.
-
-### Row identity and display
-
-Targeted retains a typed empty fixed row when no group qualifies. Qualified
-groups with disjoint sample membership bind the same fixed `TargetKey` row;
-only groups competing for the same sample keep that row unresolved. Untargeted
-standard Matrix includes established groups only.
-Provisional groups belong in a compact machine archive/review surface;
-unresolved and rejected groups remain AuditTrail facts.
-
-A Matrix row's m/z is its group's centre: the mean of the members' m/z,
-decided once when the group is built. Backfill searches
-that same centre. Matrix displays it; run metadata keeps its full precision. A
-member's m/z is its peak's own mass (`peak_mz`): the apex MS1 reading for an
-inferred precursor, whose product + loss can sit up to 10 ppm from the MS1 ion,
-else the XIC centre. Review XICs replay each
-observation's saved extraction mass and ppm tolerance, not its MS2 evidence key.
-
-`feature_id` is a report-scoped group label, not canonical group identity;
-the Matrix itself carries no ID column. A change to public keys, filenames,
-ordering, columns or schema versions is a public-contract change, with the
-existing expected-diff and downstream checks. Diagnostic
-risk flags do not independently authorize a value or row.
-
-## Surfaces
-
-| Surface | Role |
-| --- | --- |
-| `alignment_matrix.tsv` / workbook `Matrix` | Primary product-facing numeric matrix |
-| `ProductionCellDecision` | Published value/no-write decision retaining the selected integration and workflow-specific subject |
-
-Workbench shows group review from the explanation report. The Matrix SHA-256
-and row-ordered feature IDs and full-precision masses are stored together in
-run metadata. Diagnostic outputs include `alignment_backfill_cell_evidence.tsv` for Backfill evidence,
-`alignment_rt_anchors.tsv` for the frozen RT calibration knots (see
-[RT anchor table](rt-calibration.md#rt-anchor-table)), conditional
-`alignment_run_metadata.json`, and versioned `alignment-results` metadata.
-These are public schema surfaces, not independent scientific authority.
-The standard fast public validation profile remains `validation-minimal`;
-it also writes the compact `alignment_explanation.sqlite` so a run can be reviewed
-and scored without a rerun. It does not establish production readiness by itself.
+are different facts; a blank cell is not an inferred zero. The code and its
+tests own the files, columns, status values and row rules; this page keeps the
+boundaries and reasons. For reading and curating the result, use the
+[user guide](../user/untargeted.md#整理矩陣).
 
 ## Boundaries
 
-- **Owns:** final primary matrix schema, projection-owned row/cell identity,
-  cell provenance, activation bundle format, and rendering of finalized cell
-  decisions.
-- **Does not own:** which Backfill cells are currently accepted, per-row
-  scientific confidence, maturity tier decisions, or upstream
-  alignment/detection logic.
-- A candidate Backfill row is not an accepted matrix value until the authority
-  manifest accepts that row.
+- **Final only.** The type name `Matrix` is reserved for the finalized shape;
+  owner observations, Backfill results, consolidation snapshots and
+  provisional cell collections cannot cross the delivery seam as if final.
+- **Values only.** The primary Matrix carries numeric values and a stable
+  row/sample structure; identity, evidence and review details belong in
+  sidecars, and diagnostic risk flags authorize no value or row.
+- **One decision set.** Every renderer formats one finalized decision set from
+  the live cell-decision owner and cannot rebuild values, statuses, counts or
+  row inclusion from raw cells; only the workflow writer publishes
+  ([Writer Authority](decision-policy.md#writer-authority)), and a past
+  validation packet cannot authorize current values.
+- **A backfilled value is not a detection.** A `backfilled` peak can supply an
+  area in an established row but does not establish the row or count as direct
+  CID-NL support.
+- **Established groups only.** Provisional, unresolved and rejected groups
+  stay review and audit facts.
+- **`feature_id` is report-scoped**, not identity; a change to public keys,
+  filenames, ordering, columns or schema versions is a public-contract change
+  needing expected-diff and downstream checks.
 
-## Verification
+## Why It Works This Way
 
-- `tests/test_alignment_tsv_writer.py`
-- `tests/test_alignment_cell_decision.py`
+- A censored area is published as observed, never imputed; publishing it
+  does not change counted detection or physical selection.
+- A row's m/z is decided once when the group is built; Backfill searches
+  that same centre. A member's own m/z is its peak's `peak_mz`
+  ([accurate-mass reading](discovery.md#accurate-mass-reading)), because an
+  inferred precursor's product + loss can sit up to 10 ppm from the MS1 ion.
+- Owners without an integration, or with an apex on an integration
+  boundary, do not train RT calibration; cell values come from peak
+  integrations, not the anchor-eligibility flag.
+- The fast `validation-minimal` profile also writes the explanation report so
+  a run can be reviewed without a rerun; it does not establish production
+  readiness.
 
-## Pitfalls
-
-- Treating candidate Backfill rows as accepted matrix values.
-- Treating a Backfill observation as the selected value without a closed
-  `ProductionCellDecision`.
-- Passing a pre-final cell collection directly to a writer.
-- Adding diagnostic evidence columns to the primary matrix.
-- Claiming production readiness from contract fixtures or 8RAW smoke alone.
-
-## See Also
-
-- [Backfill](backfill.md) | [Alignment](alignment.md) | [Decision Policy](decision-policy.md)
-- [Targeted candidate selection](targeted-selection.md#candidate-selection)
-- [Workbench and review](workbench.md)
+See also [Backfill](backfill.md) · [Alignment](alignment.md) ·
+[Workbench and review](workbench.md)

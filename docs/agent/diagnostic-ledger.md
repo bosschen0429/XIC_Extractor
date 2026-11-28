@@ -31,67 +31,54 @@ none of these entries grants readiness or writer authority.
 
 ### Windows randomized TCP ports can fail at low connection counts
 
-`diagnostic_only` (2026-11-15). The first attempt of
-[CI run 43683214989](https://github.com/bosschen0429/XIC_Extractor/actions/runs/43683214989/attempts/1)
-failed loading `analysis.css` with `ERR_NO_BUFFER_SPACE` and no HTTP response.
-Its retained trace does not contain a native socket error, so attributing that
-specific CI failure to the allocator remains an inference.
+`diagnostic_only` (2026-11-15).
 
-The inspected [upstream reproduction](https://github.com/microsoft/playwright/issues/43545)
-isolated `SO_RANDOMIZE_PORT` locally on Windows build 22631.6491:
-ordinary phases completed 40,000 connections without error; randomized phases
-failed with Winsock 10055 after 7,062 and 12,540 attempts, with about 230 TCP rows.
-This reproduced the allocator defect independently of XIC, at low TCP occupancy.
-The original browser shard passed 57 cases both before and after mitigation,
-with sampled TCP counts below 503 and over 8 GiB of available memory. Neither run
-reproduced the browser error; these clean intervals do not prove its elimination.
+- **Conclusion:** Windows `SO_RANDOMIZE_PORT` can fail with Winsock 10055 at
+  low TCP occupancy, independently of XIC. The
+  [upstream reproduction](https://github.com/microsoft/playwright/issues/43545)
+  on build 22631.6491 completed 40,000 ordinary connections, but randomized
+  phases failed after 7,062 and 12,540 attempts with about 230 TCP rows.
+- **Not established:** that this caused the `ERR_NO_BUFFER_SPACE` in
+  [CI run 43683214989](https://github.com/bosschen0429/XIC_Extractor/actions/runs/43683214989/attempts/1).
+  Its trace has no native socket error. The browser shard passed 57 cases both
+  before and after mitigation (TCP counts below 503, over 8 GiB free) without
+  reproducing the error, so those clean runs do not prove its elimination.
+- **Current state:** Playwright 1.65.0
+  [disables `TcpPortRandomizationWin` by default](https://github.com/microsoft/playwright/pull/43605),
+  so the fixture launches the requested channel with no second browser or
+  custom switch. Bundled headless Chromium 158.0.8127.18, Chrome and Edge showed
+  the same 16 disabled features as an independent stock launch.
+- **Reopen:** after a Windows TCP stack or locked Chromium/Playwright update,
+  or another `ERR_NO_BUFFER_SPACE`. Use a native socket error and
+  contemporaneous resource counts; the error name alone does not prove
+  resource exhaustion.
 
-Playwright 1.65.0 [includes the mitigation in its own default feature list](https://github.com/microsoft/playwright/pull/43605).
-The fixture therefore launches the requested channel directly, without a
-second browser or a custom launch switch. On Windows, the fixture and an
-independent stock launch had the same 16 disabled features, including
-`TcpPortRandomizationWin`, for bundled headless Chromium 158.0.8127.18 and
-the locally installed Chrome and Edge channels.
-
-Evidence is under `output/browser-ci-analysis/`: `native-probe-result.json`,
-`shard-baseline/` and `shard-candidate/` hold the native comparison, live resource
-snapshots and Chromium NetLogs. Re-evaluate the mitigation after a Windows TCP
-stack or locked Chromium/Playwright update, or another `ERR_NO_BUFFER_SPACE`;
-use a native socket error and contemporaneous resource counts rather than
-assuming that the error name proves resource exhaustion.
+Artifacts: `output/browser-ci-analysis/`.
 
 ### Browser collection excludes unrelated test files
 
-`diagnostic_only`, `exact_safe` (2026-11-15). Replayed the full-collection policy
-and narrowed file candidates on the same checkout based on `e447a28e`, Python
-3.15.2, locked dependencies and `OPENBLAS_NUM_THREADS=1`. After one warm-up pair,
-three interleaved pairs gave process-start-through-collection-exit medians of
-3.891 seconds (range 3.890–3.932) and 1.520 seconds (1.513–1.528). This is about
-61% less local collection time, not an end-to-end CI speedup.
+`diagnostic_only`, `exact_safe` (2026-11-15); `e447a28e`.
 
-The full policy collected 4,763 cases before marker filtering; the six candidate
-files collected 330. Both retained exactly the same 169 browser node IDs. The
-three narrowed shards covered them once, without overlap, at 57/56/56 cases.
-Pytest, not the file-candidate scan, remains the membership oracle.
+- **Conclusion:** narrowing browser collection to candidate files keeps
+  exactly the same 169 browser node IDs. The full policy collected 4,763 cases
+  before marker filtering; the six candidate files collected 330. Local
+  process-start-through-collection-exit medians fell from 3.891 s to 1.520 s
+  over three interleaved pairs. Pytest, not the file-candidate scan, remains
+  the membership oracle.
+- **Not a CI speedup by itself:** hosted elapsed time follows the critical
+  path. Waiting for lint before dispatching tests regressed a whole run from
+  189 to 238 s (`43689952191`, `43702971655`) at identical browser coverage.
+- **Current state:** the plan runs independently of lint and Chromium runs in
+  five shards, as [the CI lane decision](../adr/0004-isolate-ci-lanes.md)
+  records. Hosted run `43705606879` at `54b7fc36` completed in 165 s with the
+  169 nodes executed once. Cumulative job time rose from 809 to 962 s: an
+  elapsed-time win, not a compute saving, and subject to runner and queue
+  variability.
+- **Reopen:** when marker discovery, collection, sharding or CI scheduling
+  changes. Keep local collection timings separate from runner startup, browser
+  execution and billing.
 
-Hosted runs with identical 169-case browser coverage showed that waiting for
-lint before dispatching tests regressed whole-run elapsed time from 189 to 238
-seconds (`43689952191` and `43702971655`). The 32-second lint prerequisite was
-on the critical path; local collection savings did not establish a CI speedup.
-Planning now runs separately from lint, and five isolated browser shards trade
-additional runner capacity for shorter elapsed time. Hosted run `43705606879`
-at `54b7fc36` completed in 165 seconds, with the same 169 browser node IDs
-executed once at 34/34/34/34/33 cases. The plan took 20 seconds; browser jobs
-took 103–126 seconds. Cumulative job time increased from the original baseline's
-809 to 962 seconds, so the elapsed-time win is not a compute-cost saving.
-These are hosted observations, not a guarantee against runner/queue variability;
-ordinary regression coverage also grew. Irrelevant browser jobs stay gated
-before VM allocation; only a successful plan can authorize the skip.
-
-Evidence is under `output/browser-ci-scheduling/collection-comparison.json`,
-the adjacent collection logs. Recheck parity and cost when
-marker discovery, collection, sharding or CI scheduling changes. Keep local
-collection timings separate from runner startup, browser execution and billing.
+Artifacts: `output/browser-ci-scheduling/`.
 
 ## Untargeted Method Evidence
 
@@ -100,92 +87,79 @@ collection timings separate from runner startup, browser execution and billing.
 `diagnostic_only`; 8RAW `dna_dr`, sources `878c6a8b2` and `23c613623`
 (2026-11-02/03). One CID-NL fixture, not method-independent.
 
-- With frozen calibration, RT-first and no-relative-height matching changed 31
-  of 5,475 pattern comparisons but no final membership; removing shape changed
-  11 owners' membership. Total stayed 857 groups.
-- Rerunning the full chain with only bootstrap evidence changed: no-height and
-  RT-first changed 17 owners' bootstrap membership; fitted coordinates moved at
-  most 0.282 s; the 234 published rows kept the same detected and backfilled
-  counts. Removing shape from bootstrap changed 76 owners in final grouping
-  (857 to 863 groups) and 331 cells' presence or area.
-- On held-out observations excluding anchor worksets, median peer-prediction
-  error was 3.27 s baseline versus 3.00 s without shape, but no-shape was worse
-  on the stricter no-co-apex subset (16.9 versus 17.9 s). The small gain does not
-  justify the extra splitting.
-- Replacing membership RT cost scales with observed median or p90 error grew
-  groups from 857 to 1,190 or 874.
+- **Conclusion:** none of these substitutions improves membership enough to
+  pay for its splitting. With frozen calibration, RT-first and no-height
+  matching changed no final membership; removing shape changed 11 owners
+  (857 groups throughout). In the full chain, removing shape from bootstrap
+  moved 76 owners (857 to 863 groups) and 331 cells' presence or area, for a
+  held-out peer-prediction median of 3.00 versus 3.27 s that reversed on the
+  stricter no-co-apex subset (17.9 versus 16.9 s). Scaling membership RT cost
+  by observed median or p90 error grew groups to 1,190 or 874.
+- **Reopen:** for an independently adjudicated changed case or a distinct
+  evidence hypothesis, not to repeat these substitutions.
 
-Reopen for an independently adjudicated changed case or a distinct evidence
-hypothesis, not to repeat these substitutions. Artifacts:
-`output/untarget-evidence-experiments/`, `output/bootstrap-full-chain/`.
+Artifacts: `output/untarget-evidence-experiments/`, `output/bootstrap-full-chain/`.
 
 ### Weak admission, local RT error and quality-gated shape are not adopted
 
 `diagnostic_only`; source `b58ac1e2d` (2026-11-03).
 
-- Admitting 175 rescued rows changed published Matrix rows from 234 to 225 with
-  changed integrations; admitting 339 coisolation rows gave 956 versus 857
-  groups and split two old groups. More output did not show identity gain.
-- A fixed-group observation-only probe recovered no new quantitative
-  measurements: of 57 attachments, 47 were already formal Backfills.
-- A nested five-fold local RT error model narrowed median half-width from 39.9
-  to 32.6 s but coverage on the strict subset fell from 85.3% to 82.1%. Do not
-  render these scales as calibrated probabilities.
-- On 1,086 independently component-labeled measurements, quality/competitive
-  shape fixed 48 split and 61 merge pairs but introduced 21 and 29 new ones;
-  local RT introduced 66 and 62. Rejected under the no-new-false-split rule.
-- Restricting relative-height matching to the two pooled QCs reproduced the
-  no-height Matrix with no added benefit.
+- **Conclusion:** more output did not show identity gain. Admitting 175
+  rescued rows changed Matrix rows from 234 to 225 with changed integrations;
+  admitting 339 coisolation rows gave 956 versus 857 groups and split two old
+  groups. A fixed-group observation-only probe found nothing new (47 of 57
+  attachments were already Backfills). A nested five-fold local RT error model
+  narrowed median half-width from 39.9 to 32.6 s but strict-subset coverage
+  fell from 85.3% to 82.1%; these scales are not calibrated probabilities.
+  On 1,086 component-labeled measurements, quality/competitive shape fixed 48
+  split and 61 merge pairs but introduced 21 and 29 (local RT: 66 and 62),
+  rejected under the no-new-false-split rule. Pooled-QC-only relative height
+  reproduced the no-height Matrix.
+- **Reopen:** for a distinct discriminating signal, an adjudicated changed
+  case or a new method/cohort. Do not expand these candidates to 85RAW.
 
-Reopen for a distinct discriminating signal, an adjudicated changed case or a
-new method/cohort. Do not expand these candidates to 85RAW.
 Artifacts: `output/remaining-directions/`.
 
 ### A local envelope does not improve fixed-group Backfill
 
 `diagnostic_only`; `d3da193d7` (2026-11-02).
 
-- A fixed-query envelope prototype selected regions in all 20 noise-only cases
-  (none under current Backfill), with a 27-fold area overestimate at lowest
-  signal.
-- In 24 typed-path cases, current occupancy and joint assignment already leave a
-  cell blank when its peak belongs to a known competitor. A local peer-RT
-  envelope rejected an interferer but also a genuine target shift; in
-  leave-one-out recovery it accepted 716 of 840 observations versus 840.
-- Discovery admission accepted 2,632 of 5,084 rows; 839 rejected rows already
-  keep physical evaluations and traces.
+- **Conclusion:** a fixed-query envelope selected regions in all 20 noise-only
+  cases (none under current Backfill), overestimating area 27-fold at lowest
+  signal. In 24 typed-path cases, occupancy and joint assignment already leave
+  a cell blank when its peak belongs to a known competitor; a local peer-RT
+  envelope rejected an interferer but also a genuine shift, accepting 716 of
+  840 leave-one-out observations versus 840. Of 5,084 Discovery rows, 2,632
+  were admitted, and 839 rejected rows already keep evaluations and traces.
+- **Reopen:** for a different method/cohort, changed candidate or calibration
+  owners, or an independent identity oracle.
 
-Repeat only for a different method/cohort, changed candidate or calibration
-owners, or an independent identity oracle. Artifacts:
-`output/fixed-group-final-attempt/`.
+Artifacts: `output/fixed-group-final-attempt/`.
 
 ### Urine MeIQx: group-centered Backfill already recovers seed-window misses
 
 `diagnostic_only`; `c0b9f0fc`, 54RAW urine (2026-08-20).
 
-MeIQx `FAM000012` (44 owners, RT 40.93 min) was probed in three RAWs through the
-existing ±3 min group-centered Backfill window. Two positives were rescued
-within 0.045 min of manual review; the negative's off-trajectory Discovery peak
-at 43.66 min was not rescued. BC2264 was a Discovery seed-window miss, not a
-Backfill miss.
-
-Do not widen Discovery requests or add a second RT control plane. Reopen only
-when a real case has an established group and a compatible peak, yet Backfill
-misses because the group-center query is displaced.
+- **Conclusion:** for MeIQx `FAM000012` (44 owners, RT 40.93 min), the ±3 min
+  group-centered Backfill window rescued two positives within 0.045 min of
+  manual review and correctly left the negative's off-trajectory peak at
+  43.66 min. BC2264 was a Discovery seed-window miss, not a Backfill miss, so
+  neither wider Discovery requests nor a second RT control plane is needed.
+- **Reopen:** when a real case has an established group and a compatible peak,
+  yet Backfill misses because the group-center query is displaced.
 
 ### Inferred precursor ion offsets follow MS2 resolution
 
 `diagnostic_only`; two RAWs, `DNA_dR` (#546, 2026-09-28).
 
-Direct-seed product errors have medians of +4.8/+1.8/+2.4/+7.0 ppm in bands
-below 300, 300–500, 500–700 and above 700 m/z. Target-decoy counting places
-inferred-precursor excess within ±10 ppm below m/z 500, spreading to −30/+60 ppm
-at 500–700 and +15/+35 ppm above 700. This follows from ddMS2 at 15,000 versus
-MS1 at 60,000. Discovery treats product + loss only as a pointer and reads the
-ion inside its request; banded windows were not adopted.
-
-Rerun when the instrument, its MS2 resolution or calibration, or the method
-changes.
+- **Conclusion:** inferred-precursor excess stays within ±10 ppm below m/z
+  500, spreading to −30/+60 ppm at 500–700 and +15/+35 ppm above 700, as
+  expected from ddMS2 at 15,000 versus MS1 at 60,000 (direct-seed product
+  medians +4.8/+1.8/+2.4/+7.0 ppm by band). Discovery therefore treats product
+  + loss only as a pointer and reads the ion inside its request; banded
+  windows were not adopted.
+- **Reopen:** when the instrument, its MS2 resolution or calibration, or the
+  method changes.
 
 ### Steep compound-specific RT drift splits one compound into several rows
 
@@ -193,471 +167,301 @@ changes.
 the #1165 batch drift model, 2026-11-16), read-only 8RAW XIC/MS2, 85RAW
 existing unique-channel matrix offline. One batch.
 
-- Cause: a few compounds (m/z 348.2122 with MS2 base 232.165, its 13C,
-  285.1506, 273.1506 and others at 10-14 min) also follow a per-sample shift
-  that ISTDs and ordinary compounds at nearby RT do not. The shared RT map
-  cannot carry it, so one compound split into rows.
-- #1165 adds batch state B (pooled-QC trend, one frozen shape per drift anchor)
-  and sample shift M, with two coefficients per group. 8RAW: 348.2122 and
-  349.2155 each become one row (all seven 348.2122 Y owners, no 227.139-base
-  component); the four isomer controls 244.12, 288.07, 827.17 and 828.17 stay
-  separate.
-- 8RAW is too small to estimate coefficients: permuting M across samples
-  leaves 5-13 of 21 sample-shift fits nonzero. 85RAW offline (not grouping):
-  two-coefficient residual SD 348.21 94 -> 15 s, 285.15 65 -> 15 s,
-  347.21 81 -> 9 s; ordinary channels 90% |a| < 0.07, |b| < 0.03.
-- 299.1553 is two components at fixed RT whose height ratio reverses between
-  pooled QC3 and QC5 (10.61/11.19 vs 10.59/11.19 min; MS2 cosine 0.85-0.94
-  within each, 0.61-0.73 across). The pattern track keeping QC3's and QC5's
-  selected peaks apart is correct; it is not a drift case.
-- The general map stays on bootstrap-group anchors; method channels (a
-  channel's only direct-supported peak per sample) measure drift only. Fitting
-  the map from channels instead, with a one-minute filter against each sample's
-  overall offset, was tried and reverted: on 85RAW about 20 tumor samples'
-  late ISTDs (23.5 and 25.75 min) sat 1-3 min off the map (bootstrap anchors:
-  2 samples above 30 s). The filter removed correct late anchors where a
-  sample's offset changes with RT, and the robust LOESS's sample-wide residual
-  scale then extrapolated the steep 16.5-18.6 min stretch. Dropping the filter
-  let drifting compounds shape the first fit, and M vanished. On 8RAW the
-  revert gives 867 rows against master's 872 with 14 changed m/z
-  neighborhoods; 404.1159 is separate again, as on master, where its own mixed
-  group anchors the map.
-- 827.17 and 299.1553 on the 85-sample selected worksets: owners form one
-  continuous RT band (827.17: 15.08-15.58 calibrated, isomers about 0.3 min
-  apart, one owner per sample). Either map only cuts that band somewhere; RT
-  does not assign the middle samples.
-- 288.0658 on the 85-sample selected worksets: QC7's owner (15.236 calibrated) is
-  the front component but sits in the rear row; QC7 has a rear peak at 15.505.
-  Double-peak samples put the front at 15.12-15.24 and the rear at
-  15.40-15.51; most single-peak samples, BenignfatBC1055 among them (15.245),
-  sit between and cannot be assigned by RT.
-- Isomers that share the NL have identical identity evidence in grouping; only
-  RT, shape and region remain. Three RT-only objectives (group model, evidence
-  acceptance, RT likelihood with a CRP prior and double-peak observations) each
-  split 348.21 Y or merged isomer controls once searched. MS2 fragment
-  evidence is #1170.
+- **Conclusion:** a few compounds (m/z 348.2122 with MS2 base 232.165, its
+  13C, 285.1506, 273.1506 and others at 10-14 min) follow a per-sample shift
+  that ISTDs and nearby ordinary compounds do not, so the shared map split
+  them. The #1165 batch state B and sample shift M, with two coefficients per
+  group, make 348.2122 and 349.2155 one row each on 8RAW (all seven 348.2122 Y
+  owners, no 227.139-base component), while the isomer controls 244.12,
+  288.07, 827.17 and 828.17 stay separate.
+- **Not established:** coefficients on 8RAW, which is too small (permuting M
+  leaves 5-13 of 21 sample-shift fits nonzero). 85RAW offline only:
+  two-coefficient residual SD 348.21 94 → 15 s, 285.15 65 → 15 s,
+  347.21 81 → 9 s; ordinary channels 90% |a| < 0.07, |b| < 0.03.
+- **Rejected:** fitting the general map from method channels with a
+  one-minute filter. On 85RAW about 20 tumor samples' late ISTDs (23.5 and
+  25.75 min) sat 1-3 min off the map (bootstrap anchors: 2 samples above
+  30 s): the filter removed correct late anchors where a sample's offset
+  changes with RT, and the LOESS's sample-wide residual scale extrapolated the
+  steep 16.5-18.6 min stretch; without the filter drifting compounds shaped the
+  first fit and M vanished. The revert gives 867 rows on 8RAW against
+  master's 872 (14 changed m/z neighborhoods), with 404.1159 separate as on
+  master.
+- **Not drift:** 299.1553 is two fixed-RT components whose height ratio
+  reverses between QC3 and QC5 (MS2 cosine 0.85-0.94 within, 0.61-0.73
+  across); keeping them apart is correct.
+- **RT cannot assign:** on the 85-sample selected worksets, 827.17 and
+  299.1553 owners form one continuous RT band (827.17: 15.08-15.58 min
+  calibrated, isomers about 0.3 min apart, one owner per sample) that either
+  map only cuts somewhere. For 288.0658, QC7's front-component owner (15.236
+  calibrated) sits in the rear row; double-peak samples put the front at
+  15.12-15.24 and the rear at 15.40-15.51, and most single-peak samples,
+  BenignfatBC1055 (15.245) among them, sit between. Isomers sharing the NL
+  have identical identity evidence in grouping, leaving only RT, shape and
+  region. Three RT-only objectives (group model, evidence
+  acceptance, RT likelihood with a CRP prior and double-peak observations)
+  each split 348.21 Y or merged isomer controls; MS2 fragment evidence is
+  #1170.
+- **Reopen:** for 85RAW acceptance of #1165, a change to the population-gap
+  exemption or boundary RT weighting, or a new column or method.
 
-Reopen for 85RAW acceptance of #1165, for a change to the population-gap
-exemption or boundary RT weighting, or for a new column or method. Artifacts:
-`output/rt1165-8raw-*` in the #1165 worktree and the issue #1165 side-session
-notes (outside the repo).
+Artifacts: `output/rt1165-8raw-*` in the #1165 worktree and the issue #1165
+side-session notes (outside the repo).
 
 ## Targeted And Peak Evidence
 
 ### NL116 ISTD human boundary calibration
 
-`diagnostic_only` (#125). The owner blind-labelled 12 NL116 ISTD cases in
-`Breast_Cancer_Tissue_pooled_QC3` and `TumorBC2263_DNA`. All 12 were accepted
-and counted by the machine; C010 was only flagged for `targeted_rt_review`.
-Every machine interval lay inside the human envelope (median IoU 0.807) and
-kept a median 99.24% and minimum 98.96% of its area under the same integrator.
-The 2% baseline-return rule does not materially truncate these peaks; compare
-boundaries by containment and area retention, not coordinate equality.
+`diagnostic_only` (#125).
 
-Rerun when boundary selection, the baseline-return rule or the area integrator
-changes.
+- **Conclusion:** on 12 owner-blind-labelled NL116 ISTD cases in
+  `Breast_Cancer_Tissue_pooled_QC3` and `TumorBC2263_DNA`, all were accepted
+  and counted (C010 only flagged `targeted_rt_review`). Every machine interval
+  lay inside the human envelope (median IoU 0.807) and kept a median 99.24%
+  (minimum 98.96%) of its area under the same integrator, so the 2%
+  baseline-return rule does not materially truncate these peaks. Compare
+  boundaries by containment and area retention, not coordinate equality.
+- **Reopen:** when boundary selection, the baseline-return rule or the area
+  integrator changes.
 
 ### Standard mixture manual 2RAW: identity check, not an area reference
 
-`diagnostic_only`; `e8a99be0` (2026-11-14). The two RAWs are method-change
-tests (NoSplit HESI, Split NSI): specificity is good, but the chromatography
-has known problems such as tailing and double peaks. The set therefore checks
-peak identity, not area accuracy.
+`diagnostic_only`; `e8a99be0` (2026-11-14). Two method-change RAWs (NoSplit
+HESI, Split NSI) with good specificity but known tailing and double peaks.
 
-The identity check passes: all 100 scored manual peaks were found and no ISTD
-was missed. Median absolute area error is 2.24%, 92/95 within 10%/20%; five
-rows deviate by more than 20% area or 0.20 min RT. The user reviewed those five
-and the three other rows above 10% with MS1 traces and MS2 neutral-loss scans,
-and judged the program's peak and bounds more reasonable in seven; 8-Obz-dG was
-too poorly shaped to judge.
-
-- m7G, N6-6Ah-dA and m1A (NoSplit, tailing): the program areas are 21–27%
-  larger. Neutral-loss scans continue through the tail, and the program bounds
-  tailing more consistently than the manual sheet.
-- ac4C (NoSplit) and O6-HPdG (Split, double peak): the program apex is
-  0.41–0.79 min later than the manual RT. Neutral-loss scans sit at the
-  program apex; the on-target MS2 at the manual ac4C RT shows none.
-
-The score uses the selected acquisition peak area, not the published workbook
-value. The target lists in `XIC_MANUAL_2RAW_ROOT` use the current target
-schema, with `expected_rt_min` at the midpoint of the former ±1 min window;
-the former files are kept in its `legacy_format_targets/`.
-
-Rerun when Targeted peak selection or identity rules change. Area accuracy
-needs a manual set with clean chromatography.
+- **Conclusion:** identity passes: all 100 scored manual peaks were found and
+  no ISTD was missed. Median absolute area error is 2.24%, 92/95 within
+  10%/20%. Of the eight rows above 10% area or 0.20 min RT, the user judged the
+  program's peak and bounds more reasonable in seven from MS1 traces and MS2
+  neutral-loss scans (8-Obz-dG too poorly shaped to judge): for m7G,
+  N6-6Ah-dA and m1A (NoSplit, tailing) program areas are 21–27% larger because
+  neutral-loss scans continue through the tail; for ac4C (NoSplit) and
+  O6-HPdG (Split, double peak) the program apex is 0.41–0.79 min later, where
+  the neutral-loss scans sit.
+- **Not established:** area accuracy; it needs a manual set with clean
+  chromatography. The score uses the selected acquisition peak area, not the
+  published workbook value.
+- **Current state:** the target lists in `XIC_MANUAL_2RAW_ROOT` use the
+  current schema, with `expected_rt_min` at the midpoint of the former ±1 min
+  window; the former files are in its `legacy_format_targets/`.
+- **Reopen:** when Targeted peak selection or identity rules change.
 
 ## Alignment Performance
 
 ### Full85 Alignment completes with process workers
 
-`diagnostic_only`. Process workers halved full85 runtime with byte-identical
-outputs: 2,264 s versus 4,460 s with threads (#470, `5f841191`), peak tree RSS
-3.2 to 6.3 GB. At `645fd3f2` (process12), all 46 partitions complete in 1,613 s
-with 1,716 Matrix rows, all 145,860 primary cells captured, and each of the six
-DNA ISTDs in exactly one group. The seventh label, `[13C,15N2]-8-oxo-Guo`, is
-outside the `dna_dr`/NL116 method, so seven-label acceptance remains unknown.
-Peak tree RSS was 7.2 GB; the explanation SQLite was 9.39 GB.
+`diagnostic_only`.
 
-Output-only changes can be checked against these artifacts without a RAW run.
+- **Conclusion:** process workers halve full85 runtime with byte-identical
+  outputs: 2,264 s versus 4,460 s with threads (#470, `5f841191`), peak tree
+  RSS 3.2 to 6.3 GB. At `645fd3f2` (process12), all 46 partitions complete in
+  1,613 s with 1,716 Matrix rows, all 145,860 primary cells captured, each of
+  the six DNA ISTDs in exactly one group; peak tree RSS 7.2 GB, explanation
+  SQLite 9.39 GB.
+- **Not established:** seven-label acceptance; `[13C,15N2]-8-oxo-Guo` is
+  outside the `dna_dr`/NL116 method.
+- **Reopen:** output-only changes can be checked against these artifacts
+  without a RAW run.
+
 Artifacts: `output/issue422-bounded-worksets-20260921/alignment85-process12/`.
 
 ### Partition sizing from 8RAW does not transfer to full85
 
-`diagnostic_only`; `9ba3a5b1` (#463). On 8RAW, a 2048 budget without mass bins
-was 44% faster with identical outputs. Full85's 43,652 memberships make the
-budget, not the bin, dominant (49 vs 45 partitions at 1024). A default change
-needs a full85 candidate with peak RSS and output parity.
+`diagnostic_only`; `9ba3a5b1` (#463).
 
-That candidate exists for the 2048 default (#1306): the tissue 85RAW worksets
-pack into 17 partitions instead of 30 (8 bins is the floor; 3072 and 4096 give
-14 and 11, predicted to reach 18 and 22 GB of tree memory while grouping).
-8RAW stays at its 8 bins, so it cannot test the budget. See
-[where the RAW phases spend time](#where-the-raw-phases-spend-time).
+- **Conclusion:** on 8RAW a 2048 budget without mass bins was 44% faster with
+  identical outputs, but full85's 43,652 memberships make the budget, not the
+  bin, dominant (49 vs 45 partitions at 1024). 8RAW stays at its 8 bins and
+  cannot test the budget.
+- **Current state:** the full85 candidate for the 2048 default exists (#1306):
+  85RAW worksets pack into 17 partitions instead of 30; 3072 and 4096 give 14
+  and 11, predicted to reach 18 and 22 GB of grouping tree memory. See
+  [where the RAW phases spend time](#where-the-raw-phases-spend-time).
+- **Reopen:** a default change needs a full85 candidate with peak RSS and
+  output parity.
 
 ### Four or eight workers
 
-`diagnostic_only`; `f30d42ac` (#699). On a 12-CPU, 34 GB host, eight workers
-were 4.5% faster than four on 8RAW (84.1 vs 80.3 s), with identical outputs and
-private bytes rising 6.3 to 10.6 GB. The shared default stays at four; use
-`--raw-workers 8` locally. A one-entry prepared-signal memo gained less than
-baseline noise and was removed.
+`diagnostic_only`; `f30d42ac` (#699).
 
-Rerun for changed host resources, workload or locality. On 85RAW the initial
-acquisition is worker-bound; see [where the RAW phases spend time](#where-the-raw-phases-spend-time).
+- **Conclusion:** on a 12-CPU, 34 GB host, eight workers were 4.5% faster than
+  four on 8RAW (84.1 vs 80.3 s) with identical outputs, private bytes 6.3 to
+  10.6 GB. The default stays at four; use `--raw-workers 8` locally. A
+  one-entry prepared-signal memo gained less than noise and was removed.
+- **Reopen:** for changed host resources, workload or locality. On 85RAW the
+  initial acquisition is worker-bound
+  ([where the RAW phases spend time](#where-the-raw-phases-spend-time)).
 
 ### Where the RAW phases spend time
 
 `diagnostic_only`; `78cf27ceb` (#1306), 85RAW `dna_dr`, four process workers.
-One probed run; its Matrix, review, Backfill evidence and RT anchors match an
-un-probed `713a72b3e` run byte for byte.
 
-- Summed partition acquisition over wall is capped at two by the two
-  overlapping partition producers, so it does not measure the workers. Worker
-  utilization was 93% in initial acquisition (398 s, worker-bound) and 33% in
-  Backfill (432 s with the probe; 350–397 s in four un-probed runs).
-- Backfill waited on the parent. Before dispatching a partition, its producer
-  computed band RT locations (393 s: target `locate` 54%, leave-one-out
-  `_empirical_tolerances` 41%). In two un-probed timelines, 13 and 15 of 28
-  Backfill partitions also waited for in-order composition to return an
-  admission credit. Planning with the final grouping on the workers (#1315)
-  took un-probed Backfill from 353 to 241 s with identical outputs; final
-  grouping rose 96 to 110 s.
-- Every (partition, sample) task reopens its RAW: open 15 ms, dispose 10 ms,
-  and about 0.13 s on the handle's first chromatogram call while the vendor
-  builds its scan structure, with or without the `ms` filter. That is 2,550
-  tasks per phase and about 22% of initial worker time. This is the per-handle
-  cost the scan-list entry under
-  [Rejected Alignment designs](#rejected-alignment-designs) could not share.
-- RAW reads stayed warm: per-task read time did not rise with revisits, and
-  RAW calls were no slower during physical-read bursts.
-- Discovery's windows would fully answer at most 0.06% of initial and 0.84% of
-  Backfill XIC requests. Initial region reads answer 98.8% of Backfill requests
-  within 2 ppm, but 0.66% at the same mass centre.
-- Separate RawFileReader processes do not wait on one another: per-task time is
-  flat from one to four processes, and task throughput at six and eight is 1.26
-  and 1.46 times that of four.
+- **Conclusion:** initial acquisition is worker-bound (93% utilization);
+  summed partition acquisition over wall is capped at two by the two partition
+  producers, so it does not measure the workers. Separate RawFileReader
+  processes do not wait on one another (flat per-task time from one to four;
+  throughput at six and eight 1.26 and 1.46 times four), and RAW reads stay
+  warm. Every (partition, sample) task reopens its RAW (open 15 ms, dispose
+  10 ms, about 0.13 s on the first chromatogram call), about 22% of initial
+  worker time. Discovery's windows would answer at most 0.06% of initial and
+  0.84% of Backfill requests; initial region reads answer 98.8% of Backfill
+  requests within 2 ppm, but 0.66% at the same mass centre.
+- **Current state:** each Backfill partition runs whole on one worker; its
+  bound is the larger of partition work over workers (492 s / 4 on 85RAW) and
+  the largest partition (38 s), so a batch with fewer partitions than workers
+  loses sample parallelism within a partition.
+- **Rejected:** composing on a worker one partition at a time (Backfill
+  195.7 s, 1.1 GB more per composing worker); spool-read contention was not
+  the main cost.
+- **Not established:** parent stack samples are biased toward GIL-releasing
+  code, so costs come from timed spans; one run each.
+- **Reopen:** when partition packing, worker scheduling, Backfill planning,
+  the RAW reader or where composition runs changes.
 
-After #1315, reading each ion's contrast neighbourhood with its region XIC
-(no whole-run pass, no repeated mass window in one call) and the 2048 partition
-budget, one 85RAW run (worker-side probe only) matched the master Matrix,
-review, Backfill evidence and RT anchors byte for byte. Its explanation
-database differed only in internal integer peak ids, renumbered by the new
-partition order; every table matched once peak references were resolved to
-`physical_peak_key`. Initial acquisition took 278 s (opens 2,550 to 1,445,
-vendor calls 6,844 to 2,142, worker time 1,474 to 1,034 s), Backfill 190 s
-(166 s of it in-order composition) and the runtime 586 s. The ISTD reference
-stage then set the tree's private-memory peak at 12.2 GB, with 11 Targeted
-processes before acquisition. Taking each sample's ISTD apex from its Discovery
-peaks instead, without RAW (`expected_diff`), reproduced that run's reference
-(510 coordinates, every provenance key; 8RAW's 48 likewise). The 85RAW Matrix,
-review, Backfill evidence and RT anchors matched byte for byte, and every
-explanation table and run-metadata key by content, attempt id and output path
-aside. The stage took 0.07 s instead of 38 s, and the run peaked at 10.1 GB in
-Backfill with 6 processes instead of 17; one run each, Backfill read 9.8 to
-10.1 GB and grouping 9.2 to 9.4 GB. All 510 pairs exist on both sides, so none
-of the removed Targeted paths ran: its credibility gate, elution-order check,
-cross-sample recovery and error on a failed RAW. A sample whose standard DDA
-never sampled now has no coordinate for that label.
+Artifacts: `output/1306/` in the `research-1306-raw-time-46fb42` worktree.
 
-The parent process then gated grouping, Backfill and publication. Its stack
-samples are biased toward code that gives up the GIL (zlib, file writes, the
-dataclass state hooks the pickler calls), so costs below come from timed
-spans. Grouping read each partition's initial grouping from the spool and
-pickled it to a worker twice (2.72 GB), then unpickled the final groupings
-(1.39 GB) and pickled them back. With workers reading and writing the spool
-themselves, grouping took 53.3 s instead of 114.2 s and peaked at 8.15 GB
-instead of 9.43 GB, outputs unchanged. Publication read every initial group
-back twice for an RT drift count (18.5 s) and a membership-risk flag (11.6 s);
-composition now records both, and the phase after Backfill took 57.6 s instead
-of 84.5 s (measured in the run below, which also composed on workers). Backfill
-stayed at 194 s, gated by in-order composition in the parent: writing the
-partition took 113 s of span wall, 70 s of it composing and projecting
-children, and building composition inputs 57 s on 7.7 s of thread CPU. Two
-producer threads spent 76 s reading spool records meanwhile, and composition
-steps overlapping those reads ran at 7.9 (inputs), 19 (explanation projection)
-and 62 (curve encoding) times their thread CPU, against 2.4-3.7 times when no
-read overlapped. That contention was not the main cost. Composing on a worker
-instead, one partition at a time (an experiment not kept, outputs equal), took
-153 s of task wall and left Backfill at 195.7 s, with 1.1 GB more in each
-composing worker; about a third of the task re-read the final grouping and
-initial results the producer had already read (8RAW proportions), and
-overlapping compositions within the three admission credits simulated to
-~170 s. Review-curve encoding alone costs about 8.4 s (timed on 3,000 of the
-39,487 curves).
+### Drift grouping cost floor
 
-After the branch merged master (8RAW outputs equal to master's but for the
-ISTD source path), an 85RAW run gave Backfill 180.1 s, runtime 543.2 s, CLI
-605 s and a 10.0 GB tree peak. Running each Backfill partition whole on one
-worker, which reads its final grouping and initial results once, revisits its
-samples one RAW at a time and composes, left every output identical: Backfill
-126.9 s, runtime 482.9 s, CLI 543 s, tree peak 10.7 GB with 7.7 GB available.
-Its bound is the larger of partition work over workers (492 s / 4 here) and the
-largest partition (38 s); a batch with fewer partitions than workers loses the
-sample parallelism within a partition.
+`diagnostic_only` (#1165, #1172, #1175, 2026-11-17); in-memory grouping
+measurements.
 
-Rerun when partition packing, worker scheduling, Backfill planning, the ISTD
-reference, the RAW reader or where composition runs changes. Artifacts: `output/1306/` in the `research-1306-raw-time-46fb42`
-worktree.
-
-### Drift grouping reuses prepared numerical evidence
-
-`diagnostic_only`; output-preserving grouping optimization against `2fa578cb`
-(#1165, 2026-11-17). Repeated Theil-Sen residual fits share their fixed regressor
-pairs. Candidate groups gather comparison-scoped numeric pair terms and cached
-zero-model costs instead of rebuilding columns or revisiting every scalar pair.
-Uncomputed pairs retain the scalar evaluation order and hard-conflict short circuit.
-
-On 255 synthetic owners (85 samples, 100 anchors, one mass window), interleaved
-baseline/candidate/candidate/baseline runs took 110.38-112.12 versus 53.61-60.24 s.
-The complete inference results, including coefficients, decisions and operation
-counts, were identical. An existing 8RAW snapshot replay retained all 871 groups
-and 2,681 observations with five byte-identical TSVs. These are in-memory grouping
-measurements, not a full85 RAW or Backfill runtime claim.
-
-Against `2f2d5769` (#1172), a group's drift models share its RT, weight and
-region arrays and its injection-order trend neighbours, and drift offsets are
-expanded only for the owners a consumer scores; the per-model whole-comparison
-frame cache is gone. Repeat counts showed no reusable work: 68,954 of 69,220
-candidate fits were distinct groups on the 255-owner fixture, where partition
-construction, sorting and alternatives took under 2% of the time (7% of a
-3.8 s 8RAW replay). On the same fixture under a
-concurrently loaded host, interleaved runs took 89.45-94.23 versus 68.89-77.79 s
-(medians 91.71/71.85) and peak working set fell from 1,261 to 314 MB; Theil-Sen
-fitting and batch-state lookup remain the floor. Six drift scenarios (missing B
-or M, population gaps, settled reassignment, fixed-original Backfill with
-competition) produced identical complete results. The 8RAW replay kept five
-byte-identical TSVs and its grouping time stayed within noise (4.89 versus 4.79 s).
-
-Against `4082cce7` (#1175), a borrowed batch state is computed once per exact
-RT within a frozen model's lookup, and a drift model is rejected before full
-scoring when the zero model's costliest pair already exceeds the bound in that
-model. On the historical 85-sample 312.069 / 299.154 worksets, borrowed
-computations fell from 16,220 / 12,049 to 227 / 208 and full pair scorings from
-48,220 / 44,975 to 15,859 / 38,566; interleaved medians went from 19.95 to
-14.61 s and 13.27 to 11.55 s, and the full 8RAW snapshot replay went from 3.13
-to 2.91 s. Every scored group model, every replayed group, six drift scenarios
-and a current-format 8RAW Alignment's scientific content were identical.
-Theil-Sen fitting remains the floor; a fixed-term lower bound that would skip
-fits was diagnosed but not attempted.
-
-Reopen when drift fitting, pair scoring or the comparison population changes.
-Artifacts: `output/codex-rt1165-grouping-optimization/` in the #1165 worktree;
-`output/1172/` in the #1172 worktree; `output/1175/` in the #1175 worktree.
+- **Conclusion:** Theil-Sen fitting and batch-state lookup are the floor.
+  68,954 of 69,220 candidate fits on the 255-owner fixture were distinct
+  groups, so no repeated work is left to share.
+- **Not attempted:** a fixed-term lower bound that would skip fits.
+- **Reopen:** when drift fitting, pair scoring or the comparison population
+  changes.
 
 ### Grouping-only output avoids round-trip work
 
-`diagnostic_only` (#1165, 2026-11-17). Grouping-only execution writes its first
-computed groups, members and decisions directly. Replay capture is opt-in; no
-normal run reads and recomputes its own snapshot.
+`diagnostic_only` (#1165, 2026-11-17; #1246, 2026-11-22). Single observations;
+not a timing acceptance claim.
 
-The grouping snapshot stays curve-free JSON; Backfill, pairing and Matrix
-snapshots store the formal objects (#1246, 2026-11-22). Parallel regroup loads
-the whole grouping snapshot in every worker. On 85RAW (27,082 observations, 11
-workers, the same `GroupingInputs`, process-tree private bytes sampled every
-0.5 s) the curve-free JSON peaked at 19.75 GB in 124 s; the formal objects,
-curves and source traces included, peaked at 29.9 GB in 136 s and filled the
-34 GB machine. As files, 8RAW (2,849 observations) was 5.7 MB as JSON against
-13.8 MB as a level-1 gzip pickle; 85RAW 52.7 MB against 154.8 MB. The 8RAW
-Backfill capture is 29 MB. Replays of all four stages were byte-identical to the
-earlier captures on 8RAW, single and two-batch. Single observations; not a
-timing acceptance claim.
+- **Conclusion:** grouping-only execution writes its first computed groups,
+  members and decisions directly; replay capture is opt-in, and no normal run
+  reads and recomputes its own snapshot. The grouping snapshot stays
+  curve-free JSON because parallel regroup loads it in every worker: on 85RAW
+  (27,082 observations, 11 workers) JSON peaked at 19.75 GB in 124 s, while
+  formal objects with curves and traces peaked at 29.9 GB in 136 s and filled
+  the 34 GB machine. Files: 8RAW 5.7 MB JSON versus 13.8 MB gzip pickle, 85RAW
+  52.7 versus 154.8 MB. Backfill, pairing and Matrix snapshots store formal
+  objects (8RAW Backfill capture 29 MB); all four replays were byte-identical
+  on 8RAW, single and two-batch.
+- **Reopen:** for changes to snapshot storage or grouping-only output.
 
-Reopen for changes to snapshot storage or grouping-only output.
 Artifacts: `output/i1246/` in the #1246 worktree.
 
 ### Peaks without method evidence rearranged direct rows
 
-`diagnostic_only` (#1274); frozen 85RAW grouping inputs captured at `dc2bbc4b1`,
-replayed with `ddacf394` code, no RAW except three ions read for MS2.
+`diagnostic_only` (#1274); frozen 85RAW grouping inputs captured at
+`dc2bbc4b1`, replayed with `ddacf394` code, no RAW except three ions read for
+MS2.
 
-- Of 128,678 owners, 102,576 have no method evidence of their own. 92% of those
-  sit in a sample with no direct owner of the same ion; the 7,992 that share a
-  sample with one concentrate in 97 of 1,845 windows.
-- In those 97 windows, grouping the direct owners alone and then all owners
-  separated 49 of 176 direct rows (five or more members) and merged pieces of
-  several into 30 rows. m/z 348.21: 40 strict-MS2 Y labels went from 37+3 with
-  direct owners only to 15+9+8+5+3 with all owners.
-- Cause: a row costs 1 plus its worst pair whatever its size, so once enough
-  unconfirmed peaks occupy each RT band, placing direct owners in those bands
-  is nearly free. With direct rows kept together, 348.21 is 37+3 with one X
-  label in the main row, the 268.1184 blind classes are unchanged, and the
-  merged rows in 14 checked windows fall from 21 to 0. Across 91 windows rows
-  go 604 to 615 with multi-member rows unchanged at 516.
-- Rejected on the two judged windows: worst pair replaced by the median peer
-  cost or by the worst pair after dropping the least-agreeing 5% of members;
-  coefficient cost set to zero; unconfirmed peaks admitted by mean cost to a
-  direct row; removing any one pair-cost term. A summed per-owner cost favors
-  cutting large rows.
-- Not established: whether the other 47 changed rows were wrong (MS2 could not
-  separate rows in 282.15, 293.17 or 406.22); windows with fewer than 20 such
+- **Conclusion:** a row costs 1 plus its worst pair whatever its size, so once
+  enough unconfirmed peaks occupy each RT band, placing direct owners there is
+  nearly free. Of 128,678 owners, 102,576 have no method evidence; the 7,992
+  sharing a sample with a direct owner of the same ion concentrate in 97 of
+  1,845 windows. There, grouping all owners separated 49 of 176 direct rows
+  (five or more members) and merged pieces into 30 rows; m/z 348.21's 40
+  strict-MS2 Y labels went from 37+3 to 15+9+8+5+3. Keeping direct rows
+  together restores 37+3 (one X label in the main row), leaves the 268.1184
+  blind classes unchanged and cuts merged rows in 14 checked windows from 21
+  to 0; across 91 windows rows go 604 to 615, multi-member rows unchanged at
+  516.
+- **Rejected** on the two judged windows: worst pair replaced by the median
+  peer cost or by the worst pair after dropping the least-agreeing 5%;
+  coefficient cost zero; admission by mean cost to a direct row; removing any
+  one pair-cost term. A summed per-owner cost favors cutting large rows.
+- **Not established:** whether the other 47 changed rows were wrong (MS2 could
+  not separate 282.15, 293.17 or 406.22); windows with fewer than 20 such
   peaks; any batch outside development.
-
-- Collection: 801 of 1,891 mass windows had direct owners in one sample
-  only and 307 in two or three. None of the 801 held an established row, yet
-  they carried 44,557 of the unconfirmed owners; windows below the 85RAW
-  quorum of four carried 61,658 (60%). All 74 drift anchors (2,037 owners) were
-  direct. 245 windows below the quorum held established rows of two or three
-  direct members, whose other cells first-pass peaks no longer fill.
-- Repeats under one peak (85RAW MS2, peaks fragmented at least twice): the
-  loss recurs in 65% of peaks from ions seen in four or more samples and in
-  15-18% from ions seen in one to three, at every peak-height quartile. Those
-  recurring sparse cases, about 79 ions, are why a repeat keeps a region read.
-  Only the four-sample line was tested, not neighbouring thresholds.
-
-Rerun when the row cost, the direct-first ordering or the first-pass peak
-population changes.
+- **Collection facts:** 801 of 1,891 mass windows had direct owners in one
+  sample only and 307 in two or three; none of the 801 held an established row
+  yet they carried 44,557 unconfirmed owners, and windows below the 85RAW
+  quorum of four carried 61,658 (60%). All 74 drift anchors (2,037 owners)
+  were direct. 245 windows below the quorum held established rows of two or
+  three direct members. Under one peak fragmented at least twice, the loss
+  recurs in 65% of peaks from ions seen in four or more samples and 15-18% from
+  ions seen in one to three, at every height quartile; those ~79 recurring
+  sparse ions are why a repeat keeps a region read. Only the four-sample line
+  was tested.
+- **Reopen:** when the row cost, the direct-first ordering or the first-pass
+  peak population changes.
 
 ### Grouping time concentrates in dense windows
 
-`diagnostic_only` (2026-11-21). Replaying the 83-injection `output/nl_gate/fix`
-snapshot one workset at a time took 526 s after a 5 s load. The 50 slowest of
-1,828 worksets took 72%, and time grew with about owners^2.3. The three slowest
-(NL116, 83 samples, 169–275 owners, 30–40 s each) split two ways: one spent 77%
-in peak-pattern matching, which reruns the pairing DP for every candidate shift;
-two spent nearly all of it in membership search re-scoring merged groups
-(161,023 evaluations for 239 owners). Drift coefficient fitting was about a fifth
-of profiled time there. One window timed 31 and 40 s in two runs.
+`diagnostic_only` (2026-11-21, 2026-11-24).
 
-Reopen when membership search, pattern matching or window density changes.
-Artifacts: `output/perf_probe/run83/` in the `feat/replay-rt-calibration` worktree.
+- **Conclusion:** replaying the 83-injection `output/nl_gate/fix` snapshot one
+  workset at a time took 526 s; the 50 slowest of 1,828 worksets took 72%, and
+  time grew with about owners^2.3. Of the three slowest (NL116, 169–275 owners,
+  30–40 s each), one spent 77% in peak-pattern matching (the pairing DP reruns
+  for every candidate shift) and two nearly all in membership search
+  re-scoring merged groups (161,023 evaluations for 239 owners); drift fitting
+  was about a fifth. One window timed 31 and 40 s in two runs.
+- **Reopen:** when membership search, pattern matching or window density
+  changes.
 
-**85-injection window replay (2026-11-24, `diagnostic_only`).** On the
-frozen m/z 268.1184 workset (286 owners, six rows), rejecting losing drift
-models before scoring and sharing measured pair costs across merges took
-24.50 to 18.06 s (three interleaved runs per version). The 72-owner 272.1358
-control exposed a dependency: skipping a drift fit also disabled bulk reads
-of already computed pair costs. With the two separated it took 0.63 to 0.48 s.
-Seven windows from the 85-injection run and the earlier 8-injection 474.2933
-window retained the same memberships and decision records. Not a cohort
-timing or evidence that the selected rows are chemically correct.
-Artifacts: `output/grouping-cost/` in the `perf/1270-grouping-cost` worktree.
-
-### Accepted Alignment optimizations
-
-All `exact_safe` with byte-identical public outputs; local gains, not cohort
-percentages.
-
-| Change | Measured gain | Rerun when |
-| --- | --- | --- |
-| One mass-recalibration probe per RAW (#931, `bd77a760`) | probe calls 136 to 8, probe time 110.5 to 8.0 s; end-to-end ratio inconclusive | probe logic, source binding, worker transport or applied correction changes |
-| Process workers read the shared owner bootstrap from shared memory, not initargs | workers started about 4 s apart (initargs block spawn until each child re-imports the main module), now together; initial phase 8RAW 35.4/36.4 to 28.7/32.4 s, oil 62.6/64.1 to 55.7/58.4 s; runtime −4 to −8 s | worker transport or start method changes |
-| No per-entry fsync in the recomputable fact cache (#699, `332f19f4`) | 8RAW median 104.1 to 80.2 s | cache persistence or recovery semantics change |
-| Final membership replay reuses group costs (#913, `a51d0473f`) | `replay_grouping` 240 to 178 s on 44 samples | membership costs, search or snapshot change |
-| Regroup replays worksets in process workers, largest first | 83 injections on 6 cores/12 threads: whole regroup 120 s against 526 s for sequential grouping alone, same 2,539 groups, peak working set 8.3 GB; 8RAW 4.2 to 6.2 s with six byte-identical tables | workset independence, worker transport or host changes |
-| Injection ordering prepared once per grouping population | grouping 0.156 to 0.115 s on the m/z 396 snapshot | neighbor semantics or grouping population change |
-| Peak trajectories use local mass and order regions | 128 mass families 1.85 to 0.17 s; ppm calls 1.75M to 13.6k | ppm/order semantics or density change |
-| Dense peak patterns reuse top-two DP states | 32 peaks 3.58 to 1.18 s | matching semantics change |
-| SQLite scalar reads in named columns (`42372d7f`) | Matrix-page preparation 239.5 to 120.8 ms; database 12.1 to 10.6 MB | cell retention, index layout or selection changes |
-| Review overview streams expanded cells | 1,600 rows: allocation peak 125.7 MB to 0.68 MB | reader or overview semantics change |
+Artifacts: `output/perf_probe/run83/` (`feat/replay-rt-calibration` worktree).
 
 ### Rejected Alignment designs
 
 `diagnostic_only` (2026-09-21/22, #422/#423). Do not repeat without a new cost
 model.
 
-- **Composing a partition in a worker:** 22.5 s in a worker versus 18.0 s in the
-  parent, plus 174 MB extra transport; composition never overlapped acquisition.
-  Raising the composition pool size does not create concurrency because each
-  dispatch sizes its executor to one. Exact `set`/`frozenset` serialize in hash
-  order, so identical partitions differ in bytes across processes.
-- **Evidence caching or sample-affinity scheduling:** 11,420 cache reads hit
-  11,260 unique keys; reusing every repeat saves 3.3% of payload bytes.
-  Reusing open RAW handles is a different cost, measured in
-  [where the RAW phases spend time](#where-the-raw-phases-spend-time).
-- **Sample-major replay:** three paired replays (9.07 vs 8.80 s median) fall
-  inside measurement noise; no scheduler change.
-- **Identity memoization:** at most 0.85 s of 2.65 s total.
-- **Eager explanation materialization:** a 9.39 GB report recoverable from
-  partition files; on-demand readers need a retained offset table (4.5 s rebuild
-  per 115 MB partition).
-- **Process-local float formatting change:** 6.79 vs 6.82 s, overlapping ranges.
-- **Owner Backfill scan-index variants:** `ms1-index-hybrid` slowed Owner
-  Backfill 14.6 to 64.9 s; other index variants changed outputs. Super-window
-  span factor 1 raised RAW calls 72 to 17,910.
-- **Per-handle MS1 scan list for EASY-IC XIC reads** (2026-11-12, `924f28ff`):
-  `GetScanEvents` or `GetFilteredScanEnumerator("ms")` returns the same MS1
-  scans as per-scan `GetFilterForScanNumber` on 237 RAW, but costs 0.13–0.44 s
-  per open handle, about the 0.39–0.52 s that a task's windowed filter reads
-  cost. Oil 8-RAW Alignment 155.6/143.3 s base versus 144.1/148.1 s candidate;
-  summed partition acquisition rose 171 to 174/182 s. Only sharing one list
-  per RAW across handles could remove the cost.
+| Design | Why rejected |
+| --- | --- |
+| Composing a partition in a worker | 22.5 s in a worker versus 18.0 s in the parent, plus 174 MB transport; composition never overlapped acquisition. One-sized executors create no concurrency, and `set`/`frozenset` serialize in hash order, so identical partitions differ in bytes across processes |
+| Evidence caching or sample-affinity scheduling | 11,420 cache reads hit 11,260 unique keys; reusing every repeat saves 3.3% of payload bytes. Reusing open RAW handles is a different cost ([where the RAW phases spend time](#where-the-raw-phases-spend-time)) |
+| Sample-major replay | three paired replays (9.07 vs 8.80 s median) inside noise |
+| Identity memoization | at most 0.85 s of 2.65 s |
+| Eager explanation materialization | a 9.39 GB report recoverable from partition files; on-demand readers need a retained offset table (4.5 s rebuild per 115 MB partition) |
+| Process-local float formatting change | 6.79 vs 6.82 s, overlapping ranges |
+| Owner Backfill scan-index variants | `ms1-index-hybrid` slowed Owner Backfill 14.6 to 64.9 s; other variants changed outputs; super-window span factor 1 raised RAW calls 72 to 17,910 |
+| Per-handle MS1 scan list for EASY-IC XIC reads (2026-11-12, `924f28ff`) | `GetScanEvents` or `GetFilteredScanEnumerator("ms")` returns the same MS1 scans as per-scan `GetFilterForScanNumber` on 237 RAW but costs 0.13–0.44 s per open handle, about what a task's windowed filter reads cost (0.39–0.52 s); oil 8-RAW Alignment 155.6/143.3 s base versus 144.1/148.1 s; only sharing one list per RAW across handles could remove the cost |
 
 ### Measurement noise
 
-Eight identical four-partition cache-only runs at `005fd18f` produced
-byte-identical output but wall times from 49.5 to 70.5 s, a 42% spread. A 5 ms
-stack sampler ran at an effective 18.8 ms and overstated CPU hot spots about
-fourfold; use its ordering, not its percentages.
-
-On this host, `time.process_time()` and psutil process CPU report 56–79% of a
-pure CPU loop's wall time with one to eight processes (#1306); do not infer a
-worker's CPU share from them.
+- Eight identical four-partition cache-only runs at `005fd18f` gave
+  byte-identical output but wall times from 49.5 to 70.5 s, a 42% spread.
+- A 5 ms stack sampler ran at an effective 18.8 ms and overstated CPU hot spots
+  about fourfold; use its ordering, not its percentages.
+- On this host, `time.process_time()` and psutil process CPU report 56–79% of
+  a pure CPU loop's wall time with one to eight processes (#1306); do not infer
+  a worker's CPU share from them.
 
 ## Discovery And Acquisition
 
-### Accepted Discovery optimizations
-
-All `exact_safe` with byte-identical candidate, review and physical-facts
-outputs.
-
-| Change | Measured gain | Rerun when |
-| --- | --- | --- |
-| MS1 acquisition shares super-window reads (#546) | vendor calls 3,082 to 53; `ms1_backfill` 28.6 to 16.4 s on one RAW | request planning, super-window grouping or the RAW reader changes |
-| Native MS1 batching, batch maximum 256 (#234) | 8RAW median 160.2 to 146.8 s; batches 31,819 to 128 | batching or reader changes |
-| Early precursor rejection in candidate merge (#699) | MS1 Backfill 17.8 to 14.2 s on one RAW | merge eligibility or order changes |
-| Precursor-mass index in candidate merge | MS1 Backfill 17.5 to 14.1 s on one RAW | merge eligibility or order changes |
-| MS2 precursor metadata uses file-local trailer indices | seed stage 5.76 to 4.52 s on one RAW | trailer decoding changes |
-| MS1 mass channels track the oldest live channel instead of rescanning all | EASY-IC oil 8 RAW wall 104.7/102.8 to 73.7/70.9 s; 8RAW 37.2 to 31.4 s; `within_ppm` calls 23.1M to linear on the 22,091-event RAW | channel membership rule or search order changes |
-
-Keep the formatted trailer API; the typed API changes numeric precision.
-
 ### Acquisition source
 
-`diagnostic_only` (#124, 2026-07-24). Thermo vendor XIC remains the acquisition
-oracle. The local MS1 scan index is diagnostic only: 77/100 apexes within
-0.05 min and a 1,048% p95 area delta, with an index 1.64 times the RAW size. mzML
-is not an acquisition adapter; legacy `.mzML Peak area` columns do not show
-RAW-to-mzML fidelity.
+`diagnostic_only` (#124, 2026-07-24).
 
-Run a RAW-to-mzML crosswalk only when a real consumer needs mzML input.
+- **Conclusion:** Thermo vendor XIC stays the acquisition oracle. The local MS1
+  scan index is diagnostic only: 77/100 apexes within 0.05 min, a 1,048% p95
+  area delta, and an index 1.64 times the RAW size. mzML is not an acquisition
+  adapter; `.mzML Peak area` columns do not show RAW-to-mzML fidelity.
+- **Reopen:** run a RAW-to-mzML crosswalk only when a real consumer needs mzML
+  input.
 
 ### Targeted batch preparation and MS2 acquisition
 
-`exact_safe` (#924, #928). The 158-sample, 14-target post-acquisition replay
-takes 21.5–21.7 s through XLSX publication, preserving all 2,212 rows and 5,167
-diagnostics. Targeted MS2 reads only events that can reach a declared target:
-one RAW admits 2,935 of 37,298 events; eight RAW go from 55.0 to 24.5 s warm and
-91.6 to 56.0 s cold. On USB HDD the 158-RAW run is storage-bound (1,208 s).
-Thread- and process-per-target prototypes regress or break parity.
+`exact_safe` (#924, #928).
 
-Rerun when the input population, physical binding, solver, publication contract,
-worker lifecycle or storage changes.
+- **Conclusion:** on USB HDD the 158-RAW Targeted run is storage-bound
+  (1,208 s). Thread- and process-per-target prototypes regress or break
+  parity.
+- **Reopen:** when the input population, physical binding, solver,
+  publication contract, worker lifecycle or storage changes.
 
 ### RawFileReader 8 numerical compatibility
 
-`diagnostic_only` (#929). RawFileReader 8.0.42 on .NET 8 and .NET 10 preserves
-all eight-RAW Targeted rows, diagnostics and acquired file results, and
-Untargeted Discovery outputs byte-for-byte. Vendor text formatting changes
-midpoint rounding and signed zero; a few `Monoisotopic M/Z` trailer values move
-by 0.0001 Da, accepted without a conversion layer. Eight-RAW Targeted time is
-22.4–23.6 s with 4.0.19 versus 15.4–15.9 s with 8.0.42, warm.
+`diagnostic_only` (#929).
+
+- **Conclusion:** RawFileReader 8.0.42 on .NET 8 and .NET 10 preserves all
+  eight-RAW Targeted rows, diagnostics and acquired file results, and
+  Untargeted Discovery outputs byte for byte. Vendor text formatting changes
+  midpoint rounding and signed zero; a few `Monoisotopic M/Z` trailer values
+  move by 0.0001 Da, accepted without a conversion layer. Eight-RAW Targeted
+  takes 22.4–23.6 s with 4.0.19 versus 15.4–15.9 s with 8.0.42, warm.
+- **Current state:** keep the formatted trailer API; the typed API changes
+  numeric precision.

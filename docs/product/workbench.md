@@ -1,263 +1,77 @@
 # Workbench And Review
 
-The local HTML workbench is where users set up, run and review Targeted and
-Untargeted analyses. XIC Inspector supplies its read-only evidence selection
-and the shared review renderer, which also produces self-contained offline HTML
-reports. This page owns what review may and may not mean. The
+The local HTML Workbench is where users set up, run and review Targeted and
+Untargeted analyses; XIC Inspector supplies its read-only evidence selection
+and the shared review renderer, which also produces offline HTML reports. This
+page owns what review may and may not mean. The
 [Targeted guide](../user/targeted.md) and
-[Untargeted guide](../user/untargeted.md) own operation; `--help` on
-`xic-workbench`, `xic-inspector` and `tools.diagnostics.explain_cid_nl_run`
-owns command arguments.
+[Untargeted guide](../user/untargeted.md) own operation, `--help` owns command
+arguments, and the code and its tests own layout, views and interactions.
 
-## CLI and HTML use one path
+## Boundaries
 
-The HTML workbench is the primary human surface; script CLIs remain
-reproducible automation and diagnostic surfaces. Both call the same application
-and scientific owners, so the same effective request has the same scientific
-behavior. The GUI runs complete Untargeted analysis with Backfill enabled;
-single-RAW Discovery, Alignment-only and disabling Backfill remain CLI uses.
-Worker counts come from the shared execution profile, not saved GUI settings.
+- **One path.** The GUI and script CLIs call the same application and
+  scientific owners, so the same effective request has the same scientific
+  behavior; Workbench forms and local settings are not a second scientific
+  owner.
+- **Review does not change results.** Opening, filtering, loading curves,
+  changing plot ranges or exporting never chooses peaks, integrates, changes
+  counted detection or writes workbook or Matrix values; Inspector switches no
+  candidate and builds no RT reselection table.
+- **Downloads are what the run published.** Review never rebuilds the
+  Targeted XLSX or Untargeted Matrix from Inspector data; an opened workbook is
+  bound by its SHA-256.
+- **Review curves are not measurements.** Saved curves reproduce the run's
+  processed signal; RAW reads for samples without a saved curve are new
+  diagnostic views matched by file name, not checked against the analysed
+  acquisition. A group-position curve for an empty sample selects and
+  integrates nothing.
+- **States stay distinct.** NULL, numeric zero, literal `ND`, a blank Targeted
+  cell and unavailable curve evidence stay distinct in every table, legend and
+  export; a missing curve is not zero signal, and review never infers an
+  extraction stage from method evidence.
+- **The explanation file explains.** `alignment_explanation.sqlite` records the
+  decisions for review, curation and the records outside the Matrix; it
+  authorizes no writer and proves no readiness, and a file whose schema differs
+  is rejected, not upgraded.
 
-Setup presents data, method/targets, then samples and internal standards. The
-target list is one import line with its example; its export sits in the target
-editor, and Untargeted method file tools are collapsible. A target list has one
-XLSX format (`Targets`, plus Delta Mass sheets when used). Sample conflicts,
-exclusions, settings warnings and method-specific internal-standard
-applicability remain visible. The sample step is one line of
-role and exclusion counts plus the 上機資訊 file; **調整** opens the sample
-editor. It lists RAW names in File Explorer order (digits by value) without
-changing the saved injection order; the user selects rows (drag, Ctrl, Shift,
-or search, which selects every match) and applies a role or exclusion with one
-click or the key shown on each role button, and exports the sample data.
+## Why It Works This Way
 
-The page shows either the setup of the next analysis or one opened result,
-never both. A finished run opens its result, with overview, review and
-downloads; **返回設定** returns to setup. Opening existing results uses that same
-result view without RAW or DLL access. Each GUI run writes a new
-`<date>_<time>_<kind>_<RAW folder>` folder under the chosen result location, so
-no run overwrites another.
-Matrix curation is optional and previews the existing owner's decisions before
-writing a separate matrix; it never overwrites the original matrix.
+- **Reading order starts with the minority outcome** of each Target: a rare
+  counted result may be a wrong peak and a rare not-counted one a missed peak,
+  while an outcome every sample shares is a batch fact. For Untargeted the
+  overview leads with the Matrix; unresolved cells are context, and ordinary
+  missing values are not treated as abnormal. Sort orders and m/z search are
+  not scientific scores or identity confirmation.
+- **No recorded risk is not acceptance.** Ordinary MS1-only backfill and a
+  related method HOLD are not risks by themselves; recorded competition names
+  what the alternative would do, and an unselected alternative gets no
+  published feature ID.
+- **Aligned time replays the final frozen calibration**, never the bootstrap
+  fit, so display matches grouping; display alignment cannot repair grouping
+  built without the intended ISTD input.
+- **Neighbouring-row outliers only choose what opens first.** The
+  injection-order plot circles samples far from their row's local median; the
+  circle decides nothing.
+- **Delta Mass review** has its own sample-local source, not an Alignment
+  result; the [candidate review contract](discovery.md#read-only-candidate-review)
+  owns the new-read versus saved-answer distinction.
 
-Applying an edited method changes the browser's batch draft, not its saved
-method file. **保存批次設定** or starting analysis saves the draft; **另存方法檔**
-exports a reusable method without applying it. **開始新批次** clears RAW and
-acquisition-information inputs and the displayed samples, retaining the method,
-targets/internal standards and output location. Confirmed sample annotations
-remain bound to their RAW folder, not carried into another folder.
+## Desktop Constraints The Code Does Not State
 
-## Review does not change results
+- Offline report tokens are substituted in one pass, or a value can become a
+  host placeholder. SVG references stay local to their mounted plot; a modal's
+  tooltip belongs in the dialog's top layer, not the plot's stacking context.
+- The loopback server closes a connection with an unread or unsupported body
+  rather than parse its tail as the next request, consumes a bounded body
+  before rejecting its headers to avoid a Windows reset during upload, and
+  never acknowledges an undelivered completion.
+- State-file reads and writes are serialized because an outstanding Windows
+  read can deny replacement and concurrent read-modify-write can lose an edit;
+  read-only previews do not hold that lock.
+- A frozen release is verified only by its artifact build and smoke run;
+  source tests cover the Python and resource contract.
 
-- Review reads completed evidence. Opening a result, filtering, loading curves,
-  changing plot ranges or exporting a report does not choose peaks, integrate,
-  change counted detection, or write workbook or Matrix values.
-- The workbench dispatches existing application, writer, Matrix curation and
-  Inspector owners. Its forms and local JSON settings are not a second
-  scientific owner, and a custom-method label is not a new method schema.
-- Downloads serve the files the run published. Review never rebuilds the
-  Targeted XLSX or Untargeted Matrix from Inspector data.
-- An opened Targeted workbook is bound by its SHA-256. An external edit
-  requires reopening the file.
-- Inspector does not read RAW files or rerun scientific preparation. It
-  displays the series it is given; for a saved Untargeted curve the workbench
-  recomputes smoothing and baseline from the saved raw curve with the run's
-  signal-processing settings. Scientific packages do not import Inspector.
-- Missing evidence stays visibly unavailable. Inspector never synthesizes a
-  replacement value, and a missing curve is not zero signal.
-
-## Review curves are not new measurements
-
-An Untargeted sample with a Matrix value shows the curve its run saved: the RT
-and raw intensity of the extraction window that gave the value, with the run's
-mass recalibration already applied. Selecting a feature shows these samples at
-once, without RAW or DLL. The view opens peak-centred: each curve shifts so its
-value's apex sits at 0 s (the midpoint of its saved bounds when no apex was
-kept), at its real intensity, and spans the saved peak bounds; a curve with
-neither is not centred and is named beside the plot. **原始 RT** and **校正 RT**
-show the same curves on their recorded times with each value's apex marked;
-**全部** shows the whole saved windows. Smoothing and baseline are recomputed for display; they reproduce
-the run's processed signal and change no value.
-
-RAW is read only for a sample without a saved curve that the user checks and
-loads: an empty cell, or a candidate outside the Matrix. These reads are new
-diagnostic views, not product measurements. RAW and DLL sources belong to the selected result's
-**RAW 曲線**, not the result opener. Targeted curves always read
-RAW and start from the sample row; the XIC view steps through the rows the
-target list shows (all, or 需先看) and repeats each row's saved `依據` and
-`疑點` labels.
-
-- A sample is read from the RAW file of the same name with the run's saved mass
-  recalibration. The file is not checked against the analysed acquisition; a
-  curve is a review view and changes no result.
-- An Untargeted group member without its own retained apex is read at the median
-  m/z and apex RT of the group's observed samples. That group-position curve is
-  drawn as a thin grey line for the empty sample, so a missed peak can be seen. It neither
-  selects nor integrates a peak, and the saved empty value stays empty.
-- Targeted curves use the workbook's extraction tolerance and signal-processing
-  settings over the full acquisition trace. Saved peak bounds are overlays, not
-  new integrations. The Targeted view states that the workbook keeps no RAW
-  fingerprint.
-- Support checks for an uncounted target with a counted paired ISTD reuse the
-  physical candidate gate. Their result is explained beside the plot and does
-  not change ND or write values.
-- A sample whose window yields no usable signal is named beside the curves.
-  The request fails only when no selected sample yields a curve.
-
-Reading never locks review. A list from a search, filter, page, reset, the
-overview or an opened result shows its items and opens one only when it has
-exactly one; **上一筆／下一筆** and the arrow keys in the list open the next item.
-Any new selection, search or page cancels a running RAW read and proceeds;
-**取消** stops a read within seconds.
-
-## Result states stay distinct
-
-- NULL, numeric zero, literal `ND`, a blank Targeted cell and unavailable curve
-  evidence remain distinct in every table, legend and export.
-- An explicit `not_searched` cell remains NULL with its recorded explanation.
-  It does not create a candidate or query witness.
-- Line style marks the extraction stage of the peak providing the Matrix value:
-  sample-coloured solid lines for detect, sample-coloured dashed lines for
-  backfill, and thin grey lines for loaded empty samples. MS2 support does not
-  determine extraction stage.
-- A group opens on one summary line of detect, backfill and empty counts, drawn
-  with those line styles so it is also the legend. The sample table follows,
-  then the curves. Each row gives the Area, its origin swatch, and only what
-  needs reading: why an empty cell is empty, a limitation of that sample's
-  curves, or a recorded risk. Left-empty cells with several possible peaks are
-  named 多峰留空 everywhere and take no warning tone.
-- Ordinary MS1-only backfill and a related method HOLD are not by themselves
-  risks. Low SNR, weak RT support and recorded pairing competition stay on the
-  row. Competition names what the alternative would do with this peak: the
-  samples and native apex RTs it would join, or leaving this group. An
-  unselected alternative is not assigned a published feature ID. Internal
-  records stay in SQLite. No recorded risk is not a claim of scientific
-  acceptance.
-- A value with no recorded origin uses dotted lines, not detect's solid lines.
-  Review never infers the extraction stage from method evidence.
-
-## Reading order
-
-Review starts with results that differ from the rest of their target. Within a
-target, the saved counted outcome shared by at most 20% of recorded decisions is
-the minority: a rare counted result may be a wrong peak, and a rare not-counted
-result may be a missed one. An outcome shared by every sample is a batch fact
-and needs no review. Without a clear majority, the rows whose saved labels
-need a look ([Targeted workbook](targeted-workbook.md#content-rules)) set the
-reading order. `summarize_targeted_results` owns this order
-for the workbench and the workbook summary, so their 先看 counts match. It does
-not reclassify results.
-
-For Untargeted reports, the overview leads with the Matrix. Groups with an
-explicitly unresolved saved decision leave those samples blank; the overview
-states their count as context, one action away, not as a required review step.
-Ordinary missing values are not treated as abnormal or not detected. The default order uses unresolved-cell count, then numeric sample
-coverage; it is not a scientific score. The approximate m/z search ranks by
-distance and applies no implicit mass tolerance, so a match does not confirm
-compound identity.
-
-When the result folder holds completed matrix curations, the review follows
-the latest one by folder name and names it beside the result title; producing a
-new curation from the result switches the open review to it. Opening a
-curation folder itself keeps that curation and reads evidence and curves from
-the result its summary records. The overview counts, coverage, Matrix list and
-download then cover only the kept features. Removed features are under
-**整理時移除**, beside the unadopted groups, each with one line built from
-its `feature_decisions.tsv` row. A result without curation is reviewed as
-published.
-
-## Retained evidence and diagnostics
-
-Delta Mass Discovery has a separate sample-local review source, not an Alignment
-result. Its selected-candidate JSON supports shared-scale RAW XICs and individual
-MS2 spectra in the same Inspector. The
-[candidate review contract](discovery.md#read-only-candidate-review) owns the
-new-read versus saved-answer distinction; the diagnostic export CLI owns RAW
-access. This does not add a Delta Mass Matrix or an analysis form in Workbench.
-
-`alignment_explanation.sqlite` is the shared, method-neutral Alignment
-evidence file for Matrix review, Matrix curation and the records that did not
-enter the Matrix. It records the attempt, the bound Matrix and its hash,
-samples, peaks, candidates with their exclusions, final groups with their
-members, and cells. It cannot authorize a writer or prove readiness.
-
-- The report keeps values, review reasons, risk flags and the saved raw curve of
-  each cell with a value. For other samples, request the RAW curve without
-  changing the recorded result.
-- A cell's recorded pairing competition keeps the peers each alternative would
-  give its peak. Scores, RT estimates, method assessments and the other inputs
-  of a decision are not in the report; a debug-level run's replay snapshots
-  hold them.
-- Which candidates explain a group is a stored relation, written once with the
-  report. Review selects this evidence with the query strategy.
-- The schema text is the format. A file whose schema differs is rejected, not
-  upgraded; rerun Alignment to produce a current report.
-- Explanation publication follows successful Matrix writing. If explanation IO
-  fails, the command fails and the Matrix can remain without a report.
-- Aligned-time plots replay the final frozen `SampleRtFrame` calibration, never the bootstrap
-  ISTD-reference fit. Raw and processed curves, apex and integration bounds use
-  the same [graded query](rt-calibration.md#graded-query-support).
-  A sample with no estimate displays raw RT and is explicitly labelled as such.
-  Injection order is retained independently of ISTD-reference provenance.
-  Display alignment cannot repair grouping that was built without the intended
-  ISTD input.
-- `ms1_apex_mz` is the measured MS1 apex m/z for that candidate and sample.
-  Missing measurements stay null; they are never replaced by the row center or
-  precursor m/z.
-- A curve bundle produced by `explain_cid_nl_run --curve-bundle` holds the same
-  review curves: saved curves where the run kept them and labelled RAW reads
-  for the other samples. It does not rerun Backfill, choose peaks or replace
-  recorded quantification.
-- A row's review also carries the valued apexes of every published row whose
-  center m/z lies within its ppm. When the row has samples whose calibrated
-  apex lies more than 3.5 min from the median of its 8 nearest injections in
-  that row, the view states their count and plots injection order against
-  calibrated apex for every row, this row coloured and the others grey. Those
-  samples are circled. The median follows a row that drifts with injection order,
-  so drift alone is not circled. Below the plot, the farthest three and the
-  sample nearest the row's median apex show one XIC each across all rows'
-  apexes, labelled by row; clicking a point adds or removes its sample. The
-  circle chooses what opens first and decides nothing. A row without such
-  samples looks as before. These XICs are RAW reads, so a bundle has them only
-  when `explain_cid_nl_run --group-id` is given `--raw-dir`; Workbench shows
-  the plot and lists the circled samples without them.
-
-## Packaging
-
-`packaging/xic_extractor.spec` defines the frozen-build resource and entry-point
-contract. Source tests verify the Python and resource contract only; a frozen
-release is verified only by its artifact build and smoke run.
-
-## Browser and desktop boundaries
-
-An offline report embeds data, not another round of template input. Escape
-every less-than sign in serialized JSON and substitute tokens in one pass;
-otherwise a value can end a script or become a host placeholder. Keep SVG
-references local to their mounted plot; a modal's tooltip belongs in the
-dialog's top layer, not the main plot's stacking context.
-
-The loopback server reuses HTTP connections for assets and status polls. Close
-a connection with an unread or unsupported body rather than parse its tail as
-the next request; consume a bounded body before rejecting its headers to avoid
-a Windows reset during upload. Do not acknowledge an undelivered completion.
-The private launcher capability stays valid after the browser loses its cookie.
-Serialize state-file reads and writes: an outstanding Windows read can deny
-replacement, and concurrent read-modify-write can lose an edit. Read-only
-previews do not hold that mutable-state lock.
-
-## Verification
-
-| Contract | Focused checks |
-| --- | --- |
-| Launch, routes, review and on-demand curves | `tests/test_xic_workbench.py`, `tests/test_workbench_analysis.py`, `tests/test_workbench_browser.py` |
-| Saved review curves and RAW reads for the rest | `tests/test_review_curves.py` |
-| Targeted and Untargeted workbench adapters | `tests/test_workbench_config.py`, `tests/test_workbench_targeted.py`, `tests/test_workbench_untargeted.py` |
-| Offline report layout and interaction | `tests/test_xic_inspector_html.py`, `tests/test_xic_inspector_curve_bundle.py` |
-| Inspector reads no RAW and is not imported by scientific packages | `tests/test_xic_inspector_import_boundary.py` |
-| Targeted workbook review and reading order | `tests/test_targeted_overview.py`, `tests/test_xic_inspector_targeted_workbook.py` |
-| Frozen resources | `tests/test_pyinstaller_spec.py` |
-
-## See Also
-
-- [Targeted workbook](targeted-workbook.md) | [Quant Matrix](quant-matrix.md) | [Matrix Curation](matrix-curation.md)
-- [Presets](presets.md) | [Sample metadata](sample-metadata-qc.md)
-- [Architecture contract](../architecture-contract.md#dependency-direction)
+See also [Targeted workbook](targeted-workbook.md) ·
+[Quant Matrix](quant-matrix.md) · [Matrix Curation](matrix-curation.md) ·
+[Dependency direction](../architecture/dependency-direction.md)

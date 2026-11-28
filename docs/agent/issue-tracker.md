@@ -6,7 +6,7 @@ This file owns GitHub mechanics only. What an Issue and PR contain is in
 
 ## Conventions
 
-Use `gh --help` for command syntax and `--body-file` for multiline text. Read
+Use `--body-file` for multiline text. Read
 only the fields or comments needed for the decision; paginate when an exhaustive
 inventory is required. A limited issue list is not a complete census.
 

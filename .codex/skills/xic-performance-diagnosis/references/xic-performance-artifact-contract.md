@@ -1,6 +1,6 @@
 # XIC Performance Artifact Contract
 
-This is the XIC-specific artifact, comparability, call-cost, and parity reference
+This is the XIC-specific artifact, comparability, and parity reference
 for `xic-performance-diagnosis`. It does not define product authority or a
 universal benchmark threshold.
 
@@ -10,7 +10,7 @@ Prefer timing sources in this order:
 
 1. Fresh stage timing from the exact command under discussion.
 2. `timing.live.json` / heartbeat timing for a long foreground RAW run.
-3. `timing.json` / preset summary timing.
+3. `timing.json` from the completed run.
 4. Stage replay timing with matching input-artifact identity.
 5. RAW locality or call-count summaries that explain elapsed time.
 6. A profiler for the code region it actually covers.
@@ -31,13 +31,13 @@ does not update an earlier whole-run time without a corresponding observation.
 Inspect or name the absence of only the artifacts needed for the decision:
 
 - output root, exact command, completion evidence, and producing code state;
-- `timing.json`, `timing.live.json`, preset summary, or stage replay timing;
-- method manifest, run metadata, input hashes, config/preset, runtime/backend,
-  worker budget, output level, and cache state when retained;
+- `timing.json`, `timing.live.json`, or stage replay timing;
+- run metadata, input hashes, config/preset, runtime/backend, worker budget,
+  output level, and cache state when retained;
 - RAW locality and extraction call-count summaries;
 - profiler sidecars and their covered region;
-- correctness evidence: public output hashes, matrix/review/identity parity,
-  expected-diff packet, or focused test result.
+- correctness evidence: public output parity, an approved expected diff, or a
+  focused test result.
 
 Use filename-driven discovery and targeted readers. A diagnostic sidecar is a
 measurement input unless an active product contract gives it delivery authority.
@@ -71,16 +71,6 @@ sum of nested spans as wall clock.
 
 ## Repetition And Noise
 
-For short bounded stages or commands:
-
-- isolate fixture/setup time unless it is user-visible work;
-- separate cold-cache and warm-cache observations;
-- use warmups when the measured production path is normally warm;
-- collect repeated samples, report median and dispersion, and treat p95 from a
-  small sample only as descriptive;
-- interleave baseline/candidate observations when thermal or background drift
-  could bias sequential runs.
-
 For expensive 8RAW/85RAW work, choose a design that can still falsify the claim:
 
 - prefer paired per-sample or per-stage observations from the same sample set;
@@ -103,34 +93,6 @@ XIC-wide product rule. Apply these workflow verdicts in order:
 A measured delta may still be retained as diagnostic evidence. That retention
 description does not replace or weaken the workflow verdict.
 
-## Call-Cost Model
-
-Classify the dominant cost and name what changes:
-
-- RAW opens and Thermo DLL setup;
-- XIC extraction requests, batches, and vendor chromatogram calls;
-- repeated extraction over the same sample/window;
-- per-chunk replay of matrix-only evidence;
-- repeated large TSV/CSV scans;
-- sorting, grouping, joining, and full-table memory pressure;
-- peak finding, cropping, smoothing, correlation, or audit loops;
-- matrix/report/overlay rendering;
-- cache/index build cost versus reuse benefit;
-- worker startup, scheduling, IPC, and deterministic ordering.
-
-## Workload Class
-
-- `8RAW`: lane-owned feedback/parity fixture before a named larger gate.
-- `85RAW`: lane-owned stress oracle for wall clock and locality.
-- `stage_replay`: targeted diagnosis, not readiness evidence by itself.
-- `one_time_import`: simple batching/streaming often dominates index reuse.
-- `repeated_modeling`: reusable indexes, manifests, and caches may repay setup.
-- `production_preset`: requires public-output parity or an approved expected diff.
-- `fast_mode_candidate`: opt-in alternate semantics; exact outputs remain default.
-
-Missing baseline evidence closes at command shape, required artifacts, and the
-decision the measurement can change.
-
 ## Correctness Oracles
 
 Choose the oracle before an edit or an accepted paired-performance claim:
@@ -141,40 +103,11 @@ Choose the oracle before an edit or an accepted paired-performance claim:
 - workbook/report schema and public sheet parity;
 - focused tests for crop boundaries, fallbacks, worker ordering, replay reuse,
   cache invalidation, and writers;
-- an expected-diff packet for intentional semantic change.
+- the [Expected-Diff Contract](../../../../docs/agent/product-validation-contract.md#expected-diff-contract)
+  for an intentional semantic change.
 
 A failed or missing correctness oracle blocks `optimized`, regardless of elapsed
 time or call-count improvement.
-
-## Exact-Safe Opportunities
-
-Common candidates include:
-
-- reuse of global summaries instead of per-chunk evidence regeneration;
-- sample-local scan/RT/window caches with explicit lifetime;
-- monotonic slice/search operations with defined fallbacks;
-- keyed or targeted loads instead of repeated full-table reads;
-- extraction batching by sample/window locality;
-- deterministic worker-budget tuning;
-- reuse of replay manifests and artifact hashes.
-
-Shared mechanics move into a package owner only when the architecture contract
-justifies reuse; method policy remains with its lane owner.
-
-## Expected-Diff And Fast-Mode Evidence
-
-For non-exact paths, bind the existing expected-diff owner and inspect:
-
-- feature/family/sample coverage;
-- missing/extra cells and status deltas;
-- apex, boundary, and area drift;
-- counted-detection, identity, confidence, and reason deltas;
-- held/failed buckets;
-- runtime and call-cost deltas;
-- opt-in profile and rollback path.
-
-Performance evidence does not make an alternate backend the default or activate
-product writes.
 
 ## Stop Conditions
 
