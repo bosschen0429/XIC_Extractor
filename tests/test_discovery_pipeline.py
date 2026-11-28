@@ -810,6 +810,7 @@ def test_failed_sample_keeps_completed_parts_and_closes_its_raw(
         lambda path, dll, **kwargs: openers[path](path, dll, **kwargs),
     )
 
+    recorder = TimingRecorder("discovery")
     with pytest.raises((RuntimeError, OSError, RawReaderOpenError)) as caught:
         _run_discovery_batch(
             paths,
@@ -817,6 +818,7 @@ def test_failed_sample_keeps_completed_parts_and_closes_its_raw(
             settings=settings,
             output_dir=output_dir,
             dll_dir=dll_dir,
+            timing_recorder=recorder,
         )
 
     expected_text = {"publication_failure": "case", "cancel": "cancelled"}.get(
@@ -827,6 +829,28 @@ def test_failed_sample_keeps_completed_parts_and_closes_its_raw(
     assert part_path(output_dir, "observed").is_file()
     for stem in ("observed", "case"):
         assert (output_dir / f"{stem}.closed").read_text() == "disposed"
+
+    timing = {
+        row["metric"]: row
+        for row in recorder.measurement_observations
+        if row["scope"] == "case"
+    }
+    if mode == "open_failure":
+        assert timing["raw_open_count"]["availability"] == "unavailable"
+        assert timing["raw_open_count"]["reason"]
+    else:
+        assert timing["raw_open_count"]["value"] == 1
+    if mode in {"read_failure", "cancel"}:
+        calls = timing["adapter_chromatogram_call_count"]
+        assert calls["availability"] == "measured"
+        assert isinstance(calls["value"], int)
+        for metric in (
+            "logical_xic_request_count",
+            "xic_batch_count",
+            "trace_point_count",
+        ):
+            assert timing[metric]["availability"] == "unavailable"
+            assert timing[metric]["reason"]
 
 
 @pytest.mark.parametrize("mode", ("success", "read_failure"))

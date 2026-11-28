@@ -330,7 +330,8 @@ def _discovery_peak(
         ms1_apex_rt=selected.apex_rt_min,
         status=_peak_status(
             doubly_charged=ion_peak.doubly_charged,
-            blank=is_blank is not None
+            blank=not ion_peak.doubly_charged
+            and is_blank is not None
             and is_blank(representative.precursor_mz, float(selected.height)),
             attached_event_count=len(attached),
         ),

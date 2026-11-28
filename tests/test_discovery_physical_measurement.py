@@ -1112,6 +1112,7 @@ def _inferred_apex_case(
     companion_basis: str | None = None,
     isotope_offsets: tuple[float, ...] = (),
     isotope_ratio: float = 0.5,
+    is_blank=None,
 ):
     raw_path = tmp_path / "TumorBC2312_DNA.raw"
     raw_path.write_bytes(b"owner-bound-discovery")
@@ -1166,6 +1167,7 @@ def _inferred_apex_case(
         settings=_capture_settings(),
         signal_processing_profile=SignalProcessingProfile(window_points=15),
         ms1_centroid=read_ion,
+        is_blank=is_blank,
     )
     return group, raw, result
 
@@ -1274,10 +1276,14 @@ def test_selected_precursor_reports_no_ms1_ion(tmp_path: Path) -> None:
 def test_inferred_precursor_with_a_doubly_charged_isotope_is_held_for_review(
     tmp_path: Path,
 ) -> None:
+    def blank_is_not_asked(*_args: float) -> bool:
+        raise AssertionError("a doubly charged peak keeps its status")
+
     group, _raw, result = _inferred_apex_case(
         tmp_path,
         lambda inferred, _rt: inferred * (1 + 1e-6),
         isotope_offsets=(1.0033548 / 2,),
+        is_blank=blank_is_not_asked,
     )
 
     (candidate,) = result.peaks

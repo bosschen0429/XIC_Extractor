@@ -81,17 +81,24 @@ def discover_sample(
     opener = raw_opener or partial(
         _open_source_bound_raw, job=job, timing_recorder=timing_recorder
     )
-    with opener(raw_path, job.dll_dir) as raw:
-        capture = search_cid_nl_sample(
-            raw,
-            raw_file=raw_path,
-            settings=settings,
-            acquisition_source=acquisition_input.acquisition_source,
-            signal_processing_profile=job.signal_processing_profile,
-            timing_recorder=timing_recorder,
-            is_blank=_blank_background_test(settings, acquisition_input),
-        )
-        mass_recalibration_result = raw.mass_recalibration_result
+    try:
+        with opener(raw_path, job.dll_dir) as raw:
+            try:
+                capture = search_cid_nl_sample(
+                    raw,
+                    raw_file=raw_path,
+                    settings=settings,
+                    acquisition_source=acquisition_input.acquisition_source,
+                    signal_processing_profile=job.signal_processing_profile,
+                    timing_recorder=timing_recorder,
+                    is_blank=_blank_background_test(settings, acquisition_input),
+                )
+            except Exception:
+                _observe_unfinished_xic_reads(timing_recorder, raw, raw_path.stem)
+                raise
+            mass_recalibration_result = raw.mass_recalibration_result
+    finally:
+        _observe_unrecorded_raw_open(timing_recorder, raw_path.stem)
     return publish_discovery_batch_sample(
         raw_path,
         capture.peaks,
@@ -176,6 +183,53 @@ def _open_source_bound_raw(
             expected_acquisition_source=job.acquisition_input.acquisition_source,
             timing_recorder=timing_recorder,
         ),
+    )
+
+
+def _observe_unfinished_xic_reads(
+    timing_recorder: TimingRecorder, raw: CidNlSearchSource, sample_stem: str
+) -> None:
+    """A search that did not finish reports the vendor calls it made; the XIC
+    counts it never completed stay unavailable with the reason."""
+    source = "xic_extractor.discovery.cid_nl_search"
+    timing_recorder.observe(
+        "adapter_chromatogram_call_count",
+        value=raw.raw_chromatogram_call_count,
+        scope=sample_stem,
+        unit="calls",
+        source=source,
+    )
+    for metric, unit in (
+        ("logical_xic_request_count", "requests"),
+        ("xic_batch_count", "batches"),
+        ("trace_point_count", "points"),
+    ):
+        timing_recorder.observe(
+            metric,
+            scope=sample_stem,
+            unit=unit,
+            source=source,
+            availability="unavailable",
+            reason="Discovery stopped before its XIC reads were counted",
+        )
+
+
+def _observe_unrecorded_raw_open(
+    timing_recorder: TimingRecorder, sample_stem: str
+) -> None:
+    """The reader records each successful open; a sample without one says so."""
+    if any(
+        row["metric"] == "raw_open_count" and row["scope"] == sample_stem
+        for row in timing_recorder.measurement_observations
+    ):
+        return
+    timing_recorder.observe(
+        "raw_open_count",
+        scope=sample_stem,
+        unit="opens",
+        source="xic_extractor.discovery.cid_nl_search",
+        availability="unavailable",
+        reason="RAW opener recorded no successful open",
     )
 
 
