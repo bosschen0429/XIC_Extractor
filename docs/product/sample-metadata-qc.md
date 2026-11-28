@@ -147,25 +147,6 @@ values.
 - A sequence row never invents a timestamp, and a RAW missing from the supplied
   root is not proof that an injection never occurred.
 
-## Boundaries
-
-- Owns: the sample identity schema, injection-order projection, role, batch
-  and exclusion field definitions, and QC sidecar structure.
-- Does not own: a specific sample's role or exclusion decision,
-  normalization/calibration activation, or Matrix activation scope.
-
-| Surface | Role |
-| --- | --- |
-| `sample_metadata` CSV/TSV | Shared sample identity, order, role, batch, `matrix_type`, group, exclusion schema |
-| `injection_order_source` | Optional sequence annotations; RAW chronology owns resolved injection order |
-| Run metadata / method manifest | Provenance links to sample metadata inputs |
-
-## Pitfalls
-
-- Using exclusions to silently remove product rows or cells.
-- Treating QC sidecars or calibration previews as Matrix authority.
-- Hiding sample identity or batch assumptions only in private notes.
-
 ## Verification
 
 [`test_sample_metadata.py`](../../tests/test_sample_metadata.py) ·

@@ -62,7 +62,8 @@ scientific owners, so the same effective request has the same behavior.
 - An opened Targeted workbook is bound by its SHA-256; an external edit
   requires reopening the file.
 - Inspector does not read RAW or rerun scientific preparation; it displays the
-  series it is given. Scientific packages do not import Inspector.
+  series it is given, switches no candidate and builds no RT reselection
+  table. Scientific packages do not import Inspector.
 - Missing evidence stays visibly unavailable. Inspector never synthesizes a
   replacement value, and a missing curve is not zero signal.
 

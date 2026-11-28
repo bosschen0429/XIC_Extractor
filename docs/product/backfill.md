@@ -16,7 +16,7 @@ accepted receipt as described below.
 | What earns a value? | Exactly one group-bounded, background-qualified MS1 peak with no competing evidence. The cell is written as `backfilled`. | [Cell outcome](#cell-outcome) |
 | What if two queries claim one peak? | One claim wins; the other cell gets no value. | [Competing claims](#competing-claims) |
 | Does a backfilled sample join the group? | Only with unique SUPPORT, admitted by CrossSample. A backfilled value alone is not membership. | [Membership admission](#membership-admission) |
-| What does Backfill never do? | Add a direct SUPPORT vote, move an original member, refit a band or widen the acquired window. | [Boundaries](#boundaries) |
+| What does Backfill never do? | Add a direct SUPPORT vote, move an original member, refit a band or widen the acquired window. | [Membership admission](#membership-admission) |
 
 ## Contract
 
@@ -329,14 +329,6 @@ group-level `group_center_rt`; readers require them. Validation-minimal output
 emits it; the production level writes the Matrix. It can be empty when no
 eligible cell was accepted, so a population check needs a fixture known to
 exercise this path.
-
-## Boundaries
-
-`ProductionCellDecision` owns the value and write/no-write decision;
-CrossSample owns membership; the [Quant Matrix](quant-matrix.md) and
-[Writer Authority](decision-policy.md#writer-authority) own publication scope.
-Diagnostic traces, a well-formed coverage epoch and candidate records grant
-none of these.
 
 ## Where The Code Lives
 

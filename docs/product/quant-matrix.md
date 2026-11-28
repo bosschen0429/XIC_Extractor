@@ -91,12 +91,7 @@ collections use other names and cannot cross the delivery seam as if final.
   columns or schema versions is a public-contract change needing expected-diff
   and downstream checks. Diagnostic risk flags do not authorize a value or row.
 
-## Surfaces
-
-| Surface | Role |
-| --- | --- |
-| `alignment_matrix.tsv` / workbook `Matrix` | Primary product-facing numeric matrix |
-| `ProductionCellDecision` | Published value/no-write decision retaining the selected integration and workflow-specific subject |
+## Other Outputs
 
 Workbench shows group review from the explanation report. The Matrix SHA-256,
 row-ordered feature IDs and full-precision masses are stored together in run
@@ -107,22 +102,6 @@ these are public schema surfaces, not scientific authority. The fast public
 validation profile is `validation-minimal`; it also writes the compact
 `alignment_explanation.sqlite` so a run can be reviewed and scored without a
 rerun, and does not establish production readiness.
-
-## Boundaries
-
-- **Owns:** the final primary Matrix schema, projection-owned row/cell
-  identity, cell provenance, and rendering of finalized cell decisions.
-- **Does not own:** which Backfill cells are accepted, per-row scientific
-  confidence, maturity tiers, or upstream alignment/detection logic.
-
-## Pitfalls
-
-- Treating candidate Backfill rows as accepted Matrix values.
-- Treating a Backfill observation as the selected value without a closed
-  cell decision.
-- Passing a pre-final cell collection directly to a writer.
-- Adding diagnostic evidence columns to the primary Matrix.
-- Claiming production readiness from contract fixtures or 8RAW smoke alone.
 
 ## Verification
 

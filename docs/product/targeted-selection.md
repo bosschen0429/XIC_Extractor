@@ -396,33 +396,6 @@ and carry no selection, reference-editing or quantitation authority.
 [`test_diagnostic_reference_consistency.py`](../../tests/test_diagnostic_reference_consistency.py)
 pins the exclusion, voting and warning rules; `--help` owns the defaults.
 
-## Boundaries
-
-- **Consumes:** the owner-issued target search scope. It narrows the Target
-  universe and can still ask the shared method to inspect broad relationships
-  such as dR, R or MeR.
-- **Owns:** the fixed Target row projection, row binding and cell subject,
-  post-cell inclusion, reasons, product state, counting, Review Queue routing
-  and target-pair RT rules.
-- **Selected value:** the cell decision owns it; Targeted projection renders it
-  and does not rerun selection or integration.
-- **Does not own:** Backfill or Discovery writer scope, full review-action
-  apply behavior, or maturity tiers. Targeted and Untargeted authority do not
-  extend to each other.
-- [Workbench](workbench.md) shows retained evidence for review; Inspector does
-  not switch candidates or build RT reselection tables.
-
-## Pitfalls
-
-- Treating diagnostic boundary proposals as final selected boundaries.
-- Promoting target-pair RT support without explicit activation.
-- Letting selected-hypothesis refactors silently change reasons or counted
-  detection.
-- Treating configured Target identity as proof of a local observation or
-  membership.
-- Creating a second Target-only capture, trajectory, Backfill or cell-decision
-  implementation because the output rows differ.
-
 ## Verification
 
 - [`test_targeted_peak_selection.py`](../../tests/test_targeted_peak_selection.py)
