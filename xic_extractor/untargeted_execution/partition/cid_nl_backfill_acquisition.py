@@ -616,7 +616,7 @@ def reuse_cid_nl_backfill_peak(
             search_rt_window=window,
         )
         answer = answer_physical_peak_question(
-            PreparedSignalResult(ev.prepared, ev.retained_prepared_signal, ()),
+            PreparedSignalResult(ev.prepared, ev.retained_prepared_signal),
             ev.segment_universe,
             question,
         )

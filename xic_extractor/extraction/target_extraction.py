@@ -31,7 +31,7 @@ from xic_extractor.extraction.targeted_peak_selection import (
     discovery_settings_for_loss,
     prepare_targeted_method_seeds,
     targeted_ms2_precursor_scope,
-    targeted_physical_peak_policy,
+    targeted_physical_segmentation,
 )
 from xic_extractor.extraction.trace_context import targeted_extraction_trace_group
 from xic_extractor.ms2_scan_models import Ms2Window
@@ -290,7 +290,7 @@ def extract_one_target(
     prepared = prepare_physical_signal(rt_array, intensity, profile=profile)
     universe = enumerate_physical_segment_universe(
         prepared,
-        selection_policy_version=targeted_physical_peak_policy(target, anchor_rt),
+        segmentation=targeted_physical_segmentation(target, anchor_rt),
         request_context_rt_start_min=(
             float(rt_array[0])
             if rt_array.ndim == 1 and rt_array.size

@@ -33,6 +33,7 @@ def test_discovery_tail_event_selects_its_raw_peak_beyond_quantitative_return():
         prepared,
         query_rt_min=5.8,
         selection_policy_version=DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
+        segmentation="raw_basin",
     )
     assert result.answer.selected_segment is not None
     assert result.answer.selected_segment.apex_rt_min == pytest.approx(5.0, abs=0.02)
@@ -75,6 +76,7 @@ def test_raw_zero_valley_keeps_a_smaller_nl_peak_separate_from_bigger_neighbor()
         prepared,
         query_rt_min=14.51,
         selection_policy_version=DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
+        segmentation="raw_basin",
     )
     assert result.answer.selected_segment is not None
     assert result.answer.selected_segment.apex_rt_min == pytest.approx(14.48, abs=0.04)
@@ -101,6 +103,7 @@ def test_shared_valley_does_not_lend_a_noise_components_segment_to_another_peak(
             prepared,
             query_rt_min=query,
             selection_policy_version=DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
+            segmentation="raw_basin",
         )
         assert answer.answer.selected_segment is not None
         assert answer.answer.selected_segment.apex_rt_min == pytest.approx(

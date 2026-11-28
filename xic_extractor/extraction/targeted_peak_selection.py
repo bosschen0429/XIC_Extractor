@@ -64,6 +64,7 @@ from xic_extractor.peak_detection.physical_peak_models import (
     PHYSICAL_PEAK_REFERENCE_POLICY,
     PhysicalPeakEvaluation,
     PhysicalSegment,
+    PhysicalSegmentation,
     PhysicalSegmentUniverse,
     PreparedSignalResult,
 )
@@ -312,6 +313,16 @@ def targeted_physical_peak_policy(target: Target, reference_rt: float | None) ->
     if target.is_istd and reference_rt is not None:
         return PHYSICAL_PEAK_REFERENCE_POLICY
     return PHYSICAL_PEAK_ENVELOPE_POLICY
+
+
+def targeted_physical_segmentation(
+    target: Target, reference_rt: float | None
+) -> PhysicalSegmentation:
+    """An ISTD located by its reference keeps whole peaks; others keep every lobe."""
+    policy = targeted_physical_peak_policy(target, reference_rt)
+    if policy == PHYSICAL_PEAK_REFERENCE_POLICY:
+        return "baseline_return"
+    return "localized_valley"
 
 
 def assess_targeted_candidate_population(

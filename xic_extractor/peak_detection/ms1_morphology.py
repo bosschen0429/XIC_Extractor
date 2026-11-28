@@ -67,11 +67,7 @@ def gaussian15_morphology_trace(
     values = np.asarray(residual, dtype=float)
     if values.ndim != 1:
         raise ValueError("residual must be one-dimensional")
-    window = morphology_trace_effective_points(
-        len(values),
-        method=MS1_MORPHOLOGY_TRACE_METHOD,
-        window_points=window_points,
-    )
+    window = morphology_trace_effective_points(len(values), window_points=window_points)
     if window <= 1:
         return values.copy()
     kernel = _gaussian_kernel(window)
@@ -129,9 +125,7 @@ def gaussian15_positive_asls_residual_metrics(
         trace_method=MS1_MORPHOLOGY_TRACE_METHOD,
         trace_window_points=window_points,
         trace_effective_points=morphology_trace_effective_points(
-            len(residual),
-            method=MS1_MORPHOLOGY_TRACE_METHOD,
-            window_points=window_points,
+            len(residual), window_points=window_points
         ),
         area_positive_asls_residual=area,
         area_source=MS1_MORPHOLOGY_AREA_SOURCE,
@@ -174,16 +168,9 @@ def canonical_gaussian_signal_traces(
     return smoothed_raw, np.maximum(smoothed_raw - np.maximum(baseline, 0.0), 0.0)
 
 
-def morphology_trace_effective_points(
-    trace_length: int,
-    *,
-    method: str,
-    window_points: int,
-) -> int:
+def morphology_trace_effective_points(trace_length: int, *, window_points: int) -> int:
     if trace_length <= 0:
         return 0
-    if method not in {MS1_MORPHOLOGY_TRACE_METHOD, "smooth_15"}:
-        return 1
     if window_points <= 1:
         return 1
     if trace_length < window_points:

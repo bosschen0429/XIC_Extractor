@@ -11,13 +11,11 @@ from xic_extractor.configuration.signal_processing_profile import (
 from xic_extractor.peak_detection.integration_result import IntegrationResult
 
 PhysicalPeakState = Literal["available", "unavailable", "failed"]
-PHYSICAL_SEGMENT_UNIVERSE_SCHEMA = "physical_segment_universe"
+PhysicalSegmentation = Literal["baseline_return", "localized_valley", "raw_basin"]
 PHYSICAL_PEAK_POINT_POLICY = "baseline_peak_contains_query"
 PHYSICAL_PEAK_REFERENCE_POLICY = "reference_localized_contour_peak"
 PHYSICAL_PEAK_ENVELOPE_POLICY = "localized_total_envelope"
 PHYSICAL_PEAK_NO_SELECTION_POLICY = "no_selected_physical_segment"
-PHYSICAL_PEAK_WINDOW_POLICY = "unique_baseline_peak_in_context"
-PHYSICAL_PEAK_GROUP_WINDOW_POLICY = "group_rt_resolved_peak_in_context"
 PHYSICAL_PEAK_BACKFILL_POLICY = "sample_local_background_qualified_peak_in_context"
 PHYSICAL_PEAK_UNLOCATED_BACKFILL_POLICY = "backfill_localization_unreliable"
 DISCOVERY_PHYSICAL_PEAK_POINT_POLICY = "background_qualified_peak_contains_query"
@@ -27,38 +25,15 @@ _PHYSICAL_PEAK_SELECTION_POLICIES = frozenset(
         PHYSICAL_PEAK_REFERENCE_POLICY,
         PHYSICAL_PEAK_ENVELOPE_POLICY,
         PHYSICAL_PEAK_NO_SELECTION_POLICY,
-        PHYSICAL_PEAK_WINDOW_POLICY,
-        PHYSICAL_PEAK_GROUP_WINDOW_POLICY,
         PHYSICAL_PEAK_BACKFILL_POLICY,
         PHYSICAL_PEAK_UNLOCATED_BACKFILL_POLICY,
         DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
     }
 )
-PhysicalPeakOperation = Literal[
-    "trace_evaluation",
-    "asls_baseline",
-    "gaussian_smoothing",
-    "segment_enumeration",
-    "background_qualification",
-    "integration",
-    "raw_descriptor_projection",
-    "region_audit_projection",
-]
-_PHYSICAL_PEAK_OPERATION_ORDER: tuple[PhysicalPeakOperation, ...] = (
-    "trace_evaluation",
-    "asls_baseline",
-    "gaussian_smoothing",
-    "segment_enumeration",
-    "background_qualification",
-    "integration",
-    "raw_descriptor_projection",
-    "region_audit_projection",
-)
 
 
 @dataclass(frozen=True, slots=True)
 class PreparedSignalProjection:
-    schema_version: str
     profile: SignalProcessingProfile
     rt: tuple[float, ...]
     raw: tuple[float, ...]
@@ -85,7 +60,6 @@ class PreparedSignal:
 class PreparedSignalResult:
     projection: PreparedSignalProjection
     prepared: PreparedSignal | None
-    operations: tuple[PhysicalPeakOperation, ...]
     trace_context_rt_start_min: float | None = None
     trace_context_rt_end_min: float | None = None
     baseline_unclipped: tuple[float, ...] | None = None
@@ -121,7 +95,6 @@ class RawPeakComponent:
 
 @dataclass(frozen=True, slots=True)
 class PhysicalSegmentUniverse:
-    schema_version: str
     prepared: PreparedSignalProjection
     context_rt_start_min: float
     context_rt_end_min: float
@@ -132,7 +105,6 @@ class PhysicalSegmentUniverse:
 
 @dataclass(frozen=True, slots=True)
 class PhysicalPeakQuestion:
-    schema_version: str
     universe: PhysicalSegmentUniverse
     query_rt_min: float
     admissible_segments: tuple[PhysicalSegment, ...]
@@ -150,7 +122,6 @@ class PhysicalPeakQuestion:
 
 @dataclass(frozen=True, slots=True)
 class PhysicalPeakAnswer:
-    schema_version: str
     state: PhysicalPeakState
     reason: str
     question: PhysicalPeakQuestion
@@ -166,7 +137,6 @@ class PhysicalPeakEvaluation:
     question: PhysicalPeakQuestion
     answer: PhysicalPeakAnswer
     integration: IntegrationResult | None
-    operations: tuple[PhysicalPeakOperation, ...]
     retained_prepared_signal: PreparedSignal | None = field(default=None, compare=False)
 
     def __deepcopy__(self, memo: dict[int, object]) -> PhysicalPeakEvaluation:

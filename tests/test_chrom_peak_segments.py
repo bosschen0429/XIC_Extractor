@@ -7,84 +7,6 @@ from xic_extractor.peak_detection.chrom_peak_segments import (
 )
 
 
-def _trace(residual: list[float]) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    rt = np.arange(float(len(residual)), dtype=float)
-    baseline = np.full(len(residual), 10.0)
-    intensity = baseline + np.asarray(residual, dtype=float)
-    return rt, intensity, baseline
-
-
-def test_segment_enumeration_recovers_clean_full_peak_segment() -> None:
-    rt, intensity, baseline = _trace([0, 0, 2, 10, 30, 50, 30, 10, 2, 0, 0])
-
-    result = enumerate_chrom_peak_segments(rt, intensity, baseline)
-
-    assert result.status == "OK"
-    assert result.morphology_trace_method == "gaussian_15"
-    assert len(result.segments) == 1
-    segment = result.segments[0]
-    assert segment.apex_rt_min == pytest.approx(5.0)
-    assert segment.interval.rt_start_min == pytest.approx(2.0)
-    assert segment.interval.rt_end_min == pytest.approx(8.0)
-    assert segment.interval.scan_count == 7
-    assert segment.area_baseline_corrected > 0.0
-    assert "morphology_local_maximum" in segment.evidence_sources
-    assert "baseline_return" in segment.evidence_sources
-    assert "raw_area_asls" in segment.evidence_sources
-
-
-def test_segment_enumeration_splits_baseline_separated_neighbor_peaks() -> None:
-    rt, intensity, baseline = _trace([0, 0, 10, 50, 10, 0, 0, 8, 40, 8, 0, 0])
-
-    result = enumerate_chrom_peak_segments(rt, intensity, baseline)
-
-    assert result.status == "OK"
-    assert [segment.apex_rt_min for segment in result.segments] == pytest.approx(
-        [3.0, 8.0]
-    )
-    assert result.segments[0].interval.rt_end_min < 6.0
-    assert result.segments[1].interval.rt_start_min > 5.0
-    assert "local_minimum_valley" in result.segments[0].evidence_sources
-    assert "local_minimum_valley" in result.segments[1].evidence_sources
-
-
-def test_high_valley_cut_is_not_a_valley_split() -> None:
-    rt, intensity, baseline = _trace([0, 0, 10, 50, 40, 45, 30, 0, 0])
-
-    result = enumerate_chrom_peak_segments(rt, intensity, baseline)
-
-    assert result.status == "OK"
-    assert len(result.segments) == 2
-    assert all(
-        "local_minimum_valley" not in segment.evidence_sources
-        for segment in result.segments
-    )
-
-
-def test_segment_area_uses_raw_trace_not_morphology_area() -> None:
-    residual = [0] * 12 + [0, 4, 100, 4, 0] + [0] * 12
-    rt, intensity, baseline = _trace(residual)
-
-    result = enumerate_chrom_peak_segments(
-        rt,
-        intensity,
-        baseline,
-        policy=ChromPeakSegmentPolicy(morphology_trace_window_points=15),
-    )
-
-    assert result.status == "OK"
-    segment = result.segments[0]
-    raw_segment = np.maximum(
-        intensity[segment.interval.start_index : segment.interval.end_index]
-        - baseline[segment.interval.start_index : segment.interval.end_index],
-        0.0,
-    )
-    raw_rt = rt[segment.interval.start_index : segment.interval.end_index]
-    expected_raw_area = float(np.trapezoid(raw_segment, raw_rt)) * 60.0
-    assert segment.area_baseline_corrected == pytest.approx(expected_raw_area)
-    assert segment.morphology_area_shadow != pytest.approx(expected_raw_area)
-
-
 def test_supported_broad_peak_does_not_quantify_each_surface_ripple() -> None:
     rt = np.linspace(0.0, 8.0, 2401)
     envelope = 10000.0 * np.exp(-0.5 * ((rt - 4.0) / 0.7) ** 2)
@@ -94,7 +16,6 @@ def test_supported_broad_peak_does_not_quantify_each_surface_ripple() -> None:
         signal,
         np.zeros_like(signal),
         policy=ChromPeakSegmentPolicy(
-            morphology_trace_method="rt_envelope",
             morphology_min_sigma_rt=0.08,
             min_prominence_noise_sigma=2.0 / 1.4826,
         ),
@@ -127,8 +48,6 @@ def test_clear_separated_groups_restore_one_representative_per_lobe() -> None:
         signal,
         np.zeros_like(signal),
         policy=ChromPeakSegmentPolicy(
-            min_apex_fraction_of_context=0.0,
-            morphology_trace_method="rt_envelope",
             morphology_min_sigma_rt=0.08,
             min_prominence_noise_sigma=2.0 / 1.4826,
         ),
@@ -139,8 +58,9 @@ def test_clear_separated_groups_restore_one_representative_per_lobe() -> None:
         [1.4, 1.992, 2.7]
     )
     central = result.segments[1]
-    assert central.interval.rt_start_min == pytest.approx(1.73)
-    assert central.interval.rt_end_min == pytest.approx(2.26)
+    return_scan = rt[1] - rt[0]
+    assert central.interval.rt_start_min == pytest.approx(1.73 - return_scan)
+    assert central.interval.rt_end_min == pytest.approx(2.26 + return_scan)
 
 
 def test_unresolved_envelope_preserves_mass_and_weak_isolated_peak() -> None:
@@ -155,7 +75,6 @@ def test_unresolved_envelope_preserves_mass_and_weak_isolated_peak() -> None:
         signal,
         np.zeros_like(signal),
         policy=ChromPeakSegmentPolicy(
-            morphology_trace_method="rt_envelope",
             morphology_min_sigma_rt=0.08,
             min_prominence_noise_sigma=2.0 / 1.4826,
         ),
@@ -196,13 +115,10 @@ def test_remote_small_pulses_do_not_split_an_unresolved_envelope(
         canonical,
         np.zeros_like(signal),
         policy=ChromPeakSegmentPolicy(
-            morphology_trace_method="rt_envelope",
             morphology_min_sigma_rt=0.08,
-            min_apex_fraction_of_context=0.0,
             min_prominence_noise_sigma=2.0 / 1.4826,
             baseline_return_fraction=0.0,
             baseline_return_min_residual=0.0,
-            include_baseline_return_samples=True,
         ),
         acquired_intensity_values=signal,
     )
@@ -230,7 +146,6 @@ def test_rt_envelope_peak_count_and_apex_are_stable_across_rt_density() -> None:
             signal,
             np.zeros_like(signal),
             policy=ChromPeakSegmentPolicy(
-                morphology_trace_method="rt_envelope",
                 morphology_min_sigma_rt=0.08,
                 min_prominence_noise_sigma=2.0 / 1.4826,
             ),
@@ -253,7 +168,6 @@ def test_rt_envelope_reports_original_signal_apex_within_smoothed_bounds() -> No
         signal,
         np.zeros_like(signal),
         policy=ChromPeakSegmentPolicy(
-            morphology_trace_method="rt_envelope",
             morphology_min_sigma_rt=0.08,
         ),
     )
@@ -262,8 +176,7 @@ def test_rt_envelope_reports_original_signal_apex_within_smoothed_bounds() -> No
     segment = result.segments[0]
     assert segment.apex_index == int(np.argmax(signal))
     assert segment.apex_rt_min == pytest.approx(4.18, abs=0.005)
-    assert int(np.argmax(result.morphology_trace_values)) != segment.apex_index
-    assert segment.morphology_apex_residual == pytest.approx(signal[segment.apex_index])
+    assert segment.apex_residual == pytest.approx(signal[segment.apex_index])
 
 
 @pytest.mark.parametrize("sigma", (0.01, 0.02))
@@ -394,12 +307,9 @@ def test_local_doublet_and_weak_peak_survive_remote_connected_ripple(
         signal,
         np.zeros_like(signal),
         policy=ChromPeakSegmentPolicy(
-            min_apex_fraction_of_context=0.0,
             baseline_return_fraction=0.1,
             baseline_return_min_residual=0.0,
-            include_baseline_return_samples=True,
             clear_valley_max_fraction=0.85,
-            morphology_trace_method="rt_envelope",
             morphology_trace_window_points=9,
             morphology_min_sigma_rt=0.08,
             min_prominence_fraction_of_apex=0.15,

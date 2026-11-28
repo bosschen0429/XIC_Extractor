@@ -486,9 +486,7 @@ def _localized_backfill_candidates(
         search_rt_window=(max(0.0, query_rt - half_window), query_rt + half_window),
     )
     answer = answer_physical_peak_question(
-        PreparedSignalResult(
-            evaluation.prepared, evaluation.retained_prepared_signal, ()
-        ),
+        PreparedSignalResult(evaluation.prepared, evaluation.retained_prepared_signal),
         evaluation.segment_universe,
         question,
     )
