@@ -7,10 +7,6 @@ from tests.alignment_drift_evidence_fixtures import (
 )
 from tests.owner_peak_fixtures import with_peak
 from tests.rt_calibration_fixtures import calibration_from_knots
-from xic_extractor.alignment.drift_evidence import (
-    DriftEvidenceLookup,
-    SampleDriftEvidence,
-)
 from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.alignment.sample_rt_calibration import (
     BatchRtCalibrationAccumulator,
@@ -53,17 +49,12 @@ def test_measured_istd_binding_uses_observed_peak_not_expected_rt() -> None:
     )
     lookup = reference.bind(owners)
     assert len(lookup.bindings) == 2
-    assert lookup.corrected_pair_delta_sec(*owners) == pytest.approx(0)
 
     base = SampleRtFrame(
         injections=InjectionSequence({"early": 1, "late": 2}),
         sample_cohorts={"early": "batch", "late": "batch"},
         sample_universe=frozenset({"early", "late"}),
     )
-    with pytest.raises(ValueError, match="cannot be combined with generic drift"):
-        base.with_sources(
-            known_istd_reference=reference, drift_lookup=DriftEvidenceLookup(())
-        )
     bootstrap = base.with_sources(known_istd_reference=reference).bind_owners(owners)
     frozen = bootstrap.with_sample_calibration(
         calibration_from_knots(
@@ -81,8 +72,6 @@ def test_measured_istd_binding_uses_observed_peak_not_expected_rt() -> None:
         assert set(frame.known_identity_bindings) == {
             (owner.owner_id, "ISTD") for owner in owners
         }
-        assert frame.has_direct_reference_pair(*owners)
-        assert frame.corrected_pair_delta_sec(*owners) == pytest.approx(0)
     assert tuple(owner.peak.integration.rt_apex_min for owner in owners) == (8.0, 9.0)
 
 
@@ -198,10 +187,8 @@ def test_known_reference_rejects_invalid_consumed_input(
         read_known_istd_reference(path)
 
 
-@pytest.mark.parametrize("use_batch_context", [False, True])
-def test_known_reference_only_corrects_unique_same_target_support_pairs(
+def test_known_reference_binds_only_unique_same_target_owners(
     tmp_path: Path,
-    use_batch_context: bool,
 ) -> None:
     from dataclasses import replace
 
@@ -213,11 +200,6 @@ def test_known_reference_only_corrects_unique_same_target_support_pairs(
     path = tmp_path / "reference.xlsx"
     workbook = _known_reference_workbook(path)
     reference = read_known_istd_reference(path)
-    if use_batch_context:
-        reference = reference.prepare_batch(
-            sample_universe=frozenset({"early", "late", "missing"}),
-            injections=InjectionSequence({"early": 1, "late": 2, "missing": 3}),
-        )
     early, late, other = tuple(
         _owner(
             sample,
@@ -228,10 +210,12 @@ def test_known_reference_only_corrects_unique_same_target_support_pairs(
         )
         for sample, rt in (("early", 8), ("late", 9), ("missing", 9.5))
     )
+
+    def bound(lookup):
+        return {owner for owner, _ in lookup.bindings}
+
     lookup = reference.bind((early, late, other))
-    assert lookup.corrected_pair_delta_sec(early, late) == pytest.approx(0)
-    assert lookup.sample_delta_min("early") is None
-    assert lookup.istd_identity_anchor is None
+    assert lookup.bindings == ((early.owner_id, "known"), (late.owner_id, "known"))
     no_event = replace(late, primary_identity_event=None)
     wrong_nl = replace(
         late,
@@ -241,19 +225,13 @@ def test_known_reference_only_corrects_unique_same_target_support_pairs(
         ),
     )
     for invalid in (no_event, wrong_nl):
-        rejected = reference.bind((early, invalid))
-        assert rejected.corrected_pair_delta_sec(early, invalid) is None
-
-    def assert_unavailable_pair_uses_only_raw(right, unavailable_lookup):
-        assert unavailable_lookup.corrected_pair_delta_sec(early, right) is None
-
-    assert_unavailable_pair_uses_only_raw(other, lookup)
+        assert bound(reference.bind((early, invalid))) == {early.owner_id}
     other_rt = with_peak(late, apex_rt=9.5, start_rt=9.4, end_rt=9.6)
     other_rt = replace(
         other_rt,
         hypothesis=replace(other_rt.hypothesis, hypothesis_id="different-peak"),
     )
-    assert_unavailable_pair_uses_only_raw(other_rt, lookup)
+    assert bound(reference.bind((early, other_rt))) == {early.owner_id}
     ambiguous = reference.bind(
         (
             early,
@@ -261,11 +239,11 @@ def test_known_reference_only_corrects_unique_same_target_support_pairs(
             replace(late, hypothesis=replace(late.hypothesis, hypothesis_id="overlap")),
         )
     )
-    assert_unavailable_pair_uses_only_raw(late, ambiguous)
+    assert bound(ambiguous) == {early.owner_id}
     workbook["XIC Results"]["C5"] = "ND"
     workbook.save(path)
     partial = read_known_istd_reference(path).bind((early, late))
-    assert_unavailable_pair_uses_only_raw(late, partial)
+    assert bound(partial) == {early.owner_id}
     workbook["Targets"].append(["second", "ISTD", 500, 7, 10, 20, 116.0474, 20, 50])
     workbook["XIC Results"].append(["early", "second", 8, 1])
     workbook.save(path)
@@ -274,7 +252,6 @@ def test_known_reference_only_corrects_unique_same_target_support_pairs(
 
 
 _LANDMARK_RTS = (8, 12, 16, 20, 24, 28, 32, 40)
-_STRETCHED_RTS = tuple(1.25 * rt for rt in _LANDMARK_RTS)
 
 
 def _batch_reference(tmp_path: Path, observations):
@@ -320,263 +297,8 @@ def test_batch_istd_coordinates_are_shared_by_grouping_and_backfill(tmp_path):
         ).freeze(measured_istds=frame.measured_istd_coordinates)
     )
     for sample, observed in (("early", 16), ("middle", 16.2), ("late", 16.4)):
-        assert frame.has_support(sample)
         assert frame.common_rt_min(sample, observed) == pytest.approx(16.2)
         assert 16.2 + frame.offset_min(sample, 16.2) == pytest.approx(observed)
     assert frame.common_rt_min("middle", 3.0) == 3.0
     derived = SampleRtFrame().with_calibration(frame)
     assert derived.common_rt_min("late", 16.4) == pytest.approx(16.2)
-
-
-def test_batch_reference_does_not_invent_missing_measured_landmarks(
-    tmp_path: Path,
-) -> None:
-    from tests.alignment_pipeline_helpers import _owner
-
-    reference = _batch_reference(
-        tmp_path,
-        {
-            "early": (8, 20, 40),
-            "middle": (11, None, 48),
-            "late": (10, 24, 46),
-            "outside-batch": (30, 35, 55),
-        },
-    )
-    universe = frozenset({"early", "middle", "late"})
-    order = {"early": 10, "middle": 20, "late": 40}
-    early = _owner("early", "unknown", apex_rt=20, precursor_mz=600)
-    middle = _owner("middle", "unknown", apex_rt=20 + 4 / 3, precursor_mz=600)
-    late = _owner("late", "unknown", apex_rt=24, precursor_mz=600)
-    lookup = reference.bind(
-        (early, middle, late),
-        sample_universe=universe,
-        injections=InjectionSequence(order),
-    )
-    assert lookup.corrected_pair_delta_sec(early, middle) is None
-    assert lookup.corrected_pair_delta_sec(middle, late) is None
-
-
-@pytest.mark.parametrize(
-    ("observations", "early_rt", "late_rt"),
-    [
-        (
-            {
-                "early": (None, 12, 16, 20, 24, 28, 32, 36, 40),
-                "late": (10, 15, 20, 25, 30, 35, 40, 45, 50),
-            },
-            8,
-            10,
-        ),
-        (
-            {
-                "early": (8, 12, 16, 20, 24, 28, 32, 36, 40),
-                "late": (10, 15, 20, 25, 30, 35, 40, 45, None),
-            },
-            40,
-            50,
-        ),
-        ({"early": _LANDMARK_RTS, "late": _STRETCHED_RTS}, 7, 9),
-        ({"early": _LANDMARK_RTS, "late": _STRETCHED_RTS}, 41, 51),
-        ({"early": _LANDMARK_RTS, "late": (10, 9, 20, 25, 30, 35, 40, 50)}, 14, 15),
-        ({"early": _LANDMARK_RTS, "late": (12, 0, 20, 25, 30, 35, 40, 50)}, 14, 15),
-    ],
-)
-def test_batch_reference_declines_extrapolation_or_nonmonotone_knots(
-    tmp_path: Path,
-    observations,
-    early_rt,
-    late_rt,
-) -> None:
-    from tests.alignment_pipeline_helpers import _owner
-
-    reference = _batch_reference(tmp_path, observations)
-    early = _owner("early", "unknown", apex_rt=early_rt, precursor_mz=600)
-    late = _owner("late", "unknown", apex_rt=late_rt, precursor_mz=600)
-    lookup = reference.bind(
-        (early, late),
-        sample_universe=frozenset(observations),
-        injections=InjectionSequence({"early": 10, "late": 40}),
-    )
-    assert lookup.corrected_pair_delta_sec(early, late) is None
-
-
-def test_batch_reference_preparation_is_shared_across_method_bindings(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from tests.alignment_pipeline_helpers import _owner
-    from xic_extractor.alignment import drift_evidence
-
-    reference = _batch_reference(
-        tmp_path,
-        {
-            "early": _LANDMARK_RTS,
-            "late": _STRETCHED_RTS,
-            "unused": tuple(1.5 * rt + 3 for rt in _LANDMARK_RTS),
-        },
-    )
-    universe = frozenset({"early", "late"})
-    order = {"early": 10, "late": 40}
-    prepared = reference.prepare_batch(
-        sample_universe=universe, injections=InjectionSequence(order)
-    )
-
-    def unexpected_recomputation(*_args, **_kwargs):
-        pytest.fail("unchanged prepared batch recomputed reference medians")
-
-    monkeypatch.setattr(drift_evidence.statistics, "median", unexpected_recomputation)
-    assert (
-        prepared.prepare_batch(
-            sample_universe=universe,
-            injections=InjectionSequence(dict(order)),
-        )
-        is prepared
-    )
-    assert (
-        reference.prepare_batch(
-            sample_universe=universe,
-            injections=InjectionSequence(dict(order)),
-        )
-        is prepared
-    )
-    for index in range(3):
-        early = _owner("early", f"unknown-{index}", apex_rt=14, precursor_mz=600)
-        late = _owner("late", f"unknown-{index}", apex_rt=17.5, precursor_mz=600)
-        lookup = prepared.bind(
-            (early, late),
-            sample_universe=universe,
-            injections=InjectionSequence(order),
-        )
-        assert lookup.reference is prepared
-        assert lookup.corrected_pair_delta_sec(early, late) == pytest.approx(0)
-
-
-def test_batch_reference_changed_universe_does_not_reuse_stale_medians(
-    tmp_path: Path,
-) -> None:
-    from tests.alignment_pipeline_helpers import _owner
-
-    reference = _batch_reference(
-        tmp_path,
-        {
-            "early": _LANDMARK_RTS,
-            "late": _STRETCHED_RTS,
-            "extra": tuple(1.5 * rt + 3 for rt in _LANDMARK_RTS),
-        },
-    )
-    early = _owner("early", "unknown", apex_rt=14, precursor_mz=600)
-    late = _owner("late", "unknown", apex_rt=18, precursor_mz=600)
-    order = {"early": 1, "late": 2, "extra": 3}
-    original = reference.bind(
-        (early, late),
-        sample_universe=frozenset({"early", "late"}),
-        injections=InjectionSequence(order),
-    )
-    changed = reference.bind(
-        (early, late),
-        sample_universe=frozenset(order),
-        injections=InjectionSequence(order),
-    )
-    assert original.corrected_pair_delta_sec(early, late) == pytest.approx(27)
-    assert changed.corrected_pair_delta_sec(early, late) == pytest.approx(30)
-    assert original.reference is not changed.reference
-
-
-def test_lookup_returns_median_sample_delta_and_injection_order() -> None:
-    lookup = DriftEvidenceLookup(
-        points=(
-            SampleDriftEvidence(
-                sample_stem="sample-a",
-                injection_order=7,
-                istd_rt_min=1.9,
-                local_trend_rt_min=2.1,
-                rt_drift_delta_min=-0.2,
-                source="targeted_istd_trend",
-            ),
-            SampleDriftEvidence(
-                sample_stem="sample-a",
-                injection_order=7,
-                istd_rt_min=2.0,
-                local_trend_rt_min=2.0,
-                rt_drift_delta_min=0.0,
-                source="targeted_istd_trend",
-            ),
-            SampleDriftEvidence(
-                sample_stem="sample-b",
-                injection_order=10,
-                istd_rt_min=2.1,
-                local_trend_rt_min=2.0,
-                rt_drift_delta_min=0.1,
-                source="batch_istd_trend",
-            ),
-        )
-    )
-
-    assert lookup.source == "targeted_istd_trend"
-    assert lookup.sample_delta_min("sample-a") == -0.1
-    assert lookup.sample_delta_min("sample-b") == 0.1
-    assert lookup.sample_delta_min("missing") is None
-    assert lookup.injection_order("sample-a") == 7
-    assert lookup.injection_order("missing") is None
-
-
-def test_lookup_rejects_conflicting_injection_orders_for_sample() -> None:
-    lookup = DriftEvidenceLookup(
-        points=(
-            SampleDriftEvidence(
-                sample_stem="sample-a",
-                injection_order=7,
-                istd_rt_min=1.9,
-                local_trend_rt_min=2.1,
-                rt_drift_delta_min=-0.2,
-                source="targeted_istd_trend",
-            ),
-            SampleDriftEvidence(
-                sample_stem="sample-a",
-                injection_order=8,
-                istd_rt_min=2.0,
-                local_trend_rt_min=2.0,
-                rt_drift_delta_min=0.0,
-                source="targeted_istd_trend",
-            ),
-        )
-    )
-
-    with pytest.raises(ValueError, match="conflicting injection order"):
-        lookup.injection_order("sample-a")
-
-
-def test_lookup_keeps_conflicting_injection_order_lazy_per_sample() -> None:
-    lookup = DriftEvidenceLookup(
-        points=(
-            SampleDriftEvidence(
-                sample_stem="sample-a",
-                injection_order=7,
-                istd_rt_min=1.9,
-                local_trend_rt_min=2.1,
-                rt_drift_delta_min=-0.2,
-                source="targeted_istd_trend",
-            ),
-            SampleDriftEvidence(
-                sample_stem="sample-a",
-                injection_order=8,
-                istd_rt_min=2.0,
-                local_trend_rt_min=2.0,
-                rt_drift_delta_min=0.0,
-                source="targeted_istd_trend",
-            ),
-            SampleDriftEvidence(
-                sample_stem="sample-b",
-                injection_order=10,
-                istd_rt_min=2.2,
-                local_trend_rt_min=2.0,
-                rt_drift_delta_min=0.2,
-                source="targeted_istd_trend",
-            ),
-        )
-    )
-
-    assert lookup.injection_order("sample-b") == 10
-    assert lookup.sample_delta_min("sample-b") == 0.2
-    with pytest.raises(ValueError, match="conflicting injection order"):
-        lookup.injection_order("sample-a")

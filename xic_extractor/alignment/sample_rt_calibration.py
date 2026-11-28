@@ -195,10 +195,6 @@ class BatchRtCalibration:
         """Use a bounded sample calibration, retaining raw RT outside its span."""
         return self.common_rt_min(owner.sample_stem, owner.peak.rt_apex_min)
 
-    def has_support(self, sample_stem: str) -> bool:
-        sample = self.samples.get(sample_stem)
-        return sample is not None and bool(sample.knots)
-
     def common_rt_min(self, sample_stem: str, observed_rt: float) -> float:
         sample = self.samples.get(sample_stem)
         calibrated = sample.calibrated_rt(observed_rt) if sample else None

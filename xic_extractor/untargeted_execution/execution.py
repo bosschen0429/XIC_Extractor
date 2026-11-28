@@ -349,16 +349,7 @@ class UntargetedPartitionPipelineAdapter:
         self._project_child = project_child
         self._plan = plan
         self._alignment_config = alignment_config
-        sample_universe = frozenset(sample.raw_stem for sample in plan.context.samples)
-        reference_frame = plan.context.rt_frame.for_sample_stems(sample_universe)
-        self._known_istd_reference = (
-            None
-            if known_istd_reference is None
-            else known_istd_reference.prepare_batch(
-                sample_universe=sample_universe,
-                injections=reference_frame.injections,
-            )
-        )
+        self._known_istd_reference = known_istd_reference
         self._max_partition_jobs = max_partition_jobs
         self._execution = execution
         self._mass_recalibration_by_sample = mass_recalibration_by_sample

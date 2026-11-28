@@ -62,8 +62,6 @@ def test_calibrated_rt_corrects_local_shift_inside_span_only() -> None:
     assert sample.calibrated_rt(6.0) is None
     assert sample.calibrated_rt(33.0) is None
     frame = SampleRtFrame().with_sample_calibration(calibration)
-    assert frame.has_support("S01")
-    assert not frame.has_support("missing")
     common_rt = frame.common_rt_min("S01", observed_ten)
     assert common_rt == pytest.approx(sample.calibrated_rt(observed_ten))
     assert common_rt + frame.offset_min("S01", common_rt) == pytest.approx(observed_ten)
@@ -334,7 +332,7 @@ def test_shared_anchors_correct_systematic_and_rt_dependent_injection_shift(
     known = build_batch_rt_calibration({}, measured_istds=standards, **kwargs)
     joint = build_batch_rt_calibration(groups, measured_istds=standards, **kwargs)
     centre = 0.01 * (sample_count - 1) / 2
-    assert not known.has_support("S0")
+    assert not known.samples["S0"].knots
     assert ordinary.samples["S0"].calibrated_rt(observed(6.5, 0)) is None
     for i, sample in enumerate(samples):
         for rt in (6.5, 12, 20, 37):
