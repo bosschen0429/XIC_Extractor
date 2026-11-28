@@ -16,6 +16,13 @@ from xic_extractor.alignment.cross_sample.peak_groups import (
 )
 from xic_extractor.alignment.owner_group_delivery import feature_id_label
 from xic_extractor.alignment.result.scientific_alignment import ObservedSearchSubject
+from xic_extractor.alignment_explanation.child_evidence import (
+    CandidateTerminal,
+    ChildExplanation,
+    ChildGroup,
+    ChildRow,
+    LocatedPeak,
+)
 from xic_extractor.alignment_explanation.review import review_cell
 from xic_extractor.alignment_explanation.storage import encode_review_curve
 from xic_extractor.alignment_explanation.writer import (
@@ -41,98 +48,48 @@ if TYPE_CHECKING:
     )
 
 
-def _fields(value: Any, *names: str) -> dict[str, Any]:
-    return {name: getattr(value, name) for name in names}
-
-
-def _signal_digest(content: Any) -> str:
-    """Digest of the selected raw signal that identifies one physical peak."""
-    return hashlib.blake2b(
-        repr((content.sample_key, content.mz, content.rt, content.intensity)).encode(
-            "utf-8"
-        ),
+def _located_peak(peak: PeakObservation) -> LocatedPeak:
+    digest = hashlib.blake2b(
+        repr((peak.sample_key, peak.mz, peak.rt, peak.intensity)).encode("utf-8"),
         digest_size=16,
     ).hexdigest()
-
-
-def _peak_coordinates(content: PeakObservation) -> tuple[float, float, float]:
-    return (
-        content.mz,
-        content.rt_apex_min,
-        content.generation_provenance.query_ppm_tol,
+    return LocatedPeak(
+        peak.sample_key,
+        peak.physical_peak_key,
+        (peak.mz, peak.rt_apex_min, peak.generation_provenance.query_ppm_tol),
+        digest,
     )
-
-
-_Write = tuple[str, tuple[Any, ...], dict[str, Any]]
-
-
-class _RecordedWrites:
-    """Record one child's report writes by their natural keys.
-
-    The writer numbers peaks, members, risk owners and records by first
-    appearance, so the writes are replayed into it in the batch's child order
-    instead of being written while each child composes.
-    """
-
-    def __init__(self):
-        self.writes: list[_Write] = []
-
-    def __getattr__(self, name: str) -> Callable[..., None]:
-        if name not in _RECORDED_WRITER_METHODS:
-            raise AttributeError(name)
-
-        def record(*args: Any, **kwargs: Any) -> None:
-            self.writes.append((name, args, kwargs))
-
-        return record
-
-
-_RECORDED_WRITER_METHODS = frozenset(
-    {
-        "add_terminal",
-        "add_final_group",
-        "set_row_destination",
-        "add_cells",
-        "set_cell_curve",
-        "set_cell_position",
-    }
-)
 
 
 def project_alignment_explanation_child(
     child: FinalizedUntargetApplicationResult,
     *,
     sample_rt_frame: SampleRtFrame | None,
-) -> tuple[_Write, ...]:
-    """Record the report writes of one finalized child without batch numbering.
-
-    A final group's ``feature_id`` is recorded as its position among the
-    child's written groups; replay turns it into the batch label.
-    """
-    sink = _RecordedWrites()
+) -> ChildExplanation:
+    """Retain the facts needed for review without assigning batch feature IDs."""
+    located: list[LocatedPeak] = []
+    terminals: list[CandidateTerminal] = []
+    groups: list[ChildGroup] = []
+    rows: list[ChildRow] = []
     core = child.scientific_core
 
     def locate(content: PeakObservation) -> str:
-        key: str = content.physical_peak_key
-        sink.writes.append(
-            (
-                "locate",
-                (content.sample_key, key, _peak_coordinates(content)),
-                {"digest": _signal_digest(content)},
-            )
-        )
-        return key
+        peak = _located_peak(content)
+        located.append(peak)
+        return peak.key
 
     for terminal in core.terminal_subjects:
-        key = terminal.candidate_id, terminal.sample_key
         if not isinstance(terminal, ObservedSearchSubject):
             continue
         hypothesis = terminal.hypothesis
         ref = hypothesis.peak
-        sink.add_terminal(
-            *key,
-            hypothesis_id=hypothesis.hypothesis_id,
-            physical_peak_key=locate(ref),
+        terminals.append(
+            CandidateTerminal(
+                terminal.candidate_id,
+                terminal.sample_key,
+                hypothesis.hypothesis_id,
+                locate(ref),
+            )
         )
     feature_offsets = {
         group.group_hypothesis_id: offset
@@ -206,21 +163,23 @@ def project_alignment_explanation_child(
             estimate.rt_min if estimate is not None else raw_position
         )
     for group in core.final_population:
-        position = centers.get(group.group_hypothesis_id)
-        members = [
+        members = tuple(
             {
-                **_fields(member, "sample_key", "subject_kind", "subject_id"),
+                "sample_key": member.sample_key,
+                "subject_kind": member.subject_kind,
+                "subject_id": member.subject_id,
                 "physical_peak_keys": [locate(peak) for peak in member.physical_peaks],
             }
             for member in group.member_subjects
-        ]
-        sink.add_final_group(
-            group.group_hypothesis_id,
-            feature_id=feature_offsets.get(group.group_hypothesis_id),
-            disposition=group.disposition,
-            members=members,
-            center_mz=position[0] if position else None,
-            ppm=position[1] if position else None,
+        )
+        groups.append(
+            ChildGroup(
+                group_id=group.group_hypothesis_id,
+                feature_offset=feature_offsets.get(group.group_hypothesis_id),
+                disposition=group.disposition,
+                members=members,
+                center=centers.get(group.group_hypothesis_id),
+            )
         )
     risks_by_group_sample: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(
         list
@@ -234,7 +193,7 @@ def project_alignment_explanation_child(
 
     for group, group_cells in child.group_cells:
         group_id = group.group_hypothesis_id
-        cells = [
+        cells = tuple(
             {
                 **review_cell(decision),
                 "membership_risks": risks_by_group_sample.get(
@@ -246,23 +205,29 @@ def project_alignment_explanation_child(
                 ),
             }
             for decision in group_cells
-        ]
-        sink.set_row_destination(group_id, group.destination)
-        sink.add_cells(group_id, cells)
+        )
+        curves = []
         for decision in group_cells:
             if decision.value is None:
                 continue
             trace = cast("PeakObservation", decision.value_peak).source_trace
-            sink.set_cell_curve(
-                group_id,
-                decision.subject.canonical_sample.sample_name,
-                encode_review_curve(trace.rt, trace.intensity),
+            curves.append(
+                (
+                    decision.subject.canonical_sample.sample_name,
+                    encode_review_curve(trace.rt, trace.intensity),
+                )
             )
-        for cell in cells:
-            cell_position = positions.get((group_id, cell["sample_key"]))
-            if cell_position is not None:
-                sink.set_cell_position(group_id, cell["sample_key"], cell_position)
-    return tuple(sink.writes)
+        row_positions = tuple(
+            (cell["sample_key"], rt)
+            for cell in cells
+            if (rt := positions.get((group_id, cell["sample_key"]))) is not None
+        )
+        rows.append(
+            ChildRow(group_id, group.destination, cells, tuple(curves), row_positions)
+        )
+    return ChildExplanation(
+        tuple(located), tuple(terminals), tuple(groups), tuple(rows)
+    )
 
 
 @dataclass(frozen=True)
@@ -371,31 +336,21 @@ def prepare_batch_alignment_explanation(
         )
         located_peaks: dict[str, str] = {}
 
-        def add_located_peak(
-            sample_key: str,
-            key: str,
-            coordinates: tuple[float, float, float],
-            *,
-            digest: str,
-        ) -> None:
-            """Written locator of one physical peak; never shared by two peaks.
+        def add_located_peak(peak: LocatedPeak) -> None:
+            """A locator can have different cell integrations, not different signals."""
+            if (
+                located_peaks.setdefault(peak.key, peak.signal_digest)
+                != peak.signal_digest
+            ):
+                raise ValueError(
+                    f"distinct physical peaks share one locator: {peak.key}"
+                )
+            sink.add_peak(peak.sample_key, peak.key, peak.coordinates)
 
-            A peak is its selected raw signal. Reads of it in other XIC windows
-            can integrate differently; each cell keeps its own value and curve.
-            """
-            if located_peaks.setdefault(key, digest) != digest:
-                raise ValueError(f"distinct physical peaks share one locator: {key}")
-            sink.add_peak(sample_key, key, coordinates)
-
-        def locate(content: Any) -> str:
-            key: str = content.physical_peak_key
-            add_located_peak(
-                content.sample_key,
-                key,
-                _peak_coordinates(content),
-                digest=_signal_digest(content),
-            )
-            return key
+        def locate(content: PeakObservation) -> str:
+            peak = _located_peak(content)
+            add_located_peak(peak)
+            return peak.key
 
         emitted_support: set[CidNlMethodAssessment] = set()
 
@@ -484,36 +439,13 @@ def prepare_batch_alignment_explanation(
             merge_into: Mapping[int, str],
         ) -> dict[int, str]:
             nonlocal child_count
-            merged: dict[str, str] = {}
-            final_groups: dict[int, str] = {}
-            for name, args, kwargs in cast(
-                "tuple[_Write, ...]", child.explanation or ()
-            ):
-                if name == "locate":
-                    add_located_peak(*args, **kwargs)
-                elif name == "add_final_group":
-                    offset = kwargs["feature_id"]
-                    if offset in merge_into:
-                        merged[args[0]] = merge_into[offset]
-                        sink.extend_final_group(
-                            merge_into[offset],
-                            members=kwargs["members"],
-                        )
-                    else:
-                        sink.add_final_group(
-                            *args,
-                            **{
-                                **kwargs,
-                                "feature_id": None if offset is None else label(offset),
-                            },
-                        )
-                    if offset is not None:
-                        final_groups[offset] = merged.get(args[0]) or args[0]
-                else:
-                    group_id = merged.get(args[0]) or args[0]
-                    if name == "set_row_destination" and args[0] in merged:
-                        continue
-                    getattr(sink, name)(group_id, *args[1:], **kwargs)
+            final_groups = (
+                child.explanation.write_to(
+                    sink, locate=add_located_peak, label=label, merge_into=merge_into
+                )
+                if child.explanation is not None
+                else {}
+            )
             child_count += 1
             if child_count % 256 == 0:
                 report_progress("children", child_count, child_total)

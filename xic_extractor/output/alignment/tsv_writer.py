@@ -56,6 +56,7 @@ if TYPE_CHECKING:
         FinalizedUntargetApplicationResult,
         FinalizedUntargetBatchApplicationResult,
     )
+    from xic_extractor.alignment_explanation.child_evidence import ChildExplanation
 
 
 ALIGNMENT_CELLS_COLUMNS = (
@@ -149,7 +150,7 @@ class UntargetChildOutputs:
     """One finalized child's written rows and its review-database projection."""
 
     groups: tuple[UntargetGroupRows, ...]
-    explanation: object | None = None
+    explanation: ChildExplanation | None = None
 
 
 def _output_headers(sample_order: tuple[str, ...]) -> dict[str, tuple[str, ...]]:
