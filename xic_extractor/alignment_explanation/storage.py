@@ -108,7 +108,7 @@ CREATE TABLE cell_curves (
     curve BLOB NOT NULL,
     PRIMARY KEY (group_id, sample),
     FOREIGN KEY (group_id, sample) REFERENCES cells
-) STRICT, WITHOUT ROWID;
+) STRICT;
 CREATE TABLE candidates (
     id INTEGER PRIMARY KEY,
     candidate_id TEXT NOT NULL,
