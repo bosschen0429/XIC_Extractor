@@ -5,6 +5,7 @@ import pytest
 import xic_extractor.applications.untargeted.application as application_module
 from tests.alignment_pipeline_helpers import write_batch as _write_batch
 from tests.cid_nl_raw_fixture import _settings
+from tests.execution_fixtures import in_process_execution
 from xic_extractor.alignment import AlignmentConfig
 from xic_extractor.applications.untargeted.publication import (
     UntargetedPublicationPolicy,
@@ -14,7 +15,6 @@ from xic_extractor.applications.untargeted.request import (
 )
 from xic_extractor.configuration.execution_profile import (
     UntargetedExecutionPolicy,
-    in_process_execution,
 )
 
 

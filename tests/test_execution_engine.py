@@ -283,32 +283,33 @@ def test_scheduler_execute_success(tmp_path: Path) -> None:
         adapter,
         output_dir=output_dir,
         progress_callback=progress_events.append,
-        pipeline_overlap=False,
     )
 
     assert result["application_result"]["total_children"] == 2
     assert result["child_outputs"] == ("child-0", "child-1")
 
-    stages = [
-        ev["stage"] for ev in progress_events if ev.get("event") == "partition_progress"
+    events = [
+        (ev["stage"], ev["completed"])
+        for ev in progress_events
+        if ev.get("event") == "partition_progress"
     ]
-    assert stages == [
-        "partition_start",
-        "partition_compose",
-        "partition_released",
-        "partition_start",
-        "partition_compose",
-        "partition_released",
-        "global_closure",
-        "batch_completed",
+    assert len(events) == 8
+    assert events[-2:] == [("global_closure", 2), ("batch_completed", 2)]
+    assert [event for event in events if event[0] != "partition_start"][:4] == [
+        ("partition_compose", 0),
+        ("partition_released", 1),
+        ("partition_compose", 1),
+        ("partition_released", 2),
     ]
+    for index in range(2):
+        assert events.index(("partition_start", index)) < events.index(
+            ("partition_compose", index)
+        )
 
 
-@pytest.mark.parametrize("pipeline_overlap", [False, True])
 def test_scheduler_does_not_force_full_gc_after_partition(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    pipeline_overlap: bool,
 ) -> None:
     import gc
 
@@ -326,7 +327,6 @@ def test_scheduler_does_not_force_full_gc_after_partition(
     result = PartitionPipelineScheduler.execute(
         adapter,
         output_dir=tmp_path / "gc-output",
-        pipeline_overlap=pipeline_overlap,
     )
 
     assert result["application_result"]["total_children"] == 2
@@ -477,7 +477,6 @@ def test_pipeline_overlap_temporal_intersection(tmp_path: Path) -> None:
         adapter,
         output_dir=output_dir,
         progress_callback=events.append,
-        pipeline_overlap=True,
     )
     timelines = [
         ev["timeline"] for ev in events if ev.get("event") == "partition_timeline"
@@ -516,7 +515,6 @@ def test_pipeline_overlap_single_partition_serial(tmp_path: Path) -> None:
         adapter,
         output_dir=output_dir,
         progress_callback=events.append,
-        pipeline_overlap=True,
     )
     assert result["application_result"]["total_children"] == 1
     timelines = [
@@ -568,7 +566,6 @@ def test_pipeline_overlap_backpressure(
         result = PartitionPipelineScheduler.execute(
             adapter,
             output_dir=output_dir,
-            pipeline_overlap=True,
             acquisition_workers=acquisition_workers,
         )
     else:
@@ -581,7 +578,6 @@ def test_pipeline_overlap_backpressure(
                     PartitionPipelineScheduler.execute(
                         adapter,
                         output_dir=output_dir,
-                        pipeline_overlap=True,
                         acquisition_workers=acquisition_workers,
                     )
                 )
@@ -639,7 +635,6 @@ def test_pipeline_bilateral_abort_consumer_failure(
         PartitionPipelineScheduler.execute(
             adapter,
             output_dir=output_dir,
-            pipeline_overlap=True,
             acquisition_workers=acquisition_workers,
         )
 
@@ -667,7 +662,6 @@ def test_parallel_partition_acquisition_cancellation_closes_all_producers(
             adapter,
             output_dir=output_dir,
             should_cancel=cancelled.is_set,
-            pipeline_overlap=True,
             acquisition_workers=2,
         )
     assert not list(output_dir.glob(".partition_spool-*"))
@@ -695,7 +689,6 @@ def test_pipeline_bilateral_abort_producer_failure(
         PartitionPipelineScheduler.execute(
             adapter,
             output_dir=output_dir,
-            pipeline_overlap=True,
             acquisition_workers=acquisition_workers,
         )
 
@@ -738,7 +731,6 @@ def test_consumer_composition_failure_marks_partition_failed(
             adapter,
             output_dir=output_dir,
             progress_callback=events.append,
-            pipeline_overlap=True,
         )
 
     assert "simulated consumer composition failure" in str(raised.value.__cause__)
@@ -775,7 +767,6 @@ def test_closure_boundary_cancellation_withholds_completed_batch(
             output_dir=output_dir,
             progress_callback=progress,
             should_cancel=lambda: cancel,
-            pipeline_overlap=True,
         )
 
     assert not any(e.get("stage") == "batch_completed" for e in events)
@@ -1211,10 +1202,7 @@ def test_partition_written_by_another_process_is_adopted_identically(
     )
 
 
-@pytest.mark.parametrize("pipeline_overlap", [False, True])
-def test_scheduler_phase_barrier_preserves_global_order(
-    tmp_path: Path, pipeline_overlap: bool
-) -> None:
+def test_scheduler_phase_barrier_preserves_global_order(tmp_path: Path) -> None:
     fixture = build_processing_identity_no_raw_fixture(
         tmp_path, sample_stems=("sample-1",)
     )
@@ -1256,7 +1244,6 @@ def test_scheduler_phase_barrier_preserves_global_order(
         ),
         output_dir=tmp_path / "output",
         progress_callback=progress_events.append,
-        pipeline_overlap=pipeline_overlap,
         acquisition_workers=2,
     )
     assert result["child_outputs"] == tuple(f"child-{i}" for i in range(4))
@@ -1272,10 +1259,9 @@ def test_scheduler_phase_barrier_preserves_global_order(
     assert [r["index"] for r in timelines[0]["timeline"]] == [0, 1, 2, 3]
 
 
-@pytest.mark.parametrize("pipeline_overlap", [False, True])
 @pytest.mark.parametrize("cancel", [False, True])
 def test_scheduler_phase_preparation_abort_prevents_admission(
-    tmp_path: Path, pipeline_overlap: bool, cancel: bool
+    tmp_path: Path, cancel: bool
 ) -> None:
     fixture = build_processing_identity_no_raw_fixture(
         tmp_path, sample_stems=("sample-1",)
@@ -1306,7 +1292,6 @@ def test_scheduler_phase_preparation_abort_prevents_admission(
             ),
             output_dir=output_dir,
             should_cancel=cancelled.is_set,
-            pipeline_overlap=pipeline_overlap,
         )
     assert sorted(acquired) == [0, 1]
     if not cancel:

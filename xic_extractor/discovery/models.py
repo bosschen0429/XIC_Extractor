@@ -117,11 +117,6 @@ class DiscoveryPeak:
     )
 
     @property
-    def is_clean_peak(self) -> bool:
-        """No peak-level gate holds this peak, whatever its NL attachment."""
-        return self.status in {"admitted", "no_nl_event"}
-
-    @property
     def admitted(self) -> bool:
         """Whether this peak enters CID-NL Alignment."""
         return self.status == "admitted"

@@ -496,7 +496,7 @@ def profile_replay(tmp_path, monkeypatch, request):
                     for candidate in candidates[stem]
                     if (
                         candidate.peak_id in expected_source_candidate_ids
-                        and candidate.is_clean_peak
+                        and candidate.status in {"admitted", "no_nl_event"}
                     )
                 }
                 assessment = adapter.assessment_input.assessment

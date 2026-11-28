@@ -139,7 +139,6 @@ class PartitionPipelineScheduler:
         output_dir: Path,
         progress_callback: Callable[[Mapping[str, object]], None] | None = None,
         should_cancel: Callable[[], bool] | None = None,
-        pipeline_overlap: bool = True,
         phases: Sequence[PartitionPipelinePhase[TPartitionPayload]] | None = None,
         acquisition_workers: int = 1,
         store_factory: Callable[[Path, tuple[object, ...]], StreamedResultStore] = (
@@ -285,7 +284,7 @@ class PartitionPipelineScheduler:
                     if phase.prepare_before is not None:
                         phase.prepare_before(store, check_cancellation)
                         check_cancellation()
-                    use_overlap = pipeline_overlap and len(phase.partitions) > 1
+                    use_overlap = len(phase.partitions) > 1
                     if not use_overlap:
                         for index, partition in enumerate(
                             phase.partitions, start=phase_offset

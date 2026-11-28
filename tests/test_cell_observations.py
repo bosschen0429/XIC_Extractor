@@ -397,7 +397,10 @@ def test_composer_distinguishes_completed_negative_search(
         assert (
             s4.position_associations[0].position.planning_reason == "backfill_disabled"
         )
-        assert not s4.integrations and not s4.direct_hypotheses
+        assert (
+            all(p.integration is None for p in s4.value_peaks)
+            and not s4.direct_hypotheses
+        )
 
 
 def test_composer_keeps_same_sample_sources_with_their_groups(

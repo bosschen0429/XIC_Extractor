@@ -5,6 +5,7 @@ from dataclasses import replace
 from tests.alignment_explanation_fixtures import (
     explanation_discovery_facts,
     run_alignment_fixture,
+    write_alignment_explanation,
 )
 from tests.untargeted_partition_fixtures import children_of
 from xic_extractor.alignment.rt_frame import SampleRtFrame
@@ -15,9 +16,6 @@ from xic_extractor.alignment.sample_rt_calibration import (
     SampleRtCalibration,
 )
 from xic_extractor.alignment_explanation.reader import read_alignment_explanation
-from xic_extractor.applications.untargeted.alignment_explanation_projection import (
-    write_alignment_explanation,
-)
 from xic_extractor.rt_calibration_codec import rt_calibration_from_payload
 
 

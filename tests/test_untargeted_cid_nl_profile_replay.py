@@ -154,7 +154,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         strict=True,
     ):
         assert child.scientific_core.final_population == context.final_population
-        assert child.scientific_core.lineage == ()
+        assert child.scientific_core.partition_transition.lineage == ()
         assert child.scientific_core.grouping_result == context
     children = children_of(completed.application_result)
     assert len(trace.projection_builds) == len(children)

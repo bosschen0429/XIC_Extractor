@@ -166,7 +166,6 @@ def test_sparse_calibration_localizes_in_target_coordinates_without_strong_claim
     assert prediction.query_rt == pytest.approx(12)
     assert prediction.basis == "estimated_trajectory_fit"
     assert prediction.observed_rt is None
-    assert not frame.has_support("target")
 
 
 def test_backfill_frame_scope_does_not_borrow_an_outside_population_reference():

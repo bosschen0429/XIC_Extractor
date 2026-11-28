@@ -17,9 +17,9 @@ from tests.discovery_pipeline_fixtures import (
     vendor_fake_open_raw,
 )
 from tests.discovery_store_fixtures import stored_events, stored_peaks
+from tests.execution_fixtures import in_process_execution
 from xic_extractor.configuration.execution_profile import (
     ExecutionProfile,
-    in_process_execution,
 )
 from xic_extractor.discovery import pipeline as _pipeline
 from xic_extractor.discovery.cid_nl_search import DiscoverySampleJob

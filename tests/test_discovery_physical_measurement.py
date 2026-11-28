@@ -33,7 +33,7 @@ from tests.discovery_store_fixtures import (
     stored_peaks,
     write_discovery,
 )
-from xic_extractor.configuration.execution_profile import in_process_execution
+from tests.execution_fixtures import in_process_execution
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )

@@ -6,11 +6,10 @@ import pytest
 from tests.analysis_set_fixtures import (
     header,
 )
+from tests.execution_fixtures import in_process_execution
 from xic_extractor import raw_reader_errors
 from xic_extractor.analysis_set import discover_raw_files, select_analysis_set
-from xic_extractor.configuration.execution_profile import in_process_execution
 from xic_extractor.injection_timeline import (
-    PerturbationPolicy,
     build_injection_timeline,
 )
 from xic_extractor.sample_metadata import SampleMetadata
@@ -124,7 +123,7 @@ def test_header_names_cannot_collide_with_another_raw_alias(header_names):
         for h, name in zip(headers, header_names, strict=True)
     }
     result = select_analysis_set(
-        build_injection_timeline(headers, PerturbationPolicy()),
+        build_injection_timeline(headers),
         rows,
         analysis="untargeted",
     )
@@ -338,7 +337,7 @@ def test_discover_raw_files_is_recursive(tmp_path: Path) -> None:
 
 def test_unreadable_raw_stops_only_when_it_would_be_analyzed() -> None:
     readable = header("/b/S1.raw", 0)
-    timeline = build_injection_timeline([readable], PerturbationPolicy())
+    timeline = build_injection_timeline([readable])
     rows = header_rows([readable], {readable.raw_path: "sample"})
 
     def unread(stem, role):
@@ -376,7 +375,7 @@ def test_targeted_analyzes_every_role_and_untargeted_only_samples_and_qc() -> No
     rows = header_rows(
         headers, {h.raw_path: r for h, (_, r, _) in zip(headers, names, strict=True)}
     )
-    timeline = build_injection_timeline(headers, PerturbationPolicy())
+    timeline = build_injection_timeline(headers)
     excluded = [SampleMetadata("Tumor_2", "Tumor_2", excluded=True)]
 
     targeted = select_analysis_set(timeline, rows, excluded, analysis="targeted")
@@ -398,7 +397,7 @@ def test_targeted_analyzes_every_role_and_untargeted_only_samples_and_qc() -> No
 
 def test_listing_keeps_unreadable_raw_without_deciding_membership() -> None:
     readable = header("/b/S1.raw", 0)
-    timeline = build_injection_timeline([readable], PerturbationPolicy())
+    timeline = build_injection_timeline([readable])
     rows = header_rows([readable], {readable.raw_path: "sample"})
     unread = {
         "/b/Blank_9.raw": SampleMetadata("Blank_9", "Blank_9", sample_role="blank")

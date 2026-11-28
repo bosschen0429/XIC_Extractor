@@ -134,7 +134,6 @@ def publish_alignment(
                         profile=ExecutionProfile(
                             alignment_workers=1,
                             backend="thread",
-                            overlap_partitions=False,
                         ),
                     ),
                     **(execution_changes or {}),

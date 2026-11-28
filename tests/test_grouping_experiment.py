@@ -11,6 +11,8 @@ import pytest
 
 from scripts.run_alignment import main as run_alignment
 from tests.alignment_pipeline_helpers import _owner
+from tests.execution_fixtures import in_process_execution
+from tests.rt_calibration_fixtures import calibration_from_knots
 from tests.untargeted_cid_nl_bounded_runtime_fixtures import _plan
 from tools.diagnostics.grouping_experiment import main
 from xic_extractor.alignment.config import AlignmentConfig
@@ -23,7 +25,6 @@ from xic_extractor.alignment.sample_rt_calibration import BatchRtCalibrationAccu
 from xic_extractor.configuration.execution_profile import (
     ExecutionProfile,
     UntargetedExecutionPolicy,
-    in_process_execution,
 )
 from xic_extractor.diagnostics.grouping_experiment_io import group_signature
 from xic_extractor.diagnostics.stage_snapshot import (
@@ -350,7 +351,6 @@ def test_replay_refits_batch_rt_models_from_retained_anchors(
         BatchRtModelInputs,
         RtAnchorObservation,
     )
-    from xic_extractor.alignment.sample_rt_calibration import BatchRtCalibration
 
     samples = ("a", "b", "c")
     shifts = {"a": 0.0, "b": 0.5, "c": 0.5}
@@ -377,7 +377,7 @@ def test_replay_refits_batch_rt_models_from_retained_anchors(
             ),
         ),
     )
-    stale = BatchRtCalibration.from_coordinate_knots(
+    stale = calibration_from_knots(
         tuple((sample, ((0.0, 0.0), (60.0, 60.0))) for sample in samples)
     )
     owners = []

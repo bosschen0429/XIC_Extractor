@@ -13,6 +13,7 @@ import numpy as np
 import pytest
 from openpyxl import load_workbook
 
+from tests.execution_fixtures import in_process_execution
 from tests.raw_header_fakes import install_fake_raw_headers
 from tests.targeted_fixtures import ScopedMs2WindowReader, physical_peak_result
 from tests.targeted_production_workflow_fixtures import (
@@ -33,7 +34,6 @@ from xic_extractor.applications.targeted.output_boundary import (
 from xic_extractor.applications.targeted.production_workflow import (
     execute_targeted_production_workflow,
 )
-from xic_extractor.configuration.execution_profile import in_process_execution
 from xic_extractor.configuration.signal_processing_profile import (
     resolve_signal_processing_profile,
 )

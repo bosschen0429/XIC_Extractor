@@ -299,21 +299,9 @@ def index_physical_peaks(
     return {peak.physical_identity: peak for peak in peaks}
 
 
-def same_selected_peak(left: PeakObservation, right: PeakObservation) -> bool:
-    """Whether two observations selected the same integrated MS1 peak."""
-
-    return (
-        left.rt_apex_min == right.rt_apex_min
-        and left.rt_left_min == right.rt_left_min
-        and left.rt_right_min == right.rt_right_min
-        and left.height_raw == right.height_raw
-    )
-
-
 __all__ = [
     "PeakObservation",
     "PeakObservationContractError",
     "PeakObservationGenerationProvenance",
     "index_physical_peaks",
-    "same_selected_peak",
 ]

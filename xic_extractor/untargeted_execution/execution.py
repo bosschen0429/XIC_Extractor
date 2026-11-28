@@ -349,16 +349,7 @@ class UntargetedPartitionPipelineAdapter:
         self._project_child = project_child
         self._plan = plan
         self._alignment_config = alignment_config
-        sample_universe = frozenset(sample.raw_stem for sample in plan.context.samples)
-        reference_frame = plan.context.rt_frame.for_sample_stems(sample_universe)
-        self._known_istd_reference = (
-            None
-            if known_istd_reference is None
-            else known_istd_reference.prepare_batch(
-                sample_universe=sample_universe,
-                injections=reference_frame.injections,
-            )
-        )
+        self._known_istd_reference = known_istd_reference
         self._max_partition_jobs = max_partition_jobs
         self._execution = execution
         self._mass_recalibration_by_sample = mass_recalibration_by_sample
@@ -377,11 +368,7 @@ class UntargetedPartitionPipelineAdapter:
             sample_count=len(context.samples),
         )
         self._acquisition_workers = (
-            2
-            if execution.overlap_partitions
-            and len(subject_partitions) > 1
-            and execution.alignment_workers >= 2
-            else 1
+            2 if len(subject_partitions) > 1 and execution.alignment_workers >= 2 else 1
         )
         self._partition_raw_workers = (
             execution.alignment_workers
@@ -969,7 +956,6 @@ def execute_untargeted_plan(
             output_dir=output_dir,
             progress_callback=progress_callback,
             should_cancel=should_cancel,
-            pipeline_overlap=execution.overlap_partitions,
             acquisition_workers=adapter.acquisition_workers,
             store_factory=StreamedResultStore,
             acquisition_cleanup=adapter.close_process_worker_pools,

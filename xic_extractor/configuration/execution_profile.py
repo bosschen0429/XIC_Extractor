@@ -28,19 +28,12 @@ class ExecutionProfile:
     independent grouping workset; ``alignment_workers`` bounds Alignment's RAW
     sample phases and source fingerprinting. ``backend="thread"`` keeps every
     worker inside this process, where per-RAW extraction runs one file at a
-    time. ``overlap_partitions`` lets Alignment acquire one partition while
-    composing another.
+    time.
     """
 
     parallel_workers: int = field(default_factory=default_parallel_workers)
     alignment_workers: int = DEFAULT_ALIGNMENT_WORKERS
     backend: str = DEFAULT_WORKER_BACKEND
-    overlap_partitions: bool = True
-
-
-def in_process_execution() -> ExecutionProfile:
-    """Run everything in the calling process, for injected readers and tests."""
-    return ExecutionProfile(backend="thread", overlap_partitions=False)
 
 
 def load_execution_profile(

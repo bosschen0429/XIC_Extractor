@@ -8,6 +8,7 @@ from statistics import median
 
 import pytest
 
+from tests.rt_calibration_fixtures import calibration_from_knots
 from xic_extractor.alignment.rt_anchors import RtAnchorObservation
 from xic_extractor.alignment.rt_drift import (
     BatchRtModelAccumulator,
@@ -19,7 +20,6 @@ from xic_extractor.alignment.rt_drift import (
     candidate_coefficients,
 )
 from xic_extractor.alignment.rt_frame import SampleRtFrame
-from xic_extractor.alignment.sample_rt_calibration import BatchRtCalibration
 from xic_extractor.injection_timeline import InjectionSequence
 
 SAMPLES = tuple(f"s{i:02}" for i in range(12))
@@ -35,7 +35,7 @@ FLAT = dict.fromkeys(SAMPLES, 0.0)
 
 
 def _frame(model: RtDriftModel) -> SampleRtFrame:
-    identity = BatchRtCalibration.from_coordinate_knots(
+    identity = calibration_from_knots(
         tuple((sample, ((0.0, 0.0), (60.0, 60.0))) for sample in SAMPLES)
     )
     return SampleRtFrame(
@@ -217,7 +217,7 @@ def test_several_supported_peaks_leave_that_channel_sample_unknown():
         for sample, shift in SHIFT.items()
     )
     accumulator.add_observations((anchor("c0", "s00", "s00:second", 10.5),))
-    identity = BatchRtCalibration.from_coordinate_knots(
+    identity = calibration_from_knots(
         tuple((sample, ((0.0, 0.0), (60.0, 60.0))) for sample in SAMPLES)
     )
     owners = {

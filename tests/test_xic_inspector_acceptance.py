@@ -8,13 +8,12 @@ from tests.alignment_explanation_fixtures import (
     explanation_discovery_facts,
     explanation_summary,
     run_alignment_fixture,
+    write_alignment_explanation,
 )
+from tests.execution_fixtures import in_process_execution
 from tests.untargeted_partition_fixtures import children_of
 from xic_extractor.alignment_explanation.reader import (
     read_alignment_explanation,
-)
-from xic_extractor.applications.untargeted.alignment_explanation_projection import (
-    write_alignment_explanation,
 )
 from xic_extractor.applications.untargeted.publication import (
     UntargetedPublicationPolicy,
@@ -24,7 +23,6 @@ from xic_extractor.applications.untargeted.request import (
 )
 from xic_extractor.configuration.execution_profile import (
     UntargetedExecutionPolicy,
-    in_process_execution,
 )
 from xic_extractor.evidence_artifacts import EvidenceLocator
 from xic_inspector.api import (

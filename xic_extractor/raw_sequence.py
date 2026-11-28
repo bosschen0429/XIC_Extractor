@@ -1,7 +1,7 @@
 """Resolve analysis membership and chronology from native RAW and SLD facts."""
 
 from collections.abc import Callable, Sequence
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path, PureWindowsPath
 
 from xic_extractor.analysis_set import (
@@ -15,7 +15,6 @@ from xic_extractor.configuration.execution_profile import RAW_HEADER_READ_THREAD
 from xic_extractor.execution.workers import iter_thread_results
 from xic_extractor.injection_timeline import (
     InjectionHeader,
-    ScheduledInjection,
     build_injection_timeline,
 )
 from xic_extractor.raw_reader import (
@@ -212,6 +211,14 @@ def _raw_sample_role(path: Path, sample: RawSampleHeader) -> SampleRole:
             )
         ),
     )
+
+
+@dataclass(frozen=True)
+class ScheduledInjection:
+    sequence_path: str
+    row_number: int
+    acquisition_source: str
+    instrument_method: str
 
 
 def read_sld_injections(path: Path, dll_dir: Path) -> tuple[ScheduledInjection, ...]:

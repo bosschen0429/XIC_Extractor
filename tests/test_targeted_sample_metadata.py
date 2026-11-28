@@ -4,9 +4,9 @@ from pathlib import Path
 
 import openpyxl
 
+from tests.execution_fixtures import in_process_execution
 from tests.raw_header_fakes import install_fake_raw_headers
 from tests.targeted_production_workflow_fixtures import production_case
-from xic_extractor.configuration.execution_profile import in_process_execution
 from xic_extractor.extraction import pipeline, serial_backend
 from xic_extractor.extraction.result_models import RawFileExtractionResult
 from xic_extractor.sample_metadata import SAMPLE_METADATA_COLUMNS

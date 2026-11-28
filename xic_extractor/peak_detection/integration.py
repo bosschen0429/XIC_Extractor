@@ -1,13 +1,6 @@
 import numpy as np
 
 
-def raw_apex_index(intensity_values: np.ndarray, left: int, right: int) -> int:
-    if right <= left:
-        return left
-    local_offset = int(np.argmax(intensity_values[left:right]))
-    return left + local_offset
-
-
 def integrate_area_counts_seconds(
     intensity_values: np.ndarray,
     rt_values: np.ndarray,

@@ -1,6 +1,6 @@
 """Helpers shared by test_targeted_peak_selection and other test modules."""
 
-from xic_extractor.configuration.execution_profile import in_process_execution
+from tests.execution_fixtures import in_process_execution
 from xic_extractor.configuration.models import ExtractionConfig
 
 

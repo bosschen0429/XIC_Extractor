@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.execution_fixtures import in_process_execution
 from xic_extractor.configuration import execution_profile as execution_settings
-from xic_extractor.configuration.execution_profile import in_process_execution
 from xic_extractor.configuration.models import ExtractionConfig
 
 
@@ -67,5 +67,5 @@ def test_extraction_config_default_factory_uses_shared_parallel_budget(
     )
 
     assert config.execution == execution_settings.ExecutionProfile(
-        parallel_workers=4, backend="thread", overlap_partitions=False
+        parallel_workers=4, backend="thread"
     )

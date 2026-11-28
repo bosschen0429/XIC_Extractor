@@ -4,23 +4,11 @@ import json
 import math
 import statistics
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import asdict, dataclass, field, replace
-from functools import cached_property
-from typing import Literal
+from dataclasses import asdict, dataclass
 
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
-from xic_extractor.alignment.sample_rt_calibration import (
-    RtCalibrationPolicy,
-    build_batch_rt_calibration,
-    interpolate_calibrated_rt_min,
-)
 from xic_extractor.configuration.models import Target
-from xic_extractor.injection_timeline import InjectionSequence
 from xic_extractor.mass_accuracy import mz_tolerance_da, neutral_loss_match
-
-DriftPriorSource = Literal[
-    "targeted_istd_trend", "batch_istd_trend", "batch_anchor_calibration", "none"
-]
 
 
 @dataclass(frozen=True)
@@ -31,15 +19,6 @@ class KnownIstdReference:
     workbook_sha256: str
     anchor: TargetedIstdIdentityAnchor
     coordinates: tuple[tuple[str, str, float, float], ...]
-    _batch_context: tuple[tuple[str, ...], tuple[tuple[str, int], ...]] | None = field(
-        default=None, repr=False
-    )
-    _batch_knots: tuple[tuple[str, tuple[tuple[float, float], ...]], ...] = field(
-        default=(), repr=False
-    )
-    _prepared_batch: KnownIstdReference | None = field(
-        default=None, init=False, repr=False, compare=False
-    )
 
     @property
     def provenance(self) -> dict[str, str]:
@@ -57,80 +36,15 @@ class KnownIstdReference:
             "policy": "measured_istd_shared_rt_fit_same_target_fallback",
         }
 
-    def prepare_batch(
-        self,
-        *,
-        sample_universe: frozenset[str],
-        injections: InjectionSequence | None,
-    ) -> KnownIstdReference:
-        """Prepare immutable RT knots once for this canonical batch context."""
-        samples = tuple(sorted(sample_universe))
-        orders = tuple(
-            (sample, order)
-            for sample in samples
-            if injections is not None
-            and (order := injections.order(sample)) is not None
-        )
-        context = samples, orders
-        if self._batch_context == context:
-            return self
-        if (
-            self._prepared_batch is not None
-            and self._prepared_batch._batch_context == context
-        ):
-            return self._prepared_batch
-        calibration = build_batch_rt_calibration(
-            {},
-            sample_stems=samples,
-            measured_istds=tuple(
-                (label, sample, rt) for label, sample, rt, _ in self.coordinates
-            ),
-            policy=RtCalibrationPolicy(),
-        )
-        sample_knots = tuple(
-            (sample, result.knots)
-            for sample, result in calibration.samples.items()
-            if result.knots
-        )
-        prepared = replace(
-            self, _batch_context=context, _batch_knots=tuple(sample_knots)
-        )
-        _ = prepared._knots_by_sample
-        object.__setattr__(self, "_prepared_batch", prepared)
-        return prepared
-
-    @cached_property
-    def _knots_by_sample(self) -> dict[str, tuple[tuple[float, float], ...]]:
-        return dict(self._batch_knots)
-
-    def _corrected_rt_min(self, owner: SampleLocalMS1Owner) -> float | None:
-        return interpolate_calibrated_rt_min(
-            owner.peak.rt_apex_min,
-            self._knots_by_sample.get(owner.sample_stem, ()),
-        )
-
-    def bind(
-        self,
-        owners: tuple[SampleLocalMS1Owner, ...],
-        *,
-        sample_universe: frozenset[str] | None = None,
-        injections: InjectionSequence | None = None,
-    ) -> KnownIstdOwnerLookup:
+    def bind(self, owners: tuple[SampleLocalMS1Owner, ...]) -> KnownIstdOwnerLookup:
         """Bind measured ISTD coordinates to every eligible physical owner."""
-        reference = (
-            self
-            if sample_universe is None
-            else self.prepare_batch(
-                sample_universe=sample_universe, injections=injections
-            )
-        )
         targets = {target.label: target for target in self.anchor.targets}
         owners_by_sample: dict[str, list[SampleLocalMS1Owner]] = {}
         for owner in owners:
             owners_by_sample.setdefault(owner.sample_stem, []).append(owner)
-        candidates: list[tuple[str, str, float]] = []
+        candidates: list[tuple[str, str]] = []
         counts: dict[str, int] = {}
-        for label, sample, rt, delta in self.coordinates:
+        for label, sample, rt, _ in self.coordinates:
             target = targets[label]
             matches = tuple(
                 owner
@@ -154,55 +68,17 @@ class KnownIstdReference:
             for owner in matches:
                 counts[owner.owner_id] = counts.get(owner.owner_id, 0) + 1
             if len(matches) == 1:
-                candidates.append((matches[0].owner_id, label, delta))
+                candidates.append((matches[0].owner_id, label))
         return KnownIstdOwnerLookup(
-            reference, tuple(item for item in candidates if counts[item[0]] == 1)
+            tuple(item for item in candidates if counts[item[0]] == 1)
         )
 
 
 @dataclass(frozen=True)
 class KnownIstdOwnerLookup:
-    """Immutable full-population bindings reused by grouping and cell proof."""
+    """Each owner uniquely matched to one measured ISTD target, by label."""
 
-    reference: KnownIstdReference
-    bindings: tuple[tuple[str, str, float], ...]
-    istd_identity_anchor: None = None
-
-    @property
-    def source(self) -> Literal["targeted_istd_trend"]:
-        return "targeted_istd_trend"
-
-    def sample_delta_min(self, sample_stem: str) -> None:
-        return None
-
-    @cached_property
-    def _by_owner(self) -> dict[str, tuple[str, float]]:
-        return {owner: (label, delta) for owner, label, delta in self.bindings}
-
-    def corrected_pair_delta_sec(
-        self,
-        left: SampleLocalMS1Owner,
-        right: SampleLocalMS1Owner,
-    ) -> float | None:
-        left_rt = self.reference._corrected_rt_min(left)
-        right_rt = self.reference._corrected_rt_min(right)
-        if left_rt is not None and right_rt is not None:
-            return abs(left_rt - right_rt) * 60.0
-        a, b = self._by_owner.get(left.owner_id), self._by_owner.get(right.owner_id)
-        if a is None or b is None or a[0] != b[0]:
-            return None
-        return (
-            abs((left.peak.rt_apex_min - a[1]) - (right.peak.rt_apex_min - b[1])) * 60.0
-        )
-
-    def has_direct_reference_pair(
-        self,
-        left: SampleLocalMS1Owner,
-        right: SampleLocalMS1Owner,
-    ) -> bool:
-        """A measured same-target binding must survive a closer unbound peak."""
-        a, b = self._by_owner.get(left.owner_id), self._by_owner.get(right.owner_id)
-        return a is not None and b is not None and a[0] == b[0]
+    bindings: tuple[tuple[str, str], ...]
 
 
 def mint_known_istd_reference_from_measurements(
@@ -266,16 +142,6 @@ def _istd_target_snapshot_payload(targets: tuple[Target, ...]) -> dict[str, obje
     }
 
 
-@dataclass(frozen=True)
-class SampleDriftEvidence:
-    sample_stem: str
-    injection_order: int
-    istd_rt_min: float
-    local_trend_rt_min: float
-    rt_drift_delta_min: float
-    source: Literal["targeted_istd_trend", "batch_istd_trend"]
-
-
 @dataclass(frozen=True, slots=True)
 class TargetedIstdIdentityAnchor:
     """Run-local target anchor for the known DNA dR ISTD lane.
@@ -305,59 +171,3 @@ def build_targeted_istd_identity_anchor(
         targets=targets,
         observed_labels=labels,
     )
-
-
-@dataclass(frozen=True)
-class DriftEvidenceLookup:
-    points: tuple[SampleDriftEvidence, ...]
-    istd_identity_anchor: TargetedIstdIdentityAnchor | None = None
-
-    @property
-    def source(self) -> DriftPriorSource:
-        if not self.points:
-            return "none"
-        if any(point.source == "targeted_istd_trend" for point in self.points):
-            return "targeted_istd_trend"
-        return "batch_istd_trend"
-
-    def sample_delta_min(self, sample_stem: str) -> float | None:
-        return self._sample_delta_medians.get(sample_stem)
-
-    def injection_order(self, sample_stem: str) -> int | None:
-        orders = self._injection_orders_by_sample.get(sample_stem)
-        if orders and len(orders) > 1:
-            raise ValueError(
-                f"conflicting injection order for sample {sample_stem!r}: "
-                f"{list(orders)}"
-            )
-        return self._injections.order(sample_stem)
-
-    @cached_property
-    def _injections(self) -> InjectionSequence:
-        return InjectionSequence(
-            {
-                sample: orders[0]
-                for sample, orders in self._injection_orders_by_sample.items()
-                if len(orders) == 1
-            }
-        )
-
-    @cached_property
-    def _sample_delta_medians(self) -> dict[str, float]:
-        by_sample: dict[str, list[float]] = {}
-        for point in self.points:
-            by_sample.setdefault(point.sample_stem, []).append(point.rt_drift_delta_min)
-        return {
-            sample_stem: float(statistics.median(deltas))
-            for sample_stem, deltas in by_sample.items()
-        }
-
-    @cached_property
-    def _injection_orders_by_sample(self) -> dict[str, tuple[int, ...]]:
-        by_sample: dict[str, set[int]] = {}
-        for point in self.points:
-            by_sample.setdefault(point.sample_stem, set()).add(point.injection_order)
-        return {
-            sample_stem: tuple(sorted(orders))
-            for sample_stem, orders in by_sample.items()
-        }

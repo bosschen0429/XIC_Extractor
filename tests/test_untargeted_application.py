@@ -33,6 +33,7 @@ from tests.discovery_store_fixtures import (
     stored_peaks,
     write_discovery,
 )
+from tests.execution_fixtures import in_process_execution
 from tests.untargeted_alignment_entry_fixtures import (
     PUBLISHED_TABLES,
     publish_alignment,
@@ -57,7 +58,6 @@ from xic_extractor.applications.untargeted.request import (
 from xic_extractor.configuration.execution_profile import (
     ExecutionProfile,
     UntargetedExecutionPolicy,
-    in_process_execution,
 )
 from xic_extractor.configuration.mass_recalibration import (
     MassRecalibration,
@@ -293,6 +293,7 @@ def test_pipeline_publishes_projected_children_and_cleans_up(
     import gc
     import sqlite3
 
+    from tests.alignment_explanation_fixtures import write_alignment_explanation
     from tests.untargeted_cid_nl_bounded_runtime_fixtures import _plan
     from tests.untargeted_partition_fixtures import (
         ALL_ROW_OUTPUTS,
@@ -304,9 +305,6 @@ def test_pipeline_publishes_projected_children_and_cleans_up(
     )
     from xic_extractor.alignment_explanation.reader import (
         read_alignment_explanation,
-    )
-    from xic_extractor.applications.untargeted.alignment_explanation_projection import (
-        write_alignment_explanation,
     )
     from xic_extractor.execution.result_store import StreamedResultStore
     from xic_extractor.output.alignment.tsv_writer import (

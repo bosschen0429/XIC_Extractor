@@ -3,11 +3,9 @@
 from tests.alignment_explanation_fixtures import (
     explanation_discovery_facts,
     run_alignment_fixture,
-)
-from tests.untargeted_partition_fixtures import children_of
-from xic_extractor.applications.untargeted.alignment_explanation_projection import (
     write_alignment_explanation,
 )
+from tests.untargeted_partition_fixtures import children_of
 from xic_extractor.execution.timing import TimingRecorder
 from xic_extractor.output.alignment.output_levels import EXPLANATION_ARTIFACT_NAME
 from xic_extractor.output.alignment.pipeline_outputs import (

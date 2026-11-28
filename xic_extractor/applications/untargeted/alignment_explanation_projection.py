@@ -273,47 +273,6 @@ class PreparedAlignmentExplanation:
     finalize: Callable[[Path], Path]
 
 
-def write_alignment_explanation(
-    path: Path,
-    *,
-    completed: CompletedUntargetBatchWorkflowResult,
-    children: Sequence[FinalizedUntargetApplicationResult],
-    peaks_by_sample: Mapping[str, Sequence[DiscoveryPeak]],
-    matrix_path: Path,
-    precursor_mz_by_candidate: Mapping[str, float],
-    neutral_loss_by_tag: Mapping[str, float],
-    ms1_apex_mz_by_candidate: Mapping[str, float] | None = None,
-    progress_callback: Callable[[Mapping[str, object]], None] | None = None,
-) -> Path:
-    """Persist in-memory composed children with Matrix publication provenance.
-
-    ``children`` are the batch's finalized children in its child order.
-    """
-    with prepare_alignment_explanation(
-        path,
-        completed=completed,
-        peaks_by_sample=peaks_by_sample,
-        precursor_mz_by_candidate=precursor_mz_by_candidate,
-        neutral_loss_by_tag=neutral_loss_by_tag,
-        ms1_apex_mz_by_candidate=ms1_apex_mz_by_candidate,
-        progress_callback=progress_callback,
-    ) as explanation:
-        first_group = 0
-        for child in children:
-            explanation.consume_child(
-                UntargetChildOutputs(
-                    groups=(),
-                    explanation=project_alignment_explanation_child(
-                        child,
-                        sample_rt_frame=completed.sample_rt_frame,
-                    ),
-                ),
-                first_group,
-            )
-            first_group += len(child.group_cells)
-        return explanation.finalize(matrix_path)
-
-
 @dataclass(frozen=True)
 class ExplanationBatch:
     """One completed batch with the Discovery inputs its report declares."""

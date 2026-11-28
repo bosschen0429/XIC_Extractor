@@ -4,7 +4,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from xic_extractor.configuration.execution_profile import in_process_execution
+from tests.execution_fixtures import in_process_execution
 from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence, NLResult
 from xic_extractor.extraction.result_models import ExtractionResult

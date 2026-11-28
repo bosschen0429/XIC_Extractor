@@ -283,12 +283,6 @@ def prepare_cid_nl_grouping(
     for binding in bindings:
         bindings_by_subject.setdefault(binding.method_subject_id, []).append(binding)
     sample_by_id = {sample.sample_name: sample for sample in samples}
-    sample_universe = frozenset(sample.raw_stem for sample in samples)
-    if known_istd_reference is not None:
-        known_istd_reference = known_istd_reference.prepare_batch(
-            sample_universe=sample_universe,
-            injections=rt_frame.injections,
-        )
     rt_frame = rt_frame.with_sources(known_istd_reference=known_istd_reference)
     active_subjects = tuple(
         subject

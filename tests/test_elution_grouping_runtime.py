@@ -14,12 +14,12 @@ from tests.cid_nl_runtime_fixtures import (
     install_runtime_raws,
     prepare_persisted_discovery_plan,
 )
+from tests.execution_fixtures import in_process_execution
 from tests.untargeted_cid_nl_no_raw_fixture import (
     build_untargeted_cid_nl_no_raw_fixture,
 )
 from tests.untargeted_partition_fixtures import project_composed_child
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.configuration.execution_profile import in_process_execution
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )

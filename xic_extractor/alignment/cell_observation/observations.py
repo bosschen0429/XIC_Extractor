@@ -31,7 +31,6 @@ from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessment,
     cid_nl_support_requires_supplement,
 )
-from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_extractor.peak_detection.observations import PeakObservation
 from xic_extractor.peak_detection.peak_hypothesis_identity import (
     HYPOTHESIS_METHOD_MS1_OBSERVATION,
@@ -150,14 +149,6 @@ class FinalGroupCellObservation:
             *(hypothesis.peak for hypothesis in self.direct_hypotheses),
             *self.ms1_only_backfill_observations,
             *self.ms1_only_group_observations,
-        )
-
-    @property
-    def integrations(self) -> tuple[IntegrationResult, ...]:
-        return tuple(
-            result
-            for peak in self.value_peaks
-            if (result := peak.integration) is not None
         )
 
     @property

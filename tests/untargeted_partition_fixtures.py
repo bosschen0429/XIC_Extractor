@@ -285,8 +285,9 @@ def complete_dense_partition(
 
 def fixture_assessment(result):
     """Inspect retained sample facts for scientific fixture expectations."""
-    if result.backfill_attempt is not None:
-        return result.backfill_attempt.assessment
+    if result.backfill_attempts:
+        (attempt,) = result.backfill_attempts
+        return attempt.assessment
     return result.adapter_result.assessment_input.assessment
 
 

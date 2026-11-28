@@ -8,7 +8,6 @@ from xic_extractor.peak_detection.cid_nl_evidence import (
 from xic_extractor.peak_detection.cid_nl_peak_support_models import (
     RELATIONSHIP,
     DdaCidNlPeakSupport,
-    DdaCidNlPeakSupportContractError,
     DdaCidNlPeakSupportPolicy,
 )
 from xic_extractor.peak_detection.observations import (
@@ -39,7 +38,6 @@ def bind_dda_cid_nl_peak_support(
 
 __all__ = [
     "DdaCidNlPeakSupport",
-    "DdaCidNlPeakSupportContractError",
     "DdaCidNlPeakSupportPolicy",
     "RELATIONSHIP",
     "bind_dda_cid_nl_peak_support",

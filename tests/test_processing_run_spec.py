@@ -6,13 +6,13 @@ from pathlib import Path
 
 import pytest
 
+from tests.execution_fixtures import in_process_execution
 from tests.processing_run_spec_fixtures import (
     _compile_paths,
     _raws,
     _settings,
 )
 from xic_extractor.configuration.cid_nl_profile import NeutralLossProfile
-from xic_extractor.configuration.execution_profile import in_process_execution
 from xic_extractor.discovery.processing_run_spec_adapter import (
     compile_discovery_processing_run_spec,
 )

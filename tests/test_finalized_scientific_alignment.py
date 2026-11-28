@@ -70,7 +70,6 @@ def test_finalizer_closes_exact_core_with_terminal_subject_variants(
     assert result.grouping_result is receipt
     assert result.final_population == receipt.final_population
     assert result.partition_transition == receipt.partition_transition
-    assert result.lineage == receipt.partition_transition.lineage
     assert result.cell_observation_handoff is handoff
     assert len(composed_populations) == 1
     assert result.cell_observations is composed_populations[0]

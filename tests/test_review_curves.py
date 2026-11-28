@@ -10,6 +10,7 @@ import pytest
 from tests.alignment_explanation_fixtures import (
     explanation_discovery_facts,
     run_alignment_fixture,
+    write_alignment_explanation,
 )
 from tests.explanation_review_fixtures import (
     _group_with_missing_apex_review,
@@ -24,9 +25,6 @@ from xic_extractor.alignment_explanation.reader import (
 from xic_extractor.alignment_explanation.storage import (
     decode_review_curve,
     encode_review_curve,
-)
-from xic_extractor.applications.untargeted.alignment_explanation_projection import (
-    write_alignment_explanation,
 )
 from xic_extractor.configuration.signal_processing_profile import (
     serialize_signal_processing_profile,

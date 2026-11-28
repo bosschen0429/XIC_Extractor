@@ -127,3 +127,47 @@ def plan_discovery_facts(plan) -> dict[str, object]:
         "precursor_mz_by_candidate": representative_precursors(load_plan_inputs(plan)),
         "neutral_loss_by_tag": plan.context.settings.neutral_loss_by_tag,
     }
+
+
+def write_alignment_explanation(
+    path,
+    *,
+    completed,
+    children,
+    peaks_by_sample,
+    matrix_path,
+    precursor_mz_by_candidate,
+    neutral_loss_by_tag,
+    ms1_apex_mz_by_candidate=None,
+    progress_callback=None,
+):
+    """Write a finalized batch's report in one call, as publication does per child."""
+    from xic_extractor.applications.untargeted.alignment_explanation_projection import (
+        prepare_alignment_explanation,
+        project_alignment_explanation_child,
+    )
+    from xic_extractor.output.alignment.tsv_writer import UntargetChildOutputs
+
+    with prepare_alignment_explanation(
+        path,
+        completed=completed,
+        peaks_by_sample=peaks_by_sample,
+        precursor_mz_by_candidate=precursor_mz_by_candidate,
+        neutral_loss_by_tag=neutral_loss_by_tag,
+        ms1_apex_mz_by_candidate=ms1_apex_mz_by_candidate,
+        progress_callback=progress_callback,
+    ) as explanation:
+        first_group = 0
+        for child in children:
+            explanation.consume_child(
+                UntargetChildOutputs(
+                    groups=(),
+                    explanation=project_alignment_explanation_child(
+                        child,
+                        sample_rt_frame=completed.sample_rt_frame,
+                    ),
+                ),
+                first_group,
+            )
+            first_group += len(child.group_cells)
+        return explanation.finalize(matrix_path)

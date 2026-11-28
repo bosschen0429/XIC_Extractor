@@ -7,9 +7,9 @@ from threading import Event
 
 import pytest
 
+from tests.execution_fixtures import in_process_execution
 from xic_extractor.configuration.execution_profile import (
     ExecutionProfile,
-    in_process_execution,
 )
 from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.extraction.result_models import FileResult, RawFileExtractionResult

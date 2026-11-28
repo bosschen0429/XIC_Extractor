@@ -5,8 +5,8 @@ from pathlib import Path
 
 import numpy as np
 
+from tests.execution_fixtures import in_process_execution
 from tests.targeted_fixtures import physical_peak_result
-from xic_extractor.configuration.execution_profile import in_process_execution
 from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.configuration.signal_processing_profile import (
     resolve_signal_processing_profile,

@@ -18,9 +18,9 @@ from tests.discovery_pipeline_fixtures import (
     _settings,
 )
 from tests.discovery_store_fixtures import stored_events, stored_peaks
+from tests.execution_fixtures import in_process_execution
 from xic_extractor.configuration.execution_profile import (
     ExecutionProfile,
-    in_process_execution,
 )
 from xic_extractor.discovery.cid_nl_search import DiscoverySampleJob
 from xic_extractor.discovery.pipeline import run_discovery_batch

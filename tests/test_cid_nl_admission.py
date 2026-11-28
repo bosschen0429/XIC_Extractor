@@ -203,9 +203,7 @@ def test_held_rows_never_become_alignment_roots(tmp_path, monkeypatch, with_supp
         plan,
         output_dir=tmp_path / "alignment",
         alignment_config=AlignmentConfig(),
-        execution=ExecutionProfile(
-            alignment_workers=1, backend="thread", overlap_partitions=False
-        ),
+        execution=ExecutionProfile(alignment_workers=1, backend="thread"),
         project_child=project_composed_child,
     )
     assert set(result.application_result.candidate_ids) == expected_ids
@@ -229,14 +227,12 @@ def test_alignment_measurement_decides_admission_through_the_whole_run(
     """Discovery admits Clean2's peak and Alignment measures it again. A flat
     trace there holds no available peak, so the peak does not enter Alignment;
     an overlapping trace keeps the peak and its cell carries the review."""
+    from tests.alignment_explanation_fixtures import write_alignment_explanation
     from tests.alignment_pipeline_helpers import render
     from tests.cid_nl_runtime_fixtures import (
         load_plan_inputs,
         persist_discovery_batch,
         representative_precursors,
-    )
-    from xic_extractor.applications.untargeted.alignment_explanation_projection import (
-        write_alignment_explanation,
     )
 
     stems = ("Clean1", "Clean2")
@@ -303,9 +299,7 @@ def test_alignment_measurement_decides_admission_through_the_whole_run(
         plan,
         output_dir=tmp_path / "alignment",
         alignment_config=config,
-        execution=ExecutionProfile(
-            alignment_workers=1, backend="thread", overlap_partitions=False
-        ),
+        execution=ExecutionProfile(alignment_workers=1, backend="thread"),
         project_child=project_composed_child,
     )
     if alignment_signal == "flat":

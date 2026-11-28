@@ -4,9 +4,9 @@ import numpy as np
 import pytest
 from openpyxl import load_workbook
 
+from tests.execution_fixtures import in_process_execution
 from tests.raw_header_fakes import install_fake_raw_headers
 from xic_extractor import extractor
-from xic_extractor.configuration.execution_profile import in_process_execution
 from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.extraction.result_models import RunOutput
 from xic_extractor.output.excel_pipeline import write_excel_from_run_output

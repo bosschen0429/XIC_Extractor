@@ -13,7 +13,6 @@ from statistics import median
 from typing import TYPE_CHECKING, Protocol
 
 from xic_extractor.alignment.drift_evidence import (
-    DriftEvidenceLookup,
     KnownIstdOwnerLookup,
     KnownIstdReference,
 )
@@ -48,8 +47,6 @@ class RtFrame(Protocol):
 
     def corrected_rt_min(self, owner: SampleLocalMS1Owner) -> float: ...
 
-    def has_support(self, sample_stem: str) -> bool: ...
-
     def common_rt_min(self, sample_stem: str, observed_rt: float) -> float: ...
 
     def calibrated_rt_min(
@@ -72,18 +69,6 @@ class RtFrame(Protocol):
 
     def offset_min(self, sample_stem: str, rt_min: float) -> float: ...
 
-    def corrected_pair_delta_sec(
-        self,
-        left: SampleLocalMS1Owner,
-        right: SampleLocalMS1Owner,
-    ) -> float | None: ...
-
-    def has_direct_reference_pair(
-        self,
-        left: SampleLocalMS1Owner,
-        right: SampleLocalMS1Owner,
-    ) -> bool: ...
-
 
 @dataclass(frozen=True)
 class SampleRtFrame:
@@ -98,7 +83,7 @@ class SampleRtFrame:
     sample_cohorts: Mapping[str, str] = field(default_factory=dict)
     sample_universe: frozenset[str] | None = None
     qc_samples: frozenset[str] = frozenset()
-    _drift: DriftEvidenceLookup | KnownIstdOwnerLookup | None = field(
+    _istd_bindings: KnownIstdOwnerLookup | None = field(
         default=None,
         repr=False,
     )
@@ -135,14 +120,9 @@ class SampleRtFrame:
     def with_sources(
         self,
         *,
-        drift_lookup: DriftEvidenceLookup | KnownIstdOwnerLookup | None = None,
         known_istd_reference: KnownIstdReference | None = None,
     ) -> SampleRtFrame:
-        if known_istd_reference is not None and drift_lookup is not None:
-            raise ValueError(
-                "known ISTD reference cannot be combined with generic drift"
-            )
-        return replace(self, _drift=drift_lookup, _reference=known_istd_reference)
+        return replace(self, _istd_bindings=None, _reference=known_istd_reference)
 
     def bind_owners(
         self,
@@ -153,11 +133,7 @@ class SampleRtFrame:
             return self
         return replace(
             self,
-            _drift=self._reference.bind(
-                tuple(owners),
-                sample_universe=self.sample_universe,
-                injections=self.injections,
-            ),
+            _istd_bindings=self._reference.bind(tuple(owners)),
         )
 
     def with_sample_calibration(
@@ -228,41 +204,7 @@ class SampleRtFrame:
 
     @property
     def known_identity_bindings(self) -> tuple[tuple[str, str], ...]:
-        return (
-            tuple((owner, label) for owner, label, _ in self._drift.bindings)
-            if isinstance(self._drift, KnownIstdOwnerLookup)
-            else ()
-        )
-
-    def corrected_pair_delta_sec(
-        self,
-        left: SampleLocalMS1Owner,
-        right: SampleLocalMS1Owner,
-    ) -> float | None:
-        if self._sample_calibration is not None:
-            a = self.calibrated_rt_min(left.sample_stem, left.peak.rt_apex_min)
-            b = self.calibrated_rt_min(right.sample_stem, right.peak.rt_apex_min)
-            return abs(a - b) * 60.0 if a is not None and b is not None else None
-        if self._drift is None:
-            return None
-        if isinstance(self._drift, KnownIstdOwnerLookup):
-            return self._drift.corrected_pair_delta_sec(left, right)
-        left_delta = self._drift.sample_delta_min(left.sample_stem)
-        right_delta = self._drift.sample_delta_min(right.sample_stem)
-        if left_delta is None or right_delta is None:
-            return None
-        left_corrected_rt = left.peak.rt_apex_min - left_delta
-        right_corrected_rt = right.peak.rt_apex_min - right_delta
-        return abs(left_corrected_rt - right_corrected_rt) * 60.0
-
-    def has_direct_reference_pair(
-        self,
-        left: SampleLocalMS1Owner,
-        right: SampleLocalMS1Owner,
-    ) -> bool:
-        return isinstance(self._drift, KnownIstdOwnerLookup) and (
-            self._drift.has_direct_reference_pair(left, right)
-        )
+        return self._istd_bindings.bindings if self._istd_bindings is not None else ()
 
     def corrected_rt_min(self, owner: SampleLocalMS1Owner) -> float:
         if self._coordinate_override is not None:
@@ -273,10 +215,6 @@ class SampleRtFrame:
             if source is not None
             else owner.peak.rt_apex_min
         )
-
-    def has_support(self, sample_stem: str) -> bool:
-        source = self._sample_calibration
-        return source is not None and source.has_support(sample_stem)
 
     def common_rt_min(self, sample_stem: str, observed_rt: float) -> float:
         source = self._sample_calibration
