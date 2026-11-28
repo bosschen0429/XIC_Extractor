@@ -10,27 +10,22 @@ results. Published features are not, by themselves, identified compounds.
 
 ## Current Position
 
-- The Untargeted lane runs Discovery, Alignment, and Backfill, with
-  conservative primary-matrix delivery. The Untargeted lane is not a full LC-MS
-  preprocessing, normalization, artifact annotation, blank/background
-  filtering, or batch-correction system.
-- Untargeted is the general application of the shared scientific lifecycle, not
-  a separate core that Targeted must call into wholesale. Targeted and
-  Untargeted share capture, CrossSample, ObservationRevisit, and
-  ProductionCellDecision implementations. The two applications differ in search
-  scope and output projection.
-- A broad candidate-discovery policy is available to both applications.
-  Untargeted's distinguishing search behavior is that every group qualifying
-  under the configured method remains eligible for its projection, whereas
-  Targeted retains only configured `TargetKey` rows.
-- Product-facing `Matrix` output stays conservative. Backfill-only, ambiguous,
-  diagnostic, and review-only evidence belongs in Review/Audit surfaces until a
-  writer path is explicitly contracted; see [Writer Authority](decision-policy.md#writer-authority).
-- Untargeted projection derives a typed `UntargetRowKey` from each finalized
-  canonical group. Standard Matrix rows require `established` disposition.
-  `provisional` groups stay in a compact machine archive/review surface;
-  `unresolved` and `rejected` groups remain AuditTrail facts. Disposition and
-  row inclusion are separate typed decisions.
+- The Untargeted lane runs Discovery, Alignment and Backfill with conservative
+  primary-Matrix delivery. It is not a full LC-MS preprocessing,
+  normalization, artifact annotation, blank/background filtering or
+  batch-correction system.
+- Untargeted is the general application of the shared lifecycle; Targeted and
+  Untargeted share the capture, CrossSample, revisit and cell-decision
+  implementations and differ in search scope and output projection
+  ([Product Shape](domain-glossary.md#product-shape)). Every group qualifying
+  under the configured method stays eligible for Untargeted projection, whereas
+  Targeted keeps only its configured Target rows.
+- Product-facing `Matrix` output stays conservative: Backfill-only, ambiguous,
+  diagnostic and review-only evidence belongs in Review/Audit surfaces until a
+  writer path is explicitly contracted
+  ([Writer Authority](decision-policy.md#writer-authority)). Standard rows
+  require `established` disposition; disposition and row inclusion are
+  separate decisions ([row identity](quant-matrix.md#row-identity-and-display)).
 - Row order, m/z/RT display coordinates and Matrix text are display facts, not
   canonical cell identity.
 - Exact equality to other tools' feature tables is not the success definition.
@@ -83,8 +78,5 @@ by itself:
 
 ## See Also
 
-- [Discovery](discovery.md)
-- [Alignment](alignment.md)
-- [Backfill](backfill.md)
-- [Quant Matrix](quant-matrix.md)
-- [Decision Policy](decision-policy.md)
+[Discovery](discovery.md) · [Alignment](alignment.md) · [Backfill](backfill.md) ·
+[Quant Matrix](quant-matrix.md) · [Decision Policy](decision-policy.md)
