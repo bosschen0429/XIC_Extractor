@@ -245,7 +245,6 @@ def test_current_pair_reference_preserves_method_offset_for_all_lanes(
 def physical_candidate_input() -> tuple[PreparedSignalResult, PhysicalSegmentUniverse]:
     profile = DEFAULT_SIGNAL_PROCESSING_PROFILE
     projection = PreparedSignalProjection(
-        schema_version="prepared_signal",
         profile=profile,
         rt=(-1.0, 0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 5.0),
         raw=(10.0, 11.0, 45.0, 60.0, 45.0, 21.0, 60.0, 90.0, 60.0, 14.0, 10.0),
@@ -288,9 +287,8 @@ def physical_candidate_input() -> tuple[PreparedSignalResult, PhysicalSegmentUni
         ),
     )
     return (
-        PreparedSignalResult(projection, prepared, ("trace_evaluation",)),
+        PreparedSignalResult(projection, prepared),
         PhysicalSegmentUniverse(
-            schema_version="physical_segment_universe",
             prepared=projection,
             context_rt_start_min=-1.0,
             context_rt_end_min=5.0,

@@ -34,16 +34,12 @@ from xic_extractor.peak_detection.physical_peak_models import (
     DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
     PHYSICAL_PEAK_BACKFILL_POLICY,
     PHYSICAL_PEAK_ENVELOPE_POLICY,
-    PHYSICAL_PEAK_GROUP_WINDOW_POLICY,
     PHYSICAL_PEAK_NO_SELECTION_POLICY,
     PHYSICAL_PEAK_POINT_POLICY,
     PHYSICAL_PEAK_REFERENCE_POLICY,
     PHYSICAL_PEAK_UNLOCATED_BACKFILL_POLICY,
-    PHYSICAL_PEAK_WINDOW_POLICY,
-    PHYSICAL_SEGMENT_UNIVERSE_SCHEMA,
     PhysicalPeakAnswer,
     PhysicalPeakEvaluation,
-    PhysicalPeakOperation,
     PhysicalPeakQuestion,
     PhysicalPeakState,
     PhysicalSegment,
@@ -79,7 +75,6 @@ def prepare_physical_signal(
         *, state: PhysicalPeakState, reason: str
     ) -> PreparedSignalProjection:
         return PreparedSignalProjection(
-            schema_version="prepared_signal_projection",
             profile=profile,
             rt=rt,
             raw=raw,
@@ -88,7 +83,6 @@ def prepare_physical_signal(
         )
 
     trace_context = _derivable_physical_trace_context(rt)
-    trace_operation: tuple[PhysicalPeakOperation, ...] = ("trace_evaluation",)
     malformed_reason = _physical_trace_failure_reason(rt, raw)
     if malformed_reason:
         projection = projection_for(
@@ -98,7 +92,6 @@ def prepare_physical_signal(
         return PreparedSignalResult(
             projection,
             None,
-            trace_operation,
             *(trace_context or (None, None)),
         )
     if not rt:
@@ -106,7 +99,7 @@ def prepare_physical_signal(
             state="unavailable",
             reason="no_signal_above_baseline",
         )
-        return PreparedSignalResult(projection, None, trace_operation)
+        return PreparedSignalResult(projection, None)
     if len(rt) < profile.window_points:
         projection = projection_for(
             state="unavailable",
@@ -115,7 +108,6 @@ def prepare_physical_signal(
         return PreparedSignalResult(
             projection,
             None,
-            trace_operation,
             *(trace_context or (None, None)),
         )
     if max(raw, default=0.0) <= 0.0:
@@ -126,7 +118,6 @@ def prepare_physical_signal(
         return PreparedSignalResult(
             projection,
             None,
-            trace_operation,
             *(trace_context or (None, None)),
         )
     try:
@@ -146,7 +137,6 @@ def prepare_physical_signal(
         return PreparedSignalResult(
             projection,
             None,
-            (*trace_operation, "asls_baseline"),
             *(trace_context or (None, None)),
         )
     try:
@@ -163,14 +153,8 @@ def prepare_physical_signal(
         return PreparedSignalResult(
             projection,
             None,
-            (*trace_operation, "asls_baseline", "gaussian_smoothing"),
             *(trace_context or (None, None)),
         )
-    operations: tuple[PhysicalPeakOperation, ...] = (
-        "trace_evaluation",
-        "asls_baseline",
-        "gaussian_smoothing",
-    )
     state: PhysicalPeakState = (
         "available" if float(np.max(positive)) > 0.0 else "unavailable"
     )
@@ -189,7 +173,6 @@ def prepare_physical_signal(
     return PreparedSignalResult(
         projection,
         prepared,
-        operations,
         context_start,
         context_end,
         baseline_unclipped=tuple(float(value) for value in baseline_unclipped),
@@ -206,7 +189,6 @@ def enumerate_physical_segment_universe(
 ) -> PhysicalSegmentUniverse:
     if selection_policy_version not in _PHYSICAL_PEAK_SELECTION_POLICIES:
         raise ValueError("unsupported physical peak selection policy")
-    universe_schema = PHYSICAL_SEGMENT_UNIVERSE_SCHEMA
     context_start, context_end = _physical_owner_context(
         prepared_result,
         request_context_rt_start_min=request_context_rt_start_min,
@@ -334,7 +316,6 @@ def enumerate_physical_segment_universe(
         else:
             state, reason = "failed", "malformed_trace"
     return PhysicalSegmentUniverse(
-        schema_version=universe_schema,
         prepared=prepared_result.projection,
         context_rt_start_min=context_start,
         context_rt_end_min=context_end,
@@ -567,13 +548,7 @@ def mint_physical_peak_question(
     admissible = _admissible_physical_segments(
         universe, query_rt, selection_policy_version, search_rt_window
     )
-    schema_version = (
-        "bounded_physical_peak_question"
-        if search_rt_window is not None
-        else "physical_peak_question"
-    )
     return PhysicalPeakQuestion(
-        schema_version=schema_version,
         universe=universe,
         query_rt_min=query_rt,
         admissible_segments=admissible,
@@ -589,12 +564,7 @@ def _validated_search_window(
 ) -> tuple[float, float] | None:
     if window is None:
         return None
-    if selection_policy_version not in {
-        PHYSICAL_PEAK_WINDOW_POLICY,
-        PHYSICAL_PEAK_GROUP_WINDOW_POLICY,
-        PHYSICAL_PEAK_BACKFILL_POLICY,
-        PHYSICAL_PEAK_UNLOCATED_BACKFILL_POLICY,
-    }:
+    if selection_policy_version not in _BACKFILL_POLICIES:
         raise ValueError("search window requires a window selection policy")
     start, end = (
         _finite_physical_float(value, field="search_rt_window") for value in window
@@ -614,18 +584,11 @@ def _admissible_physical_segments(
 ) -> tuple[PhysicalSegment, ...]:
     if selection_policy_version not in _PHYSICAL_PEAK_SELECTION_POLICIES:
         raise ValueError("unsupported physical peak selection policy")
-    if universe.schema_version != PHYSICAL_SEGMENT_UNIVERSE_SCHEMA:
-        raise ValueError("physical question crosses boundary policy")
     if selection_policy_version == PHYSICAL_PEAK_NO_SELECTION_POLICY:
         return ()
     if selection_policy_version == DISCOVERY_PHYSICAL_PEAK_POINT_POLICY:
         return _raw_component_segments_at_rt(universe, query_rt)
-    if selection_policy_version in {
-        PHYSICAL_PEAK_WINDOW_POLICY,
-        PHYSICAL_PEAK_GROUP_WINDOW_POLICY,
-        PHYSICAL_PEAK_BACKFILL_POLICY,
-        PHYSICAL_PEAK_UNLOCATED_BACKFILL_POLICY,
-    }:
+    if selection_policy_version in _BACKFILL_POLICIES:
         if not universe.context_rt_start_min <= query_rt <= universe.context_rt_end_min:
             return ()
         candidates = tuple(
@@ -640,10 +603,7 @@ def _admissible_physical_segments(
                 for segment in universe.segments
                 if segment.left_rt_min <= query_rt <= segment.right_rt_min
             )
-        if selection_policy_version in {
-            PHYSICAL_PEAK_GROUP_WINDOW_POLICY,
-            PHYSICAL_PEAK_BACKFILL_POLICY,
-        }:
+        if selection_policy_version == PHYSICAL_PEAK_BACKFILL_POLICY:
             containing = tuple(
                 segment
                 for segment in candidates
@@ -826,7 +786,6 @@ def answer_physical_peak_question(
     state = universe.state
     reason = universe.reason
     selected: PhysicalSegment | None = None
-    background_qualified = False
     if state == "available":
         if (
             question.selection_policy_version == DISCOVERY_PHYSICAL_PEAK_POINT_POLICY
@@ -859,34 +818,18 @@ def answer_physical_peak_question(
             if support_failure:
                 state, reason = "unavailable", support_failure
                 selected = None
-            elif (
-                question.selection_policy_version
-                == DISCOVERY_PHYSICAL_PEAK_POINT_POLICY
-            ):
-                background_qualified = True
     answer = PhysicalPeakAnswer(
-        schema_version="physical_peak_answer",
         state=state,
         reason=reason,
         question=question,
         selected_segment=selected,
     )
     integration: IntegrationResult | None = None
-    operations = prepared_result.operations
-    if prepared_result.projection.state == "available":
-        operations = (*operations, "segment_enumeration")
-    if background_qualified:
-        operations = (*operations, "background_qualification")
     if selected is not None:
         prepared = prepared_result.prepared
         if prepared is None:
             raise ValueError("available physical answer lacks worker-local signal")
         integration = _physical_raw_descriptor_projection(prepared, selected)
-        operations = (
-            *operations,
-            "integration",
-            "raw_descriptor_projection",
-        )
     return PhysicalPeakEvaluation(
         state=state,
         reason=reason,
@@ -895,7 +838,6 @@ def answer_physical_peak_question(
         question=question,
         answer=answer,
         integration=integration,
-        operations=operations,
         retained_prepared_signal=prepared_result.prepared,
     )
 

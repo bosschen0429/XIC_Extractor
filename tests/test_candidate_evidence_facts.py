@@ -187,14 +187,6 @@ def test_physical_owner_mints_closed_unique_admissible_bounded_facts() -> None:
         np.trapezoid(selected_raw, selected_rt) * 60.0
     )
     assert evaluation.integration.raw_scan_indices == ()
-    assert evaluation.operations == (
-        "trace_evaluation",
-        "asls_baseline",
-        "gaussian_smoothing",
-        "segment_enumeration",
-        "integration",
-        "raw_descriptor_projection",
-    )
     assert not hasattr(evaluation, "rt")
 
 
@@ -234,7 +226,6 @@ def test_short_trace_is_unavailable_without_smoothing_or_silent_shrink() -> None
 
     assert evaluation.state == "unavailable"
     assert evaluation.reason == "insufficient_points_for_profile"
-    assert evaluation.operations == ("trace_evaluation",)
     assert evaluation.segment_universe.context_rt_start_min == 3.0
     assert evaluation.segment_universe.context_rt_end_min == 3.0
     assert prepared.prepared is None
@@ -259,7 +250,6 @@ def test_zero_point_trace_has_terminal_question_using_live_request_bounds() -> N
     assert evaluation.segment_universe.context_rt_start_min == 1.0
     assert evaluation.segment_universe.context_rt_end_min == 2.0
     assert evaluation.answer.question == evaluation.question
-    assert evaluation.operations == ("trace_evaluation",)
 
 
 def test_malformed_trace_has_failed_terminal_question_and_rehydrates() -> None:
@@ -280,7 +270,6 @@ def test_malformed_trace_has_failed_terminal_question_and_rehydrates() -> None:
     assert evaluation.segment_universe.segments == ()
     assert evaluation.answer.selected_segment is None
     assert evaluation.integration is None
-    assert evaluation.operations == ("trace_evaluation",)
     np.testing.assert_array_equal(evaluation.prepared.rt, rt)
     assert evaluation.prepared.raw == tuple(raw)
 
@@ -294,7 +283,6 @@ def test_nonpositive_trace_is_unavailable_before_asls_or_smoothing() -> None:
 
     assert prepared.projection.state == "unavailable"
     assert prepared.projection.reason == "no_signal_above_baseline"
-    assert prepared.operations == ("trace_evaluation",)
     assert prepared.prepared is None
 
 

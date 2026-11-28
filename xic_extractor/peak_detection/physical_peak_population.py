@@ -26,7 +26,6 @@ from xic_extractor.peak_detection.physical_peak_models import (
     DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
     PhysicalPeakAnswer,
     PhysicalPeakEvaluation,
-    PhysicalPeakOperation,
     PhysicalPeakQuestion,
     PhysicalSegment,
     PhysicalSegmentUniverse,
@@ -63,7 +62,6 @@ class PhysicalPeakPopulation:
             max(query_rt, self.context_rt_start_min), self.context_rt_end_min
         )
         question = PhysicalPeakQuestion(
-            "physical_peak_question",
             self.universe,
             query_rt,
             (segment,),
@@ -86,26 +84,9 @@ class PhysicalPeakPopulation:
             if question.admissible_segments
             else "no_selection"
         )
-        answer = PhysicalPeakAnswer(
-            "physical_peak_answer", state, reason, question, None
-        )
-        operations: tuple[PhysicalPeakOperation, ...] = (
-            "trace_evaluation",
-            "asls_baseline",
-            "gaussian_smoothing",
-            "segment_enumeration",
-        )
-        if universe.prepared.state != "available":
-            operations = ("trace_evaluation",)
+        answer = PhysicalPeakAnswer(state, reason, question, None)
         return PhysicalPeakEvaluation(
-            state,
-            reason,
-            universe.prepared,
-            universe,
-            question,
-            answer,
-            None,
-            operations,
+            state, reason, universe.prepared, universe, question, answer, None
         )
 
     def evaluate(self, query_rt_min: float) -> PhysicalPeakEvaluation:

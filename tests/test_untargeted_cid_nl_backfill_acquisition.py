@@ -419,7 +419,7 @@ def test_physical_backfill_context_is_not_search_permission(
                 prepare_physical_signal,
             )
             from xic_extractor.peak_detection.physical_peak_models import (
-                PHYSICAL_PEAK_GROUP_WINDOW_POLICY,
+                PHYSICAL_PEAK_BACKFILL_POLICY,
             )
 
             trace = peak.source_trace
@@ -427,7 +427,7 @@ def test_physical_backfill_context_is_not_search_permission(
             original = evaluate_physical_peak(
                 prepare_physical_signal(trace.rt, trace.intensity, profile=profile),
                 query_rt_min=8.0,
-                selection_policy_version=PHYSICAL_PEAK_GROUP_WINDOW_POLICY,
+                selection_policy_version=PHYSICAL_PEAK_BACKFILL_POLICY,
             )
             assert original.answer.selected_segment is not None
             assert (

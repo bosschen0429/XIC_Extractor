@@ -31,12 +31,10 @@ from xic_extractor.peak_detection.physical_peak_evaluation import (
 from xic_extractor.peak_detection.physical_peak_models import (
     DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
     PHYSICAL_PEAK_BACKFILL_POLICY,
-    PHYSICAL_PEAK_GROUP_WINDOW_POLICY,
     PHYSICAL_PEAK_NO_SELECTION_POLICY,
     PHYSICAL_PEAK_POINT_POLICY,
     PHYSICAL_PEAK_REFERENCE_POLICY,
     PHYSICAL_PEAK_UNLOCATED_BACKFILL_POLICY,
-    PHYSICAL_PEAK_WINDOW_POLICY,
     PhysicalPeakEvaluation,
 )
 from xic_extractor.peak_detection.physical_peak_population import (
@@ -124,11 +122,7 @@ def test_background_contrast_rejects_weak_peak_for_capture_and_backfill(
         query_rt_min=1.0,
         search_rt_window=(0.85, 1.15),
     )
-    detected = evaluate_physical_peak(
-        prepared,
-        **question,
-        selection_policy_version=PHYSICAL_PEAK_GROUP_WINDOW_POLICY,
-    )
+    detected = evaluate_physical_peak(prepared, query_rt_min=1.0)
     assert detected.state == expected
     reference = evaluate_physical_peak(
         prepared,
@@ -167,12 +161,6 @@ def test_backfill_recovers_the_complete_peak_containing_the_query(
         query_rt_min=query_rt,
         search_rt_window=window,
     )
-    ordinary = evaluate_physical_peak(
-        prepared,
-        **question,
-        selection_policy_version=PHYSICAL_PEAK_GROUP_WINDOW_POLICY,
-    )
-    assert ordinary.state == "unavailable" and ordinary.answer.selected_segment is None
     backfill = evaluate_physical_peak(
         prepared,
         **question,
@@ -425,7 +413,7 @@ def test_search_window_does_not_admit_context_only_peak(target_present: bool) ->
     result = evaluate_physical_peak(
         prepare_physical_signal(rt, raw),
         query_rt_min=1.3,
-        selection_policy_version=PHYSICAL_PEAK_GROUP_WINDOW_POLICY,
+        selection_policy_version=PHYSICAL_PEAK_BACKFILL_POLICY,
         search_rt_window=(1.0, 3.0),
     )
     if target_present:
@@ -446,7 +434,7 @@ def test_search_window_keeps_complete_peak_and_round_trips() -> None:
     result = evaluate_physical_peak(
         prepared,
         query_rt_min=3.0,
-        selection_policy_version=PHYSICAL_PEAK_GROUP_WINDOW_POLICY,
+        selection_policy_version=PHYSICAL_PEAK_BACKFILL_POLICY,
         search_rt_window=(2.8, 3.2),
     )
     assert result.state == "available" and result.answer.selected_segment is not None
@@ -470,7 +458,7 @@ def test_search_window_does_not_resolve_two_eligible_peaks_by_strength() -> None
     result = evaluate_physical_peak(
         prepare_physical_signal(rt, raw),
         query_rt_min=1.0,
-        selection_policy_version=PHYSICAL_PEAK_GROUP_WINDOW_POLICY,
+        selection_policy_version=PHYSICAL_PEAK_BACKFILL_POLICY,
         search_rt_window=(1.0, 3.5),
     )
     assert len(result.question.admissible_segments) == 2
@@ -478,16 +466,9 @@ def test_search_window_does_not_resolve_two_eligible_peaks_by_strength() -> None
     assert result.integration is None
 
 
-@pytest.mark.parametrize(
-    "policy",
-    [
-        PHYSICAL_PEAK_POINT_POLICY,
-        PHYSICAL_PEAK_WINDOW_POLICY,
-    ],
-)
 @pytest.mark.parametrize("positive_points", [1, 2])
 def test_isolated_one_or_two_scan_pulses_do_not_supply_complete_peak_evidence(
-    policy: str, positive_points: int
+    positive_points: int,
 ) -> None:
     rt = np.linspace(0.0, 3.0, 31)
     raw = np.zeros_like(rt)
@@ -514,7 +495,6 @@ def test_isolated_one_or_two_scan_pulses_do_not_supply_complete_peak_evidence(
     result = evaluate_physical_peak(
         prepare_physical_signal(rt, raw),
         query_rt_min=1.5,
-        selection_policy_version=policy,
     )
 
     assert result.state == "unavailable"
@@ -527,73 +507,42 @@ def test_isolated_one_or_two_scan_pulses_do_not_supply_complete_peak_evidence(
     assert result.answer.selected_segment is None and result.integration is None
 
 
-@pytest.mark.parametrize(
-    "policy,query_rt",
-    [
-        (PHYSICAL_PEAK_POINT_POLICY, 1.5),
-        (PHYSICAL_PEAK_WINDOW_POLICY, 0.2),
-    ],
-)
 @pytest.mark.parametrize("positions", [(14, 16), (12, 14, 16, 18)])
 def test_discontinuous_original_points_cannot_mint_fresh_physical_facts(
-    policy: str, query_rt: float, positions: tuple[int, ...]
+    positions: tuple[int, ...],
 ) -> None:
     rt = np.linspace(0.0, 3.0, 31)
     raw = np.zeros_like(rt)
     raw[list(positions)] = 1000.0
     prepared = prepare_physical_signal(rt, raw)
-    fresh = evaluate_physical_peak(
-        prepared,
-        query_rt_min=query_rt,
-        selection_policy_version=policy,
-    )
+    fresh = evaluate_physical_peak(prepared, query_rt_min=1.5)
     assert fresh.state == "unavailable"
     assert fresh.reason == "insufficient_original_xic_continuity"
     assert fresh.answer.selected_segment is None
     assert fresh.answer.selected_segment is None and fresh.integration is None
 
 
-@pytest.mark.parametrize(
-    "policy", [PHYSICAL_PEAK_POINT_POLICY, PHYSICAL_PEAK_WINDOW_POLICY]
-)
-def test_adjacent_pair_with_an_isolated_point_still_requires_contrast(
-    policy: str,
-) -> None:
+def test_adjacent_pair_with_an_isolated_point_still_requires_contrast() -> None:
     rt = np.linspace(0.0, 3.0, 31)
     raw = np.zeros_like(rt)
     raw[[14, 15, 17]] = 1000.0
     result = evaluate_physical_peak(
         prepare_physical_signal(rt, raw),
         query_rt_min=1.5,
-        selection_policy_version=policy,
     )
     assert result.state == "unavailable"
     assert result.reason == "insufficient_local_peak_contrast"
     assert result.answer.selected_segment is None
 
 
-@pytest.mark.parametrize(
-    "policy,query_rt",
-    [
-        (PHYSICAL_PEAK_POINT_POLICY, 5.0),
-        (PHYSICAL_PEAK_WINDOW_POLICY, 0.5),
-    ],
-)
-def test_heavily_interrupted_peak_without_contrast_persists_unavailable(
-    policy: str,
-    query_rt: float,
-) -> None:
+def test_heavily_interrupted_peak_without_contrast_persists_unavailable() -> None:
     rt = np.linspace(0.0, 10.0, 101)
     raw = 1000.0 * np.exp(-0.5 * ((rt - 5.0) / 0.8) ** 2)
     raw[::2] = 0.0
     raw[50] = 1000.0
     profile = SignalProcessingProfile()
     prepared = prepare_physical_signal(rt, raw, profile=profile)
-    fresh = evaluate_physical_peak(
-        prepared,
-        query_rt_min=query_rt,
-        selection_policy_version=policy,
-    )
+    fresh = evaluate_physical_peak(prepared, query_rt_min=5.0)
     assert fresh.state == "unavailable"
     assert fresh.reason == "insufficient_local_peak_contrast"
     assert fresh.answer.selected_segment is None and fresh.integration is None
@@ -976,7 +925,6 @@ def test_whole_trend_has_matching_target_and_discovery_facts(
     "policy",
     [
         PHYSICAL_PEAK_POINT_POLICY,
-        PHYSICAL_PEAK_WINDOW_POLICY,
         DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
     ],
 )
@@ -1128,12 +1076,8 @@ def test_background_fluctuation_cannot_borrow_height_from_its_baseline(
     assert fresh.answer.selected_segment is None and fresh.integration is None
 
 
-@pytest.mark.parametrize(
-    "policy", [PHYSICAL_PEAK_POINT_POLICY, PHYSICAL_PEAK_WINDOW_POLICY]
-)
 @pytest.mark.parametrize("background", [1000.0, 100000.0])
 def test_constant_background_cannot_supply_acquired_support_to_an_impulse(
-    policy: str,
     background: float,
 ) -> None:
     rt = np.linspace(0.0, 3.0, 31)
@@ -1142,7 +1086,6 @@ def test_constant_background_cannot_supply_acquired_support_to_an_impulse(
     fresh = evaluate_physical_peak(
         prepare_physical_signal(rt, raw),
         query_rt_min=1.5,
-        selection_policy_version=policy,
     )
     assert fresh.state == "unavailable"
     assert fresh.reason == "insufficient_original_xic_support"
@@ -1268,7 +1211,7 @@ def test_is_provisional_peak_shape() -> None:
     [
         (PHYSICAL_PEAK_POINT_POLICY, "insufficient_original_xic_support"),
         (PHYSICAL_PEAK_REFERENCE_POLICY, "insufficient_original_xic_support"),
-        (PHYSICAL_PEAK_WINDOW_POLICY, "ambiguous_segment_candidates"),
+        (PHYSICAL_PEAK_UNLOCATED_BACKFILL_POLICY, "ambiguous_segment_candidates"),
     ],
 )
 def test_other_peak_support_cannot_backfill_a_singleton_or_resolve_ambiguity(
@@ -1402,7 +1345,8 @@ def test_tenth_height_return_uses_canonical_apex_not_coarse_envelope(sigma) -> N
 
 
 @pytest.mark.parametrize(
-    "policy", [PHYSICAL_PEAK_WINDOW_POLICY, PHYSICAL_PEAK_GROUP_WINDOW_POLICY]
+    "policy",
+    [PHYSICAL_PEAK_UNLOCATED_BACKFILL_POLICY, PHYSICAL_PEAK_BACKFILL_POLICY],
 )
 @pytest.mark.parametrize(
     "centers,query_rt,expected",
@@ -1413,7 +1357,7 @@ def test_tenth_height_return_uses_canonical_apex_not_coarse_envelope(sigma) -> N
         ((), 2.0, "unavailable"),
     ],
 )
-def test_group_window_selects_only_one_complete_peak(
+def test_backfill_selects_only_one_complete_peak(
     centers, query_rt, expected, policy
 ) -> None:
     rt = np.linspace(0.0, 4.0, 161)
@@ -1572,8 +1516,8 @@ def _hmdc_tail_noise_trace() -> tuple[np.ndarray, np.ndarray]:
 @pytest.mark.parametrize(
     "policy,expected_reason",
     [
-        (PHYSICAL_PEAK_WINDOW_POLICY, "ambiguous_segment_candidates"),
-        (PHYSICAL_PEAK_GROUP_WINDOW_POLICY, ""),
+        (PHYSICAL_PEAK_UNLOCATED_BACKFILL_POLICY, "ambiguous_segment_candidates"),
+        (PHYSICAL_PEAK_BACKFILL_POLICY, ""),
     ],
 )
 def test_shared_owner_closes_observed_tail_at_measurement_noise(
@@ -1602,11 +1546,11 @@ def test_shared_owner_closes_observed_tail_at_measurement_noise(
 @pytest.mark.parametrize(
     "policy,expected_reason",
     [
-        (PHYSICAL_PEAK_WINDOW_POLICY, "ambiguous_segment_candidates"),
-        (PHYSICAL_PEAK_GROUP_WINDOW_POLICY, ""),
+        (PHYSICAL_PEAK_UNLOCATED_BACKFILL_POLICY, "ambiguous_segment_candidates"),
+        (PHYSICAL_PEAK_BACKFILL_POLICY, ""),
     ],
 )
-def test_group_window_prefers_the_one_peak_containing_the_group_rt(
+def test_backfill_prefers_the_one_peak_containing_the_group_rt(
     policy: str, expected_reason: str
 ) -> None:
     rt = np.linspace(0.0, 4.0, 161)
