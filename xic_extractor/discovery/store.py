@@ -134,6 +134,46 @@ CREATE TABLE delta_mass_features (
     rt_end_min REAL,
     PRIMARY KEY (sample, feature_id)
 ) STRICT, WITHOUT ROWID;
+CREATE VIEW discovery_peaks AS
+    SELECT p.id, p.peak_id, s.sample_stem, p.status, p.evidence_score,
+        (SELECT COUNT(*) FROM events e
+         WHERE e.peak = p.id AND e.unattached_reason IS NULL)
+            AS attached_event_count,
+        p.peak_mz, p.ms1_apex_mz, p.ms1_apex_rt, p.representative_scan,
+        p.neutral_loss_tag,
+        (SELECT json_group_array(tag) FROM (
+            SELECT DISTINCT t.tag FROM events e
+            JOIN tags t ON t.tag = e.neutral_loss_tag
+            WHERE e.peak = p.id ORDER BY t.position, t.tag)) AS matched_tag_names
+    FROM peaks p JOIN samples s ON s.id = p.sample;
+CREATE VIEW discovery_events AS
+    SELECT e.id, s.sample_stem, s.raw_file, e.peak, p.peak_id,
+        e.unattached_reason, e.scan_number, e.rt, e.neutral_loss_tag,
+        t.neutral_loss_da AS configured_neutral_loss_da,
+        CASE WHEN e.precursor_mz_basis = 'product_plus_neutral_loss'
+            THEN t.neutral_loss_da ELSE e.precursor_mz - e.product_mz END
+            AS observed_neutral_loss_da,
+        e.product_mz, e.product_intensity, e.precursor_mz, e.precursor_mz_basis,
+        e.scan_precursor_mz, e.precursor_monoisotopic_mz, e.precursor_charge,
+        e.isolation_width_da, e.isolation_offset_da, e.parent_ms1_scan_number,
+        e.parent_ms1_rt, e.parent_ms1_centroid_mzs
+    FROM events e
+    JOIN samples s ON s.id = e.sample
+    JOIN tags t ON t.tag = e.neutral_loss_tag
+    LEFT JOIN peaks p ON p.id = e.peak;
+CREATE VIEW delta_mass_candidate_table AS
+    SELECT s.sample_stem AS sample, c.candidate_id, c.pattern_id,
+        c.base_mz AS mz, c.base_rt_apex_min AS rt_min, c.base_height AS height,
+        (SELECT COUNT(*) FROM delta_mass_positions p
+         WHERE p.candidate = c.id AND p.position_status = 'pass')
+            AS positions_found,
+        (SELECT COALESCE(group_concat(position_label, ';'), '') FROM (
+            SELECT position_label FROM delta_mass_positions p
+            WHERE p.candidate = c.id AND p.position_status = 'pass'
+            ORDER BY p.ordinal)) AS positions,
+        COALESCE(c.cid_nl_peak_id, '') AS cid_nl_peak_id,
+        s.id AS sample_order
+    FROM delta_mass_candidates c JOIN samples s ON s.id = c.sample;
 """
 
 
@@ -409,24 +449,10 @@ def read_discovery_batch(path: Path) -> DiscoveryBatchInput:
     return DiscoveryBatchInput(path=path, sample_order=tuple(samples), samples=samples)
 
 
-def read_neutral_loss_by_tag(db: sqlite3.Connection) -> dict[str, float]:
-    return dict(db.execute("SELECT tag,neutral_loss_da FROM tags ORDER BY position"))
-
-
-_PEAK_COLUMNS = (
-    "p.id,p.peak_id,s.sample_stem,p.peak_mz,p.neutral_loss_tag,p.representative_scan,"
-    "p.ms1_apex_rt,p.status,p.ms1_apex_mz,p.evidence_score,"
-    "(SELECT COUNT(*) FROM events e WHERE e.peak=p.id AND e.unattached_reason IS NULL),"
-    "(SELECT json_group_array(tag) FROM (SELECT DISTINCT t.tag FROM events e "
-    "JOIN tags t ON t.tag=e.neutral_loss_tag WHERE e.peak=p.id "
-    "ORDER BY t.position,t.tag))"
-)
-
-
 def read_peaks(
     db: sqlite3.Connection, where: str = "", parameters: Sequence[Any] = ()
 ) -> list[tuple[int, DiscoveryPeak]]:
-    """Peaks with their derived event counts and tags, without located events."""
+    """Peaks of ``discovery_peaks`` by row id, without their located events."""
     return [
         (
             row_id,
@@ -458,32 +484,26 @@ def read_peaks(
             attached,
             tags,
         ) in db.execute(
-            f"SELECT {_PEAK_COLUMNS} FROM peaks p JOIN samples s ON s.id=p.sample "
-            f"{where} ORDER BY p.id",
+            "SELECT id,peak_id,sample_stem,peak_mz,neutral_loss_tag,"
+            "representative_scan,ms1_apex_rt,status,ms1_apex_mz,evidence_score,"
+            f"attached_event_count,matched_tag_names FROM discovery_peaks {where} "
+            "ORDER BY id",
             parameters,
         )
     ]
 
 
-_EVENT_COLUMNS = (
-    "e.peak,e.unattached_reason,e.scan_number,e.rt,e.neutral_loss_tag,e.product_mz,"
-    "e.product_intensity,e.precursor_mz,e.precursor_mz_basis,e.scan_precursor_mz,"
-    "e.precursor_monoisotopic_mz,e.precursor_charge,e.isolation_width_da,"
-    "e.isolation_offset_da,e.parent_ms1_scan_number,e.parent_ms1_rt,"
-    "e.parent_ms1_centroid_mzs,s.sample_stem,s.raw_file"
-)
-
-
-def event_from_row(
-    row: Sequence[Any], neutral_loss_by_tag: Mapping[str, float]
-) -> tuple[int | None, str, DiscoveryEvent]:
-    """An event's located peak row, reason and facts; loss and error derived."""
+def event_from_row(row: Sequence[Any]) -> tuple[int | None, str, DiscoveryEvent]:
+    """An event's located peak row, reason and facts; the loss error follows
+    from the observed and configured losses."""
     (
         peak,
         reason,
         scan,
         rt,
         tag,
+        configured,
+        observed,
         product_mz,
         intensity,
         precursor_mz,
@@ -499,12 +519,6 @@ def event_from_row(
         stem,
         raw_file,
     ) = row
-    configured = float(neutral_loss_by_tag[tag])
-    if basis == "product_plus_neutral_loss":
-        observed, error = configured, None
-    else:
-        observed = precursor_mz - product_mz
-        error = absolute_ppm_error(observed, configured)
     metadata = Ms2PrecursorMetadata(
         monoisotopic_mz=mono,
         charge=charge,
@@ -522,7 +536,9 @@ def event_from_row(
         neutral_loss_tag=tag,
         configured_neutral_loss_da=configured,
         observed_neutral_loss_da=observed,
-        observed_loss_error_ppm=error,
+        observed_loss_error_ppm=None
+        if basis == "product_plus_neutral_loss"
+        else absolute_ppm_error(observed, configured),
         scan_precursor_mz=selected_mz,
         precursor_mz_basis=basis,
         precursor_metadata=None if metadata == Ms2PrecursorMetadata() else metadata,
@@ -538,27 +554,29 @@ def event_from_row(
 
 
 def read_events(
-    db: sqlite3.Connection,
-    neutral_loss_by_tag: Mapping[str, float],
-    where: str = "",
-    parameters: Sequence[Any] = (),
+    db: sqlite3.Connection, where: str = "", parameters: Sequence[Any] = ()
 ) -> Iterator[tuple[int | None, str, DiscoveryEvent]]:
+    """Events of ``discovery_events`` in stored order."""
     for row in db.execute(
-        f"SELECT {_EVENT_COLUMNS} FROM events e JOIN samples s ON s.id=e.sample "
-        f"{where} ORDER BY e.id",
+        "SELECT peak,unattached_reason,scan_number,rt,neutral_loss_tag,"
+        "configured_neutral_loss_da,observed_neutral_loss_da,product_mz,"
+        "product_intensity,precursor_mz,precursor_mz_basis,scan_precursor_mz,"
+        "precursor_monoisotopic_mz,precursor_charge,isolation_width_da,"
+        "isolation_offset_da,parent_ms1_scan_number,parent_ms1_rt,"
+        f"parent_ms1_centroid_mzs,sample_stem,raw_file FROM discovery_events {where} "
+        "ORDER BY id",
         parameters,
     ):
-        yield event_from_row(row, neutral_loss_by_tag)
+        yield event_from_row(row)
 
 
 def read_sample_peaks(path: Path, sample_stem: str) -> tuple[DiscoveryPeak, ...]:
     """One sample's peaks with their located events, for diagnostics."""
     with open_discovery(path) as db:
-        losses = read_neutral_loss_by_tag(db)
-        peaks = read_peaks(db, "WHERE s.sample_stem=?", (sample_stem,))
+        peaks = read_peaks(db, "WHERE sample_stem=?", (sample_stem,))
         located: dict[int, list[DiscoveryEvent]] = {}
         for peak, _reason, event in read_events(
-            db, losses, "WHERE s.sample_stem=? AND e.peak IS NOT NULL", (sample_stem,)
+            db, "WHERE sample_stem=? AND peak IS NOT NULL", (sample_stem,)
         ):
             assert peak is not None
             located.setdefault(peak, []).append(event)

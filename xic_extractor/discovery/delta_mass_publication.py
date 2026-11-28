@@ -159,20 +159,12 @@ def publish_delta_mass_store(
 
 def read_delta_mass_table(path: Path) -> list[dict[str, Any]]:
     """One readable row per established candidate, in sample and m/z order."""
+    columns = ",".join(DELTA_MASS_TABLE_COLUMNS)
     with open_discovery(path) as db:
         return [
             dict(zip(DELTA_MASS_TABLE_COLUMNS, row, strict=True))
             for row in db.execute(
-                "SELECT s.sample_stem,c.candidate_id,c.pattern_id,c.base_mz,"
-                "c.base_rt_apex_min,c.base_height,"
-                "(SELECT COUNT(*) FROM delta_mass_positions p "
-                " WHERE p.candidate=c.id AND p.position_status='pass'),"
-                "(SELECT COALESCE(group_concat(position_label,';'),'') FROM "
-                " (SELECT position_label FROM delta_mass_positions p "
-                "  WHERE p.candidate=c.id AND p.position_status='pass' "
-                "  ORDER BY p.ordinal)),"
-                "COALESCE(c.cid_nl_peak_id,'') "
-                "FROM delta_mass_candidates c JOIN samples s ON s.id=c.sample "
-                "ORDER BY s.id,c.base_mz,c.candidate_id"
+                f"SELECT {columns} FROM delta_mass_candidate_table "
+                "ORDER BY sample_order,mz,candidate_id"
             )
         ]

@@ -114,7 +114,7 @@ ISTD 清單直接用 Targeted 的[目標清單](targeted.md#目標清單)檔案�
 | `alignment_explanation.sqlite` | 檢閱畫面用的判定與曲線，不需要自己開 |
 | `alignment_run_metadata.json` | 本次的輸入、設定和整理矩陣用的列身分 |
 | `sample_metadata.tsv` | 本次使用的樣本角色、注射順序與排除 |
-| `discovery.sqlite` | 探索結果：各樣本找到的 MS1 峰、每個中性丟失 MS2 事件與它落在哪個峰。給對齊與診斷工具讀，不需要自己開 |
+| `discovery.sqlite` | 探索結果：各樣本找到的 MS1 峰、每個中性丟失 MS2 事件與它落在哪個峰。給對齊與診斷工具讀；想自己看，用任何 SQLite 工具開 `discovery_peaks`（每個峰一列）與 `discovery_events`（每個事件一列）兩個檢視 |
 | `matrix_curation_<日期>_<時間>/` | 整理矩陣的結果，見下方 |
 
 ### `alignment_matrix.tsv`

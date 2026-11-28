@@ -15,7 +15,6 @@ from xic_extractor.discovery.store import (
     DiscoveryBatchInput,
     open_discovery,
     read_events,
-    read_neutral_loss_by_tag,
     read_peaks,
 )
 
@@ -59,7 +58,6 @@ class DiscoveryInputSource(Mapping[str, tuple[DiscoveryPeak, ...]]):
         by_row: dict[int, str] = {}
         pools: dict[str, list[tuple[bool, tuple[object, ...], float]]] = {}
         with open_discovery(batch.path) as db:
-            self._losses = read_neutral_loss_by_tag(db)
             for row_id, cid, stem, mz, tag, status, apex_mz in db.execute(
                 "SELECT p.id,p.peak_id,s.sample_stem,p.peak_mz,p.neutral_loss_tag,"
                 "p.status,p.ms1_apex_mz FROM peaks p "
@@ -76,9 +74,8 @@ class DiscoveryInputSource(Mapping[str, tuple[DiscoveryPeak, ...]]):
                 by_row[row_id] = cid
             for peak, reason, event in read_events(
                 db,
-                self._losses,
-                "JOIN peaks p ON p.id=e.peak "
-                "WHERE e.neutral_loss_tag=p.neutral_loss_tag",
+                "WHERE neutral_loss_tag="
+                "(SELECT p.neutral_loss_tag FROM peaks p WHERE p.id=peak)",
             ):
                 cid = by_row.get(peak) if peak is not None else None
                 if cid is not None:
@@ -117,11 +114,11 @@ class DiscoveryInputSource(Mapping[str, tuple[DiscoveryPeak, ...]]):
                 events: dict[int, list[DiscoveryEvent]] = {}
                 if located_events:
                     for located, _reason, event in read_events(
-                        db, self._losses, f"WHERE e.peak IN ({marks})", chunk
+                        db, f"WHERE peak IN ({marks})", chunk
                     ):
                         assert located is not None
                         events.setdefault(located, []).append(event)
-                for row_id, peak in read_peaks(db, f"WHERE p.id IN ({marks})", chunk):
+                for row_id, peak in read_peaks(db, f"WHERE id IN ({marks})", chunk):
                     if located_events:
                         peak = replace(
                             peak,

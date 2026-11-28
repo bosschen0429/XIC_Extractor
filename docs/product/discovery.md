@@ -64,10 +64,11 @@ and then the reason is physical. The table also carries each event's precursor
 metadata and parent-MS1 observation, so Alignment assesses the events without
 reading RAW again.
 
-The file keeps each fact once. A peak's attached-event count and matched tags
-are read from its events; an event's observed loss is precursor − product, or
-the configured loss when the precursor was inferred from the product, and its
-loss error is computed from that. Each sample process writes its own part file;
+The file keeps each fact once. Its `discovery_peaks` and `discovery_events`
+views are the tables to read: a peak's attached-event count and matched tags
+come from its events; an event's observed loss is precursor − product, or the
+configured loss when the precursor was inferred from the product. Readers
+compute the loss error from that. Each sample process writes its own part file;
 the batch owner merges them in run order and replaces `discovery.sqlite` in
 one step, so a stopped run leaves the previous file unchanged. A file whose
 schema differs from the current one is refused with an instruction to rerun
@@ -450,8 +451,8 @@ Delta Mass output is `diagnostic_only`. It has no Alignment handoff and no
 Matrix, Backfill, counted-detection or export authority. A run publishes only
 established candidates: `discovery.sqlite` holds the method, each sample's
 mass-restoration result, the candidates, their positions and the detected
-feature bounds the review reads; `delta_mass_candidates.csv` is the readable
-table, one row per candidate with its sample, m/z, RT, height, positions found
+feature bounds the review reads; `delta_mass_candidates.csv` is its
+`delta_mass_candidate_table` view written out as the readable table, one row per candidate with its sample, m/z, RT, height, positions found
 and joined dR peak. A composite method reads the dR peaks from the CID-NL
 `discovery.sqlite` of the same RAW (`--cid-nl-discovery`). Shape similarity never
 establishes membership by itself. Real-sample counts are method-development

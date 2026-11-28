@@ -24,7 +24,6 @@ from xic_extractor.discovery.store import (
     part_path,
     read_discovery_batch,
     read_events,
-    read_neutral_loss_by_tag,
     read_peaks,
     read_sample_peaks,
     write_sample_part,
@@ -190,7 +189,6 @@ def stored_peaks(store: Path) -> list[DiscoveryPeak]:
 def stored_events(store: Path) -> list[EventAttachment]:
     """Every published event, with the peak it locates and why it does not attach."""
     with open_discovery(store) as db:
-        losses = read_neutral_loss_by_tag(db)
         peak_ids = {row_id: item.peak_id for row_id, item in read_peaks(db)}
         return [
             EventAttachment(
@@ -198,5 +196,5 @@ def stored_events(store: Path) -> list[EventAttachment]:
                 peak_id="" if row_id is None else peak_ids[row_id],
                 unattached_reason=reason,
             )
-            for row_id, reason, stored in read_events(db, losses)
+            for row_id, reason, stored in read_events(db)
         ]
