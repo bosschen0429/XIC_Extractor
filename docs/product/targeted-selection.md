@@ -385,17 +385,6 @@ with an explicit schema/versioning plan, and the claim needs a matching
 RAW-tier evidence label. Passing tests do not establish scientific readiness;
 method-changing selection rules need the method-appropriate oracle.
 
-## Reference Input Diagnostic
-
-An on-demand diagnostic checks target CSV reference RTs (the search-window
-midpoint) across method groups by leave-one-out monotonic mapping of shared
-targets, and against RAW peak-cluster positions. Mapping residuals give
-informational warnings; only RAW cluster disagreement or a mapping onto a
-different RAW cluster gives a high warning. Its outputs are `diagnostic_only`
-and carry no selection, reference-editing or quantitation authority.
-[`test_diagnostic_reference_consistency.py`](../../tests/test_diagnostic_reference_consistency.py)
-pins the exclusion, voting and warning rules; `--help` owns the defaults.
-
 ## Verification
 
 - [`test_targeted_peak_selection.py`](../../tests/test_targeted_peak_selection.py)
@@ -424,7 +413,6 @@ pins the exclusion, voting and warning rules; `--help` owns the defaults.
 | Cell value or typed no-write | `ProductionCellDecision` |
 | Paired-ISTD identity and rejection | `paired_istd_positions` in `extraction.targeted_product_projection` |
 | Row binding and cell subject | `alignment.projection.target.pre_cell` |
-| Reference input diagnostic | `tools.diagnostics.check_reference_consistency` |
 
 RAW acquisition supplies retained arrays and the MS2 window, then consumes the
 completed selection; the selection owner works in memory and does not read RAW.
