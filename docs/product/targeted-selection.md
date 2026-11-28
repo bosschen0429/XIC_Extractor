@@ -11,7 +11,7 @@ the Target was observed. For operation and result reading, start with the
 
 | Question | Rule | Detail |
 | --- | --- | --- |
-| What does a Target ask for? | MS1 only, CID-NL, Delta Mass, or both, set by two target columns. Every declared condition must match the same peak. | [Target method](#target-method) |
+| What does a Target ask for? | MS1 only, CID-NL, Delta Mass, or both, set by two target columns. CID-NL alone ranks by its assessment; with Delta Mass, every declared condition must match the same peak. | [Target method](#target-method) |
 | Which peaks are candidates? | Every physical region over the sample's complete acquisition RT range, retained until all samples are acquired. | [Candidate population](#candidate-population) |
 | How is one candidate chosen? | Individually attributed CID-NL support from a recorded precursor ranks first; otherwise physical and RT/ISTD evidence localize. | [Candidate selection](#candidate-selection) |
 | Where is a Target expected? | At its expected RT, shifted by the current sample's credible paired ISTD or available drift. Expected RT is an identity prior, not a search window. | [RT reference](#rt-reference) |
@@ -43,10 +43,12 @@ there are no named methods.
   Co-elution, ratios and shape reference the quantitation ion. Ratios are
   annotations, not admission gates. Position XIC windows must not overlap.
   Settings normalize the lowest mass internally.
-- **Composition.** With both, every declared condition must match the **same
-  sample-local physical quantitation candidate**; there is no any-of
-  combination, and evidence from other peaks or samples cannot satisfy it.
-  OR does not require unacquired clauses to pass. HCD-PI is not implemented.
+- **Composition.** CID-NL alone keeps the Targeted CID-NL assessment
+  (ranking support). With Delta Mass, every declared condition must match the
+  same peak; there is no any-of combination. Each clause answers on the **same
+  sample-local physical quantitation candidate**, and evidence from other peaks
+  or samples cannot satisfy AND. OR does not require unacquired clauses to
+  pass. HCD-PI is not implemented.
 
 Each condition answers `matched`, `not_matched` or `not_acquired` (no target
 MS2 inside that candidate). Missing MS2 is not a failed chemical measurement
@@ -231,7 +233,8 @@ Correspondence also reads unselected regions.
   alternate ion band, it cannot substitute for an absent or unquantifiable
   Target: no numeric result, with a correspondence explanation. A single
   acquired point can locate an alternate band without becoming MS1 quantity.
-  Missing transfer evidence alone does not trigger this.
+  Missing transfer evidence alone does not trigger this; paired ISTD
+  position stays with its own owner.
 - Unresolved multi-body totals are measurements, not RT calibrators.
 - A body incompatible with the retention context is not replaced by a small
   background residual. Plausible but uncertain mappings keep a provisional
@@ -252,7 +255,8 @@ truth.
 - A missing or untrusted pair does not become an anchor; the reference is the
   analyte's expected RT plus the available sample drift.
 - Candidate scoring uses this reference as its RT prior and the complete
-  acquisition span for window position, so shared drift is not penalized.
+  acquisition span for window position; agreement can support ranking, and
+  shared drift incurs no unshifted-window penalty.
 - The reference is computed in memory for the current sample. External
   RT-prior or pair calibration files and rolling ISTD prepasses are not inputs,
   and another sample cannot replace missing current-sample identity support.
@@ -284,7 +288,8 @@ The rule is applied once every Target in the batch has rendered. All must hold:
    the position and tolerance; contradictory counted peaks cannot calibrate
    away their own mismatch. Otherwise the counted ISTD plus the configured
    offset is the reference, with 12 s tolerance. Batch confirmation count is
-   not an identity gate.
+   not an identity gate: both cases use the same current-sample ISTD,
+   peak-quality and blocker requirements.
 
 The result records `paired_istd_identity` among its support reasons, so it
 stays distinct from NL-confirmed detection; morphology and other reasons still
