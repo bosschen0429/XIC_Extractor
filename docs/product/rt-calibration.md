@@ -1,37 +1,30 @@
 # Retention Time Calibration
 
-Retention Time (RT) calibration places every injection on a common RT coordinate
-frame so cross-sample correspondence, Backfill forecasting and review can compare
-observations across runs. It models run-to-run retention drift, not compound
-identification.
+Retention Time (RT) calibration places every injection on a common RT
+coordinate frame so cross-sample correspondence, Backfill forecasting and
+review can compare observations across runs. It models run-to-run retention
+drift, not compound identification. [Alignment](alignment.md) describes how
+grouping consumes the frame.
 
-[`rt_anchors`](../../xic_extractor/alignment/rt_anchors.py) owns the anchor
-observations both models read,
-[`sample_rt_calibration`](../../xic_extractor/alignment/sample_rt_calibration.py)
-the knots and the fit, and [`rt_drift`](../../xic_extractor/alignment/rt_drift.py)
-the drift model on top of it;
-[`drift_evidence`](../../xic_extractor/alignment/drift_evidence.py) owns production
-ISTD RT correspondence; downstream consumers access the frozen map
-through `SampleRtFrame`. Shared terminology remains owned by the
-[Domain Glossary](domain-glossary.md). See [Alignment](alignment.md) for how
-grouping consumes this frame.
+## At A Glance
+
+| Question | Rule | Detail |
+| --- | --- | --- |
+| What calibrates a sample? | Measured ISTDs plus ordinary bootstrap correspondences seen in at least half the cohort, each one knot. | [Anchor qualification](#anchor-qualification) |
+| How is the map fitted? | Robust local-linear LOESS per sample; at least eight distinct RT positions, else no strong fit. | [Robust LOESS fit](#robust-loess-fit) |
+| How far can an ISTD pull the curve? | At most six times the fit's median absolute residual, without breaking order. | [ISTD landmark bounded influence](#istd-landmark-bounded-influence) |
+| What happens outside the anchors? | The endpoint's constant shift, or the median shift when no curve exists; each answer says which. | [Graded query support](#graded-query-support) |
+| What about the early part of an under-equilibrated injection? | Band linking alone corrects it with a measured early-segment shift. | [Early segment](#early-segment-of-an-under-equilibrated-injection) |
+| Are declared batches calibrated together? | No; each batch aligns alone, and finished Matrix groups are paired between batches afterwards. | [Declared batches](#declared-batches) |
+| What about compounds that drift more than the map? | A frozen batch state B and sample shift M, with per-group coefficients. | [Drift beyond the map](#drift-beyond-the-map) |
 
 ## Calibration Contract
 
 ### Anchor qualification
 
 Bootstrap links peaks in measured RT. Established bands supply measured anchors
-from direct, quantifiable members; bootstrap membership is not final membership.
-
-A Known-ISTD reference from a target list takes each sample's ISTD apex from
-its Discovery peaks without reading RAW: a peak at the target's m/z, carrying
-an event of the target's neutral loss, with its apex within 2 min of the
-expected RT and not read as a doubly charged ion. The spiked standard triggers the most events; ties go to the
-apex closest to the expected RT. A sample whose standard DDA never sampled has
-no coordinate for that label. An imported reference workbook retains its
-declared measurement contract; the reader does not add MS2 qualification. See the
-[Untargeted guide](../development/command-line.md#alignment-cli-inputs) for CLI
-input selection.
+from direct, quantifiable members; bootstrap membership is not final
+membership.
 
 | Mechanism | Current source and use |
 | --- | --- |
@@ -41,263 +34,248 @@ input selection.
 | Band | Links measured member peaks in injection order; the final band supplies sample-local Backfill coordinates. |
 | Calibration diagnostic | Uses the same fit owner with detected-cell inputs and an interleaved held-out comparison. Its files do not alter production results. |
 
-[`rt_anchors`](../../xic_extractor/alignment/rt_anchors.py) produces the
-anchor observations once per initial grouping: an owner with direct method
-support, a primary identity event and quantification-eligible integration,
-with its method channel, apex RT and, when it belongs to an established
-bootstrap band holding at least two such owners, that band. Each band is one
-calibrating correspondence; the general map also uses the measured ISTD
-coordinates. The [drift model](#drift-beyond-the-map) reads every observation
-by channel, banded or not. M is [voted](#drift-beyond-the-map) from the same
-population's direct bands. Removing a peak only after grouping is not
-equivalent: that peak may have set a channel center or changed which bootstrap
-bands formed. Final rows and their coefficients are inferred on the full
-population.
-
-The calibration population is read from the first pass, not acquired again.
-Bootstrap bands exist only to calibrate, so they are linked only where they
-can: not for a workset whose anchors fall short of the correspondence quorum
-below in every cohort. Such owners stay unlinked until final grouping, and
-their anchors still reach the drift model.
-
-[`sample_rt_calibration`](../../xic_extractor/alignment/sample_rt_calibration.py)
-turns each agreed bootstrap group into one ordinary correspondence and fits the
-map. A correspondence's reference is its same-cohort median observed RT; it
-needs observations in at least half the declared cohort (rounded up), with at
-least three measured members. These are anchor qualifications, not
-feature-retention rules: other observations remain available to grouping. Exact
-duplicate sample/RT patterns contribute only once, keeping every channel the
-duplicates were measured in. Measured ISTDs require at least two same-cohort
-measurements, but not ordinary-feature prevalence. Missing ISTDs, predicted
-coordinates and Backfill observations are not imputed as anchors. Declared
-batch IDs define cohorts; empty IDs share an unspecified cohort and sample role
-does not define the cohort.
-
-Each knot is one correspondence in one cohort. It records that cohort, the ISTD
-label for a measured ISTD, and the method channels (precursor m/z, neutral
-loss) of its observations; ISTD knots and the diagnostic fits, which have no
-method channel, record none.
+- **Known ISTD.** A target-list ISTD takes each sample's apex from its
+  Discovery peaks without reading RAW: a peak at the target's m/z, carrying an
+  event of its neutral loss, with its apex within 2 min of the expected RT and
+  not read as doubly charged. The spiked standard triggers the most events;
+  ties go to the apex closest to the expected RT. A sample whose standard DDA
+  never sampled has no coordinate for that label. An imported reference
+  workbook keeps its declared measurement contract, and the reader adds no MS2
+  qualification. CLI input selection is in the
+  [command-line guide](../development/command-line.md#alignment-cli-inputs).
+- **Anchor observations.** Produced once per initial grouping: an owner with
+  direct method support, a primary identity event and quantification-eligible
+  integration, with its method channel, apex RT and, when it belongs to an
+  established bootstrap band holding at least two such owners, that band. Each
+  band is one calibrating correspondence; the general map also uses measured
+  ISTD coordinates. The [drift model](#drift-beyond-the-map) reads every
+  observation by channel, banded or not, and M is voted from the same
+  population's direct bands. Removing a peak only after grouping is not
+  equivalent, since it may have set a channel center or changed which bands
+  formed; final rows and coefficients are inferred on the full population.
+- **First pass only.** The population is read from the first pass, not
+  acquired again. Bootstrap bands exist only to calibrate, so they are not
+  linked for a workset whose anchors fall short of the correspondence quorum in
+  every cohort; such owners stay unlinked until final grouping, and their
+  anchors still reach the drift model.
+- **Correspondence quorum.** A correspondence's reference is its same-cohort
+  median observed RT; it needs observations in at least half the declared
+  cohort (rounded up), with at least three measured members. Measured ISTDs
+  need at least two same-cohort measurements, not ordinary prevalence. These
+  qualify anchors; they are not feature-retention rules. Exact duplicate
+  sample/RT patterns count once, keeping every channel they were measured in.
+  Missing ISTDs, predicted coordinates and Backfill observations are not
+  imputed as anchors.
+- **Cohorts.** Declared batch IDs define cohorts; empty IDs share an
+  unspecified cohort, and sample role does not define the cohort.
+- **Knots.** Each knot is one correspondence in one cohort, recording that
+  cohort, the ISTD label for a measured ISTD, and the method channels
+  (precursor m/z, neutral loss) of its observations; ISTD knots and diagnostic
+  fits record no channel.
 
 ### Robust LOESS fit
 
-Each sample uses robust local-linear regression of reference-minus-observed RT,
-with a 0.3 neighborhood fraction and three residual reweightings. Repeated
-observed RT positions receive one median reference vote. A new fit requires at
-least eight distinct measured RT positions, and at least eight positions must
-retain nonzero robust weight in the final fit. Local neighborhoods include at
-least eight positions; they expand when rejected points would otherwise fill
-the final neighborhood. Distance weights remain unequal: eight positions are
-not a guarantee of precision or dense coverage. A deficient strong fit is
-unavailable, not replaced by a two-point line or interpolated pseudo-anchors.
-A fit whose reference order folds between adjacent positions merges only those
-positions into one knot at their mean observed and fitted RT
-(pool-adjacent-violators); ordered stretches keep their fitted values. A fold
-broad enough to leave fewer than eight knots keeps the strong fit unavailable.
-In 85RAW two Tumor injections folded at one pair 0.04 min apart, where the
-offset drops from about +40 s to about 0 s. With only ISTDs, contradictory
-landmark order cannot establish strong calibration from the same
-measurements. Ordinary corroboration can support a fit despite a conflicting
-standard; fitted standard residuals remain visible and do not reselect that
-standard's peak.
+Each sample uses robust local-linear regression of reference-minus-observed
+RT, with a 0.3 neighborhood fraction and three residual reweightings; repeated
+observed RT positions get one median reference vote.
 
-Eight is a conservative application support floor, not a universal LOESS
-theorem. Local support, polynomial degree, bandwidth and sampling density still
-matter; see [Cleveland (1979)](https://doi.org/10.1080/01621459.1979.10481038)
-and the [NIST LOESS guidance](https://www.itl.nist.gov/div898/handbook/pmd/section1/pmd144.htm).
-It counts RT positions per injection, not the number of samples in the batch.
-The fit consumes fixed bootstrap anchors once; final regrouping and Backfill do
-not feed their own results back into that fit. Grouping replay refits from the
-same retained anchors; a saved map without them keeps its coordinates and is
-not refitted under this floor.
+- **Support floor.** A fit needs at least eight distinct measured RT positions,
+  and at least eight must keep nonzero robust weight. Local neighborhoods
+  include at least eight positions and expand when rejected points would fill
+  them. Distance weights stay unequal, so eight positions do not guarantee
+  precision or dense coverage. A deficient fit is unavailable, not replaced by
+  a two-point line or interpolated pseudo-anchors. Eight is a conservative
+  application floor per injection, not a universal LOESS theorem; local
+  support, degree, bandwidth and sampling density still matter
+  ([Cleveland (1979)](https://doi.org/10.1080/01621459.1979.10481038),
+  [NIST LOESS guidance](https://www.itl.nist.gov/div898/handbook/pmd/section1/pmd144.htm)).
+- **Folds.** A fit whose reference order folds between adjacent positions
+  merges only those positions into one knot at their mean observed and fitted
+  RT (pool-adjacent-violators); ordered stretches keep their values. A fold
+  leaving fewer than eight knots keeps the fit unavailable. In 85RAW two Tumor
+  injections folded at one pair 0.04 min apart, where the offset drops from
+  about +40 s to about 0 s.
+- **ISTD conflicts.** With only ISTDs, contradictory landmark order cannot
+  establish strong calibration. Ordinary corroboration can support a fit
+  despite a conflicting standard; its residual stays visible and does not
+  reselect that standard's peak.
+- **No feedback.** The fit consumes fixed bootstrap anchors once; final
+  regrouping and Backfill do not feed back into it. Replay refits from the same
+  retained anchors; a saved map without them keeps its coordinates.
 
 ### ISTD landmark bounded influence
 
-Within a usable fit, a measured ISTD also supplies a bounded local landmark.
-Its fitted coordinate can move toward its measured cohort reference by at most
-six times the median absolute residual of the final nonzero-weight positions,
-using the same residual multiplier as the robust fit. Rejected correspondences
-do not enlarge this influence limit. The adjustment must preserve order against
-both the original neighboring fitted coordinates and neighboring landmark
-proposals; conflicting proposals keep their original fitted values. It changes
-only an existing measured knot, not neighboring knots, the observed support
-range, or the count of supported positions. The frozen interpolation therefore
-carries this local correction without a second ISTD override. Large or
-order-conflicting standard residuals remain visible rather than forcing the
-curve through every standard. This bound limits influence; it is not a
-statistical confidence interval or independent identity verification.
+Within a usable fit, a measured ISTD's fitted coordinate can move toward its
+measured cohort reference by at most six times the median absolute residual of
+the final nonzero-weight positions, the robust fit's own multiplier. Rejected
+correspondences do not enlarge this limit. The adjustment must keep order
+against both neighboring fitted coordinates and neighboring landmark
+proposals; conflicting proposals keep their fitted values. It changes only that
+measured knot, not neighbors, support range or position count, so the frozen
+interpolation carries it without a second ISTD override. Large or
+order-conflicting residuals stay visible rather than forcing the curve through
+every standard. This limits influence; it is not a confidence interval or
+identity verification.
 
 ### Graded query support
 
-The strong-only map and inverse remain bounded by the supported anchor range.
-Localization explicitly uses a graded query instead:
+The strong-only map and inverse stay bounded by the supported anchor range.
+Localization uses a graded query instead:
 
-- Inside a usable curve, preserve its LOESS coordinate exactly.
-- Outside it, use the nearest endpoint's constant shift (`boundary_shift`).
-  This weak continuation joins continuously and preserves order and a unique
-  inverse; it does not extend strong calibration support.
-- With at least two qualified distinct positions but no usable strong fit,
-  use their median reference-minus-observed shift (`median_shift`). Zero or
-  one position does not establish a batch shift. Failed strong-fit status is
-  retained, not relabelled as strong support.
+- Inside a usable curve, the LOESS coordinate exactly.
+- Outside it, the nearest endpoint's constant shift (`boundary_shift`), which
+  joins continuously and keeps order and a unique inverse without extending
+  strong support.
+- With at least two qualified distinct positions but no usable fit, their
+  median reference-minus-observed shift (`median_shift`). Zero or one position
+  establishes no shift, and a failed fit is not relabelled as strong support.
 
-The frozen measured support is prepared once. Each answer carries its method,
-qualified position count, measured range, model residual spread, nearest-anchor
-distance and distance outside model support. These are descriptive facts, not
-probabilities or bounds on true error. The bounded map supplies band membership
-coordinates, apart from an under-equilibrated injection's
-[early segment](#early-segment-of-an-under-equilibrated-injection); the graded
-estimates remain available for Backfill forecasts and their review facts. Accepted membership risks retain the applied query facts in the
-review outputs. Weak localization uses an `estimated_` basis and remains a
-forecast, not a physical observation. Neither query changes observed RT, peak
-boundaries, area, identity, or Backfill admission rules.
-
-The persisted calibration retains the measured support for these queries. Legacy
-v1/v2 coordinates remain exact and bounded, with quality unrecorded; old knots
-do not create weak estimates. Bootstrap's strong-only APIs and ISTD-only unique
-same-target fallback retain their existing meaning.
+Each answer carries its method, qualified position count, measured range,
+residual spread, nearest-anchor distance and distance outside support:
+descriptive facts, not probabilities or error bounds. The bounded map supplies
+band membership coordinates, apart from an under-equilibrated injection's
+[early segment](#early-segment-of-an-under-equilibrated-injection); graded
+estimates serve Backfill forecasts and their review facts, and accepted
+membership risks keep the applied query facts. Weak localization uses an
+`estimated_` basis and stays a forecast. Neither query changes observed RT,
+boundaries, area, identity or Backfill admission. The persisted calibration
+keeps the measured support these queries need.
 
 ### Early segment of an under-equilibrated injection
 
 After a short method (a 15 min Blank or an 8 min SDOLEK), the next injection
-starts on a column that has not re-equilibrated, and its early-eluting compounds
-come early (#786): shift(RT, injection) = A × g(RT). The map absorbs the shift
-from about 9 min, where the injection has anchors; before that it usually has
-none, so its early peaks kept the whole shift, up to two minutes, and fell out
-of their bands.
+starts on a column that has not re-equilibrated, and its early-eluting
+compounds come early (#786): shift(RT, injection) = A × g(RT). The map absorbs
+the shift from about 9 min, where the injection has anchors; before that it
+usually has none, so its early peaks kept the whole shift, up to two minutes,
+and fell out of their bands.
 
-[`early_segment_shift`](../../xic_extractor/alignment/early_segment_shift.py)
-measures A from the frozen calibration's own standards. A standard's deviation is
-its observed RT minus the median of the same standard in up to three injections
-on each side. An injection is affected when its earliest standard is earlier
-than both 10 s and five times the batch's median absolute deviation, and its next
-standard moved the same way by a fraction closer to g's decay than to a uniform
-shift; with fewer than two standards no injection is affected. g is
-exp(−(RT − 8.5)/5.26) from 8.5 min and, before that, the medians #786 measured:
-0 at 2.6 min, rising to 2.6 at 5.0 min, then 1.4 at 6.5 min and 1.0 from 7.5 min.
-Both were measured on the 60 min dna_dr gradient; another gradient needs g
-measured again. Single compounds at 4–7 min spread from 1.2 to 3.1 times A.
-
-Only band linking reads it. An affected injection's peak before 8.5 min moves to
-the elution time solving observed = elution + A × g(elution), then is read
-through the maps of the unaffected injections around it. Such a predicted
-coordinate does not vote on M. The published calibration, Backfill localization
-and every output keep their values.
+- **A** is measured from the frozen calibration's own standards. A standard's
+  deviation is its observed RT minus the median of the same standard in up to
+  three injections on each side. An injection is affected when its earliest
+  standard is earlier than both 10 s and five times the batch's median
+  absolute deviation, and its next standard moved the same way by a fraction
+  closer to g's decay than to a uniform shift; with fewer than two standards
+  no injection is affected.
+- **g** is exp(−(RT − 8.5)/5.26) from 8.5 min and, before that, the medians
+  #786 measured: 0 at 2.6 min, rising to 2.6 at 5.0 min, then 1.4 at 6.5 min
+  and 1.0 from 7.5 min. Both were measured on the 60 min dna_dr gradient;
+  another gradient needs g measured again. Single compounds at 4–7 min spread
+  from 1.2 to 3.1 times A.
+- **Use.** Only band linking reads it. An affected injection's peak before
+  8.5 min moves to the elution time solving observed = elution + A × g(elution),
+  then is read through the maps of the unaffected injections around it. Such a
+  predicted coordinate does not vote on M. The published calibration, Backfill
+  localization and every output keep their values.
 
 ### Persisted RT replay
 
-Explanation summaries retain the final frozen batch `sample_rt_calibration`,
-including its knots with their cohort, ISTD label and channels, fitted sample
-knots and distinct qualified observation positions with their
-`estimate_support`. The bootstrap ISTD reference's measured identity provenance
-and target snapshot are recorded once, in the run metadata
-`known_istd_reference_*` keys, not as a second display calibration. Inspector and
-Workbench replay the same estimate owner without refitting: `loess` within the
-fit, continuous endpoint `boundary_shift` outside it, and qualified
-`median_shift` for samples without a curve. Only samples with no estimate fall
-back to raw RT, with an explicit label. This changes display coordinates, not
-measured signal, area, grouping or quantification. Injection order is preserved
-separately. Obsolete explanation layouts and calibrations whose knot fields
-differ from the current ones require rerunning Alignment.
-
-Optional grouping snapshots (`--stop-after grouping --save-grouping-inputs`) keep the
-frozen drift model, including the owners each drift anchor observed, so replay
-reuses its B shapes and M. Explanation summaries keep only the calibration.
+Explanation summaries keep the final frozen batch `sample_rt_calibration`:
+knots with cohort, ISTD label and channels, fitted sample knots, and distinct
+qualified observation positions with their `estimate_support`. The bootstrap
+ISTD reference's identity provenance and target snapshot are recorded once, in
+run metadata `known_istd_reference_*` keys. Inspector and Workbench replay the
+same estimate owner without refitting (`loess`, `boundary_shift`,
+`median_shift`); only samples with no estimate fall back to raw RT, with an
+explicit label. This changes display coordinates, not signal, area, grouping
+or quantification; injection order is kept separately. Explanation layouts or
+calibrations whose knot fields differ from the current ones require rerunning
+Alignment. Optional grouping snapshots
+(`--stop-after grouping --save-grouping-inputs`) also keep the frozen drift
+model, including each drift anchor's owners, so replay reuses its B shapes
+and M; explanation summaries keep only the calibration.
 
 ### RT anchor table
 
 Every Alignment run writes `alignment_rt_anchors.tsv`, and
 `--stop-after grouping` writes `rt_anchors.tsv`: one row per frozen knot, with
 `knot_id`, `cohort`, `kind` (`ordinary` or `istd`), `istd_label`,
-`precursor_mz`, `neutral_loss_da`, `reference_rt_min` and `sample_count`. A knot
-measured in several channels lists them in matching order, separated by `;`;
-ISTD knots leave the channel columns empty, as does a composition channel's
-neutral loss. The table is a projection of the persisted knots, not another
-calculation; without a calibration it has only its header. Per-sample anchor
-RTs are not written.
+`precursor_mz`, `neutral_loss_da`, `reference_rt_min` and `sample_count`. A
+knot measured in several channels lists them in matching order, separated by
+`;`; ISTD knots leave the channel columns empty, as does a composition
+channel's neutral loss. The table projects the persisted knots; without a
+calibration it has only its header. Per-sample anchor RTs are not written.
 
-## Declared batches
+## Declared Batches
 
 A run whose sample metadata declares more than one batch ID aligns each batch
-alone, as if it were the only input: subject minting, worksets, bootstrap,
-calibration, drift, final grouping and Backfill see only that batch's samples.
-[`batch_correspondence`](../../xic_extractor/alignment/batch_correspondence.py)
-is the one step that relates the batches; it pairs finished Matrix groups and
-never changes a batch's membership. One declared batch, or no metadata, takes
-the single-batch path unchanged. There is no cross-batch Backfill.
+alone: subject minting, worksets, bootstrap, calibration, drift, final grouping
+and Backfill see only that batch's samples. Batch correspondence is the one
+step relating batches; it pairs finished Matrix groups and never changes a
+batch's membership. One declared batch, or no metadata, takes the single-batch
+path. There is no cross-batch Backfill.
 
-- **Reference batch**: the batch with the most samples; on equal sizes, the
-  batch whose latest RAW acquisition is later. Batch IDs and input order do not
+### Batch pairing
+
+- **Reference batch.** The batch with the most samples; on equal sizes, the
+  one whose latest RAW acquisition is later. Batch IDs and input order do not
   decide it.
-- **Feature**: a batch's Matrix-destination group, placed at the median of its
+- **Feature.** A batch's Matrix-destination group, placed at the median of its
   members' calibrated RT (raw apex for a sample without an estimate). Two
   features share a channel when their neutral loss tags match and their
   precursor m/z agree within the Discovery precursor tolerance both ways.
-- **Coarse prediction**: the batch's ISTD knots against the reference batch's,
-  with offsets interpolated linearly and the endpoint offset beyond them. Its
-  search half-width is `max(0.2 min, 2 × largest leave-one-out ISTD error)`.
-- **Anchors**: a feature pair unique both ways inside that window, with both
-  features meeting the ordinary anchor threshold of their own batch. Pairs
-  within 0.05 min of each other in both batches form one elution family and
-  vote once; a family containing an ISTD takes the ISTD's coordinates. Every
-  excluded candidate keeps its reason: `no_candidate`, `outside_window`,
-  `ambiguous`, `counterpart_below_threshold` or `competitor`.
-- **Batch map**: the non-reference batch is fitted as one sample by the sample
-  calibration fitter, with the same LOESS, pool-adjacent-violators, eight-position
-  floor and graded query. With fewer than two ISTDs in common the batch has no
-  map and its features stay unpaired (`unpaired_no_map`).
-- **Pairing**: a Matrix feature bound to a known ISTD pairs with the other
-  batch's feature bound to the same ISTD, by identity and without an RT
-  search; neither is a candidate for any other feature. Every other
-  feature is searched through the map. The search window follows RT: at each
-  ISTD its half-width is `max(0.2 min, 2 × that ISTD's leave-one-out error of
-  the map)`, interpolated linearly between neighboring ISTDs in the reference
-  batch's coordinate and held at the nearest ISTD's value before the first and
-  after the last. Each feature's window is taken at its own reference-batch RT,
-  so a region the ISTDs measure well keeps a narrow window and a poorly
-  measured region a wide one. A feature pairs only when the match is unique
-  both ways. More than one candidate in the
-  window is `unpaired_ambiguous` and lists the candidates; a reverse match that
-  points elsewhere lists that competitor. An unpaired feature keeps its own row.
+- **Coarse prediction.** The batch's ISTD knots against the reference batch's,
+  offsets interpolated linearly and held at the endpoint beyond them; search
+  half-width `max(0.2 min, 2 × largest leave-one-out ISTD error)`.
+- **Anchors.** A feature pair unique both ways inside that window, both
+  meeting their own batch's ordinary anchor threshold. Pairs within 0.05 min
+  in both batches form one elution family and vote once; a family containing
+  an ISTD takes its coordinates. Excluded candidates keep their reason:
+  `no_candidate`, `outside_window`, `ambiguous`,
+  `counterpart_below_threshold` or `competitor`.
+- **Batch map.** The non-reference batch is fitted as one sample by the sample
+  calibration fitter, with the same LOESS, pool-adjacent-violators,
+  eight-position floor and graded query. With fewer than two ISTDs in common it
+  has no map and its features stay unpaired (`unpaired_no_map`).
+- **Pairing.** A feature bound to a known ISTD pairs with the other batch's
+  feature bound to the same ISTD by identity, without an RT search, and
+  neither is a candidate for any other feature. Every other feature is searched
+  through the map, in a window that follows RT: at each ISTD the half-width is
+  `max(0.2 min, 2 × that ISTD's leave-one-out error of the map)`, interpolated
+  linearly between neighboring ISTDs in the reference coordinate and held at
+  the nearest ISTD's value outside them, taken at the feature's own
+  reference-batch RT. A feature pairs only when the match is unique both ways;
+  several candidates are `unpaired_ambiguous` with the candidates listed, and
+  a reverse match pointing elsewhere lists that competitor. An unpaired
+  feature keeps its own row.
 
 The multiplier 2 and the 0.2 min floor are fixed before results are read; the
 multiplier changes only on leave-one-out ISTD evidence.
 
-Limit: outside the range of its anchors the map extrapolates from the
-endpoint, and the search window does not widen with the extrapolation
-distance. Leave-one-out errors measure only between ISTDs, so drift that bends
-beyond the outermost ISTD is invisible to both the coarse window and the map.
-The method therefore needs ISTDs covering the early and late ends of the
-gradient; without them, nonlinear drift there can pair a feature with a
+Limit: outside its anchors the map extrapolates from the endpoint, and the
+window does not widen with that distance. Leave-one-out errors measure only
+between ISTDs, so drift bending beyond the outermost ISTD is invisible to both
+the coarse window and the map. The method needs ISTDs covering both ends of
+the gradient; without them, nonlinear drift there can pair a feature with a
 neighboring same-channel feature instead of its counterpart.
 
-Outputs:
+### Batch outputs
 
-- The Matrix writes a paired row once, with the reference batch's Mz and RT and
-  both batches' cells. An unpaired row of another batch is written with its RT
+- The Matrix writes a paired row once, with the reference batch's Mz and RT
+  and both batches' cells. An unpaired row of another batch has its RT
   converted through the batch map. A batch's absent samples are empty in the
   Matrix and `not_searched` in status and cells; no cell is recomputed.
 - `alignment_batch_correspondence.tsv` (`batch_correspondence.tsv` with
   `--stop-after grouping`) has one row per feature: `batch_id`, `group_id`,
   `neutral_loss_tag`, `precursor_mz`, `batch_rt_min`, `reference_rt_min`,
   `sample_count`, `known_identity_label`, `anchor` (ISTD label or `pair`),
-  `state`,
-  `partner_group_id` and `competitor_group_ids`.
+  `state`, `partner_group_id` and `competitor_group_ids`.
 - Run metadata `batch_correspondence` records each map's status, knot and
-  anchor counts, coarse ISTDs, leave-one-out errors, the coarse half-width,
-  the search window (half-width at each ISTD's reference RT), and anchors
-  and exclusion reasons per 4 min reference RT segment, with feature states and
-  paired and single-batch row counts. `rt_drift_summary` is keyed by batch.
-- The review TSV adds `batch_ids` and `batch_pairing`. Counts add up; the other
+  anchor counts, coarse ISTDs, leave-one-out errors, the coarse half-width, the
+  search window (half-width at each ISTD's reference RT), anchors and exclusion
+  reasons per 4 min reference RT segment, feature states, and paired and
+  single-batch row counts. `rt_drift_summary` is keyed by batch.
+- The review TSV adds `batch_ids` and `batch_pairing`; counts add up, and other
   judgement columns list each batch's distinct values.
-- The explanation report records a paired row as the reference batch's group,
+- The explanation report records a paired row as the reference batch's group
   joined by its partner's members and cells, with the less certain
   disposition. Initial groups, drift coefficients and empty-cell positions stay
   each batch's own; an empty cell of the other batch is inspected at the
   reference group's centre m/z.
-- The RT anchor table lists every batch's knots in that batch's own coordinate,
-  distinguished by `cohort`; knot IDs restart per batch. The persisted
-  calibration follows each sample's map with its batch map, so replay reads the
-  reference batch's coordinate.
+- The RT anchor table lists every batch's knots in that batch's own
+  coordinate, distinguished by `cohort`; knot IDs restart per batch. The
+  persisted calibration follows each sample's map with its batch map, so
+  replay reads the reference coordinate.
 
 ## Drift beyond the map
 
@@ -317,8 +295,10 @@ more, and differently: after general calibration,
 - **a, b** are one group's two coefficients; ordinary compounds have both near
   zero.
 
-[`rt_drift`](../../xic_extractor/alignment/rt_drift.py) freezes B and M once,
-after the general fit and before final grouping:
+### Freezing B and M
+
+The drift model freezes B and M once, after the general fit and before final
+grouping:
 
 - **Channels**: a channel is one CID-NL method subject (precursor m/z and
   neutral loss). When a sample has exactly one
@@ -357,6 +337,8 @@ after the general fit and before final grouping:
 - Without pooled QC, M is measured against the samples' running trend; when
   samples are injected in tissue blocks, time and tissue then mix.
 
+### Use in final grouping
+
 Final grouping uses them as follows:
 
 - A group overlapping a drift anchor's observations uses that anchor's shape;
@@ -390,3 +372,15 @@ holds two lines in some injections cannot merge with the rest of either, and an
 earlier seed can still take peaks that a later seed's fit would have joined.
 Pieces of one line more than eight injections apart, with no detected peak
 between them, stay separate rows.
+
+## Where The Code Lives
+
+| Rule | Module |
+| --- | --- |
+| Anchor observations both models read | [`rt_anchors`](../../xic_extractor/alignment/rt_anchors.py) |
+| Knots and the fit | [`sample_rt_calibration`](../../xic_extractor/alignment/sample_rt_calibration.py) |
+| Drift model | [`rt_drift`](../../xic_extractor/alignment/rt_drift.py) |
+| Production ISTD RT correspondence | [`drift_evidence`](../../xic_extractor/alignment/drift_evidence.py) |
+| Early-segment shift | [`early_segment_shift`](../../xic_extractor/alignment/early_segment_shift.py) |
+| Batch correspondence | [`batch_correspondence`](../../xic_extractor/alignment/batch_correspondence.py) |
+| Frozen map access for consumers | `SampleRtFrame` |
