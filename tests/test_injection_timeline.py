@@ -6,13 +6,13 @@ from pathlib import Path
 import pytest
 
 from tools.diagnostics import build_injection_timeline as cli
-from xic_extractor.injection_timeline import (
-    InjectionHeader,
+from xic_extractor.diagnostics.injection_timeline_review import (
     PerturbationPolicy,
-    ScheduledInjection,
-    build_injection_timeline,
     compare_sequence,
+    possibly_perturbed,
 )
+from xic_extractor.injection_timeline import InjectionHeader, build_injection_timeline
+from xic_extractor.raw_sequence import ScheduledInjection
 
 BASE = datetime(2026, 1, 1, 12)
 
@@ -41,13 +41,13 @@ def test_copies_do_not_create_extra_injections_or_negative_idle() -> None:
         ),
         replace(sample, raw_path="/batch/Pairs/sample.raw"),
     ]
-    rows = build_injection_timeline([sample, *copies, blank], PerturbationPolicy())
+    rows = build_injection_timeline([sample, *copies, blank])
     assert [r.raw_stem for r in rows] == ["blank", "sample"]
     assert [len(r.copy_paths) for r in rows] == [2, 2]
     assert rows[1].idle_min == 2
-    assert rows[1].possibly_perturbed
+    assert possibly_perturbed(rows[1], PerturbationPolicy())
     assert rows[0].idle_min is None
-    assert not rows[0].possibly_perturbed
+    assert not possibly_perturbed(rows[0], PerturbationPolicy())
     assert not any(r.renamed_after_acquisition for r in rows)
 
 
@@ -57,7 +57,7 @@ def test_raw_stem_is_the_local_filename_after_rename() -> None:
         raw_path="/batch/TumorBC2304_DNAandRNA.raw",
     )
     nested_copy = replace(renamed, raw_path="/batch/validation/copy.raw")
-    [row] = build_injection_timeline([nested_copy, renamed], PerturbationPolicy())
+    [row] = build_injection_timeline([nested_copy, renamed])
     assert row.raw_stem == "TumorBC2304_DNAandRNA"
     assert row.acquisition_stem == "TumorBC2302_DNAandRNA"
     assert row.renamed_after_acquisition
@@ -80,13 +80,12 @@ def test_recursive_discovery_preserves_cross_folder_previous_injection(
             header("sample", 79, 60),
             header("blank", 0, 15),
             header("normal", 17, 60, folder="except sample/"),
-        ],
-        PerturbationPolicy(),
+        ]
     )
     assert rows[-1].previous_raw_stem == "normal"
     assert rows[-1].previous_run_length_min == 60
     assert rows[-1].idle_min == 2
-    assert not rows[-1].possibly_perturbed
+    assert not possibly_perturbed(rows[-1], PerturbationPolicy())
 
 
 @pytest.mark.parametrize("idle,expected", [(2.0, True), (12.4, False)])
@@ -94,56 +93,47 @@ def test_long_idle_prevents_flag_for_identical_run_lengths(
     idle: float, expected: bool
 ) -> None:
     rows = build_injection_timeline(
-        [header("blank", 0, 15), header("qc", 15 + idle, 60)], PerturbationPolicy()
+        [header("blank", 0, 15), header("qc", 15 + idle, 60)]
     )
     assert rows[-1].idle_min == pytest.approx(idle)
-    assert rows[-1].possibly_perturbed is expected
+    assert possibly_perturbed(rows[-1], PerturbationPolicy()) is expected
 
 
 def test_policy_controls_short_absolute_and_relative_duration() -> None:
-    headers = [header("blank", 0, 25), header("sample", 27, 60)]
-    assert not build_injection_timeline(headers, PerturbationPolicy())[
-        -1
-    ].possibly_perturbed
-    assert build_injection_timeline(
-        headers, PerturbationPolicy(max_previous_run_min=30)
-    )[-1].possibly_perturbed
-    assert not build_injection_timeline(
-        [header("a", 0, 15), header("b", 17, 20)], PerturbationPolicy()
-    )[-1].possibly_perturbed
-    assert (
-        build_injection_timeline(
-            headers, PerturbationPolicy(max_previous_run_min=30, max_idle_min=1)
-        )[-1].possibly_perturbed
-        is False
+    sample = build_injection_timeline(
+        [header("blank", 0, 25), header("sample", 27, 60)]
+    )[-1]
+    assert not possibly_perturbed(sample, PerturbationPolicy())
+    assert possibly_perturbed(sample, PerturbationPolicy(max_previous_run_min=30))
+    similar = build_injection_timeline([header("a", 0, 15), header("b", 17, 20)])[-1]
+    assert not possibly_perturbed(similar, PerturbationPolicy())
+    assert not possibly_perturbed(
+        sample, PerturbationPolicy(max_previous_run_min=30, max_idle_min=1)
     )
 
 
 def test_clock_offsets_and_true_overlaps_are_not_clamped() -> None:
     first = replace(header("a", 0, 15), start_time_min=1)
     second = replace(header("b", 16, 60), start_time_min=2)
-    rows = build_injection_timeline([first, second], PerturbationPolicy())
+    rows = build_injection_timeline([first, second])
     assert rows[0].run_length_min == 14
     assert rows[1].acquisition_start == BASE + timedelta(minutes=18)
     assert rows[1].acquisition_end == BASE + timedelta(minutes=76)
     assert rows[1].idle_min == 3
-    overlapping = build_injection_timeline(
-        [header("a", 0, 15), header("b", 10, 60)], PerturbationPolicy()
-    )
+    overlapping = build_injection_timeline([header("a", 0, 15), header("b", 10, 60)])
     assert overlapping[1].idle_min == -5
     assert overlapping[1].timing_warning == "overlapping_acquisitions"
-    assert not overlapping[1].possibly_perturbed
+    assert not possibly_perturbed(overlapping[1], PerturbationPolicy())
 
 
 def test_identity_keeps_reinjections_and_same_time_distinct_sources() -> None:
     a = header("a", 0, 15)
     rows = build_injection_timeline(
-        [a, replace(a, creation_date=BASE + timedelta(minutes=17)), header("b", 0, 15)],
-        PerturbationPolicy(),
+        [a, replace(a, creation_date=BASE + timedelta(minutes=17)), header("b", 0, 15)]
     )
     assert len(rows) == 3
     with pytest.raises(ValueError, match="conflicting duplicate"):
-        build_injection_timeline([a, replace(a, end_time_min=20)], PerturbationPolicy())
+        build_injection_timeline([a, replace(a, end_time_min=20)])
 
 
 @pytest.mark.parametrize(
@@ -180,8 +170,7 @@ def test_sequence_preserves_segments_missing_and_ambiguous_rows() -> None:
             a,
             replace(a, creation_date=BASE + timedelta(minutes=17)),
             header("b", 34, 60),
-        ],
-        PerturbationPolicy(),
+        ]
     )
     schedule = [
         ScheduledInjection("segment.sld", i, f"D:/acquired/{name}.raw", "method")

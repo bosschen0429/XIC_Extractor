@@ -23,12 +23,13 @@ from pathlib import Path
 from time import perf_counter
 
 from xic_extractor.analysis_set import discover_raw_files
-from xic_extractor.injection_timeline import (
+from xic_extractor.diagnostics.injection_timeline_review import (
     PerturbationPolicy,
-    build_injection_timeline,
     compare_sequence,
+    possibly_perturbed,
     validate_perturbation_policy,
 )
+from xic_extractor.injection_timeline import build_injection_timeline
 from xic_extractor.raw_reader import preflight_raw_reader, read_raw_injection_header
 from xic_extractor.raw_sequence import read_sld_injections
 
@@ -106,7 +107,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Reading RAW {index}/{len(paths)}: {path.name}", flush=True)
         headers.append(read_raw_injection_header(path, args.dll_dir))
         print(f"RAW {index}/{len(paths)}: {path.name}", flush=True)
-    timeline = build_injection_timeline(headers, policy)
+    timeline = build_injection_timeline(headers)
+    flags = [possibly_perturbed(row, policy) for row in timeline]
     scheduled = tuple(
         entry for path in args.sld for entry in read_sld_injections(path, args.dll_dir)
     )
@@ -120,7 +122,10 @@ def main(argv: list[str] | None = None) -> int:
         "raw_file_count": len(paths),
         "injection_count": len(timeline),
         "duplicate_copy_count": len(paths) - len(timeline),
-        "injections": [asdict(row) for row in timeline],
+        "injections": [
+            {**asdict(row), "possibly_perturbed": flag}
+            for row, flag in zip(timeline, flags, strict=True)
+        ],
         "sequence_comparisons": [asdict(row) for row in comparisons],
         "elapsed_seconds": perf_counter() - started,
     }
@@ -165,8 +170,8 @@ def main(argv: list[str] | None = None) -> int:
             delimiter="\t",
         )
         writer.writeheader()
-        for row in timeline:
-            record = asdict(row)
+        for row, flag in zip(timeline, flags, strict=True):
+            record = {**asdict(row), "possibly_perturbed": flag}
             writer.writerow(
                 {
                     **{key: record[key] for key in columns},
@@ -181,7 +186,7 @@ def main(argv: list[str] | None = None) -> int:
                 "output": str(args.output),
                 "injections": len(timeline),
                 "duplicates": len(paths) - len(timeline),
-                "flagged": sum(r.possibly_perturbed for r in timeline),
+                "flagged": sum(flags),
                 "elapsed_seconds": payload["elapsed_seconds"],
             }
         )

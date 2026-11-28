@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import math
 from collections.abc import Callable, Container, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -185,25 +184,6 @@ class InjectionHeader:
 
 
 @dataclass(frozen=True)
-class PerturbationPolicy:
-    max_previous_run_min: float = 20.0
-    max_previous_run_fraction: float = 0.5
-    max_idle_min: float = 5.0
-
-
-def validate_perturbation_policy(model: PerturbationPolicy) -> None:
-    values = (
-        model.max_previous_run_min,
-        model.max_previous_run_fraction,
-        model.max_idle_min,
-    )
-    if not all(math.isfinite(v) and v >= 0 for v in values):
-        raise ValueError("perturbation thresholds must be finite and nonnegative")
-    if not 0 < model.max_previous_run_fraction < 1:
-        raise ValueError("max_previous_run_fraction must be between 0 and 1")
-
-
-@dataclass(frozen=True)
 class Injection:
     injection_order: int
     raw_stem: str
@@ -219,7 +199,6 @@ class Injection:
     previous_run_length_min: float | None
     idle_min: float | None
     previous_instrument_method: str | None
-    possibly_perturbed: bool
     timing_warning: str | None
 
     @property
@@ -252,7 +231,6 @@ def acquisition_key(source: str) -> str:
 
 def build_injection_timeline(
     headers: Sequence[InjectionHeader],
-    policy: PerturbationPolicy | None = None,
 ) -> tuple[Injection, ...]:
     """Order actual injections across folders; preserve copies and overlap evidence.
 
@@ -286,15 +264,6 @@ def build_injection_timeline(
             if previous
             else None
         )
-        flagged = bool(
-            policy
-            and previous
-            and idle is not None
-            and 0 <= idle <= policy.max_idle_min
-            and previous.run_length_min <= policy.max_previous_run_min
-            and previous.run_length_min
-            <= header.run_length_min * policy.max_previous_run_fraction
-        )
         copy_paths = tuple(sorted({h.raw_path for h in copies}))
         acquisition_stem = PureWindowsPath(header.acquisition_source).stem
         raw_stem = local_raw_stem(copy_paths, acquisition_stem)
@@ -318,55 +287,9 @@ def build_injection_timeline(
                 previous_instrument_method=previous.header.instrument_method
                 if previous
                 else None,
-                possibly_perturbed=flagged,
                 timing_warning="overlapping_acquisitions"
                 if idle is not None and idle < 0
                 else None,
             )
         )
     return tuple(rows)
-
-
-@dataclass(frozen=True)
-class ScheduledInjection:
-    sequence_path: str
-    row_number: int
-    acquisition_source: str
-    instrument_method: str
-
-
-@dataclass(frozen=True)
-class SequenceComparison:
-    scheduled: ScheduledInjection
-    status: str
-    injection_orders: tuple[int, ...]
-
-
-def compare_sequence(
-    scheduled: Sequence[ScheduledInjection],
-    timeline: Sequence[Injection],
-) -> tuple[SequenceComparison, ...]:
-    """Compare exact vendor filenames; ambiguous repeat acquisitions stay visible.
-
-    Sequence segments remain separate provenance records and never determine
-    chronology. No fuzzy basename matching across acquisition directories.
-    """
-    by_source: dict[str, list[int]] = {}
-    for row in timeline:
-        by_source.setdefault(acquisition_key(row.header.acquisition_source), []).append(
-            row.injection_order
-        )
-    comparisons = []
-    for entry in scheduled:
-        orders = tuple(by_source.get(acquisition_key(entry.acquisition_source), ()))
-        status = (
-            "unconfigured"
-            if not entry.acquisition_source
-            else "missing_raw"
-            if not orders
-            else "matched"
-            if len(orders) == 1
-            else "ambiguous"
-        )
-        comparisons.append(SequenceComparison(entry, status, orders))
-    return tuple(comparisons)
