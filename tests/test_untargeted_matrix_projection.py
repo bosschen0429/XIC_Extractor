@@ -62,6 +62,7 @@ def test_completed_values_project_to_exact_group_sample_positions(
                 assert integration is None
             else:
                 assert decision.variant == "numeric"
+                assert integration is not None
                 assert integration is evidence.value_peaks[0].integration
                 numeric_by_sample[subject.canonical_sample.raw_stem] = decision.value
     if group_mode != "single":
