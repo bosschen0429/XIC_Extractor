@@ -13,7 +13,7 @@ from datetime import datetime
 from pathlib import Path
 
 from xic_extractor.acquisition.raw_paths import existing_raw_paths
-from xic_extractor.discovery.csv_reader import DiscoveryBatchInput
+from xic_extractor.discovery.store import DiscoveryBatchInput
 from xic_extractor.raw_reader import read_raw_injection_header
 from xic_extractor.sample_metadata import SampleMetadata
 
@@ -35,10 +35,7 @@ def split_discovery_batch(
             replace(
                 batch,
                 sample_order=tuple(stems),
-                peak_csvs={stem: batch.peak_csvs[stem] for stem in stems},
-                raw_files={stem: batch.raw_files[stem] for stem in stems},
-                event_csvs={stem: batch.event_csvs[stem] for stem in stems},
-                peak_receipts={stem: batch.peak_receipts[stem] for stem in stems},
+                samples={stem: batch.samples[stem] for stem in stems},
             ),
         )
         for batch_id, stems in sorted(stems_by_batch.items())

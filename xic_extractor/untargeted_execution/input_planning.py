@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from pathlib import Path
 
 from xic_extractor.alignment.cid_nl_grouping import alignment_subject_worksets
@@ -222,22 +222,11 @@ def prepare_indexed_untargeted_plan(
     feature_ids = source.feature_candidate_ids()
     precursor_by_id = {cid: source.locations[cid].peak_mz for cid in feature_ids}
 
-    def locate(candidate: DiscoveryPeak) -> DiscoveryPeak:
-        located = replace(
-            candidate,
-            located_events=source.located_events(
-                candidate, neutral_loss_by_tag=settings.neutral_loss_by_tag
-            ),
-        )
-        representative_event_rt(located)
-        return located
-
     def load_partition(candidate_ids: tuple[str, ...]):
-        candidates = source.load_candidates(candidate_ids)
-        located = {
-            stem: tuple(locate(candidate) for candidate in values)
-            for stem, values in candidates.items()
-        }
+        located = source.load_candidates(candidate_ids, located_events=True)
+        for values in located.values():
+            for candidate in values:
+                representative_event_rt(candidate)
         return located, {stem: () for stem in source}
 
     ordered = _subject_candidates(
@@ -279,7 +268,6 @@ def prepare_indexed_untargeted_plan(
         metadata_by_stem={sample.raw_stem: sample for sample in sample_metadata},
         source_expectations=expectations,
         peak_map={stem: () for stem in source},
-        receipt_map=source.batch.peak_receipts,
         signal_processing_profile=profile,
         injections=injections,
     )

@@ -14,7 +14,7 @@ def order_discovery_peak_bindings(
     *,
     settings: DiscoverySettings,
 ) -> tuple[DiscoveryPeakPhysicalBinding, ...]:
-    """Order peaks for the peak table and physical sidecar, numbering each one.
+    """Order peaks for publication, numbering each one.
 
     Peaks a reviewer should see first lead: two or more attached events at the
     event RT on the peak, then the rest, then blank background;

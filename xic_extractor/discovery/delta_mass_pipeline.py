@@ -3,51 +3,36 @@
 from __future__ import annotations
 
 import math
-import time
 from collections.abc import Callable, Sequence
-from dataclasses import asdict, dataclass
+from dataclasses import asdict
 from pathlib import Path
 
 import numpy as np
 
-from xic_extractor.configuration.mass_recalibration import (
-    serialize_mass_recalibration_result,
-)
-from xic_extractor.discovery.delta_mass_csv import (
-    DeltaMassDiscoveryOutputs,
-    write_delta_mass_outputs,
-)
 from xic_extractor.discovery.delta_mass_patterns import (
     DeltaMassCandidate,
     complete_delta_mass_candidates,
     prepare_delta_mass_candidates,
 )
-from xic_extractor.discovery.delta_mass_strategy import DeltaMassDiscoveryStrategy
-from xic_extractor.discovery.detected_features import (
-    optional_row_finite_float,
-    required_row_text,
-    write_detected_features_csv,
+from xic_extractor.discovery.delta_mass_publication import (
+    DeltaMassDiscoveryOutputs,
+    write_delta_mass_outputs,
 )
+from xic_extractor.discovery.delta_mass_strategy import DeltaMassDiscoveryStrategy
 from xic_extractor.discovery.local_ms1_features import (
     LocalMs1FeatureSettings,
     build_local_ms1_feature_table,
 )
+from xic_extractor.discovery.models import DiscoveryPeak
 from xic_extractor.discovery.sample_process_execution import (
     raise_if_discovery_cancelled,
 )
+from xic_extractor.discovery.store import DiscoverySample, open_discovery, read_peaks
 from xic_extractor.mass_accuracy import absolute_ppm_error
 from xic_extractor.raw_reader import open_raw
-from xic_extractor.tabular_io import read_delimited_rows
 
 _ALLOWED_CID_NL_TAG = "DNA_dR"
 _JOINABLE_STATUSES = frozenset({"admitted"})
-_CID_NL_REQUIRED_COLUMNS = (
-    "peak_id",
-    "sample_stem",
-    "matched_tag_names",
-    "status",
-    "peak_mz",
-)
 _CID_NL_MZ_TOLERANCE_PPM = 20.0
 _CID_NL_RT_TOLERANCE_SEC = 30.0
 
@@ -73,8 +58,7 @@ def run_delta_mass_discovery(
     dll_dir: Path,
     output_dir: Path,
     strategy: DeltaMassDiscoveryStrategy,
-    cid_nl_peak_tables: Sequence[Path] = (),
-    cid_nl_export_csv: Path | None = None,
+    cid_nl_store: Path | None = None,
     raw_paths: Sequence[Path] | None = None,
     should_cancel: Callable[[], bool] | None = None,
     progress_callback: Callable[[int, int, str], None] | None = None,
@@ -85,8 +69,8 @@ def run_delta_mass_discovery(
     every RAW in the folder is analyzed. A cancellation stops before the next
     RAW and before any output is written.
 
-    ``cid_nl_peak_tables`` is the only CID-NL calculation source. The caller
-    supplies ``cid_nl_export_csv`` separately for publication; it is never read.
+    A composite method joins the dR peaks of ``cid_nl_store``, the CID-NL
+    Discovery of the same RAW.
     """
     raw_paths = sorted(
         raw_paths
@@ -98,18 +82,19 @@ def run_delta_mass_discovery(
     if not raw_paths:
         raise ValueError(f"no RAW files in {raw_dir}")
     if strategy.cid_nl_composite:
-        if not cid_nl_peak_tables:
-            raise ValueError("composite preset requires --cid-nl-peaks-csv")
-        cid_rows = _load_cid_nl_peak_rows(cid_nl_peak_tables)
+        if cid_nl_store is None:
+            raise ValueError("composite preset requires --cid-nl-discovery")
+        with open_discovery(cid_nl_store) as db:
+            cid_rows = tuple(peak for _row_id, peak in read_peaks(db))
     else:
         cid_rows = ()
     candidates: list[DeltaMassCandidate] = []
-    samples = []
+    samples: list[DiscoverySample] = []
+    feature_bounds: dict[tuple[str, str], tuple[float, float | None, float | None]] = {}
     for done, raw_path in enumerate(raw_paths):
         raise_if_discovery_cancelled(should_cancel)
         if progress_callback is not None:
             progress_callback(done, len(raw_paths), raw_path.stem)
-        started = time.perf_counter()
         with open_raw(
             raw_path, dll_dir=dll_dir, mass_recalibration=strategy.mass_recalibration
         ) as reader:
@@ -122,89 +107,53 @@ def run_delta_mass_discovery(
                 else 0.0
             )
             detector = detector_settings_for_interval(strategy, interval)
-            detector_started = time.perf_counter()
             features = build_local_ms1_feature_table(
                 index,
                 sample_stem=raw_path.stem,
                 settings=detector,
             )
-            detector_seconds = time.perf_counter() - detector_started
-            sample_dir = output_dir / raw_path.stem
-            sample_dir.mkdir(parents=True, exist_ok=True)
-            write_detected_features_csv(sample_dir / "detected_features.csv", features)
+            feature_bounds.update(
+                ((raw_path.stem, f.feature_id), (f.mz, f.rt_start_min, f.rt_end_min))
+                for f in features
+            )
             prepared = prepare_delta_mass_candidates(
                 features,
                 strategy.settings,
                 scan_interval_sec=interval,
             )
-            acquisition_started = time.perf_counter()
             traces = (
                 reader.extract_xic_many(prepared.requests) if prepared.requests else ()
             )
-            acquisition_seconds = time.perf_counter() - acquisition_started
             completed = complete_delta_mass_candidates(
                 prepared, traces, strategy.settings
             )
         if strategy.cid_nl_composite:
             completed = _join_cid_nl(completed, cid_rows)
         candidates.extend(completed)
-        counts = dict(prepared.counts)
-        for layer in (3, 4, 5):
-            counts[f"layer_{layer}_rejected"] = sum(
-                c.rejected_at_layer == layer for c in prepared.candidates
-            )
-        for layer in (3, 4, 5):
-            counts[f"layer_{layer}_passed"] = sum(
-                c.rejected_at_layer is None or c.rejected_at_layer > layer
-                for c in prepared.candidates
-            )
-        samples.append(
-            {
-                "sample_stem": raw_path.stem,
-                "feature_count": len(features),
-                **counts,
-                "candidate_count": sum(c.status == "candidate" for c in completed),
-                "layer_4_xic_requests": len(prepared.requests),
-                "layer_4_seconds": acquisition_seconds,
-                "median_ms1_scan_interval_sec": interval,
-                "mass_recalibration": serialize_mass_recalibration_result(mass_result),
-                "gaussian_window_points": detector.gaussian_window_points,
-                "detector_seconds": detector_seconds,
-                "total_seconds": time.perf_counter() - started,
-            }
-        )
-    sidecar = {
-        "preset": strategy.label,
-        "method": {
-            **asdict(strategy.settings),
-            "mass_recalibration": strategy.mass_recalibration.value,
-            "height_ratio_policy": "evidence_only",
-            "detector": {
-                "smoothing_window_sec": strategy.smoothing_window_sec,
-                "feature_link_ppm": strategy.settings.mz_tolerance_ppm,
-                "spectrum_mode": "vendor_centroid",
-            },
+        samples.append(DiscoverySample(raw_path.stem, raw_path, None, mass_result))
+    method = {
+        **asdict(strategy.settings),
+        "mass_recalibration": strategy.mass_recalibration.value,
+        "height_ratio_policy": "evidence_only",
+        "detector": {
+            "smoothing_window_sec": strategy.smoothing_window_sec,
+            "feature_link_ppm": strategy.settings.mz_tolerance_ppm,
+            "spectrum_mode": "vendor_centroid",
         },
-        "inputs": {
-            "raw_dir": str(raw_dir),
-            "raw_files": [p.name for p in raw_paths],
-            "cid_nl_peaks_csv": None,
-        },
-        "samples": samples,
-        "status": "diagnostic_only",
     }
     raise_if_discovery_cancelled(should_cancel)
     return write_delta_mass_outputs(
         output_dir,
-        tuple(candidates),
-        sidecar,
-        strategy.settings,
-        cid_nl_export_csv=cid_nl_export_csv,
+        method_label=strategy.label,
+        method=method,
+        samples=samples,
+        candidates=candidates,
+        features=feature_bounds,
     )
 
 
 def _join_cid_nl(
-    candidates: tuple[DeltaMassCandidate, ...], rows: tuple[_CidNlPeakRow, ...]
+    candidates: tuple[DeltaMassCandidate, ...], rows: tuple[DiscoveryPeak, ...]
 ) -> tuple[DeltaMassCandidate, ...]:
     """Join detector-local bases by the existing bounded m/z/RT predicate.
 
@@ -213,7 +162,7 @@ def _join_cid_nl(
     with its status), an admitted dR peak of the same ion outside the RT
     window (``outside_rt_tolerance``), otherwise ``no_cid_nl_peak``.
     """
-    dr_rows_by_sample: dict[str, list[_CidNlPeakRow]] = {}
+    dr_rows_by_sample: dict[str, list[DiscoveryPeak]] = {}
     for row in rows:
         if _ALLOWED_CID_NL_TAG in row.matched_tag_names:
             dr_rows_by_sample.setdefault(row.sample_stem, []).append(row)
@@ -249,138 +198,34 @@ def _join_cid_nl(
     return tuple(joined)
 
 
-@dataclass(frozen=True)
-class _CidNlPeakRow:
-    """The fields of one ``discovery_peaks.csv`` row the dR base join reads.
-
-    ``peak_id`` is required because composite output exposes the matched
-    CID-NL peak identity. ``peak_mz`` is the peak's ion mass, the one Alignment
-    extracts. The representative event's precursor is one MS2 isolation and can
-    sit tens of ppm away on a dense peak.
-    """
-
-    sample_stem: str
-    peak_id: str
-    matched_tag_names: tuple[str, ...]
-    status: str
-    peak_mz: float | None
-    ms1_apex_rt: float | None
-    evidence_score: float | None
-
-
-def _load_cid_nl_peak_rows(paths: Sequence[Path]) -> tuple[_CidNlPeakRow, ...]:
-    """Load the measured CID-NL peaks a delta-mass base may join.
-
-    Every row must carry ``peak_id``, ``sample_stem`` and ``status``.
-    Rows of every status load; only admitted peaks join, and the others only
-    explain why a base did not match. A measured peak without an attached NL
-    event does not supply dR support.
-    """
-
-    rows = (
-        (path, row_index, row)
-        for path in paths
-        for row_index, row in enumerate(
-            read_delimited_rows(
-                path,
-                required_columns=_CID_NL_REQUIRED_COLUMNS,
-                delimiter=",",
-                encoding="utf-8",
-            )
-        )
-    )
-    parsed: list[_CidNlPeakRow] = []
-    seen: set[str] = set()
-    for path, row_index, row in rows:
-        label = f"{path} row {row_index}"
-        peak_id = required_row_text(row.get("peak_id"), "peak_id", label)
-        sample_stem = required_row_text(row.get("sample_stem"), "sample_stem", label)
-        for field, identity in (("peak_id", peak_id), ("sample_stem", sample_stem)):
-            _reject_ambiguous_formula_escaped_identity(
-                identity, field=field, row_label=label
-            )
-        status = required_row_text(row.get("status"), "status", label)
-        if peak_id in seen:
-            raise ValueError(f"{label}: duplicate CID-NL peak_id values: {peak_id}")
-        seen.add(peak_id)
-        parsed.append(
-            _CidNlPeakRow(
-                sample_stem=sample_stem,
-                peak_id=peak_id,
-                matched_tag_names=tuple(
-                    tag
-                    for tag in (row.get("matched_tag_names") or "").split(";")
-                    if tag
-                ),
-                status=status,
-                peak_mz=optional_row_finite_float(row.get("peak_mz"), "peak_mz", label),
-                ms1_apex_rt=optional_row_finite_float(
-                    row.get("ms1_apex_rt"), "ms1_apex_rt", label
-                ),
-                evidence_score=optional_row_finite_float(
-                    row.get("evidence_score"), "evidence_score", label
-                ),
-            )
-        )
-    return tuple(parsed)
-
-
-def _reject_ambiguous_formula_escaped_identity(
-    value: str,
-    *,
-    field: str,
-    row_label: str,
-) -> None:
-    """Fail closed when an identity may have been Excel-formula escaped.
-
-    The legacy Discovery CSV writer prepends an apostrophe to strings beginning
-    with ``=``, ``+``, ``-``, or ``@``. That serialized form is indistinguishable
-    from an original identifier that genuinely began with the apostrophe, so a
-    composite identity join must not silently unescape or compare it literally.
-    """
-
-    if len(value) >= 2 and value[0] == "'" and value[1] in "=+-@":
-        raise ValueError(
-            f"{row_label} has ambiguous Excel formula-escaped machine identity "
-            f"in {field!r}: {value!r}"
-        )
-
-
 def _ppm_error(candidate: DeltaMassCandidate, peak_mz: float) -> float:
     return absolute_ppm_error(peak_mz, candidate.base_mz)
 
 
-def _mz_matches(candidate: DeltaMassCandidate, row: _CidNlPeakRow) -> bool:
-    return (
-        row.peak_mz is not None
-        and _ppm_error(candidate, row.peak_mz) <= _CID_NL_MZ_TOLERANCE_PPM
-    )
+def _mz_matches(candidate: DeltaMassCandidate, row: DiscoveryPeak) -> bool:
+    return _ppm_error(candidate, row.peak_mz) <= _CID_NL_MZ_TOLERANCE_PPM
 
 
-def _fallback_matches(candidate: DeltaMassCandidate, row: _CidNlPeakRow) -> bool:
-    if row.ms1_apex_rt is None or not _mz_matches(candidate, row):
+def _fallback_matches(candidate: DeltaMassCandidate, row: DiscoveryPeak) -> bool:
+    if not _mz_matches(candidate, row):
         return False
     rt_delta_sec = abs(row.ms1_apex_rt - candidate.base_rt_apex_min) * 60.0
     return rt_delta_sec <= _CID_NL_RT_TOLERANCE_SEC
 
 
 def _best_fallback_match(
-    candidate: DeltaMassCandidate, matches: list[_CidNlPeakRow]
-) -> _CidNlPeakRow:
+    candidate: DeltaMassCandidate, matches: list[DiscoveryPeak]
+) -> DiscoveryPeak:
     """Tie-break for multiple m/z/RT fallback matches (plan lines 836-838):
     smallest absolute RT delta, then smallest absolute m/z ppm, then highest
     ``evidence_score``."""
 
-    def _key(row: _CidNlPeakRow) -> tuple[float, float, float, str]:
-        assert row.ms1_apex_rt is not None
-        assert row.peak_mz is not None
+    def _key(row: DiscoveryPeak) -> tuple[float, float, float, str]:
         rt_delta_sec = abs(row.ms1_apex_rt - candidate.base_rt_apex_min) * 60.0
-        ppm_error = _ppm_error(candidate, row.peak_mz)
-        evidence_score = row.evidence_score if row.evidence_score is not None else 0.0
         return (
             rt_delta_sec,
-            ppm_error,
-            -evidence_score,
+            _ppm_error(candidate, row.peak_mz),
+            -row.evidence_score,
             row.peak_id,
         )
 

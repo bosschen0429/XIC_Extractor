@@ -1,12 +1,13 @@
 """Locate acquisition files for the declared sample set."""
 
+from collections.abc import Mapping
 from pathlib import Path
 
 
 def existing_raw_paths(
     *,
     sample_order: tuple[str, ...],
-    raw_files: dict[str, Path | None],
+    raw_files: Mapping[str, Path | None],
     raw_dir: Path,
 ) -> dict[str, Path]:
     paths: dict[str, Path] = {}

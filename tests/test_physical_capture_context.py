@@ -6,7 +6,6 @@ import numpy as np
 import pytest
 
 from tests.cid_nl_raw_fixture import TEST_PROFILE
-from tests.discovery_csv_fixtures import located_scan_ids
 from tests.discovery_ms1_capture_fixtures import (
     _BoundedRaw,
     _FakeRaw,
@@ -14,6 +13,7 @@ from tests.discovery_ms1_capture_fixtures import (
     _seed,
     _settings,
 )
+from tests.discovery_peak_fixtures import located_scan_ids
 from xic_extractor.acquisition import physical_capture
 from xic_extractor.acquisition.physical_capture import (
     PhysicalPeakCapture,

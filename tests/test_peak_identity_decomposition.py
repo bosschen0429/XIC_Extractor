@@ -14,7 +14,7 @@ import numpy as np
 import pytest
 
 from tests.cid_nl_raw_fixture import TEST_PROFILE, fake_acquisition_source
-from tests.discovery_csv_fixtures import representative_event
+from tests.discovery_peak_fixtures import representative_event
 from xic_extractor.configuration.cid_nl_profile import NeutralLossProfile
 from xic_extractor.discovery.ion_grouping import build_discovery_ions
 from xic_extractor.discovery.models import DiscoveryEvent, DiscoveryPeak
@@ -300,5 +300,4 @@ def _discovery_ms1_peak_probe(
     return (
         representative_event(candidate).precursor_mz,
         candidate.ms1_apex_rt,
-        candidate.query_rt_min,
     )

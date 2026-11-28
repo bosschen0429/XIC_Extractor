@@ -18,10 +18,12 @@ from xic_extractor.diagnostics.delta_mass_review_data import (
     decode_delta_mass_review,
     write_delta_mass_nl_summary,
 )
-from xic_extractor.discovery.detected_features import DetectedFeature
 from xic_extractor.discovery.ms2_events import discovery_events_from_scan
 from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata, Ms2Scan, Ms2ScanEvent
+from xic_extractor.peak_detection.cid_nl_method_assessment import (
+    CidNlCandidateInterval,
+)
 from xic_extractor.precursor_evidence import Ms1PrecursorObservation
 from xic_extractor.xic_models import XICTrace
 
@@ -32,9 +34,7 @@ def test_peak_nl_support_uses_shared_matching_and_retains_competing_peak_ambigui
     )
     c = review_fixture().candidates[0]
     position = replace(c.positions[0], feature_id="peak", peak_rt_window=(1.8, 2.2))
-    feature = DetectedFeature(
-        "sample-a", "peak", None, 100, 2, 1.8, 2.2, 100, None, "OK", None, "external"
-    )
+    feature = CidNlCandidateInterval(100, 1.8, 2.2)
     scans = (
         Ms2Scan(11, 2.0, 100, np.array([80.0, 55.0]), np.array([20.0, 100.0]), 100.0),
         Ms2Scan(22, 2.5, 100, np.array([80.0]), np.array([100.0]), 100.0),
@@ -60,7 +60,7 @@ def test_peak_nl_support_uses_shared_matching_and_retains_competing_peak_ambigui
         )
     )
     result = assess_review_neutral_losses(
-        candidate, features=(feature,), seeds=seeds, settings=settings
+        candidate, features={"peak": feature}, seeds=seeds, settings=settings
     )[0]
     assert result.status == "supported"
     assert result.related_scan_numbers == (11,)
@@ -68,9 +68,12 @@ def test_peak_nl_support_uses_shared_matching_and_retains_competing_peak_ambigui
         (m.scan_number, m.product_mz, m.observed_loss_da, m.product_base_ratio)
         for m in result.matches
     ] == [(11, 80.0, 20.0, 0.2)]
-    overlap = replace(feature, feature_id="other", rt_start_min=1.9, rt_end_min=2.3)
+    overlap = CidNlCandidateInterval(100, 1.9, 2.3)
     ambiguous = assess_review_neutral_losses(
-        candidate, features=(feature, overlap), seeds=seeds, settings=settings
+        candidate,
+        features={"peak": feature, "other": overlap},
+        seeds=seeds,
+        settings=settings,
     )[0]
     assert ambiguous.status == "ambiguous"
     assert ambiguous.matches[0].status == "ambiguous"
@@ -82,9 +85,7 @@ def test_inferred_loss_without_parent_ms1_is_not_self_confirming_support():
     )
     c = review_fixture().candidates[0]
     position = replace(c.positions[0], feature_id="peak", peak_rt_window=(1.8, 2.2))
-    feature = DetectedFeature(
-        "sample-a", "peak", None, 100, 2, 1.8, 2.2, 100, None, "OK", None, "external"
-    )
+    feature = CidNlCandidateInterval(100, 1.8, 2.2)
     meta = Ms2PrecursorMetadata(
         isolation_width_da=1.6, isolation_offset_da=0, master_scan_number=9
     )
@@ -98,7 +99,7 @@ def test_inferred_loss_without_parent_ms1_is_not_self_confirming_support():
         scan, raw_file=Path("sample-a.raw"), settings=settings
     )
     result = assess_review_neutral_losses(
-        candidate, features=(feature,), seeds=seeds, settings=settings
+        candidate, features={"peak": feature}, seeds=seeds, settings=settings
     )[0]
     assert result.status == "unresolved"
     assert result.matches[0].status == "parent_ms1_unavailable"
@@ -110,11 +111,9 @@ def test_missing_peak_and_no_ms2_are_not_negative_nl_findings():
         neutral_loss_profiles=(NeutralLossProfile("test", 20.0),)
     )
     c = review_fixture().candidates[1]
-    result = assess_review_neutral_losses(c, features=(), seeds=(), settings=settings)
+    result = assess_review_neutral_losses(c, features={}, seeds=(), settings=settings)
     assert {p.status for p in result} == {"no_peak_bounds"}
-    feature = DetectedFeature(
-        "sample-b", "peak", None, 200, 2, 1.8, 2.2, 100, None, "OK", None, "external"
-    )
+    feature = CidNlCandidateInterval(200, 1.8, 2.2)
     c = replace(
         c,
         positions=(
@@ -122,14 +121,14 @@ def test_missing_peak_and_no_ms2_are_not_negative_nl_findings():
         ),
     )
     result = assess_review_neutral_losses(
-        c, features=(feature,), seeds=(), settings=settings
+        c, features={"peak": feature}, seeds=(), settings=settings
     )
     assert result[0].status == "no_ms2"
     partial = replace(
         c, ms2_read_errors=(ReviewReadError(99, (1.8, 2.2), "read failure"),)
     )
     result = assess_review_neutral_losses(
-        partial, features=(feature,), seeds=(), settings=settings
+        partial, features={"peak": feature}, seeds=(), settings=settings
     )
     assert result[0].status == "incomplete"
 

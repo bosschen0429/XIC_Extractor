@@ -1,7 +1,6 @@
 """Complete method routes with production stage owners and synthetic RAW I/O."""
 
 import csv
-import json
 from dataclasses import asdict, replace
 from pathlib import Path
 
@@ -17,6 +16,7 @@ from xic_extractor.applications.untargeted.full_analysis import (
 )
 from xic_extractor.configuration.execution_profile import ExecutionProfile
 from xic_extractor.discovery.delta_mass_pipeline import run_delta_mass_discovery
+from xic_extractor.discovery.store import DISCOVERY_ARTIFACT_NAME, read_discovery_batch
 from xic_extractor.presets import load_preset
 from xic_extractor.presets.delta_mass import resolve_delta_mass_discovery
 from xic_extractor.sample_metadata import SampleMetadata, load_sample_metadata
@@ -59,7 +59,7 @@ def test_complete_cid_nl_matches_workbench_intake_with_sample_values(
     ] == [("first", "qc", "control"), ("second", "sample", "case")]
     assert {
         "sample_metadata.tsv",
-        "discovery_batch_index.csv",
+        "discovery.sqlite",
         "alignment_matrix.tsv",
         "alignment_explanation.sqlite",
     } <= {Path(path).name for path in direct["published_paths"]}
@@ -111,78 +111,55 @@ def test_complete_diagnostic_routes_keep_candidates_sample_bound_without_matrix(
         should_cancel=lambda: False,
     )
     result = run.execute()
-    sidecar = json.loads((run.output_dir / "delta_mass_sidecar.json").read_text())
-    export = (
-        run.output_dir / "cid_nl_dR" / "discovery_peaks.csv"
-        if preset.endswith("cid_nl_dr")
-        else None
-    )
-    assert sidecar["inputs"] == {
-        "raw_dir": str(tmp_path),
-        "raw_files": ["first.raw", "second.raw"],
-        "cid_nl_peaks_csv": str(export) if export else None,
-    }
+    batch = read_discovery_batch(run.output_dir / DISCOVERY_ARTIFACT_NAME)
+    assert [batch.samples[s].raw_file.name for s in batch.sample_order] == [
+        "first.raw",
+        "second.raw",
+    ]
     with Path(result["delta_mass"]["candidates_csv"]).open(
-        encoding="utf-8", newline=""
+        encoding="utf-8-sig", newline=""
     ) as handle:
         candidates = list(csv.DictReader(handle))
-    supported = [r for r in candidates if r["status"] == "candidate"]
-    assert [(r["sample_stem"], float(r["base_mz"])) for r in supported] == [
+    assert [(r["sample"], float(r["mz"])) for r in candidates] == [
         ("first", 300),
         ("second", 600),
     ]
-    assert float(supported[1]["base_height"]) == pytest.approx(
-        2 * float(supported[0]["base_height"]), rel=1e-5
+    assert float(candidates[1]["height"]) == pytest.approx(
+        2 * float(candidates[0]["height"]), rel=1e-5
     )
     if preset.endswith("cid_nl_dr"):
-        assert [r["cid_nl_base_status"] for r in supported] == ["matched", "matched"]
         assert all(
-            r["cid_nl_base_peak_id"].startswith(r["sample_stem"] + "@")
-            for r in supported
+            r["cid_nl_peak_id"].startswith(r["sample"] + "@") for r in candidates
         )
-        assert Path(result["delta_mass"]["cid_nl_peaks_csv"]).is_file()
-        merged = Path(result["delta_mass"]["cid_nl_peaks_csv"])
-        merged.unlink()
         replay = run_delta_mass_discovery(
             raw_dir=tmp_path,
             dll_dir=tmp_path,
-            output_dir=tmp_path / "table-input",
+            output_dir=tmp_path / "replay",
             strategy=resolve_delta_mass_discovery(preset),
-            cid_nl_export_csv=merged,
-            cid_nl_peak_tables=tuple(
-                run.output_dir / "cid_nl_dR" / stem / "discovery_peaks.csv"
-                for stem in ("first", "second")
-            ),
+            cid_nl_store=run.output_dir / "cid_nl_dR" / DISCOVERY_ARTIFACT_NAME,
         )
-        assert not merged.exists()
         assert (
             replay.candidates_csv.read_bytes()
             == Path(result["delta_mass"]["candidates_csv"]).read_bytes()
         )
+    else:
+        assert {r["cid_nl_peak_id"] for r in candidates} == {""}
     assert result["modules"] == {"delta_mass": "completed"}
     assert result["matrix_tsv"] is None
     assert not list(run.output_dir.glob("alignment*"))
 
 
-@pytest.mark.parametrize("invalid", ["duplicate", "missing_column", "nonfinite"])
-def test_composite_validates_across_sample_tables_before_raw(tmp_path, invalid):
-    first, second = tmp_path / "first.csv", tmp_path / "second.csv"
-    header = "peak_id,sample_stem,matched_tag_names,status,peak_mz,ms1_apex_rt\n"
-    first.write_text(header + "id-first,first,DNA_dR,admitted,300,1\n")
-    payload = {
-        "duplicate": header + "id-first,second,DNA_dR,admitted,600,1\n",
-        "missing_column": "peak_id,sample_stem\nid-second,second\n",
-        "nonfinite": header + "id-second,second,DNA_dR,admitted,nan,1\n",
-    }[invalid]
-    second.write_text(payload)
+def test_composite_rejects_a_dr_input_that_is_not_discovery_before_raw(tmp_path):
+    stale = tmp_path / "discovery_peaks.csv"
+    stale.write_text("peak_id,sample_stem\n")
     (tmp_path / "sample.raw").touch()
-    with pytest.raises(ValueError, match=str(second).replace("\\", "\\\\")):
+    with pytest.raises(ValueError, match="not a current Discovery output"):
         run_delta_mass_discovery(
             raw_dir=tmp_path,
             dll_dir=tmp_path,
             output_dir=tmp_path / "result",
             strategy=resolve_delta_mass_discovery("pt_pattern_cid_nl_dr"),
-            cid_nl_peak_tables=(first, second),
+            cid_nl_store=stale,
         )
     assert not (tmp_path / "result").exists()
 
@@ -217,8 +194,7 @@ def test_cancel_preserves_previous_matrix(tmp_path, monkeypatch, stage):
     assert previous.read_bytes() == b"previous completed matrix"
     assert previous not in [path for _label, path in run.available_outputs]
     assert any(
-        path.name == "discovery_batch_index.csv"
-        for _label, path in run.available_outputs
+        path.name == DISCOVERY_ARTIFACT_NAME for _label, path in run.available_outputs
     ) == (stage == "after_discovery")
 
 
@@ -263,5 +239,6 @@ def test_diagnostic_interruption_does_not_publish_completion(
     assert not (run.output_dir / "delta_mass_candidates.csv").exists()
     assert not list(run.output_dir.glob("alignment*"))
     assert any(
-        path.name == "discovery_peaks.csv" for _label, path in run.available_outputs
+        path == run.output_dir / "cid_nl_dR" / DISCOVERY_ARTIFACT_NAME
+        for _label, path in run.available_outputs
     )

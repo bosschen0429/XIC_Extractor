@@ -8,7 +8,6 @@ import numpy as np
 import pytest
 
 from tests.cid_nl_raw_fixture import TEST_PROFILE
-from tests.discovery_csv_fixtures import located_scan_ids
 from tests.discovery_ms1_capture_fixtures import (
     _FakeRaw,
     _gaussian,
@@ -16,6 +15,7 @@ from tests.discovery_ms1_capture_fixtures import (
     _seed,
     _settings,
 )
+from tests.discovery_peak_fixtures import located_scan_ids
 from xic_extractor.discovery.ion_grouping import build_discovery_ions
 from xic_extractor.discovery.models import build_discovery_peak_id
 from xic_extractor.discovery.ms1_capture import capture_ms1_peaks
@@ -36,7 +36,7 @@ def _capture(raw, seeds, settings: DiscoverySettings):
 
 
 def _events_by_scan(result):
-    return {event.ms2_scan_number: event for event in result.attachments}
+    return {item.event.scan_number: item for item in result.attachments}
 
 
 def _two_peak_raw(*, first: float, second: float, sigma: float = 0.04) -> _FakeRaw:
@@ -77,13 +77,13 @@ def test_isomers_at_one_mass_are_two_peaks_on_one_channel() -> None:
     assert channel.events == seeds
     assert len(result.peaks) == 2
     assert all(
-        peak.peak_id
+        binding.peak.peak_id
         == build_discovery_peak_id(
-            sample_stem=peak.sample_stem,
+            sample_stem=binding.peak.sample_stem,
             xic_mz=channel.mz,
-            peak_rt_min=peak.query_rt_min,
+            peak_rt_min=binding.physical_evaluation.question.query_rt_min,
         )
-        for peak in result.peaks
+        for binding in result.physical_bindings
     )
     events = _events_by_scan(result)
     assert events[10].peak_id != events[20].peak_id
@@ -207,8 +207,8 @@ def test_seed_order_does_not_change_peaks_or_events() -> None:
         random.Random(seed).shuffle(shuffled)
         result = _capture(raw, tuple(shuffled), settings)
         assert result.peaks == expected.peaks
-        assert sorted(result.attachments, key=lambda e: e.ms2_scan_number) == sorted(
-            expected.attachments, key=lambda e: e.ms2_scan_number
+        assert sorted(result.attachments, key=lambda e: e.event.scan_number) == sorted(
+            expected.attachments, key=lambda e: e.event.scan_number
         )
 
 

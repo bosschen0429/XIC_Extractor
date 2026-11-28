@@ -279,7 +279,6 @@ def materialize_untargeted_partition(
                     for subject in subject_batch.subjects[:1]
                 ),
                 candidates=candidates[stem],
-                discovery_receipt=context.discovery_receipts_by_sample[stem],
                 settings=context.settings,
                 raw_path=context.raw_paths_by_sample[stem],
                 dll_dir=plan.dll_dir,

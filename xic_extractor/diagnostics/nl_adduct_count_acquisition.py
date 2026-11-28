@@ -14,10 +14,10 @@ from xic_extractor.diagnostics.nl_adduct_count import (
     RunCount,
     count_candidates,
 )
-from xic_extractor.discovery.csv_reader import (
-    read_discovery_batch_index,
-    read_discovery_events_csv,
-    read_discovery_peaks_csv,
+from xic_extractor.discovery.store import (
+    DISCOVERY_ARTIFACT_NAME,
+    read_discovery_batch,
+    read_sample_peaks,
 )
 from xic_extractor.mass_accuracy import mz_tolerance_da
 from xic_extractor.matrix_curation.known_nucleosides import read_nucleoside_list
@@ -57,23 +57,17 @@ def count_run(
 ) -> RunCount:
     """``sugar_losses`` holds every sugar's neutral loss by tag; those outside
     ``neutral_loss_by_tag`` show when a compound fragments as another sugar."""
-    index = read_discovery_batch_index(discovery_dir / "discovery_batch_index.csv")
-    (sample,) = index.sample_order
-    raw, events = index.raw_files[sample], index.event_csvs[sample]
-    if raw is None or events is None:
-        raise ValueError(f"{discovery_dir}: Discovery output lacks its RAW or events")
-    peaks = [p for p in read_discovery_peaks_csv(index.peak_csvs[sample]) if p.admitted]
+    store = discovery_dir / DISCOVERY_ARTIFACT_NAME
+    batch = read_discovery_batch(store)
+    (sample,) = batch.sample_order
+    raw = batch.samples[sample].raw_file
+    peaks = [p for p in read_sample_peaks(store, sample) if p.admitted]
     scans: dict[str, set[int]] = defaultdict(set)
     loss = None
-    for item in read_discovery_events_csv(
-        events,
-        raw_file=raw,
-        sample_stem=sample,
-        neutral_loss_by_tag=neutral_loss_by_tag,
-    ):
-        if item.peak_id:
-            scans[item.peak_id].add(item.event.scan_number)
-            loss = item.event.configured_neutral_loss_da
+    for peak in peaks:
+        for event in peak.located_events:
+            scans[peak.peak_id].add(event.scan_number)
+            loss = event.configured_neutral_loss_da
     if loss is None:
         raise ValueError(f"{discovery_dir}: no event locates an admitted peak")
     same = [w for w, tag in nucleosides if tag in neutral_loss_by_tag]

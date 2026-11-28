@@ -4,13 +4,13 @@ import numpy as np
 import pytest
 
 from tests.cid_nl_raw_fixture import TEST_PROFILE
-from tests.discovery_csv_fixtures import representative_event
 from tests.discovery_ms1_capture_fixtures import (
     _BoundedRaw,
     _gaussian,
     _seed,
     _settings,
 )
+from tests.discovery_peak_fixtures import representative_event
 from xic_extractor.discovery.ion_grouping import build_discovery_ions
 from xic_extractor.discovery.ms1_capture import capture_ms1_peaks
 from xic_extractor.peak_detection.chrom_peak_segments import local_apex_prominence

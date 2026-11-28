@@ -45,13 +45,12 @@ from xic_extractor.diagnostics.grouping_experiment_io import (
     write_json,
 )
 from xic_extractor.diagnostics.stage_snapshot import write_grouping_inputs
-from xic_extractor.discovery.batch_contract import DiscoveryPeakUniverseReceipt
-from xic_extractor.discovery.csv_reader import (
-    DiscoveryBatchIndex,
-    DiscoveryBatchInput,
-    read_discovery_batch_index,
-)
 from xic_extractor.discovery.input_source import DiscoveryInputSource
+from xic_extractor.discovery.store import (
+    DiscoveryBatchInput,
+    DiscoverySample,
+    read_discovery_batch,
+)
 from xic_extractor.execution.timing import TimingRecorder
 from xic_extractor.output.alignment.batch_correspondence_table import (
     BATCH_CORRESPONDENCE_ARTIFACT_NAME,
@@ -95,12 +94,12 @@ class AlignmentProcessExecutionError(RuntimeError):
 
 
 def _admitted_batch(
-    index: Path | DiscoveryBatchIndex, recorder: TimingRecorder
-) -> DiscoveryBatchIndex:
-    if isinstance(index, DiscoveryBatchIndex):
-        return index
-    with recorder.stage("alignment.read_batch_index"):
-        return read_discovery_batch_index(index)
+    discovery: Path | DiscoveryBatchInput, recorder: TimingRecorder
+) -> DiscoveryBatchInput:
+    if isinstance(discovery, DiscoveryBatchInput):
+        return discovery
+    with recorder.stage("alignment.read_discovery"):
+        return read_discovery_batch(discovery)
 
 
 def run_untargeted_application(
@@ -126,7 +125,7 @@ def run_untargeted_application(
             "require_discovery_owner_closure": True,
         },
     )
-    batch = _admitted_batch(request.discovery_batch_index, recorder)
+    batch = _admitted_batch(request.discovery, recorder)
     with recorder.stage("alignment.read_candidates") as stage:
         peaks_by_sample = DiscoveryInputSource(batch)
         stage.metrics["candidate_count"] = len(peaks_by_sample.locations)
@@ -153,7 +152,7 @@ def run_untargeted_application(
     )
 
     metadata = alignment_metadata(
-        discovery_batch_index=batch.path,
+        discovery=batch.path,
         raw_dir=request.raw_dir,
         dll_dir=request.dll_dir,
         output_level=request.publication.output_level,
@@ -161,10 +160,10 @@ def run_untargeted_application(
     )
     metadata["mass_recalibration_by_sample"] = json.dumps(
         {
-            sample: json.loads(
-                serialize_mass_recalibration_result(receipt.mass_recalibration_result)
+            stem: json.loads(
+                serialize_mass_recalibration_result(sample.mass_recalibration_result)
             )
-            for sample, receipt in batch.peak_receipts.items()
+            for stem, sample in batch.samples.items()
         },
         sort_keys=True,
         separators=(",", ":"),
@@ -330,7 +329,7 @@ def _prepare_mass_recalibration(
     if request.discovery_settings.mass_recalibration is MassRecalibration.NONE:
         return {}
     return {
-        stem: _bind_discovery_mass_recalibration(path, batch.peak_receipts[stem])
+        stem: _bind_discovery_mass_recalibration(path, batch.samples[stem])
         for stem, path in existing_raw_paths(
             sample_order=batch.sample_order,
             raw_files=batch.raw_files,
@@ -340,14 +339,14 @@ def _prepare_mass_recalibration(
 
 
 def _bind_discovery_mass_recalibration(
-    path: Path, receipt: DiscoveryPeakUniverseReceipt
+    path: Path, sample: DiscoverySample
 ) -> PreparedRawMassRecalibration:
-    source = receipt.acquisition_source
-    assert source.local_file_revision is not None
+    source = sample.acquisition_source
+    assert source is not None and source.local_file_revision is not None
     binding = bind_expected_path_identity(path, source, source.local_file_revision)
     return PreparedRawMassRecalibration(
         AcquisitionSourceExpectation(source, binding.path_identity),
-        receipt.mass_recalibration_result,
+        sample.mass_recalibration_result,
     )
 
 
@@ -399,7 +398,7 @@ def run_untargeted_grouping(
     """
     context = context or UntargetedExecutionContext()
     recorder = context.timing_recorder or TimingRecorder.disabled("alignment")
-    batch = _admitted_batch(request.discovery_batch_index, recorder)
+    batch = _admitted_batch(request.discovery, recorder)
     directory = request.output_dir / "pairing-inputs"
     snapshot = request.output_dir / GROUPING_SNAPSHOT_NAME
     if (
@@ -514,7 +513,7 @@ def _grouping_provenance(
     index: Path, groupings: Sequence[PreparedGroupingExperiment]
 ) -> dict[str, object]:
     return {
-        "discovery_batch_index": str(index.resolve()),
+        "discovery": str(index.resolve()),
         "partition_count": sum(item.total_partition_count for item in groupings),
         "initial_job_count": sum(item.initial_job_count for item in groupings),
     }

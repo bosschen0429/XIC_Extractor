@@ -5,6 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Literal
 
+from tests.discovery_store_fixtures import single_peak_sample, write_discovery
 from tests.untargeted_partition_fixtures import ComposedChildOutputs, children_of
 from xic_extractor.alignment.cell_decision.owner import (
     NoWriteCellDecision,
@@ -19,14 +20,6 @@ from xic_extractor.alignment.ownership_models import (
 from xic_extractor.alignment.result.scientific_alignment import (
     ObservedSearchSubject,
 )
-from xic_extractor.discovery.batch_contract import (
-    DISCOVERY_BATCH_INDEX_COLUMNS,
-    DISCOVERY_BATCH_INDEX_SCHEMA_VERSION,
-    discovery_receipt_index_fields,
-    mint_discovery_peak_universe_receipt,
-)
-from xic_extractor.discovery.csv_reader import read_discovery_peaks_csv
-from xic_extractor.discovery.models import DISCOVERY_PEAK_COLUMNS
 from xic_extractor.output.alignment.tsv_writer import (
     project_untarget_child_rows,
     untarget_sample_order,
@@ -35,9 +28,6 @@ from xic_extractor.output.alignment.tsv_writer import (
 from xic_extractor.peak_detection.hypotheses import IntegrationResult
 from xic_extractor.peak_detection.observations import PeakObservation
 from xic_extractor.peak_detection.peak_hypothesis_identity import MeasuredPeakHypothesis
-from xic_extractor.processing_identity import (
-    build_local_acquisition_source_identity,
-)
 
 
 def write_batch(
@@ -46,92 +36,25 @@ def write_batch(
     *,
     raw_files: dict[str, str] | None = None,
 ) -> Path:
-    batch_dir = tmp_path / "batch"
-    batch_dir.mkdir(exist_ok=True)
+    """One admitted candidate per sample, published as a Discovery file."""
     raw_files = raw_files or {}
-    rows = []
-    for sample_stem in sample_order:
-        sample_dir = batch_dir / sample_stem
-        sample_dir.mkdir(exist_ok=True)
-        candidates_csv = sample_dir / "discovery_peaks.csv"
-        write_csv(
-            candidates_csv,
-            DISCOVERY_PEAK_COLUMNS,
-            [candidate_row(sample_stem)],
-        )
-        row = {
-            "sample_stem": sample_stem,
-            "raw_file": raw_files.get(sample_stem, f"C:/stale/{sample_stem}.raw"),
-            "peak_csv": str(candidates_csv.relative_to(batch_dir)),
-            "event_csv": "",
-        }
-        row.update(_owner_closed_receipt_fields(sample_stem, candidates_csv))
-        rows.append(row)
-    batch_index = batch_dir / "discovery_batch_index.csv"
-    write_csv(batch_index, DISCOVERY_BATCH_INDEX_COLUMNS, rows)
-    return batch_index
-
-
-def _owner_closed_receipt_fields(
-    sample_stem: str,
-    candidates_csv: Path,
-) -> dict[str, str]:
-    """Build a test-only receipt from one stable synthetic acquisition."""
-
-    source_path = candidates_csv.with_name("owner_closed_acquisition.raw")
-    source_path.write_bytes(f"owner-closed-acquisition:{sample_stem}".encode())
-    acquisition_source = build_local_acquisition_source_identity(
-        source_path,
-        acquisition_format="thermo_raw",
-        observation_namespace="thermo_raw_file_reader:Device.MS:1",
+    batch_dir = tmp_path / "batch"
+    return write_discovery(
+        batch_dir,
+        [
+            single_peak_sample(
+                batch_dir,
+                stem,
+                raw_file=Path(raw_files.get(stem, f"C:/stale/{stem}.raw")),
+                peak_id=candidate_id(stem),
+            )
+            for stem in sample_order
+        ],
     )
-    candidates = read_discovery_peaks_csv(candidates_csv)
-    receipt = mint_discovery_peak_universe_receipt(
-        sample_stem=sample_stem,
-        acquisition_source=acquisition_source,
-        peak_csv=candidates_csv,
-        peaks=candidates,
-    )
-    return {
-        "schema_version": DISCOVERY_BATCH_INDEX_SCHEMA_VERSION,
-        "peak_count": str(len(candidates)),
-        **discovery_receipt_index_fields(receipt),
-    }
-
-
-def write_csv(
-    path: Path,
-    fieldnames: tuple[str, ...],
-    rows: list[dict[str, str]],
-) -> None:
-    with path.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(rows)
 
 
 def candidate_id(sample_stem: str) -> str:
     return f"{sample_stem}@mz500_rt8.5000"
-
-
-def candidate_row(sample_stem: str) -> dict[str, str]:
-    return {
-        "status": "admitted",
-        "evidence_score": "80",
-        "attached_event_count": "2",
-        "peak_id": candidate_id(sample_stem),
-        "sample_stem": sample_stem,
-        "peak_mz": "500.0",
-        "precursor_mz_basis": "scan_precursor",
-        "ms1_apex_mz": "",
-        "ms1_apex_rt": "8.5",
-        "ms1_search_rt_min": "7.9",
-        "ms1_search_rt_max": "9.1",
-        "query_rt_min": "8.5",
-        "best_ms2_scan_id": "1",
-        "neutral_loss_tag": "DNA_dR",
-        "matched_tag_names": "DNA_dR",
-    }
 
 
 @dataclass(frozen=True)

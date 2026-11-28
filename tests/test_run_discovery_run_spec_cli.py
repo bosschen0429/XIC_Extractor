@@ -120,11 +120,7 @@ def test_discovery_cli_forwards_worker_budget_and_run_spec(
 
     def capture_pipeline(run_spec, **kwargs):
         observed.append((run_spec, kwargs))
-        return SimpleNamespace(
-            batch_index_csv=tmp_path / "batch.csv",
-            peaks_csv=tmp_path / "candidates.csv",
-            events_csv=tmp_path / "review.csv",
-        )
+        return SimpleNamespace(store=tmp_path / "discovery.sqlite")
 
     monkeypatch.setattr(
         run_discovery,
@@ -203,10 +199,7 @@ def test_discovery_cli_runs_saved_method_with_only_explicit_tuning_overrides(
 
     def capture_pipeline(run_spec, **kwargs):
         observed.append(run_spec.settings)
-        return SimpleNamespace(
-            peaks_csv=tmp_path / "candidates.csv",
-            events_csv=tmp_path / "review.csv",
-        )
+        return SimpleNamespace(store=tmp_path / "discovery.sqlite")
 
     monkeypatch.setattr(run_discovery, "run_discovery", capture_pipeline)
     assert (

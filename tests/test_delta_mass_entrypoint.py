@@ -2,24 +2,36 @@
 
 import csv
 import json
+import sqlite3
+from contextlib import closing
 from types import SimpleNamespace
 
 import numpy as np
 import pytest
 
 from scripts.run_delta_mass_discovery import main
+from tests.discovery_store_fixtures import (
+    SampleRecords,
+    attached,
+    event,
+    peak,
+    write_discovery,
+)
 from xic_extractor.configuration.delta_mass import (
     DeltaMassPatternSettings,
     DeltaMassPosition,
 )
 from xic_extractor.configuration.mass_recalibration import (
+    VENDOR_MASS_RECALIBRATION_RESULT,
     MassRecalibration,
     MassRecalibrationResult,
     deserialize_mass_recalibration_result,
 )
 from xic_extractor.discovery import delta_mass_pipeline
-from xic_extractor.discovery.delta_mass_csv import write_delta_mass_outputs
 from xic_extractor.discovery.delta_mass_patterns import DeltaMassCandidate
+from xic_extractor.discovery.delta_mass_publication import write_delta_mass_outputs
+from xic_extractor.discovery.models import EventAttachment
+from xic_extractor.discovery.store import DISCOVERY_ARTIFACT_NAME, DiscoverySample
 from xic_extractor.ms1_scan_index import build_ms1_scan_index
 from xic_extractor.xic_models import XICTrace
 
@@ -75,44 +87,38 @@ smoothing_window_sec = 1
             "value = 116.0474\n[discovery]",
         )
         preset.write_text(text)
-        cid = tmp_path / "cid.csv"
-        with cid.open("w", newline="") as handle:
-            writer = csv.DictWriter(
-                handle,
-                fieldnames=[
-                    "peak_id",
-                    "sample_stem",
-                    "matched_tag_names",
-                    "status",
-                    "peak_mz",
-                    "precursor_mz",
-                    "ms1_apex_rt",
-                ],
-            )
-            writer.writeheader()
-            writer.writerow(
-                dict(
-                    peak_id="cid-first",
-                    sample_stem="first",
-                    matched_tag_names="DNA_dR",
-                    status="admitted",
-                    peak_mz=300,
-                    precursor_mz=300 * (1 + 30e-6),
-                    ms1_apex_rt=1 + 4 / 60,
-                )
-            )
-            writer.writerow(
-                dict(
-                    peak_id="cid-second",
-                    sample_stem="second",
-                    matched_tag_names="DNA_dR",
-                    status="no_nl_event",
-                    peak_mz=600,
-                    precursor_mz=600,
-                    ms1_apex_rt=1 + 4 / 60,
-                )
-            )
-        extra_args = ["--cid-nl-peaks-csv", str(cid)]
+        first = peak("first", peak_id="cid-first", peak_mz=300, ms1_apex_rt=1 + 4 / 60)
+        second = peak(
+            "second",
+            peak_id="cid-second",
+            peak_mz=600,
+            ms1_apex_rt=1 + 4 / 60,
+            status="no_nl_event",
+        )
+        cid = write_discovery(
+            tmp_path / "cid",
+            [
+                SampleRecords(
+                    "first",
+                    raw_dir / "first.raw",
+                    peaks=[first],
+                    attachments=attached(first, event("first", precursor_mz=300)),
+                ),
+                SampleRecords(
+                    "second",
+                    raw_dir / "second.raw",
+                    peaks=[second],
+                    attachments=[
+                        EventAttachment(
+                            event("second", precursor_mz=600),
+                            peak_id=second.peak_id,
+                            unattached_reason="rt_outside_peak",
+                        )
+                    ],
+                ),
+            ],
+        )
+        extra_args = ["--cid-nl-discovery", str(cid)]
     batches = []
 
     class Raw:
@@ -230,81 +236,43 @@ def test_raw_cli_preserves_sample_attribution_and_batches_trace_acquisition(
         == 0
     )
     with (output / "delta_mass_candidates.csv").open(
-        newline="", encoding="utf-8"
+        newline="", encoding="utf-8-sig"
     ) as handle:
         rows = list(csv.DictReader(handle))
-    assert [
-        (r["sample_stem"], float(r["base_mz"]), float(r["base_height"]), r["status"])
-        for r in rows
-    ] == [("first", 300, 1e6, "candidate"), ("second", 600, 2e6, "candidate")]
+    assert [(r["sample"], float(r["mz"]), float(r["height"])) for r in rows] == [
+        ("first", 300, 1e6),
+        ("second", 600, 2e6),
+    ]
     assert batches == [(300, 4 if signal_gate else 2), (600, 4 if signal_gate else 2)]
-    assert [r["cid_nl_base_status"] for r in rows] == (
-        ["matched", "unmatched"] if composite else ["", ""]
-    )
-    assert [r["cid_nl_base_peak_id"] for r in rows] == (
+    assert [r["cid_nl_peak_id"] for r in rows] == (
         ["cid-first", ""] if composite else ["", ""]
     )
-    assert [
-        (r["cid_nl_base_unmatched_reason"], r["cid_nl_base_peak_status"]) for r in rows
-    ] == ([("", ""), ("not_admitted", "no_nl_event")] if composite else [("", "")] * 2)
-    with (output / "delta_mass_positions.csv").open(
-        newline="", encoding="utf-8"
-    ) as handle:
-        positions = list(csv.DictReader(handle))
-    assert len(positions) == 4
-    if signal_gate:
-        heavy = [r for r in positions if r["position_label"] == "heavy"]
-        assert [float(r["height_above_background"]) for r in heavy] == [5e5, 1e6]
-        assert all(r["signal_status"] == r["lowest_status"] == "pass" for r in heavy)
-        assert all(r["base_support_status"] == "pass" for r in rows)
-        assert [float(r["base_expected_net_height"]) for r in rows] == pytest.approx(
-            [5e5 / np.sqrt(0.4 * ratio_max), 1e6 / np.sqrt(0.4 * ratio_max)],
-            rel=1e-5,
-        )
-        assert [float(r["base_support_score"]) for r in rows] == pytest.approx(
-            [2 * np.sqrt(0.4 * ratio_max)] * 2, rel=1e-5
-        )
-    else:
-        assert all(r["base_support_status"] == "not_required" for r in rows)
-        assert all(r["base_support_score"] == "" for r in rows)
-
-    assert all(
-        row["ratio_status"] == expected_ratio_status
-        and row["position_status"] == "pass"
-        for row in positions
-        if row["position_label"] == "heavy"
-    )
-    assert all(
-        float(row["height_ratio_to_base"]) == 0.5
-        for row in positions
-        if row["position_label"] == "heavy"
-    )
-    sidecar = json.loads((output / "delta_mass_sidecar.json").read_text())
-    assert sidecar["method"]["mass_recalibration"] == mass_policy
-    results = [
-        deserialize_mass_recalibration_result(s["mass_recalibration"])
-        for s in sidecar["samples"]
-    ]
-    assert [r.baseline_lm for r in results] == (
+    assert [(r["positions_found"], r["positions"]) for r in rows] == [
+        ("2", "base;heavy")
+    ] * 2
+    with closing(sqlite3.connect(output / DISCOVERY_ARTIFACT_NAME)) as db:
+        heavy = db.execute(
+            "SELECT position_status,height_ratio_to_base FROM delta_mass_positions "
+            "WHERE position_label='heavy' ORDER BY candidate"
+        ).fetchall()
+        (method,) = db.execute("SELECT method FROM delta_mass_run").fetchone()
+        saved = db.execute(
+            "SELECT mass_recalibration_result FROM samples ORDER BY id"
+        ).fetchall()
+    assert heavy == [("pass", 0.5)] * 2
+    method = json.loads(method)
+    assert method["mass_recalibration"] == mass_policy
+    assert [deserialize_mass_recalibration_result(r).baseline_lm for (r,) in saved] == (
         [1.0, 2.0] if mass_policy != "none" else [None, None]
     )
-    assert sidecar["status"] == "diagnostic_only"
-    assert sidecar["method"]["height_ratio_policy"] == "evidence_only"
-    assert sidecar["method"]["base_support_positions"] == (
-        ["heavy"] if signal_gate else []
-    )
-    assert sidecar["method"]["min_base_support"] == 0.25
-    assert sidecar["method"]["detector"]["spectrum_mode"] == "vendor_centroid"
-    assert [s["candidate_count"] for s in sidecar["samples"]] == [1, 1]
-    assert {p.name for p in output.glob("*.*")} == {
+    assert method["height_ratio_policy"] == "evidence_only"
+    assert method["base_support_positions"] == (["heavy"] if signal_gate else [])
+    assert method["min_base_support"] == 0.25
+    assert method["detector"]["spectrum_mode"] == "vendor_centroid"
+    assert {p.name for p in output.iterdir()} == {
+        DISCOVERY_ARTIFACT_NAME,
         "delta_mass_candidates.csv",
-        "delta_mass_positions.csv",
-        "delta_mass_sidecar.json",
     }
-    assert all(
-        (output / name / "detected_features.csv").is_file()
-        for name in ("first", "second")
-    )
 
 
 @pytest.mark.parametrize(
@@ -338,45 +306,47 @@ def test_selected_raw_matches_the_single_file_baseline(tmp_path, raw_cli_case):
     assert not opened
     assert main([*args, *evidence]) == 0
     assert opened == [first]
-    for name in (
-        "delta_mass_candidates.csv",
-        "delta_mass_positions.csv",
-        "first/detected_features.csv",
-    ):
-        assert (selected / name).read_bytes() == (baseline / name).read_bytes()
-    assert not (selected / "second").exists()
+    assert (selected / "delta_mass_candidates.csv").read_bytes() == (
+        baseline / "delta_mass_candidates.csv"
+    ).read_bytes()
+    assert _dump(selected) == _dump(baseline)
 
 
-@pytest.mark.parametrize("separate_tables", [False, True])
+def _dump(directory):
+    with closing(sqlite3.connect(directory / DISCOVERY_ARTIFACT_NAME)) as db:
+        return list(db.iterdump())
+
+
 def test_cid_nl_join_records_unmatched_reason_and_reproduces_from_published_table(
     tmp_path,
-    separate_tables,
 ):
     """Each unmatched base says why; the written table re-joins identically.
 
-    The base m/z sits 19.99999 ppm from its peak, so the ``.6g`` display value
-    (379.123) falls outside 20 ppm and would flip the match on recomputation.
+    The base m/z sits 19.99999 ppm from its peak, so a ``.6g`` display value
+    (379.123) would fall outside 20 ppm and flip the match on recomputation.
     """
     base_mz = 379.1234
     edge_peak_mz = base_mz * (1 + 19.99999e-6)
-    peaks = [
-        ("edge", "matched", "admitted", edge_peak_mz, 2.0),
-        ("crowded", "overlapping", "no_nl_event", 500.0, 3.0),
-        ("crowded", "split", "doubly_charged", 500.0, 3.1),
-        ("late", "late-peak", "admitted", 600.0, 5.0),
-        ("alone", "other-ion", "admitted", 700.0, 2.0),
-        ("alone", "unrelated-tag", "admitted", 800.0, 2.0),
-    ]
-    cid_csv = tmp_path / "cid.csv"
-    with cid_csv.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.writer(handle)
-        writer.writerow(
-            ["peak_id", "sample_stem", "matched_tag_names", "status", "peak_mz"]
-            + ["ms1_apex_rt"]
+    cid_rows = tuple(
+        peak(
+            sample,
+            peak_id=peak_id,
+            status=status,
+            peak_mz=mz,
+            ms1_apex_rt=rt,
+            matched_tag_names=(
+                ("Other",) if peak_id == "unrelated-tag" else ("DNA_dR",)
+            ),
         )
-        for sample, peak_id, status, mz, rt in peaks:
-            tag = "Other" if peak_id == "unrelated-tag" else "DNA_dR"
-            writer.writerow([peak_id, sample, tag, status, repr(mz), rt])
+        for sample, peak_id, status, mz, rt in (
+            ("edge", "matched", "admitted", edge_peak_mz, 2.0),
+            ("crowded", "overlapping", "no_nl_event", 500.0, 3.0),
+            ("crowded", "split", "doubly_charged", 500.0, 3.1),
+            ("late", "late-peak", "admitted", 600.0, 5.0),
+            ("alone", "other-ion", "admitted", 700.0, 2.0),
+            ("alone", "unrelated-tag", "admitted", 800.0, 2.0),
+        )
+    )
     settings = DeltaMassPatternSettings(
         pattern_id="synthetic",
         method_label="synthetic",
@@ -402,15 +372,6 @@ def test_cid_nl_join_records_unmatched_reason_and_reproduces_from_published_tabl
             positions=(),
         )
 
-    if separate_tables:
-        lines = cid_csv.read_text(encoding="utf-8").splitlines(keepends=True)
-        first, second = tmp_path / "first.csv", tmp_path / "second.csv"
-        first.write_text("".join([lines[0], *lines[1:4]]), encoding="utf-8")
-        second.write_text("".join([lines[0], *lines[4:]]), encoding="utf-8")
-        cid_csv.unlink()
-        cid_rows = delta_mass_pipeline._load_cid_nl_peak_rows((first, second))
-    else:
-        cid_rows = delta_mass_pipeline._load_cid_nl_peak_rows((cid_csv,))
     joined = delta_mass_pipeline._join_cid_nl(
         (
             candidate("edge", base_mz, 2.0 + 29.999 / 60),
@@ -420,30 +381,42 @@ def test_cid_nl_join_records_unmatched_reason_and_reproduces_from_published_tabl
         ),
         cid_rows,
     )
-    write_delta_mass_outputs(tmp_path / "dm", joined, {}, settings)
-    with (tmp_path / "dm" / "delta_mass_candidates.csv").open(
-        newline="", encoding="utf-8"
-    ) as handle:
-        published = list(csv.DictReader(handle))
     assert [
         (
-            r["cid_nl_base_status"],
-            r["cid_nl_base_peak_id"],
-            r["cid_nl_base_unmatched_reason"],
-            r["cid_nl_base_peak_status"],
+            c.cid_nl_base_status,
+            c.cid_nl_base_peak_id,
+            c.cid_nl_base_unmatched_reason,
+            c.cid_nl_base_peak_status,
         )
-        for r in published
+        for c in joined
     ] == [
         ("matched", "matched", "", ""),
         ("unmatched", "", "not_admitted", "doubly_charged;no_nl_event"),
         ("unmatched", "", "outside_rt_tolerance", ""),
         ("unmatched", "", "no_cid_nl_peak", ""),
     ]
+    outputs = write_delta_mass_outputs(
+        tmp_path / "dm",
+        method_label=settings.method_label,
+        method={},
+        samples=[
+            DiscoverySample(
+                c.sample_stem,
+                tmp_path / f"{c.sample_stem}.raw",
+                None,
+                VENDOR_MASS_RECALIBRATION_RESULT,
+            )
+            for c in joined
+        ],
+        candidates=joined,
+        features={},
+    )
+    with outputs.candidates_csv.open(newline="", encoding="utf-8-sig") as handle:
+        published = list(csv.DictReader(handle))
+    assert [r["cid_nl_peak_id"] for r in published] == ["matched", "", "", ""]
     rejoined = delta_mass_pipeline._join_cid_nl(
         tuple(
-            candidate(
-                r["sample_stem"], float(r["base_mz"]), float(r["base_rt_apex_min"])
-            )
+            candidate(r["sample"], float(r["mz"]), float(r["rt_min"]))
             for r in published
         ),
         cid_rows,

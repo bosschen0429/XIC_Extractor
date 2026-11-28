@@ -103,11 +103,6 @@ def test_capture_runs_physical_peak_detection() -> None:
         settings=_settings(ms1_search_padding_min=0.30),
     )[0]
     assert candidate.ms1_apex_rt == pytest.approx(9.02)
-    assert (
-        candidate.ms1_search_rt_min
-        <= candidate.query_rt_min
-        <= candidate.ms1_search_rt_max
-    )
     assert candidate.ms1_apex_rt - representative_event_rt(candidate) == (
         pytest.approx(0.02)
     )
@@ -165,11 +160,10 @@ def test_discovery_verifies_inferred_seeds_after_ms1_without_moving_peak(
     candidate = _candidates_from_raw(raw, (group,), settings=settings)[0]
     assert len(batches) == 1 and len(batches[0]) == 1
     assert candidate.status == state
-    assert candidate.precursor_mz_basis == "product_plus_neutral_loss"
+    assert {event.precursor_mz_basis for event in candidate.located_events} == {
+        "product_plus_neutral_loss"
+    }
     assert candidate.ms1_apex_rt == baseline.ms1_apex_rt
-    assert candidate.ms1_search_rt_min == baseline.ms1_search_rt_min
-    assert candidate.ms1_search_rt_max == baseline.ms1_search_rt_max
-    assert candidate.query_rt_min == baseline.query_rt_min
     assert [event.scan_number for event in candidate.located_events] == [10, 11]
     for event in candidate.located_events:
         assert event.assess_precursor_loss(settings.nl_tolerance_ppm).status == status
@@ -398,7 +392,7 @@ def test_single_raw_basin_keeps_events_outside_quantitative_return(
 
     (peak,) = result.peaks
     assert peak.ms1_apex_rt - representative_event_rt(peak) == pytest.approx(0.26)
-    events = {event.ms2_scan_number: event for event in result.attachments}
+    events = {item.event.scan_number: item for item in result.attachments}
     assert events[20].peak_id == peak.peak_id
     assert events[10].peak_id == peak.peak_id or (
         events[10].unattached_reason == "rt_outside_peak"

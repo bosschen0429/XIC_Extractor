@@ -16,7 +16,7 @@ from pathlib import Path
 import pytest
 
 from tests.cid_nl_raw_fixture import _FakeRaw
-from tests.discovery_csv_fixtures import representative_event
+from tests.discovery_peak_fixtures import representative_event
 from tests.untargeted_alignment_entry_fixtures import (
     SETTINGS,
     cell_sources,

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import csv
 import uuid
 from collections.abc import Callable, Mapping
 from copy import deepcopy
@@ -22,13 +21,13 @@ from xic_extractor.configuration.execution_profile import (
     ExecutionProfile,
     UntargetedExecutionPolicy,
 )
-from xic_extractor.discovery.csv_writer import merge_discovery_peak_tables
 from xic_extractor.discovery.delta_mass_pipeline import run_delta_mass_discovery
 from xic_extractor.discovery.models import DiscoveryBatchOutputs
 from xic_extractor.discovery.pipeline import run_discovery_batch
 from xic_extractor.discovery.processing_run_spec_adapter import (
     compile_discovery_processing_run_spec,
 )
+from xic_extractor.discovery.store import read_peak_counts
 from xic_extractor.output.alignment.pipeline_outputs import AlignmentRunOutputs
 from xic_extractor.presets import (
     BoundCidNlRecipe,
@@ -144,8 +143,8 @@ class UntargetedAnalysis:
                 done, total_steps, f"Discovery: {sample}"
             ),
         )
-        index_path = batch_outputs.batch_index_csv
-        self._retain_discovery_outputs(batch_outputs, index_path)
+        index_path = batch_outputs.store
+        self._retain_discovery_outputs(batch_outputs)
         self._raise_if_cancelled("Untargeted run cancelled after Discovery")
         self.progress(0, 0, "Discovery 完成；準備跨樣本對齊與 Backfill")
         outputs = self._run_alignment(
@@ -171,12 +170,9 @@ class UntargetedAnalysis:
         strategy = resolve_delta_mass_discovery(
             request.preset_snapshot, label=request.preset
         )
-        peaks_csv = None
-        peak_tables: tuple[Path, ...] = ()
+        cid_nl_store = None
         if strategy.cid_nl_composite:
-            cid_outputs = self._run_cid_nl_dr(raw_paths)
-            peak_tables = tuple(Path(item.peaks_csv) for item in cid_outputs.per_sample)
-            peaks_csv = request.output_dir / "cid_nl_dR" / "discovery_peaks.csv"
+            cid_nl_store = self._run_cid_nl_dr(raw_paths).store
             self._raise_if_cancelled("Untargeted run cancelled after CID-NL dR")
         self.stage = "Delta Mass Discovery"
         self.progress(0, 0, "Delta Mass Discovery…")
@@ -185,8 +181,7 @@ class UntargetedAnalysis:
             dll_dir=request.dll_dir,
             output_dir=request.output_dir,
             strategy=strategy,
-            cid_nl_export_csv=peaks_csv,
-            cid_nl_peak_tables=peak_tables,
+            cid_nl_store=cid_nl_store,
             raw_paths=raw_paths,
             should_cancel=self.should_cancel,
             progress_callback=lambda done, total, sample: self.progress(
@@ -196,26 +191,22 @@ class UntargetedAnalysis:
         self._raise_if_cancelled("Untargeted run cancelled after Delta Mass")
         self.available_outputs += (
             ("Delta Mass 候選表", outputs.candidates_csv),
-            ("Delta Mass 離子明細", outputs.positions_csv),
-            ("Delta Mass 執行紀錄", outputs.sidecar_json),
+            ("Delta Mass 結果", outputs.store),
         )
         self.progress(1, 1, "完成")
-        with outputs.candidates_csv.open(encoding="utf-8", newline="") as handle:
-            statuses = [row.get("status") for row in csv.DictReader(handle)]
         return {
             "output_dir": str(request.output_dir),
             "sample_count": len(raw_paths),
             "delta_mass": {
                 "candidates_csv": str(outputs.candidates_csv),
-                "candidate_count": statuses.count("candidate"),
-                "cid_nl_peaks_csv": str(peaks_csv) if peaks_csv else None,
+                "candidate_count": outputs.candidate_count,
             },
             "alignment_outputs": {},
             "matrix_tsv": None,
         }
 
     def _run_cid_nl_dr(self, raw_paths: tuple[Path, ...]) -> DiscoveryBatchOutputs:
-        """Run dR Discovery; its per-sample tables are the composite input."""
+        """Run dR Discovery; its Discovery file is the composite input."""
         request = self.request
         self.stage = "CID-NL dR Discovery"
         settings = bind_cid_nl_recipe(load_preset("dna_dr"), "full").discovery_settings
@@ -232,11 +223,7 @@ class UntargetedAnalysis:
                 done, total, f"CID-NL dR Discovery: {sample}"
             ),
         )
-        merged = directory / "discovery_peaks.csv"
-        peak_tables = tuple(Path(item.peaks_csv) for item in outputs.per_sample)
-        merge_discovery_peak_tables(peak_tables, merged)
-        self._retain_discovery_outputs(outputs, outputs.batch_index_csv)
-        self.available_outputs += (("CID-NL dR 峰表（合併）", merged),)
+        self._retain_discovery_outputs(outputs)
         return outputs
 
     def _run_alignment(
@@ -248,7 +235,7 @@ class UntargetedAnalysis:
         self.stage = "Alignment 分析與 Matrix 發布"
         outputs = run_untargeted_application(
             UntargetedRequest(
-                discovery_batch_index=index_path,
+                discovery=index_path,
                 raw_dir=raw_dir,
                 dll_dir=request.dll_dir,
                 output_dir=request.output_dir,
@@ -293,20 +280,8 @@ class UntargetedAnalysis:
             label += f" · {completed}/{total}"
         self.progress(0, 0, label)
 
-    def _retain_discovery_outputs(
-        self, outputs: DiscoveryBatchOutputs, index_path: Path
-    ) -> None:
-        found: list[tuple[str, Path]] = []
-        if index_path.is_file():
-            found.append(("Discovery batch index", index_path))
-        for item in outputs.per_sample:
-            for label, path in (
-                ("Discovery 峰表", item.peaks_csv),
-                ("Discovery 事件表", item.events_csv),
-            ):
-                if Path(path).is_file():
-                    found.append((label, Path(path)))
-        self.available_outputs += tuple(found)
+    def _retain_discovery_outputs(self, outputs: DiscoveryBatchOutputs) -> None:
+        self.available_outputs += (("Discovery 結果", outputs.store),)
 
     def _prepare_samples(self, raw_dir: Path | None) -> tuple[Path, ...]:
         if raw_dir is None or not raw_dir.is_dir():
@@ -331,13 +306,13 @@ class UntargetedAnalysis:
         self.available_outputs += (("本次分析的樣本資訊", sample_path),)
         return tuple(sorted(analysis_set.raw_paths, key=lambda path: path.name.lower()))
 
-    def _discovery_summary(self, index_path: Path) -> dict[str, Any]:
-        counts, sample_count = _read_batch_counts(index_path)
+    def _discovery_summary(self, store: Path) -> dict[str, Any]:
+        counts, sample_count = read_peak_counts(store)
         return {
             "output_dir": str(self.request.output_dir),
             "sample_count": sample_count,
             "peak_counts": counts,
-            "discovery_batch_index": str(index_path),
+            "discovery": str(store),
             "alignment_outputs": {},
             "matrix_tsv": None,
         }
@@ -401,23 +376,3 @@ def _ordered_existing_paths(
             ordered.append(candidate)
             seen.add(candidate)
     return tuple(ordered)
-
-
-def _read_batch_counts(index_path: Path) -> tuple[dict[str, int] | None, int]:
-    if not index_path.exists():
-        return None, 0
-    totals = {"total": 0, "admitted": 0}
-    sample_count = 0
-    with index_path.open(newline="", encoding="utf-8") as handle:
-        for row in csv.DictReader(handle):
-            sample_count += 1
-            totals["total"] += _int_csv_value(row, "peak_count")
-            totals["admitted"] += _int_csv_value(row, "admitted_peak_count")
-    return totals, sample_count
-
-
-def _int_csv_value(row: Mapping[str, str | None], key: str) -> int:
-    value = row.get(key)
-    if value is None or value == "":
-        return 0
-    return int(value)

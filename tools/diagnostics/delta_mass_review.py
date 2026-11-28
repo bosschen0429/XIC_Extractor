@@ -57,11 +57,6 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.output.suffix.lower() != ".json":
         parser.error("--output must be a .json review file")
-    if (
-        args.output.resolve()
-        == (args.discovery_dir / "delta_mass_sidecar.json").resolve()
-    ):
-        parser.error("--output cannot replace the Discovery sidecar")
     try:
         review = acquire_delta_mass_review(
             args.discovery_dir,

@@ -907,7 +907,6 @@ def _backfill_request(tmp_path, options, config):
     from tests.cid_nl_runtime_fixtures import persist_discovery_batch
     from xic_extractor.applications.untargeted.request import UntargetedRequest
     from xic_extractor.configuration.execution_profile import UntargetedExecutionPolicy
-    from xic_extractor.discovery.csv_reader import DiscoveryBatchIndex
 
     batch = persist_discovery_batch(
         raw_paths=options["raw_paths"],
@@ -916,14 +915,7 @@ def _backfill_request(tmp_path, options, config):
         root=tmp_path / "batch",
     )
     return UntargetedRequest(
-        discovery_batch_index=DiscoveryBatchIndex(
-            path=tmp_path / "batch" / "index.csv",
-            sample_order=batch.sample_order,
-            raw_files=batch.raw_files,
-            peak_csvs=batch.peak_csvs,
-            event_csvs=batch.event_csvs,
-            peak_receipts=batch.peak_receipts,
-        ),
+        discovery=batch,
         sample_metadata=options["sample_metadata"],
         alignment_config=config,
         raw_dir=tmp_path / "raw",
@@ -1286,14 +1278,12 @@ def test_matrix_joins_independently_captured_named_batches(tmp_path, monkeypatch
         return out
 
     captures = []
-    for batch_id, batch_index in split_discovery_batch(
-        request.discovery_batch_index, samples
-    ):
+    for batch_id, batch_index in split_discovery_batch(request.discovery, samples):
         out = tmp_path / batch_id
         application.run_untargeted_application(
             replace(
                 request,
-                discovery_batch_index=batch_index,
+                discovery=batch_index,
                 sample_metadata=tuple(s for s in samples if s.batch_id == batch_id),
                 output_dir=out,
                 replay=AlignmentReplayOptions(matrix=True, pairing=True),

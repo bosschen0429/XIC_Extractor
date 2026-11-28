@@ -23,7 +23,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "--preset", required=True, help="Built-in name or preset TOML path."
     )
-    parser.add_argument("--cid-nl-peaks-csv", type=Path)
+    parser.add_argument(
+        "--cid-nl-discovery",
+        type=Path,
+        help="discovery.sqlite of the same RAW's CID-NL dR Discovery (composite).",
+    )
     parser.add_argument("--output-dir", type=Path, required=True)
     args = parser.parse_args(argv)
     try:
@@ -34,17 +38,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             dll_dir=args.dll_dir,
             output_dir=args.output_dir,
             strategy=strategy,
-            cid_nl_peak_tables=(args.cid_nl_peaks_csv,)
-            if args.cid_nl_peaks_csv
-            else (),
-            cid_nl_export_csv=args.cid_nl_peaks_csv,
+            cid_nl_store=args.cid_nl_discovery,
         )
     except (OSError, ValueError, RawReaderError) as exc:
         print(f"delta_mass_discovery failed: {exc}", file=sys.stderr)
         return 2
     print(f"Candidates: {outputs.candidates_csv}")
-    print(f"Positions: {outputs.positions_csv}")
-    print(f"Sidecar: {outputs.sidecar_json}")
+    print(f"Discovery: {outputs.store}")
     return 0
 
 

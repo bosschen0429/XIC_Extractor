@@ -7,12 +7,13 @@ fewer Delta Mass candidates must not manufacture unique NL attribution.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 from xic_extractor.diagnostics.delta_mass_review_data import (
     ReviewCandidate,
     ReviewNlMatch,
     ReviewNlPosition,
 )
-from xic_extractor.discovery.detected_features import DetectedFeature
 from xic_extractor.discovery.models import DiscoveryEvent
 from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.mass_accuracy import mz_tolerance_da
@@ -30,11 +31,14 @@ from xic_extractor.precursor_evidence import PrecursorMassScope
 def assess_review_neutral_losses(
     candidate: ReviewCandidate,
     *,
-    features: tuple[DetectedFeature, ...],
+    features: Mapping[str, CidNlCandidateInterval],
     seeds: tuple[DiscoveryEvent, ...],
     settings: DiscoverySettings,
 ) -> tuple[ReviewNlPosition, ...]:
-    """Use saved peak bounds and the existing mass/precursor/relation owners."""
+    """Use saved peak bounds and the existing mass/precursor/relation owners.
+
+    ``features`` are the candidate sample's detected features with RT bounds.
+    """
     results = []
     spectra = {s.scan_number: s for s in candidate.spectra}
     for position in candidate.positions:
@@ -46,12 +50,9 @@ def assess_review_neutral_losses(
             maximum_inference_radius_da=settings.ms2_precursor_tol_da,
         )
         population = tuple(
-            (f.feature_id, CidNlCandidateInterval(f.mz, f.rt_start_min, f.rt_end_min))
-            for f in features
-            if f.sample_stem == candidate.sample_stem
-            and abs(f.mz - position.query_mz) <= 2 * tolerance
-            and f.rt_start_min is not None
-            and f.rt_end_min is not None
+            (feature_id, interval)
+            for feature_id, interval in features.items()
+            if abs(interval.mz - position.query_mz) <= 2 * tolerance
         )
         target = next(
             (

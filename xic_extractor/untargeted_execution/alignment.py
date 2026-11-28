@@ -20,14 +20,12 @@ from xic_extractor.configuration.execution_profile import ExecutionProfile
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
-from xic_extractor.discovery.csv_reader import (
-    DiscoveryBatchInput,
-)
 from xic_extractor.discovery.input_source import DiscoveryInputSource
 from xic_extractor.discovery.processing_run_spec_adapter import (
     fingerprint_acquisition_sources,
 )
 from xic_extractor.discovery.settings import DiscoverySettings
+from xic_extractor.discovery.store import DiscoveryBatchInput
 from xic_extractor.execution.timing import TimingRecorder
 from xic_extractor.processing_identity import AcquisitionSourceExpectation
 from xic_extractor.sample_metadata import SampleMetadata
@@ -130,8 +128,7 @@ def prepare_untargeted_alignment_inputs(
             for stem, expectation in zip(
                 discovery_batch.sample_order, expectations, strict=True
             )
-            if expectation.source
-            != discovery_batch.peak_receipts[stem].acquisition_source
+            if expectation.source != discovery_batch.samples[stem].acquisition_source
         ]
         if changed:
             raise ValueError(

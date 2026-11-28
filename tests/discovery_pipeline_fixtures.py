@@ -14,7 +14,7 @@ from xic_extractor.configuration.mass_recalibration import (
     MassRecalibrationResult,
 )
 from xic_extractor.discovery import pipeline as _pipeline
-from xic_extractor.discovery.models import DiscoveryRunOutputs
+from xic_extractor.discovery.models import DiscoveryBatchOutputs
 from xic_extractor.discovery.processing_run_spec_adapter import (
     compile_discovery_processing_run_spec,
 )
@@ -70,7 +70,7 @@ def _compiled_run_spec(raw_paths: tuple[Path, ...], settings: DiscoverySettings)
     return compile_discovery_processing_run_spec(raw_paths, discovery_settings=settings)
 
 
-def _run_discovery(raw_path: Path, **kwargs: Any) -> DiscoveryRunOutputs:
+def _run_discovery(raw_path: Path, **kwargs: Any) -> DiscoveryBatchOutputs:
     settings = kwargs.pop("settings")
     spec = kwargs.pop("run_spec", None) or _compiled_run_spec((raw_path,), settings)
     return _pipeline.run_discovery(spec, **kwargs)

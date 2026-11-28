@@ -27,6 +27,12 @@ def ordered_tag_names(
     )
 
 
+def ranked_neutral_losses(settings: DiscoverySettings) -> dict[str, float]:
+    """Each configured tag's loss, in the order matched tags are listed."""
+    losses = settings.neutral_loss_by_tag
+    return {tag: losses[tag] for tag in ordered_tag_names(losses, settings=settings)}
+
+
 def select_representative_event(
     events: Iterable[DiscoveryEvent], *, settings: DiscoverySettings
 ) -> DiscoveryEvent:

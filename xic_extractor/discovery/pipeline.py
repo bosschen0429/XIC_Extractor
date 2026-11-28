@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from contextlib import AbstractContextManager
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Protocol, cast
@@ -25,10 +25,10 @@ from xic_extractor.discovery.cid_nl_search import (
     CidNlSearchSource,
     search_cid_nl_sample,
 )
+from xic_extractor.discovery.event_evidence import ranked_neutral_losses
 from xic_extractor.discovery.models import (
     DiscoveryBatchOutputs,
     DiscoveryPeak,
-    DiscoveryRunOutputs,
     EventAttachment,
 )
 from xic_extractor.discovery.ms1_capture import (
@@ -116,7 +116,7 @@ def run_discovery(
     raw_opener: RawOpener | None = None,
     timing_recorder: TimingRecorder | None = None,
     should_cancel: Callable[[], bool] | None = None,
-) -> DiscoveryRunOutputs:
+) -> DiscoveryBatchOutputs:
     raise_if_discovery_cancelled(should_cancel)
     recorder = timing_recorder or TimingRecorder.disabled("discovery")
     (acquisition_input,) = run_spec.acquisition_inputs
@@ -134,17 +134,15 @@ def run_discovery(
         discovery_result.peaks,
         discovery_result.attachments,
         output_dir=output_dir,
-        sample_output_dir=output_dir,
+        sample_index=0,
+        neutral_loss_by_tag=ranked_neutral_losses(run_spec.settings),
         acquisition_source=acquisition_input.acquisition_source,
         timing_recorder=recorder,
         mass_recalibration_result=discovery_result.mass_recalibration_result,
     )
-    receipt_index = output_publication.write_batch_index(
-        output_dir / "discovery_batch_index.csv",
-        [publication.index_row],
-        timing_recorder=recorder,
+    return output_publication.publish_discovery_batch(
+        output_dir, (publication,), timing_recorder=recorder
     )
-    return replace(publication.outputs, batch_index_csv=receipt_index)
 
 
 def run_discovery_batch(
@@ -181,8 +179,7 @@ def run_discovery_batch(
             discover_sample=discover_sample_for_process_job,
         )
 
-    index_rows: list[dict[str, str]] = []
-    per_sample: list[DiscoveryRunOutputs] = []
+    published: list[output_publication.PublishedDiscoverySample] = []
     for sample_index, acquisition_input in enumerate(run_inputs):
         raise_if_discovery_cancelled(should_cancel)
         sample_stem = acquisition_input.raw_path.stem
@@ -194,28 +191,25 @@ def run_discovery_batch(
             timing_recorder=recorder,
             acquisition_input=acquisition_input,
         )
-        publication = output_publication.publish_discovery_batch_sample(
-            acquisition_input.raw_path,
-            discovery_result.peaks,
-            discovery_result.attachments,
-            output_dir=output_dir,
-            acquisition_source=acquisition_input.acquisition_source,
-            timing_recorder=recorder,
-            mass_recalibration_result=discovery_result.mass_recalibration_result,
+        published.append(
+            output_publication.publish_discovery_batch_sample(
+                acquisition_input.raw_path,
+                discovery_result.peaks,
+                discovery_result.attachments,
+                output_dir=output_dir,
+                sample_index=sample_index,
+                neutral_loss_by_tag=ranked_neutral_losses(run_spec.settings),
+                acquisition_source=acquisition_input.acquisition_source,
+                timing_recorder=recorder,
+                mass_recalibration_result=discovery_result.mass_recalibration_result,
+            )
         )
-        per_sample.append(publication.outputs)
-        index_rows.append(publication.index_row)
         if progress_callback is not None:
             progress_callback(sample_index + 1, len(run_inputs), sample_stem)
 
     raise_if_discovery_cancelled(should_cancel)
-    return DiscoveryBatchOutputs(
-        batch_index_csv=output_publication.write_batch_index(
-            output_dir / "discovery_batch_index.csv",
-            index_rows,
-            timing_recorder=recorder,
-        ),
-        per_sample=tuple(per_sample),
+    return output_publication.publish_discovery_batch(
+        output_dir, published, timing_recorder=recorder
     )
 
 

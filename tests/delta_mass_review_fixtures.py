@@ -8,6 +8,9 @@ from xic_extractor.configuration.delta_mass import (
     DeltaMassPatternSettings,
     DeltaMassPosition,
 )
+from xic_extractor.configuration.mass_recalibration import (
+    VENDOR_MASS_RECALIBRATION_RESULT,
+)
 from xic_extractor.diagnostics.delta_mass_review_data import (
     DeltaMassReview,
     ReviewCandidate,
@@ -17,15 +20,12 @@ from xic_extractor.diagnostics.delta_mass_review_data import (
     ReviewSpectrum,
     write_delta_mass_review,
 )
-from xic_extractor.discovery.delta_mass_csv import write_delta_mass_outputs
 from xic_extractor.discovery.delta_mass_patterns import (
     DeltaMassCandidate,
     DeltaMassPositionResult,
 )
-from xic_extractor.discovery.detected_features import (
-    DetectedFeature,
-    write_detected_features_csv,
-)
+from xic_extractor.discovery.delta_mass_publication import write_delta_mass_outputs
+from xic_extractor.discovery.store import DiscoverySample
 from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
 from xic_inspector.rendering.html_builder import build_report_html
 from xic_inspector.sources.delta_mass import DeltaMassReviewSource
@@ -128,34 +128,28 @@ def write_discovery(directory: Path) -> tuple[str, ...]:
                 ),
             )
         )
+    stems = sorted({c.sample_stem for c in candidates})
     write_delta_mass_outputs(
-        directory, candidates, {"method": asdict(settings)}, settings
+        directory,
+        method_label=settings.method_label,
+        method=asdict(settings),
+        samples=[
+            DiscoverySample(
+                stem, Path(f"{stem}.raw"), None, VENDOR_MASS_RECALIBRATION_RESULT
+            )
+            for stem in stems
+        ],
+        candidates=candidates,
+        features={
+            (c.sample_stem, p.feature_id): (
+                p.expected_mz,
+                c.base_rt_apex_min - 0.2,
+                c.base_rt_apex_min + 0.2,
+            )
+            for c in candidates
+            for p in c.positions
+        },
     )
-    for sample in {c.sample_stem for c in candidates}:
-        sample_dir = directory / sample
-        sample_dir.mkdir()
-        write_detected_features_csv(
-            sample_dir / "detected_features.csv",
-            tuple(
-                DetectedFeature(
-                    sample,
-                    p.feature_id,
-                    None,
-                    p.expected_mz,
-                    c.base_rt_apex_min,
-                    c.base_rt_apex_min - 0.2,
-                    c.base_rt_apex_min + 0.2,
-                    100.0,
-                    None,
-                    "OK",
-                    None,
-                    "external",
-                )
-                for c in candidates
-                if c.sample_stem == sample
-                for p in c.positions
-            ),
-        )
     return tuple(c.candidate_id for c in candidates)
 
 

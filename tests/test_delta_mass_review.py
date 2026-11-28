@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 import subprocess
 import sys
+from contextlib import closing
 from dataclasses import asdict
 
 import pytest
@@ -20,6 +22,7 @@ from xic_extractor.diagnostics.delta_mass_review_data import (
     REVIEW_SCHEMA,
     decode_delta_mass_review,
 )
+from xic_extractor.discovery.store import DISCOVERY_ARTIFACT_NAME
 from xic_extractor.xic_models import XICTrace
 from xic_inspector.api import (
     InspectorError,
@@ -28,14 +31,23 @@ from xic_inspector.api import (
     resolve_source,
 )
 
+_EASY_IC_RESTORE = (
+    "UPDATE delta_mass_run SET method="
+    "json_set(method,'$.mass_recalibration','easy_ic_restore')"
+)
+
+
+def _edit(directory, statement, *parameters):
+    """Change the saved Delta Mass result in place, as a hand-edited file would."""
+    with closing(sqlite3.connect(directory / DISCOVERY_ARTIFACT_NAME)) as db:
+        db.execute(statement, parameters)
+        db.commit()
+
 
 def test_restored_review_requires_saved_result_instead_of_reestimating(tmp_path):
     discovery = tmp_path / "discovery"
     ids = write_discovery(discovery)
-    path = discovery / "delta_mass_sidecar.json"
-    sidecar = json.loads(path.read_text())
-    sidecar["method"]["mass_recalibration"] = "easy_ic_restore"
-    path.write_text(json.dumps(sidecar))
+    _edit(discovery, _EASY_IC_RESTORE)
     with pytest.raises(ValueError, match="Missing saved mass restoration"):
         acquisition.acquire_delta_mass_review(
             discovery, candidate_ids=ids, raw_directory=tmp_path, dll_directory=tmp_path
@@ -53,9 +65,6 @@ def test_review_reuses_each_samples_saved_mass_restoration_before_acquiring(
 
     discovery = tmp_path / "discovery"
     ids = write_discovery(discovery)
-    sidecar_path = discovery / "delta_mass_sidecar.json"
-    sidecar = json.loads(sidecar_path.read_text())
-    sidecar["method"]["mass_recalibration"] = "easy_ic_restore"
     saved = {
         sample: MassRecalibrationResult(
             "applied",
@@ -65,14 +74,14 @@ def test_review_reuses_each_samples_saved_mass_restoration_before_acquiring(
         )
         for sample, baseline in [("sample-a", 1.0), ("sample-b", 2.0)]
     }
-    sidecar["samples"] = [
-        {
-            "sample_stem": sample,
-            "mass_recalibration": serialize_mass_recalibration_result(result),
-        }
-        for sample, result in saved.items()
-    ]
-    sidecar_path.write_text(json.dumps(sidecar))
+    _edit(discovery, _EASY_IC_RESTORE)
+    for sample, result in saved.items():
+        _edit(
+            discovery,
+            "UPDATE samples SET mass_recalibration_result=? WHERE sample_stem=?",
+            serialize_mass_recalibration_result(result),
+            sample,
+        )
     raw = tmp_path / "raw"
     raw.mkdir()
     for sample in saved:
@@ -124,21 +133,11 @@ def test_selected_raws_are_batched_and_saved_evidence_is_not_reclassified(
 ):
     discovery = tmp_path / "discovery"
     candidate_ids = write_discovery(discovery)
-    import csv
-
-    position_path = discovery / "delta_mass_positions.csv"
-    with position_path.open(encoding="utf-8-sig") as f:
-        reader = csv.DictReader(f)
-        rows = list(reader)
-        columns = [
-            c
-            for c in reader.fieldnames
-            if c not in {"shape_r", "height_ratio_to_base", "ratio_status", "height"}
-        ]
-    with position_path.open("w", newline="", encoding="utf-8-sig") as f:
-        writer = csv.DictWriter(f, fieldnames=columns, extrasaction="ignore")
-        writer.writeheader()
-        writer.writerows(rows)
+    _edit(
+        discovery,
+        "UPDATE delta_mass_positions SET height=NULL,height_ratio_to_base=NULL,"
+        "shape_r=NULL",
+    )
     before = {p.name: p.read_bytes() for p in discovery.iterdir() if p.is_file()}
     raw = tmp_path / "raw"
     raw.mkdir()
@@ -190,7 +189,7 @@ def test_selected_raws_are_batched_and_saved_evidence_is_not_reclassified(
     partner = review.candidates[0].positions[1]
     assert partner.delta_da == 3.0000001234
     assert partner.feature_mz == 103.0000001234
-    assert partner.query_mz == 103.0
+    assert partner.query_mz == 103.0000001234
     assert [c[1] for c in calls if c[0] == "open"] == ["sample-a", "sample-b"]
     assert [c for c in calls if c[0] == "xic"] == [
         ("xic", "sample-a", 6),
@@ -232,21 +231,14 @@ def test_unknown_candidate_fails_before_raw_acquisition(tmp_path, monkeypatch):
 def test_review_queries_the_exact_discovery_center_not_the_partner_mass(
     tmp_path, monkeypatch
 ):
-    import csv
-
     ids = write_discovery(tmp_path)
-    path = tmp_path / "delta_mass_positions.csv"
-    with path.open(encoding="utf-8-sig") as f:
-        reader = csv.DictReader(f)
-        columns = reader.fieldnames
-        rows = list(reader)
-    for row in rows:
-        if row["candidate_id"] == ids[0] and row["position_label"] == "partner":
-            row["observed_mz"] = "103.008"
-    with path.open("w", encoding="utf-8-sig", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=columns)
-        writer.writeheader()
-        writer.writerows(rows)
+    _edit(
+        tmp_path,
+        "UPDATE delta_mass_positions SET observed_mz=103.008 WHERE position_label="
+        "'partner' AND candidate=(SELECT id FROM delta_mass_candidates "
+        "WHERE candidate_id=?)",
+        ids[0],
+    )
     raw = tmp_path / "raw"
     raw.mkdir()
     (raw / "sample-a.raw").touch()

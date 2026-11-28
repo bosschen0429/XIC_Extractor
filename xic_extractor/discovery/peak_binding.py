@@ -13,7 +13,7 @@ class DiscoveryPeakPhysicalBinding:
     """One final peak and the measurement Discovery judged it by.
 
     The measurement stays in the Discovery process; Alignment measures the
-    peak again from RAW with the capture conditions the peak table carries.
+    peak again from RAW.
     """
 
     final_ordinal: int

@@ -212,7 +212,7 @@ def test_acceptance_a9_pipeline_shared_callable_handoff(tmp_path, monkeypatch) -
     outputs = application.run_untargeted_application(
         UntargetedRequest(
             execution=UntargetedExecutionPolicy(profile=in_process_execution()),
-            discovery_batch_index=batch_index,
+            discovery=batch_index,
             raw_dir=tmp_path,
             dll_dir=tmp_path,
             output_dir=tmp_path / "published",

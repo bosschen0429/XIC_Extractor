@@ -202,7 +202,7 @@ def test_application_outputs_formal_groups_with_an_optional_snapshot(
         diagnostic_guard.setattr(experiment, "group_peak_bands", forbidden)
         output = application.run_untargeted_grouping(
             UntargetedRequest(
-                discovery_batch_index=write_batch(tmp_path, ("S0", "S1", "S2", "S3")),
+                discovery=write_batch(tmp_path, ("S0", "S1", "S2", "S3")),
                 raw_dir=tmp_path,
                 dll_dir=tmp_path,
                 output_dir=tmp_path / "snapshot",
@@ -670,7 +670,7 @@ def test_grouping_anchor_table_lists_istd_knots_without_any_workset(
     output = application.run_untargeted_grouping(
         UntargetedRequest(
             execution=UntargetedExecutionPolicy(profile=in_process_execution()),
-            discovery_batch_index=write_batch(tmp_path, ("S0", "S1")),
+            discovery=write_batch(tmp_path, ("S0", "S1")),
             raw_dir=tmp_path,
             dll_dir=tmp_path,
             output_dir=tmp_path / "grouping",

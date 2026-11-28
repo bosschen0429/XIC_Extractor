@@ -24,17 +24,14 @@ from tests.cid_nl_raw_fixture import (
     _multi_tag_settings,
     _settings,
 )
-from tests.cid_nl_runtime_fixtures import (
-    build_discovery_receipts,
-    install_runtime_raws,
-)
+from tests.cid_nl_runtime_fixtures import install_runtime_raws
+from tests.discovery_store_fixtures import SampleRecords, write_discovery
 from tests.untargeted_cid_nl_batch_runtime_fixtures import _nearby_subject_candidates
 from tests.untargeted_partition_fixtures import (
     project_composed_child,
 )
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.configuration.execution_profile import ExecutionProfile
-from xic_extractor.discovery.csv_reader import DiscoveryBatchInput
 from xic_extractor.discovery.models import representative_event_rt
 from xic_extractor.execution.process_memory import (
     ProcessMemorySample,
@@ -62,7 +59,6 @@ def _assert_jobs_match_direct_construction(batch) -> None:
             sample=sample,
             method_subject=subject,
             candidates=context.peaks_by_sample[sample.raw_stem],
-            discovery_receipt=context.discovery_receipts_by_sample[sample.raw_stem],
             settings=context.settings,
             raw_path=context.raw_paths_by_sample[sample.raw_stem],
             dll_dir=batch.jobs[0].dll_dir,
@@ -112,14 +108,11 @@ def profile_replay(tmp_path, monkeypatch, request):
         else ((2,), "single", False, False, 0.0)
     )
 
+    from xic_extractor.acquisition.physical_capture import (
+        PHYSICAL_CONTEXT_HALF_WINDOW_MIN,
+    )
     from xic_extractor.configuration.signal_processing_profile import (
         SignalProcessingProfile,
-    )
-    from xic_extractor.discovery.csv_reader import (
-        read_owner_bound_discovery_peaks_csv,
-    )
-    from xic_extractor.discovery.csv_writer import (
-        write_discovery_events_csv,
     )
     from xic_extractor.discovery.ion_grouping import build_discovery_ions
     from xic_extractor.discovery.ms1_capture import (
@@ -129,6 +122,7 @@ def profile_replay(tmp_path, monkeypatch, request):
     from xic_extractor.discovery.processing_run_spec_adapter import (
         compile_discovery_processing_run_spec,
     )
+    from xic_extractor.discovery.store import read_discovery_batch, read_sample_peaks
 
     separate_groups = len(group_sizes) == 2
     sample_stems = tuple(f"S{index + 1}" for index in range(sum(group_sizes)))
@@ -152,6 +146,7 @@ def profile_replay(tmp_path, monkeypatch, request):
             product_mz_tolerance_ppm=1.0,
             rt_min=12.8,
         )
+    padding_min = max(settings.ms1_search_padding_min, PHYSICAL_CONTEXT_HALF_WINDOW_MIN)
     spec = compile_discovery_processing_run_spec(
         paths, discovery_settings=settings, signal_processing_profile=profile
     )
@@ -160,10 +155,8 @@ def profile_replay(tmp_path, monkeypatch, request):
     opened_raws = install_runtime_raws(
         monkeypatch, sources_by_path=source_raws, tmp_path=tmp_path
     )
-    receipts = {}
-    csvs = {}
+    persisted = []
     candidates = {}
-    event_csvs = {}
     physical_peaks = {}
     source_records = {}
     source_evidence = {}
@@ -265,22 +258,16 @@ def profile_replay(tmp_path, monkeypatch, request):
                 signal_processing_profile=profile,
                 ms1_centroid=lambda *_: None,
             )
-        folder = tmp_path / path.stem
-        folder.mkdir()
-        persisted_candidates = discovery.peaks
-        receipts.update(
-            build_discovery_receipts(folder, (path,), {path.stem: persisted_candidates})
-        )
-        csvs[path.stem] = folder / f"{path.stem}.owner-candidates.csv"
-        event_csvs[path.stem] = write_discovery_events_csv(
-            folder / "discovery_events.csv", discovery.attachments
-        )
-        candidates[path.stem] = tuple(
-            candidate
-            for candidate in read_owner_bound_discovery_peaks_csv(
-                csvs[path.stem], receipt=receipts[path.stem]
+        persisted.append(
+            SampleRecords(
+                path.stem,
+                path,
+                peaks=discovery.peaks,
+                attachments=discovery.attachments,
+                acquisition_source=source.acquisition_source,
             )
         )
+        candidates[path.stem] = discovery.peaks
         source_evidence.update(
             (record.peak.peak_id, record) for record in discovery.physical_bindings
         )
@@ -292,20 +279,22 @@ def profile_replay(tmp_path, monkeypatch, request):
         if family_context:
             assert len(candidates[path.stem]) == 1
             assert all(True for candidate in candidates[path.stem])
+            windows = [
+                (
+                    record.physical_evaluation.question.query_rt_min - padding_min,
+                    record.physical_evaluation.question.query_rt_min + padding_min,
+                )
+                for record in discovery.physical_bindings
+            ]
             if not family_precursor_delta:
-                (record,) = discovery.physical_bindings
-                assert record.peak.ms1_search_rt_min <= min(query_rts)
-                assert record.peak.ms1_search_rt_max >= max(query_rts)
+                ((window_min, window_max),) = windows
+                assert window_min <= min(query_rts)
+                assert window_max >= max(query_rts)
                 (candidate,) = discovery.peaks
                 observed_nl_rts = tuple(seed.rt for seed in seeds)
                 assert representative_event_rt(candidate) in observed_nl_rts
-                assert record.peak.query_rt_min not in observed_nl_rts
-            rt_min = min(
-                record.peak.ms1_search_rt_min for record in discovery.physical_bindings
-            )
-            rt_max = max(
-                record.peak.ms1_search_rt_max for record in discovery.physical_bindings
-            )
+            rt_min = min(window_min for window_min, _ in windows)
+            rt_max = max(window_max for _, window_max in windows)
             vendor = opened_raws[path][0]
             start = vendor.ScanNumberFromRetentionTime(rt_min) - 1
             end = vendor.ScanNumberFromRetentionTime(rt_max)
@@ -328,22 +317,17 @@ def profile_replay(tmp_path, monkeypatch, request):
             continue
         (record,) = discovery.physical_bindings
         assert record.physical_evaluation.answer.selected_segment is not None
-        assert (
-            record.physical_evaluation.question.context_rt_start_min
-            != record.peak.ms1_search_rt_min
-        )
-        assert (
-            record.physical_evaluation.question.context_rt_end_min
-            != record.peak.ms1_search_rt_max
-        )
         physical_peaks[path.stem] = record.physical_evaluation.answer.selected_segment
-    discovery_batch = DiscoveryBatchInput(
-        sample_order=sample_stems,
-        peak_csvs=csvs,
-        raw_files={path.stem: path for path in paths},
-        event_csvs=event_csvs,
-        peak_receipts=receipts,
+    discovery_batch = read_discovery_batch(
+        write_discovery(
+            tmp_path / "discovery",
+            persisted,
+            neutral_loss_by_tag=settings.neutral_loss_by_tag,
+        )
     )
+    candidates = {
+        stem: read_sample_peaks(discovery_batch.path, stem) for stem in sample_stems
+    }
     captured_batches = []
     from xic_extractor.untargeted_execution import execution as bounded_owner
 
@@ -620,7 +604,6 @@ def profile_replay(tmp_path, monkeypatch, request):
                 center_rt=center_rt,
                 profile=profile,
                 settings=settings,
-                receipts=receipts,
                 sample_stems=sample_stems,
                 separate_groups=separate_groups,
                 source_raws=source_raws,

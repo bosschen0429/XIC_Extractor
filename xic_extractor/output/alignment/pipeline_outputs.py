@@ -91,7 +91,7 @@ def output_paths(
 
 def alignment_metadata(
     *,
-    discovery_batch_index: Path,
+    discovery: Path,
     raw_dir: Path,
     dll_dir: Path,
     output_level: AlignmentOutputLevel,
@@ -100,7 +100,7 @@ def alignment_metadata(
     ),
 ) -> dict[str, str]:
     metadata = {
-        "discovery_batch_index": str(discovery_batch_index),
+        "discovery": str(discovery),
         "raw_dir": str(raw_dir),
         "dll_dir": str(dll_dir),
         "output_level": output_level,

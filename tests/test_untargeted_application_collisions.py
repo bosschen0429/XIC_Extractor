@@ -40,7 +40,7 @@ def test_pipeline_rejects_stale_explanation_before_raw(
         application_module.run_untargeted_application(
             UntargetedRequest(
                 execution=UntargetedExecutionPolicy(profile=in_process_execution()),
-                discovery_batch_index=batch_index,
+                discovery=batch_index,
                 raw_dir=tmp_path / "raw",
                 dll_dir=tmp_path / "dll",
                 output_dir=output_dir,
@@ -80,7 +80,7 @@ def test_pipeline_rejects_stale_output_pair_before_writer_or_raw(
         application_module.run_untargeted_application(
             UntargetedRequest(
                 execution=UntargetedExecutionPolicy(profile=in_process_execution()),
-                discovery_batch_index=batch_index,
+                discovery=batch_index,
                 raw_dir=raw_dir,
                 dll_dir=tmp_path / "dll",
                 output_dir=output_dir,
@@ -124,7 +124,7 @@ def test_pipeline_rejects_stale_output_pair_before_replace_or_raw(
         application_module.run_untargeted_application(
             UntargetedRequest(
                 execution=UntargetedExecutionPolicy(profile=in_process_execution()),
-                discovery_batch_index=batch_index,
+                discovery=batch_index,
                 raw_dir=raw_dir,
                 dll_dir=tmp_path / "dll",
                 output_dir=output_dir,
@@ -166,7 +166,7 @@ def test_run_alignment_rejects_stale_owner_edge_outputs_before_raw(
         application_module.run_untargeted_application(
             UntargetedRequest(
                 execution=UntargetedExecutionPolicy(profile=in_process_execution()),
-                discovery_batch_index=batch_index,
+                discovery=batch_index,
                 raw_dir=raw_dir,
                 dll_dir=tmp_path / "dll",
                 output_dir=output_dir,
@@ -219,7 +219,7 @@ def test_run_alignment_rejects_stale_product_artifacts_before_raw(
         application_module.run_untargeted_application(
             UntargetedRequest(
                 execution=UntargetedExecutionPolicy(profile=in_process_execution()),
-                discovery_batch_index=batch_index,
+                discovery=batch_index,
                 raw_dir=raw_dir,
                 dll_dir=tmp_path / "dll",
                 output_dir=output_dir,

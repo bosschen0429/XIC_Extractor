@@ -86,9 +86,6 @@ def test_istd_apex_is_the_discovery_peak_with_most_events_near_expected_rt():
             best_ms2_scan_id=1,
             attached_event_count=events,
             ms1_apex_rt=rt,
-            ms1_search_rt_min=rt - 1.0,
-            ms1_search_rt_max=rt + 1.0,
-            query_rt_min=rt,
             status=status,
             matched_tag_names=(tag,),
         )

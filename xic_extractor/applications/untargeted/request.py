@@ -20,8 +20,8 @@ from xic_extractor.configuration.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
     SignalProcessingProfile,
 )
-from xic_extractor.discovery.csv_reader import DiscoveryBatchIndex
 from xic_extractor.discovery.settings import DiscoverySettings
+from xic_extractor.discovery.store import DiscoveryBatchInput
 from xic_extractor.execution.timing import TimingRecorder
 from xic_extractor.sample_metadata import SampleMetadata
 from xic_extractor.untargeted_execution.input_planning import (
@@ -47,7 +47,7 @@ class UntargetedRequest:
     I/O. Policies own their accepted options; canonical configs are not copied.
     """
 
-    discovery_batch_index: Path | DiscoveryBatchIndex
+    discovery: Path | DiscoveryBatchInput
     raw_dir: Path
     dll_dir: Path
     output_dir: Path
@@ -73,8 +73,8 @@ class UntargetedRequest:
                 "run_untargeted_application supports only supported CID-NL "
                 "discovery_settings; "
                 "pure single-provider CID-NL or compatible composite settings; "
-                "use scripts.run_alignment --preset dna_dr with an "
-                "owner-closed discovery batch index"
+                "use scripts.run_alignment --preset dna_dr with a "
+                "CID-NL Discovery output"
             )
         profile = self.signal_processing_profile
         validate_retained_processing_profile(profile)

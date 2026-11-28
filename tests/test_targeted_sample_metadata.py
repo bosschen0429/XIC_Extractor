@@ -253,8 +253,8 @@ def test_cli_flows_share_tsv_groups_and_excluded_population(tmp_path, monkeypatc
     assert (
         run_alignment.main(
             [
-                "--discovery-batch-index",
-                str(discovery.batch_index_csv),
+                "--discovery",
+                str(discovery.store),
                 "--raw-dir",
                 str(config.data_dir),
                 "--dll-dir",

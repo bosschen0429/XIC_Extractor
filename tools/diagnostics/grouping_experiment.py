@@ -97,7 +97,7 @@ def _parser() -> argparse.ArgumentParser:
     )
     for command in (query, compare):
         command.add_argument("--output-dir", required=True, type=Path)
-    query.add_argument("--discovery-batch-index", required=True, type=Path)
+    query.add_argument("--discovery", required=True, type=Path)
     query.add_argument("--mz-range", action="append", type=_range, required=True)
     _add_replay_arguments(replay)
     return parser
@@ -162,7 +162,7 @@ def _execute(parser: argparse.ArgumentParser, argv: Sequence[str] | None) -> int
     args.output_dir.mkdir(parents=True, exist_ok=True)
     try:
         if args.command == "query":
-            samples, rows = query_discovery(args.discovery_batch_index, args.mz_range)
+            samples, rows = query_discovery(args.discovery, args.mz_range)
             columns = (
                 "sample_stem",
                 "candidate_id",

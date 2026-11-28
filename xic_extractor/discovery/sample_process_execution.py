@@ -19,6 +19,7 @@ from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
 from xic_extractor.discovery import output_publication
+from xic_extractor.discovery.event_evidence import ranked_neutral_losses
 from xic_extractor.discovery.models import (
     DiscoveryBatchOutputs,
     DiscoveryPeak,
@@ -254,7 +255,7 @@ def run_discovery_batch_process(
         )
 
     if report.cancellation_requested:
-        raise InterruptedError("Discovery cancelled before batch index publication")
+        raise InterruptedError("Discovery cancelled before batch publication")
     raise_if_discovery_cancelled(should_cancel)
 
     results = tuple(
@@ -276,13 +277,10 @@ def run_discovery_batch_process(
             unsubmitted_job_count=len(report.unsubmitted_job_ordinals),
         )
 
-    return DiscoveryBatchOutputs(
-        batch_index_csv=output_publication.write_batch_index(
-            output_dir / "discovery_batch_index.csv",
-            [result.publication.index_row for result in results],
-            timing_recorder=timing_recorder,
-        ),
-        per_sample=tuple(result.publication.outputs for result in results),
+    return output_publication.publish_discovery_batch(
+        output_dir,
+        [result.publication for result in results],
+        timing_recorder=timing_recorder,
     )
 
 
@@ -353,6 +351,8 @@ def run_discovery_sample_process_job(
             discovery_result.peaks,
             discovery_result.attachments,
             output_dir=job.output_dir,
+            sample_index=job.sample_index,
+            neutral_loss_by_tag=ranked_neutral_losses(job.settings),
             acquisition_source=job.acquisition_input.acquisition_source,
             timing_recorder=recorder,
             mass_recalibration_result=discovery_result.mass_recalibration_result,

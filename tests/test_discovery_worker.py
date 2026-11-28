@@ -45,7 +45,7 @@ def _full_request(
 
     def fake_run_discovery_batch(run_spec: Any, **kwargs: Any) -> SimpleNamespace:
         captured_discovery.update(kwargs, run_spec=run_spec)
-        return SimpleNamespace(batch_index_csv=index_path, per_sample=())
+        return SimpleNamespace(store=index_path)
 
     monkeypatch.setattr(
         module,
