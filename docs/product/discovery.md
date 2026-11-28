@@ -2,39 +2,41 @@
 
 Discovery answers which sample-local signals warrant further evaluation. It
 turns method-specific seed evidence and MS1 traces into reviewable candidates;
-a candidate does not establish cross-sample correspondence or a final value.
-The [interpretation guide](../user/concepts.md#從-raw-到矩陣) explains that
-distinction with an example. This page owns candidate generation and the method
-evidence behind it. The [Untargeted method](untargeted-method.md) page owns the
-literature basis and the Untargeted scope; the
-[Untargeted guide](../user/untargeted.md) owns commands and outputs.
+a candidate does not establish cross-sample correspondence or a final value,
+and Discovery publishes no product value
+([Writer Authority](decision-policy.md#writer-authority)). Each provider
+(CID-NL, HCD-PI, Delta Mass and future ones) generates candidates its own way
+but publishes through one shared evidence contract, so Alignment, Backfill and
+the cell decision do not fork per provider. Untargeted keeps every candidate
+qualifying under its configured evidence space; Targeted keeps only configured
+Targets. The [interpretation guide](../user/concepts.md#從-raw-到矩陣)
+explains the distinction; the [Untargeted method](untargeted-method.md) owns
+the literature basis and scope; the [Untargeted guide](../user/untargeted.md)
+owns commands and outputs.
 
-Discovery is provider-specific at its input. CID-NL, HCD-PI, Delta Mass and
-future providers consume different evidence and generate candidates
-differently. Each publishes observations and hypotheses through one shared
-evidence contract, so Alignment, Backfill and the cell decision do not fork per
-provider. Untargeted retains every candidate qualifying under its configured
-evidence space; Targeted retains only configured targets. Discovery does not
-publish product values; see [Writer Authority](decision-policy.md#writer-authority).
+## At A Glance
+
+| Question | Rule | Detail |
+| --- | --- | --- |
+| What is one CID-NL candidate? | One raw valley-separated MS1 peak on one ion's XIC; several windows reading the same centroids are one peak. | [Ions, peaks and events](#ions-peaks-and-events) |
+| When does an NL event support a peak? | Its precursor is verified, within the peak's ppm window, and its scan RT lies within the peak bounds ± 0.1 min. | [CID-NL support relations](#cid-nl-support-relations) |
+| Which peaks enter Alignment? | Only `admitted` peaks: at least one attached event, not doubly charged, not blank. | [Peak status](#peak-status) |
+| Which mass does a peak carry? | The recorded precursor, else the MS1 accurate-mass reading at the apex. | [Accurate-mass reading](#accurate-mass-reading) |
+| What does a RAW claim need? | Its full query: scan filter, trace type, mass and RT window, backend and processing basis. | [RAW evidence is a query](#raw-evidence-is-a-query) |
+| Is blank qualification on? | No, it is opt-in after method-appropriate validation. | [Blank qualification](#blank-qualification) |
+| What does Delta Mass find? | Co-eluting MS1 peaks at preset mass separations; output is diagnostic only. | [Delta Mass Discovery](#delta-mass-discovery) |
 
 ## Evidence providers and composites
 
-Discovery strategy families name reusable evidence-provider classes:
-`neutral_loss` for CID-NL methods and `delta_mass` for MS1 mass-difference
-patterns. Concrete patterns live under a family: `DNA_dR` is a neutral-loss
-tag, and `pt` is a delta-mass pattern. `pt_pattern` is the method label for
-`delta_mass(pattern_id=pt)`, not a separate primitive strategy.
-
-Composite methods combine providers by explicit set operations on the same base
-peak. `pt_pattern + cid_nl(dR)` intersects Delta Mass hypotheses with existing
+Strategy families name provider classes: `neutral_loss` for CID-NL and
+`delta_mass` for MS1 mass-difference patterns. `DNA_dR` is a neutral-loss tag
+and `pt` a delta-mass pattern; `pt_pattern` is the method label for
+`delta_mass(pattern_id=pt)`, not a separate strategy. Composite methods combine
+providers by explicit set operations on the same base peak:
+`pt_pattern + cid_nl(dR)` intersects Delta Mass hypotheses with
 `neutral_loss(tag=DNA_dR)` evidence. Delta Mass evaluates its own hypotheses
-first, then annotates whether the base matches CID-NL(dR). That annotation uses
-admitted CID-NL peaks and the sample-local predicate on the peak's
-`peak_mz` and apex RT; it does not alter CID-NL decisions. An unmatched base
-records why: a non-admitted dR peak inside the window (`not_admitted`, with
-its status), an admitted dR peak of the same ion outside the RT window
-(`outside_rt_tolerance`), or neither (`no_cid_nl_peak`). Base m/z and apex RT
-are written at full precision so the published table reproduces the join.
+first, then annotates whether the base matches CID-NL(dR)
+([Output](#output)).
 
 ## CID-NL peaks and events
 
@@ -51,28 +53,17 @@ loss fragment ranks in the top three of the spectrum have a median error of
 
 ### Ions, peaks and events
 
-CID-NL Discovery publishes one SQLite file per batch, `discovery.sqlite`. It is
-written for Alignment, Delta Mass and diagnostics to query, not for reading by
-hand. Its `samples` table holds each sample's RAW file, acquisition identity and
-mass-restoration result, in run order; `tags` holds the configured losses.
-`peaks` has one row per physical MS1 peak. `events` has one row per strict NL
-event, keyed by MS2 scan, tag and product; a scan matching two tags is two
-events. Locating a peak and attaching to it are two facts: `peak` names the
-peak an event locates, and `unattached_reason` says why it does not attach
-there. `peak` is empty only when the ion has no measured peak at the event RT,
-and then the reason is physical. The table also carries each event's precursor
-metadata and parent-MS1 observation, so Alignment assesses the events without
-reading RAW again.
-
-The file keeps each fact once. Its `discovery_peaks` and `discovery_events`
-views are the tables to read: a peak's attached-event count and matched tags
-come from its events; an event's observed loss is precursor − product, or the
-configured loss when the precursor was inferred from the product. Readers
-compute the loss error from that. Each sample process writes its own part file;
-the batch owner merges them in run order and replaces `discovery.sqlite` in
-one step, so a stopped run leaves the previous file unchanged. A file whose
-schema differs from the current one is refused with an instruction to rerun
-Discovery.
+CID-NL Discovery publishes one `discovery.sqlite` per batch for Alignment,
+Delta Mass and diagnostics to query; read its `discovery_peaks` and
+`discovery_events` views. `peaks` has one row per physical MS1 peak; `events`
+has one row per strict NL event, keyed by MS2 scan, tag and product, so a scan
+matching two tags is two events. Each event names the `peak` it locates and,
+separately, the `unattached_reason` it does not attach there; `peak` is empty
+only when the ion has no measured peak at the event RT. Events carry their
+precursor metadata and parent-MS1 observation, so Alignment assesses them
+without reading RAW. A stopped run leaves the previous file unchanged; layout,
+part-file merging, derived counts and schema refusal are pinned by
+[`test_discovery_store.py`](../../tests/test_discovery_store.py).
 
 - **Ion.** Events are grouped only by their MS1-measured ion: the recorded
   scan precursor, or the single parent-MS1 centroid of an inferred precursor.
@@ -87,30 +78,13 @@ Discovery.
   XIC of the ion whose measurement is kept; measuring the peak again in another
   window (see [accurate-mass reading](#accurate-mass-reading)) does not rename
   it.
-- **Same ion.** Adjacent XIC windows overlap, so one ion can be measured in
-  several. A trace point sums the centroids inside its window, so windows
-  holding the same centroids read exactly the same intensity; a centroid near a
-  window edge can fall inside one window only. Two measurements are one peak
-  when their mass windows overlap, each apex lies inside the other peak's
-  bounds, and on the scans where both read non-zero inside the shared part of
-  the two peaks at least 3 read exactly equal and those are the majority.
-  Different ions in overlapping windows, such as ¹³C and ¹⁵N isotopes about
-  25 ppm apart, never read an equal intensity. The relation is closed
-  transitively, so the result does not depend on input order, channel order or
-  peak IDs. The kept measurement is one a recorded precursor located when the
-  group has one, then the window observing the most non-zero scans of the
-  group's peaks, then the wider RT context, then the lower `xic_mz` and earlier
-  context. Its RT context represents the peak, and every event of the group is
-  attached against it.
 - **Valley.** An event on a valley shared by two peaks belongs to the earlier
   peak.
 - **Evidence.** The event table lists every event located on the peak,
   attached or not, because Alignment re-judges them from it; the peak row keeps
   only `best_ms2_scan_id`, which names the representative event there, not the
   peak's mass. `attached_event_count` and `status` count attached events only.
-- **Mass.** `peak_mz` is the peak's ion mass: the [accurate-mass
-  reading](#accurate-mass-reading) for an inferred precursor, else `xic_mz`.
-  Discovery writes it once; Alignment and Delta Mass read it.
+  The peak's mass is `peak_mz` ([accurate-mass reading](#accurate-mass-reading)).
 
 | `unattached_reason` | Meaning |
 | --- | --- |
@@ -118,6 +92,24 @@ Discovery.
 | `mass_outside_peak` | The verified precursor lies outside the peak's precursor ppm window |
 | `rt_outside_peak` | The MS2 scan, or the parent MS1 scan of an inferred precursor, lies outside the peak bounds ± 0.1 min |
 | `no_peak_at_rt`, or a physical evaluation reason | The ion's XIC has no measurable physical peak at the event RT |
+
+#### Same ion in several windows
+
+Adjacent XIC windows overlap, so one ion can be measured in
+several. A trace point sums the centroids inside its window, so windows
+holding the same centroids read exactly the same intensity; a centroid near a
+window edge can fall inside one window only. Two measurements are one peak
+when their mass windows overlap, each apex lies inside the other peak's
+bounds, and on the scans where both read non-zero inside the shared part of
+the two peaks at least 3 read exactly equal and those are the majority.
+Different ions in overlapping windows, such as ¹³C and ¹⁵N isotopes about
+25 ppm apart, never read an equal intensity. The relation is closed
+transitively, so the result does not depend on input order, channel order or
+peak IDs. The kept measurement is one a recorded precursor located when the
+group has one, then the window observing the most non-zero scans of the
+group's peaks, then the wider RT context, then the lower `xic_mz` and earlier
+context. Its RT context represents the peak, and every event of the group is
+attached against it.
 
 ### Peak status
 
@@ -147,96 +139,92 @@ measured on its whole envelope (see
 
 ### Physical qualification
 
-Within a sample, overlapping or adjacent RT requests share their RT planning.
-Every distinct precursor center and ppm window is actually acquired; mass
-compatibility alone does not make extraction windows interchangeable. Compatible
-mass queries may share preparation only when their signals are exactly equal
-over the final complete acquired range. Different signals, ppm windows and
-isotope-separated channels remain separate. A bounded raw-only read probe can
-extend the shared context before its single canonical preparation and segment
-measurement; it does not quantify each NL request independently.
+Each raw valley-separated peak owns one measurement; NL events only locate it
+and add method evidence. Several events on one peak give one measurement and
+one peak row, not competing areas, and the event table keeps each event. The
+measurement query is the raw apex; the representative event keeps its own MS2
+RT.
 
-Each raw valley-separated peak owns one measurement. NL events only locate
-that owner and contribute their independent method evidence. Multiple events
-on that peak produce one measurement and one peak row, not competing areas;
-the event table keeps each event. The canonical measurement query is the raw
-apex, while the representative NL event keeps its own MS2 RT in the event
-table.
+- **Acquisition.** Within a sample, overlapping or adjacent RT requests share
+  RT planning, but every distinct precursor center and ppm window is acquired;
+  mass compatibility alone does not make windows interchangeable. A bounded
+  raw-only read probe can extend the shared context before one canonical
+  preparation and segment measurement; it does not quantify each NL request
+  separately.
+- **Shared population.** Different m/z windows share a prepared population
+  only after acquisition, when they use the same ppm tolerance, their m/z values
+  are compatible with every member, and their complete acquired RT and
+  raw-intensity arrays are exactly equal with positive signal. Different
+  signals, ppm windows and isotope-separated channels stay separate. Sharing
+  observed signal does not establish chemical identity.
+- **Several peaks, several ions.** One ion's XIC can hold several peaks; events
+  are partitioned by the physical owner's peak selection, and events outside or
+  between peaks stay in the event table with their reason without supporting
+  another peak. Distinct ions can share one MS2 scan; that does not make their
+  peaks duplicates, and both are kept.
+- A peak row is not cross-sample identity, selected-peak truth or Backfill
+  authority.
 
-Discovery uses the shared physical peak owner. An ordinary candidate needs two
-adjacent acquired points supporting its half-prominence top, and relief above
-the accepted component boundaries of at least four times the local raw-noise MAD. A valley at
-or below half the smaller apex separates peaks; a shallow shoulder stays one
-envelope; uncut top ripples do not create contrast boundaries. This gate can reject
-short real signals. It is not
-chemical identity and does not replace cross-sample support. The
-[signal processing rationale](signal-processing.md) owns the
-method and its evidence.
+The shared physical peak owner qualifies peaks. An ordinary candidate needs two
+adjacent acquired points supporting its half-prominence top and relief above
+its accepted boundaries of at least four times the local raw-noise MAD. A
+valley at or below half the smaller apex separates peaks; a shallow shoulder
+stays one envelope; uncut top ripples create no contrast boundary. This gate
+can reject short real signals; it is not chemical identity and does not
+replace cross-sample support. [Signal processing](signal-processing.md) owns
+the method and its evidence.
 
 ### Precursor basis
 
-A CID-NL mass reference has one of three bases:
+A CID-NL mass reference has one basis; `mixed` summarizes a peak whose events
+differ. The method assumes singly charged ions and rejects known incompatible
+charge. A missing or zero vendor value is unavailable, not a measured zero.
 
-- `scan_precursor`: the selected isolation m/z of the MS2 scan;
-- `scan_monoisotopic`: a distinguishable vendor-recorded monoisotopic m/z,
-  which is recorded evidence independent of product-plus-loss arithmetic;
-- `product_plus_neutral_loss`: an inferred precursor, product m/z plus the
-  configured loss.
+| Basis | Reference | Supports a strict relation |
+| --- | --- | --- |
+| `scan_precursor` | The MS2 scan's selected isolation m/z | Yes |
+| `scan_monoisotopic` | A distinguishable vendor-recorded monoisotopic m/z, independent of product + loss arithmetic | Only inside the recorded nominal isolation window; outside or unknown stays a mass-compatible candidate |
+| `product_plus_neutral_loss` | Inferred: product m/z plus the configured loss | Only after [verification](#inferred-precursor-verification) |
 
-`mixed` summarizes a peak whose events have different bases. The method
-assumes singly charged ions and rejects known incompatible charge. A missing or
-zero vendor value is unavailable, not a measured zero.
-
-Source and support are separate questions. A monoisotopic reference supports a
-strict NL relation only when it lies inside the recorded nominal isolation
-window. An outside or unknown reference stays a recorded mass-compatible
-candidate. Neither case proves unique chemical parentage.
-
-Inference stays inside the recorded isolation window: center = selected m/z +
-isolation offset, radius = the smaller of half the recorded width and
-`ms2_precursor_tol_da` (default 0.8 Da, the half-width of the 1.6 Da method).
-Inference does not establish precursor identity or replace the NL tolerance.
-Its loss error is null, not zero: derived equality is not an independent
-measurement and earns no ranking advantage.
+No basis proves unique chemical parentage. Inference stays inside the recorded
+isolation window: center = selected m/z + isolation offset, radius = the
+smaller of half the recorded width and `ms2_precursor_tol_da` (default 0.8 Da,
+the half-width of the 1.6 Da method). It establishes no precursor identity and
+does not replace the NL tolerance. Its loss error is null, not zero: derived
+equality is not an independent measurement and earns no ranking advantage.
 
 ### Inferred-precursor verification
 
-An inferred precursor alone cannot grant a strict NL relation or a detection
-count. After physical qualification, Discovery reads the recorded parent MS1
-scan within the precursor ppm window:
-
-- exactly one positive centroid supplies an independent precursor reference;
-- a missing scan, a missing ion or several centroids leave the inference
-  unresolved;
-- the measured mass must lie inside the nominal isolation window and satisfy
-  the per-ion NL tolerance;
-- both the parent MS1 scan and the MS2 scan must attach to the physical peak
-  (see [peak attachment](#cid-nl-support-relations)).
-
-This is method support, not proof of a unique precursor–product pairing. The
-original inferred m/z and null loss error stay unchanged. Alignment reads the
-parent-MS1 observation from the event table and assesses it again.
+An inferred precursor alone grants no strict NL relation or detection count.
+After physical qualification, Discovery reads the recorded parent MS1 scan
+within the precursor ppm window. Exactly one positive centroid supplies an
+independent reference; a missing scan or ion, or several centroids, leave the
+inference unresolved. The measured mass must lie inside the nominal isolation
+window and satisfy the per-ion NL tolerance, and both the parent MS1 and the
+MS2 scan must [attach](#cid-nl-support-relations) to the peak. This is method
+support, not a proven precursor–product pairing; the inferred m/z and null
+loss error stay unchanged, and Alignment reassesses the parent-MS1 observation
+from the event table.
 
 ### Accurate-mass reading
 
-For a measurement located only by `product_plus_neutral_loss` events,
-Discovery reads the ion at the apex scan and one MS1 scan on each side. MS1 is
-the method's accurate-mass scan, while ddMS2 runs at a quarter of its
-resolution, so product + loss only points at the ion. When the
-intensity-weighted reading differs from the XIC center, the peak is measured
-once more in the window centred on the reading, with the same RT context and
-tolerance, selecting the peak at its raw apex. That one measurement judges
-the peak; Alignment measures the peak again from RAW and publishes its own
-measurement. `peak_id` keeps the ion's XIC center. A window that selects nothing
-there, or selects a peak with another raw apex because its extra signal merges
-or splits peaks, keeps the first measurement, and the reading is not taken.
+`peak_mz` is the one mass Alignment and Delta Mass read, written once by
+Discovery and always the center of the window that measured the peak: the
+reading below for a peak whose events are all inferred, else `xic_mz`. A group
+with a recorded precursor takes no reading; that precursor fixes the ion.
 
-After [same-ion](#ions-peaks-and-events) grouping, a peak whose events are all
-inferred reports the reading its window is centred on as `ms1_apex_mz`; it is
-`peak_mz`, the mass Alignment and Delta Mass read, and always the center of the
-window that measured the peak. A group with a recorded precursor reads none;
-that precursor fixes the ion. The original precursor and product remain the
-keys for MS2 scan replay.
+For a measurement located only by `product_plus_neutral_loss` events,
+Discovery reads the ion at the apex scan and one MS1 scan on each side: MS1 is
+the accurate-mass scan, while ddMS2 runs at a quarter of its resolution, so
+product + loss only points at the ion. When the intensity-weighted reading
+differs from the XIC center, the peak is measured once more in a window
+centred on the reading, with the same RT context and tolerance, selecting the
+peak at its raw apex; that measurement judges the peak, and the reading is
+reported as `ms1_apex_mz`. A window that selects nothing there, or a peak with
+another raw apex because its extra signal merges or splits peaks, keeps the
+first measurement and takes no reading. `peak_id` keeps the XIC center, the
+original precursor and product stay the MS2 replay keys, and Alignment
+measures the peak again from RAW.
 
 - A reading spread wider than 5 ppm comes from two ions and reports none.
 - Selected precursors (`scan_precursor`, `scan_monoisotopic`, `mixed`) report
@@ -245,11 +233,11 @@ keys for MS2 scan replay.
   m/z when the scan was triggered.
 
 Product + loss assumes a singly charged precursor. When the MS1 ion read at
-the peak's apex has a centroid one doubly charged ¹³C spacing (0.50168 m/z)
-above it in most scans, the peak's `status` is `doubly_charged`; this is judged
-once per peak, after same-ion grouping. Its bounds,
-area and reason remain visible; it cannot reach Alignment or a Matrix value. A
-separate singly charged ion keeps its own admission.
+the apex has a centroid one doubly charged ¹³C spacing (0.50168 m/z) above it
+in most scans, the peak's `status` is `doubly_charged`, judged once per peak
+after same-ion grouping. Its bounds, area and reason stay visible, but it
+cannot reach Alignment or a Matrix value; a separate singly charged ion keeps
+its own admission.
 
 ### Trace context
 
@@ -261,45 +249,24 @@ reaches 100,000. Reacquisition keeps the
 original query m/z and tolerance. It answers the physical peak question; it
 does not upgrade precursor identity or grant Matrix authority.
 
-### Shared measurements
-
-- Distinct ions can share one MS2 scan. Sharing a scan does not make their
-  peaks duplicates; both are kept.
-- One ion's XIC can contain several physical peaks. Events are partitioned by the
-  physical owner's peak selection. Events outside or between peaks stay in the
-  event table with their reason and do not support another peak.
-- The physical owner prepares each retained trace population once and measures
-  each raw peak once; NL events share that measurement, not competing areas.
-  Different m/z windows share a population only after acquisition: they use the
-  same ppm tolerance, their m/z values are compatible with every member, and
-  their complete acquired RT and raw-intensity arrays are exactly equal with
-  positive signal. Observed-signal sharing does not establish chemical
-  identity; a peak row is not cross-sample identity, selected-peak truth or
-  Backfill authority.
-
 ## CID-NL support relations
 
-The CID-NL method assessment binds MS2 evidence to physical MS1 peaks. The
-current lab acquisition is DDA/ddMS2; DIA is outside this contract because the
-lab has no mature DIA method.
+An NL event attaches to a Discovery peak only when its precursor is verified
+(recorded, or measured in the parent MS1 for an inferred precursor), that mass
+lies within the peak's precursor ppm window, and the MS2 scan RT, plus the
+parent MS1 scan RT for an inferred precursor, lie within the peak bounds ±
+0.1 min. One rule covers every precursor basis, in Discovery admission and in
+method assessment. The margin covers DDA sampling a foot or tail just past the
+10%-height return; an RT inside another measured peak of the same trace never
+attaches through it. The lab acquisition is DDA/ddMS2; DIA is outside this
+contract because the lab has no mature DIA method.
 
-- **Peak attachment (Discovery admission).** One rule applies to every
-  precursor basis. An NL event supports a Discovery peak only when its precursor
-  is verified (recorded, or measured in the parent MS1 for an inferred
-  precursor), that mass lies within the precursor ppm window of the peak, and
-  the MS2 scan RT, plus the parent MS1 scan RT for an inferred precursor, lie
-  within the peak bounds ± 0.1 min. The margin covers DDA sampling a peak's foot
-  or tail just past its 10%-height return. An RT outside the bounds that lies
-  inside another measured peak of the same trace never attaches through the
-  margin. A peak with no attached event is `no_nl_event`.
-
-- **Strict support.** Method assessment uses the same attachment rule. An event
-  that attaches to exactly one m/z-compatible candidate peak, with no
-  positive-width overlap with another compatible peak, supports that peak
-  individually; this includes a scan at an isolated peak's boundary or within
-  its 0.1 min margin.
+- **Strict support.** An event attached to exactly one m/z-compatible
+  candidate, with no positive-width overlap with another compatible peak,
+  supports it individually, including a scan at an isolated peak's boundary or
+  within its 0.1 min margin.
 - **Set relation.** A scan on an endpoint shared by adjacent peaks, or a peak
-  with positive-width overlap, relates to the connected candidate set. A set relation grants no
+  with positive-width overlap, relates to the connected candidate set, with no
   individual vote and no hypothesis.
 - **One event per peak.** Repeated strict scans inside one MS1 peak are one
   chromatographic support event with several scans, not independent votes. The
@@ -324,19 +291,17 @@ lab has no mature DIA method.
 | `HOLD` | Set-only evidence, or a completed Backfill search without qualifying support |
 | `REJECT` | Qualifying CID-NL evidence with no usable physical MS1 peak |
 
-Non-qualifying scans cannot manufacture `REJECT`. The technical state
-(`evaluated`, `unsupported`, `failed`, `not_evaluated`) is a separate axis:
-technical failure never becomes `REJECT`, and the absence of positive evidence
-is not proof that a search ran. A sample with no eligible Discovery input is
-`not_evaluated`. If a group-guided Backfill later searches it and finds nothing
-qualifying, the completed result is `HOLD`, distinct from the unsearched slot
-and not proof of rejection.
-
-A subject with at least one evaluated result, every evaluated result `HOLD` or
-`REJECT`, and every other slot unsearched is excluded under `cid_nl_requirement_not_supported` (or
-`composite_requirement_not_supported`). Each sample's Discovery peak needs its
-own evaluated `HOLD` or `REJECT`; an unsearched slot cannot supply negative
-evidence.
+- Non-qualifying scans cannot manufacture `REJECT`. The technical state
+  (`evaluated`, `unsupported`, `failed`, `not_evaluated`) is a separate axis:
+  technical failure never becomes `REJECT`, and absent positive evidence does
+  not prove a search ran.
+- A sample with no eligible Discovery input is `not_evaluated`. A later
+  group-guided Backfill that finds nothing qualifying makes it `HOLD`, distinct
+  from the unsearched slot and not a rejection.
+- A subject with at least one evaluated result, all of them `HOLD` or
+  `REJECT`, and every other slot unsearched is excluded under `cid_nl_requirement_not_supported` (or
+  `composite_requirement_not_supported`). Each sample's Discovery peak needs its
+  own evaluated answer; an unsearched slot supplies no negative evidence.
 
 ## RAW evidence is a query
 
@@ -365,25 +330,25 @@ and [Thermo RawFileReader](https://github.com/thermofisherlsms/RawFileReader).
 
 ## Blank qualification
 
-Blank qualification is disabled by default. Producing a blank library alone
-does not enable it; an explicit opt-in requires method-appropriate validation.
+Blank qualification is off by default; producing a blank library does not
+enable it, and opting in requires method-appropriate validation. When enabled,
+a peak matched within 10 ppm keeps its admission only when its MS1 height is at
+least 3× the blank's maximum intensity; below that its `status` is `blank`,
+unless it reads as doubly charged. It changes eligibility only, not the peak's
+boundaries, apex or area.
 
-- The library aggregates centroid m/z and maximum intensity. It does not
-  preserve RT or qualify peak shape.
-- A short solvent blank with a different LC gradient is diagnostic background,
-  not a validated hard-exclusion reference for a longer method. RT must not be
-  scaled linearly between different 15-minute and 60-minute gradients.
+- The library aggregates centroid m/z and maximum intensity; it keeps no RT
+  and qualifies no shape.
+- A short solvent blank on a different LC gradient is diagnostic background,
+  not a hard-exclusion reference for a longer method. RT must not be scaled
+  linearly between different 15-minute and 60-minute gradients.
 - Background references distinguish clean pre-sample solvent injections from
   post-standard or post-sample carryover monitors and waste-directed runs. A
-  method-matched blank is a prerequisite for evaluating removal, not proof that
-  an m/z-only intensity rule is valid.
-- Instrument acquisition exclusion lists and software blank qualification are
-  separate. An acquisition exclusion can prevent an MS/MS trigger; disabling
-  software filtering does not recreate an unacquired spectrum.
-- When enabled, a peak matched within 10 ppm keeps its admission only when its
-  MS1 height is at least 3× the blank's maximum intensity. Below that its
-  `status` is `blank`, unless it reads as doubly charged. Qualification changes eligibility
-  only; it does not change the peak's boundaries, apex or area.
+  method-matched blank is a prerequisite for evaluating removal, not proof
+  that an m/z-only rule is valid.
+- Instrument acquisition exclusion and software blank qualification are
+  separate: an exclusion can prevent an MS/MS trigger, and disabling software
+  filtering does not recreate an unacquired spectrum.
 
 ## Delta Mass Discovery
 
@@ -391,113 +356,122 @@ Delta Mass finds sample-local MS1 peak combinations at preset-defined mass
 separations. A candidate must satisfy the mass differences and co-elution;
 designated discriminating positions also need apex-region shape correlation.
 The method supports two or more positions and has no built-in chemistry.
+Output is `diagnostic_only`, with no Alignment handoff and no Matrix,
+Backfill, counted-detection or export authority.
 
-The built-in Pt presets restore Easy-IC mass coordinates before constructing
-features. Matching, RAW confirmation and review use that same per-sample mass
-result. The Delta Mass file saves it per sample for review replay. Restoration
-changes the measured input, not
-the configured 20 ppm window, apex tolerance or R threshold. Pt envelope models
-remain review-only.
-
-The Delta Mass ppm setting also controls feature mass linking, so a tolerance
-comparison starts before hypotheses are selected. Detector mass-dispersion
-quality limits are separate and are not changed by this window setting.
+### Matching
 
 1. Only detector-qualified features anchor a hypothesis, in the roles the
-   preset names. The matcher trusts that qualification.
+   preset names; the matcher trusts that qualification. The RAW adapter gives
+   the detector vendor-centroided MS1 ions, so profile samples on a mass peak's
+   sides are not separate features. Detector heights are smoothed screening
+   heights, not areas.
 2. Partners are searched in both mass directions from the lowest-mass position,
    within the ppm window and the scan-aware apex tolerance
-   `max(apex_floor_sec, scan_interval_multiplier × MS1 interval)`.
+   `max(apex_floor_sec, scan_interval_multiplier × MS1 interval)`. The ppm
+   setting also controls feature mass linking, so tolerance comparison starts
+   before hypotheses are selected; detector mass-dispersion limits are
+   separate.
 3. Measured height ratios are compared with the preset's reference ranges and
    recorded as `ratio_status`. Ratios are evidence only: out-of-range ratios do
    not reject candidates, and expected abundance never predicts missing signal.
 4. Missing positions are confirmed in RAW by apex alignment and apex-region
    Pearson correlation. RAW apex tolerance uses the median interval of the
-   acquired XIC times, including zero-intensity scans, with the same floor and
-   multiplier. It does not reuse the whole-file interval used for initial
-   table matching. A two-position method needs its partner in the feature
-   table; RAW never completes a solitary seed.
+   acquired XIC times, zero-intensity scans included, with the same floor and
+   multiplier, not the whole-file interval of table matching. A two-position
+   method needs its partner in the feature table; RAW never completes a
+   solitary seed.
 5. Discriminating positions are shape-checked. An optional `lowest_position`
    must have the lowest background-subtracted RAW height and clear background
    support.
 
-Background is the median of the lower-median flank of two configured intervals
-around the base apex; the lower flank limits contamination from a neighbouring
-peak on one side. Background variation is `1.4826 × MAD` on that flank. The
-lowest position needs net height of at least the larger of an absolute floor
-and a multiple of that variation. The floor remains necessary because sparse
-flanks can have zero MAD; zero variation is not infinite signal-to-noise. This
-screening statistic is not a calibrated detection limit.
+Shape similarity never establishes membership by itself.
 
-The optional base-support check sums the named non-base positions' net heights
-and divides by the sum of their reference ratios (geometric centers of each
-range). The base must reach `min_base_support` of that expectation. This is one
-pooled lower bound, not separate ratio gates or an upper bound. Each height is
-its own central-window maximum, not a simultaneous spectrum or area, and
-molecular isotope overlap or interference can affect the distribution.
+### Background and base support
 
-The RAW adapter supplies vendor-centroided MS1 ions to the local detector, so
-profile samples on a mass peak's sides are not separate features. Detector
-heights are smoothed screening heights, not quantitative areas.
+- **Background.** The median of the lower-median flank of two configured
+  intervals around the base apex; the lower flank limits contamination from a
+  neighbour on one side. Variation is `1.4826 × MAD` on that flank. The lowest
+  position needs net height of at least the larger of an absolute floor and a
+  multiple of that variation. The floor is needed because sparse flanks can
+  have zero MAD, and zero variation is not infinite signal-to-noise. This is a
+  screening statistic, not a calibrated detection limit.
+- **Base support.** The optional check sums the named non-base positions' net
+  heights and divides by the sum of their reference ratios (geometric centers
+  of each range); the base must reach `min_base_support` of that expectation.
+  This is one pooled lower bound, not separate ratio gates or an upper bound.
+  Each height is its own central-window maximum, not a simultaneous spectrum or
+  area, and isotope overlap or interference can affect the distribution.
 
-The Pt presets are provisional applications of this generic method. Their TOML
-files own every numeric choice: positions, anchors, ratio bounds, background
-floor and base-support tolerance. The abundance reference is
-[NIST platinum isotope composition](https://physics.nist.gov/cgi-bin/Compositions/stand_alone.pl?ele=Pt).
-The base-support tolerance is provisional, not implied by natural abundance.
-Ratio agreement is not a calibrated Pt probability.
+### Pt presets
 
-Delta Mass output is `diagnostic_only`. It has no Alignment handoff and no
-Matrix, Backfill, counted-detection or export authority. A run publishes only
-established candidates: `discovery.sqlite` holds the method, each sample's
-mass-restoration result, the candidates, their positions and the detected
-feature bounds the review reads; `delta_mass_candidates.csv` is its
-`delta_mass_candidate_table` view written out as the readable table, one row per candidate with its sample, m/z, RT, height, positions found
-and joined dR peak. A composite method reads the dR peaks from the CID-NL
-`discovery.sqlite` of the same RAW (`--cid-nl-discovery`). Shape similarity never
-establishes membership by itself. Real-sample counts are method-development
+The built-in Pt presets are provisional applications of this method. They
+restore Easy-IC mass coordinates before building features, and matching, RAW
+confirmation and review use that same per-sample result, saved per sample in
+the Delta Mass file. Restoration changes the measured input, not the
+configured 20 ppm window, apex tolerance or R threshold. The preset TOML files
+own every numeric choice: positions, anchors, ratio bounds, background floor
+and base-support tolerance. The abundance reference is
+[NIST platinum isotope composition](https://physics.nist.gov/cgi-bin/Compositions/stand_alone.pl?ele=Pt);
+the base-support tolerance is provisional, not implied by natural abundance.
+Ratio agreement is not a calibrated Pt probability, and Pt envelope models are
+review-only.
+
+### Output
+
+A run publishes only established candidates. `discovery.sqlite` holds the
+method, each sample's mass-restoration result, the candidates, their positions
+and the feature bounds review reads; `delta_mass_candidates.csv` writes its
+`delta_mass_candidate_table` view as the readable table, one row per candidate
+with sample, m/z, RT, height, positions found and joined dR peak.
+
+A composite method reads dR peaks from the CID-NL `discovery.sqlite` of the
+same RAW (`--cid-nl-discovery`). The annotation uses admitted CID-NL peaks and
+the sample-local predicate on the peak's `peak_mz` and apex RT; it does not
+alter CID-NL decisions. An unmatched base records why: a non-admitted dR peak
+inside the window (`not_admitted`, with its status), an admitted dR peak of the
+same ion outside the RT window (`outside_rt_tolerance`), or neither
+(`no_cid_nl_peak`). Base m/z and apex RT are written at full precision so the
+table reproduces the join. Real-sample counts are method-development
 evidence, not an accuracy threshold.
 
 ### Read-only candidate review
 
-Review answers: candidate → position XICs → NL assessment → supporting MS2.
-Export selected IDs, or all saved candidates, with
-`python -m tools.diagnostics.delta_mass_review --help`; open the JSON with
-`xic-inspector <review.json>` (or `python -m xic_inspector`).
-Choose `--nl-preset` explicitly to assess NL inside saved feature bounds.
-Without it, only XICs are acquired; there is no manual MS2 browsing mode.
-The Inspector shows unsmoothed RAW XICs on a shared intensity axis, position
-labels, configured ΔDa, m/z, saved statuses and feature bounds.
-Review XICs use the same expected m/z centers as Discovery, retained at full
-precision in the Delta Mass file. Observed partner masses remain
-available for feature/precursor evidence; they do not silently recenter the XICs.
-Clicking NL support opens its exact spectrum, measured product and XIC bounds;
-multiple supporting scans remain navigable without a scan search.
-The existing NL matcher, parent-MS1 evidence and peak attribution own the answer.
-Missing evidence, ambiguous attribution and read errors remain distinguishable.
-Review does not consume shape correlations or independently measured height ratios.
-For `pattern_id=pt`, review also compares the synchronous base/+1/+2/+4 net
-intensities with Pt+C, Pt+C+Cl, Pt+C+S and Pt+C+2S models. The base defines one
-half-height core around the local apex; all four positions use those same scans.
-The reported spread is the largest intensity/model amount divided by the smallest
-at the best carbon count: closer to 1 means a closer fit, not confirmed identity.
-Inspector orders the loaded candidates by this score and shows the model,
-carbon count, core scan count and observed/expected ratios. Missing or incompatible
-traces show an unavailable reason rather than a fabricated score. This comparison
-uses fixed singly charged positions, not charge/origin search, fine-structure
-attribution or RT fitting. No spread threshold is applied and no candidate status
-or saved Delta Mass result is changed. Older reviews without this evidence remain readable.
-The comparison table expresses both observations and model expectations with
-BASE set to 100. Display names use BASE/PLUS N rather than Light/Heavy or
-internal `base`/`plus_*` identifiers; custom Heavy positions use their configured
-mass offset. Exact Δm/z remains visible separately, and saved position IDs do not
-change. Four Pt curves have distinct colors as well as distinct line patterns.
-RAW files are matched by saved sample name, not verified as the original bytes.
-These are new diagnostic reads, not a replay of the original detector.
-Inspector reads the saved report only and never acquires RAW.
-NL support is `diagnostic_only`, not chemical identity or full CID-NL qualification.
-Neither review nor a support click changes Discovery, candidate admission or Matrix
-eligibility; absence of support is not proof of chemical absence.
+Review follows candidate → position XICs → NL assessment → supporting MS2 and
+never changes Discovery, admission or Matrix eligibility.
+
+- **Reads.** Review XICs use Discovery's expected m/z centers at full
+  precision; observed partner masses stay evidence and do not recenter the
+  XICs. RAW files are matched by saved sample name, not verified as the
+  original bytes. These are new diagnostic reads, not a replay of the
+  detector. Inspector reads the saved report only and never acquires RAW.
+- **NL.** NL is assessed inside saved feature bounds only when `--nl-preset`
+  is chosen; otherwise only XICs are acquired, and there is no manual MS2
+  browsing mode. The shared NL matcher, parent-MS1 evidence and peak
+  attribution own the answer. NL support is `diagnostic_only`, not identity or
+  full CID-NL qualification; its absence is not proof of chemical absence.
+  Missing evidence, ambiguous attribution and read errors stay distinct.
+- Review does not consume shape correlations or independently measured height
+  ratios.
+- **Pt envelope.** For `pattern_id=pt`, review compares the synchronous
+  base/+1/+2/+4 net intensities with Pt+C, Pt+C+Cl, Pt+C+S and Pt+C+2S models
+  over one half-height core around the base apex, shared by all four
+  positions. The spread is the largest intensity/model amount divided by the
+  smallest at the best carbon count: closer to 1 is a closer fit, not
+  identity. It uses fixed singly charged positions, with no charge/origin
+  search, fine-structure attribution or RT fitting. No spread threshold
+  applies and no saved status changes; Inspector orders candidates by it and
+  shows model, carbon count, core scan count and observed/expected ratios, and
+  missing or incompatible traces show an unavailable reason instead of a
+  score.
+
+Export with `python -m tools.diagnostics.delta_mass_review --help` and open
+the JSON with `xic-inspector <review.json>` (or `python -m xic_inspector`).
+[`test_delta_mass_review.py`](../../tests/test_delta_mass_review.py) and
+[`test_delta_mass_review_browser.py`](../../tests/test_delta_mass_review_browser.py)
+pin the export and the display (shared intensity axis, BASE/PLUS N position
+names and colors, exact support spectra without scan search, unavailable
+states).
 
 ## Method-specific validation
 
@@ -510,10 +484,19 @@ truth. Vendor RAW-to-mzML conversion is not an implicit product dependency.
 
 ## Verification
 
-- `tests/test_discovery_ion_peaks.py`, `tests/test_discovery_store.py`,
-  `tests/test_discovery_output_publication.py`
+- [`test_discovery_ion_peaks.py`](../../tests/test_discovery_ion_peaks.py)
+- [`test_discovery_store.py`](../../tests/test_discovery_store.py)
+- [`test_discovery_output_publication.py`](../../tests/test_discovery_output_publication.py)
 
 ## See Also
 
-- [Alignment](alignment.md) | [Backfill](backfill.md) | [Untargeted method](untargeted-method.md)
-- [Presets](presets.md)
+[Alignment](alignment.md) · [Backfill](backfill.md) ·
+[Untargeted method](untargeted-method.md) · [Presets](presets.md)
+
+## Where The Code Lives
+
+| Rule | Module |
+| --- | --- |
+| Discovery batch file | `xic_extractor.discovery.store` |
+| Delta Mass review export | `tools.diagnostics.delta_mass_review` |
+| Delta Mass review display | `xic_inspector` |
