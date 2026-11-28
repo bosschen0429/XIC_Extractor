@@ -13,6 +13,7 @@ from tests.discovery_ms1_capture_fixtures import (
     _channel,
     _multi_tag_settings,
     _seed,
+    with_scan,
 )
 from tests.discovery_ms1_capture_fixtures import (
     _settings as _capture_settings,
@@ -150,7 +151,7 @@ def test_recorded_mono_nl_match_keeps_distinct_inferred_physical_search(
     if parent_support:
         assert supported[0].ms1_apex_rt == pytest.approx(9.02)
         assert (
-            representative_event(supported[0]).precursor_mz_basis
+            representative_event(supported[0]).scan.precursor_mz_basis
             == "product_plus_neutral_loss"
         )
 
@@ -213,7 +214,7 @@ def test_pipeline_retains_each_seeded_physical_peak_from_one_rt_group(
     assert all(candidate.status == "admitted" for candidate in candidates)
     peak_ids = {candidate.peak_id for candidate in candidates}
     assert sorted(
-        item.event.scan_number for item in events if item.peak_id in peak_ids
+        item.event.scan.scan_number for item in events if item.peak_id in peak_ids
     ) == [100, 200]
     assert raw.raw_chromatogram_call_count == 1
 
@@ -268,10 +269,14 @@ def test_discovery_retained_physical_peak_cardinality(
     basis = fixture.get("precursor_mz_basis", "product_plus_neutral_loss")
     seeds = tuple(
         replace(
-            _seed(scan_number=scan, rt=seed_rt, precursor_mz=mz, product_mz=product),
+            with_scan(
+                _seed(
+                    scan_number=scan, rt=seed_rt, precursor_mz=mz, product_mz=product
+                ),
+                precursor_mz_basis=basis,
+            ),
             raw_file=raw_path,
             sample_stem=raw_path.stem,
-            precursor_mz_basis=basis,
         )
         for scan, seed_rt, mz, product in zip(
             fixture["seed_scans"],
@@ -318,7 +323,7 @@ def test_discovery_retained_physical_peak_cardinality(
         }
     if fixture_name == "discovery_true_double_peak":
         assert {
-            item.event.scan_number for item in result.attachments if item.peak_id
+            item.event.scan.scan_number for item in result.attachments if item.peak_id
         } == {12327}
     if fixture_name == "discovery_non_peak_background":
         assert all(not event.peak_id for event in result.attachments)
@@ -352,15 +357,17 @@ def test_merged_physical_candidate_round_trips_through_the_discovery_file(
     source = spec.acquisition_inputs[0].acquisition_source
     seeds = tuple(
         replace(
-            _seed(
-                scan_number=scan,
-                rt=rt,
-                product_mz=500.0 - loss,
-                product_intensity=20000.0 if scan == 20 else 10000.0,
+            with_scan(
+                _seed(
+                    scan_number=scan,
+                    rt=rt,
+                    product_mz=500.0 - loss,
+                    product_intensity=20000.0 if scan == 20 else 10000.0,
+                ),
+                configured_neutral_loss_da=loss,
+                observed_neutral_loss_da=loss,
             ),
             neutral_loss_tag=tag,
-            configured_neutral_loss_da=loss,
-            observed_neutral_loss_da=loss,
         )
         for scan, rt, tag, loss in (
             (10, 7.78, "dR", 116.047344),
@@ -372,10 +379,10 @@ def test_merged_physical_candidate_round_trips_through_the_discovery_file(
         from xic_extractor.precursor_evidence import Ms1PrecursorObservation
 
         seeds = tuple(
-            replace(
+            with_scan(
                 seed,
                 precursor_mz=500.0 + offset,
-                product_mz=seed.product_mz + offset,
+                product_mz=seed.scan.product_mz + offset,
                 precursor_mz_basis="product_plus_neutral_loss",
                 observed_loss_error_ppm=None,
                 scan_precursor_mz=500.5,
@@ -420,7 +427,7 @@ def test_merged_physical_candidate_round_trips_through_the_discovery_file(
         assert len(parent_batches) == 1 and len(parent_batches[0]) == 1
     assert candidate.admitted
     assert candidate.matched_tag_names == ("dR", "R")
-    assert [event.scan_number for event in candidate.located_events] == [10, 20]
+    assert [event.scan.scan_number for event in candidate.located_events] == [10, 20]
     assert {event.peak_id for event in result.attachments} == {candidate.peak_id}
     (restored,) = stored_peaks(
         write_discovery(
@@ -446,13 +453,13 @@ def test_merged_physical_candidate_round_trips_through_the_discovery_file(
 
 def _stored_facts(event):
     return (
-        event.scan_number,
-        event.rt,
+        event.scan.scan_number,
+        event.scan.rt_min,
         event.neutral_loss_tag,
-        event.precursor_mz,
-        event.product_mz,
-        event.precursor_mz_basis,
-        event.ms1_precursor_observation,
+        event.scan.precursor_mz,
+        event.scan.product_mz,
+        event.scan.precursor_mz_basis,
+        event.scan.ms1_precursor_observation,
     )
 
 
@@ -595,7 +602,7 @@ def test_short_discovery_request_reacquires_points_without_assuming_peak_support
     group = _channel(
         (
             _seed(scan_number=10, rt=12.063),
-            replace(
+            with_scan(
                 _seed(scan_number=11, rt=12.181),
                 precursor_mz_basis="product_plus_neutral_loss",
             ),
@@ -697,7 +704,7 @@ def test_product_inferred_single_seed_uses_widened_initial_context(
     profile = SignalProcessingProfile(window_points=15)
     group = _channel(
         (
-            replace(
+            with_scan(
                 _seed(
                     scan_number=10,
                     rt=12.063,
@@ -740,7 +747,7 @@ def test_strong_product_inferred_seed_group_uses_widened_initial_context(
     profile = SignalProcessingProfile(window_points=15)
     group = _channel(
         tuple(
-            replace(
+            with_scan(
                 _seed(
                     scan_number=scan_number,
                     rt=rt,
@@ -1054,20 +1061,24 @@ def test_physical_fact_sharing_uses_one_raw_peak(
     )
     source = spec.acquisition_inputs[0].acquisition_source
     first = replace(
-        _seed(scan_number=10, rt=7.80, precursor_mz=500.0000001),
+        with_scan(
+            _seed(scan_number=10, rt=7.80, precursor_mz=500.0000001),
+            configured_neutral_loss_da=116.047344,
+            observed_neutral_loss_da=116.047344,
+        ),
         neutral_loss_tag="dR",
-        configured_neutral_loss_da=116.047344,
-        observed_neutral_loss_da=116.047344,
     )
     second = (
         replace(
-            first,
+            with_scan(
+                first,
+                configured_neutral_loss_da=132.0423,
+                observed_neutral_loss_da=132.0423,
+            ),
             neutral_loss_tag="R",
-            configured_neutral_loss_da=132.0423,
-            observed_neutral_loss_da=132.0423,
         )
         if same_question
-        else replace(first, precursor_mz=500.0000002)
+        else with_scan(first, precursor_mz=500.0000002)
     )
     raw = _OwnerBoundBatchRaw(source)
     prepare = Mock(wraps=prepare_physical_signal)
@@ -1126,7 +1137,7 @@ def _inferred_apex_case(
     raw = _CadenceBoundRaw(source, full_rt, full_intensity)
     group = _channel(
         (
-            replace(
+            with_scan(
                 _seed(scan_number=10, rt=12.063, product_intensity=1_000_000.0),
                 precursor_mz_basis=basis,
             ),
@@ -1137,7 +1148,7 @@ def _inferred_apex_case(
         groups += (
             _channel(
                 (
-                    replace(
+                    with_scan(
                         _seed(scan_number=11, rt=12.083, product_intensity=900_000.0),
                         precursor_mz_basis=companion_basis,
                     ),
@@ -1191,7 +1202,7 @@ def test_inferred_precursor_is_measured_once_in_the_window_of_its_apex_ion(
     assert raw.request_batches[0][0].mz == pytest.approx(group.mz)
     assert raw.request_batches[-1][0].mz == pytest.approx(apex_mz)
     (candidate,) = result.peaks
-    assert representative_event(result.peaks[0]).precursor_mz == (group.mz)
+    assert representative_event(result.peaks[0]).scan.precursor_mz == (group.mz)
     assert candidate.ms1_apex_mz == pytest.approx(apex_mz)
     assert candidate.peak_mz == pytest.approx(apex_mz)
     assert raw.request_batches[-1][0].mz == candidate.peak_mz
@@ -1238,8 +1249,8 @@ def test_pipeline_publishes_inferred_precursor_ms1_ion_from_raw_handle(
 
     (candidate,) = stored_peaks(outputs.store)
     (event,) = stored_events(outputs.store)
-    assert event.event.precursor_mz_basis == "product_plus_neutral_loss"
-    assert event.event.precursor_mz == pytest.approx(500.0)
+    assert event.event.scan.precursor_mz_basis == "product_plus_neutral_loss"
+    assert event.event.scan.precursor_mz == pytest.approx(500.0)
     assert candidate.ms1_apex_mz == pytest.approx(apex_ion_mz)
 
 
@@ -1253,7 +1264,7 @@ def test_inferred_precursor_meeting_two_ions_reports_no_ms1_ion(
     group, _raw, result = _inferred_apex_case(tmp_path, _two_ions)
 
     (candidate,) = result.peaks
-    assert representative_event(result.peaks[0]).precursor_mz == (group.mz)
+    assert representative_event(result.peaks[0]).scan.precursor_mz == (group.mz)
     assert candidate.ms1_apex_mz is None
     assert candidate.status in {
         "admitted",
@@ -1269,7 +1280,7 @@ def test_selected_precursor_reports_no_ms1_ion(tmp_path: Path) -> None:
     )
 
     (candidate,) = result.peaks
-    assert representative_event(result.peaks[0]).precursor_mz == (group.mz)
+    assert representative_event(result.peaks[0]).scan.precursor_mz == (group.mz)
     assert candidate.ms1_apex_mz is None
 
 
@@ -1287,7 +1298,7 @@ def test_inferred_precursor_with_a_doubly_charged_isotope_is_held_for_review(
     )
 
     (candidate,) = result.peaks
-    assert representative_event(result.peaks[0]).precursor_mz == (group.mz)
+    assert representative_event(result.peaks[0]).scan.precursor_mz == (group.mz)
     assert candidate.status == "doubly_charged"
 
 
@@ -1360,7 +1371,7 @@ def test_held_inferred_peak_remains_in_review(
     )
 
     (candidate,) = stored_peaks(outputs.store)
-    assert representative_event(candidate).precursor_mz_basis == (
+    assert representative_event(candidate).scan.precursor_mz_basis == (
         "product_plus_neutral_loss"
     )
     assert candidate.status == "doubly_charged"
@@ -1412,10 +1423,13 @@ def test_a_selected_precursor_carries_a_peak_with_two_ions(
     assert sum(c.status == "admitted" for c in result.peaks) == 1
     if companion_basis is not None:
         (candidate,) = result.peaks
-        assert [event.scan_number for event in candidate.located_events] == [10, 11]
+        assert [event.scan.scan_number for event in candidate.located_events] == [
+            10,
+            11,
+        ]
         assert candidate.attached_event_count == 1
         assert len(result.peaks) == 1
-        events = {item.event.scan_number: item for item in result.attachments}
+        events = {item.event.scan.scan_number: item for item in result.attachments}
         assert events[10].unattached_reason == "parent_ms1_unavailable"
         assert events[11].peak_id == candidate.peak_id
 
@@ -1440,7 +1454,7 @@ def test_inferred_precursor_rechecks_isotope_after_point_reacquisition(
     profile = SignalProcessingProfile(window_points=15)
     group = _channel(
         tuple(
-            replace(
+            with_scan(
                 _seed(scan_number=scan, rt=rt, product_intensity=1_000_000.0),
                 precursor_mz_basis="product_plus_neutral_loss",
             )

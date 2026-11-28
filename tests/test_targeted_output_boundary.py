@@ -517,9 +517,12 @@ def test_service_publishes_finalized_numeric_values_without_counting_detection(
                 best_loss_ppm=loss_ppm,
                 best_product_evidence=replace(
                     product,
-                    product_mz=product.precursor_mz - observed_loss_da,
-                    observed_loss_da=observed_loss_da,
-                    observed_loss_error_ppm=loss_ppm,
+                    scan=replace(
+                        product.scan,
+                        product_mz=product.scan.precursor_mz - observed_loss_da,
+                        observed_neutral_loss_da=observed_loss_da,
+                        observed_loss_error_ppm=loss_ppm,
+                    ),
                 ),
             )
         else:

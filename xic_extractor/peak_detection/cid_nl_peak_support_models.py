@@ -53,11 +53,11 @@ class DdaCidNlPeakSupport:
 
     @property
     def dda_scan_number(self) -> int:
-        return self.evidence.scan_number
+        return self.evidence.scan.scan_number
 
     @property
     def configured_neutral_loss_da(self) -> float:
-        return self.evidence.configured_neutral_loss_da
+        return self.evidence.scan.configured_neutral_loss_da
 
 
 __all__ = [

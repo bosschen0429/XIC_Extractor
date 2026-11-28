@@ -243,7 +243,7 @@ def test_review_only_input_supplies_each_physical_member_without_cid(
         candidates[sample] = discovery.peaks
         raws[path] = source
     assert {
-        event.precursor_mz_basis for event in candidates["S6"][0].located_events
+        event.scan.precursor_mz_basis for event in candidates["S6"][0].located_events
     } == {"product_plus_neutral_loss"}
     paths = tuple(fixture.source_paths.values())
     plan = prepare_persisted_discovery_plan(

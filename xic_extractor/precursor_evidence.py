@@ -77,6 +77,53 @@ class PrecursorLossAssessment:
         )
 
 
+@dataclass(frozen=True, slots=True)
+class CidNlScan:
+    """A single scan's CID-NL measurement, independent of its tag or workflow."""
+
+    scan_number: int
+    rt_min: float
+    precursor_mz: float
+    product_mz: float
+    product_intensity: float
+    configured_neutral_loss_da: float
+    observed_neutral_loss_da: float
+    observed_loss_error_ppm: float | None
+    scan_precursor_mz: float | None = None
+    precursor_mz_basis: PrecursorMzBasis = "scan_precursor"
+    precursor_metadata: Ms2PrecursorMetadata | None = None
+    ms1_precursor_observation: Ms1PrecursorObservation | None = None
+
+    @property
+    def support_rt_min(self) -> float:
+        """Both the parent ion observation and its MS2 event must fit the peak."""
+        parent = self.ms1_precursor_observation
+        return self.rt_min if parent is None else parent.rt_min
+
+    def assess_precursor_loss(self, tolerance_ppm: float) -> PrecursorLossAssessment:
+        return assess_precursor_loss(
+            basis=self.precursor_mz_basis,
+            precursor_mz=self.precursor_mz,
+            product_mz=self.product_mz,
+            neutral_loss_da=self.configured_neutral_loss_da,
+            observed_loss_da=self.observed_neutral_loss_da,
+            observed_loss_error_ppm=self.observed_loss_error_ppm,
+            tolerance_ppm=tolerance_ppm,
+            selected_mz=self.scan_precursor_mz,
+            metadata=self.precursor_metadata,
+            ms1_observation=self.ms1_precursor_observation,
+        )
+
+    @property
+    def supports_direct_nl(self) -> bool:
+        return supports_direct_nl(
+            self.precursor_mz_basis,
+            self.precursor_mz,
+            self.scan_precursor_mz,
+            self.precursor_metadata,
+        )
+
+
 def assess_precursor_loss(
     *,
     basis: PrecursorMzBasis,

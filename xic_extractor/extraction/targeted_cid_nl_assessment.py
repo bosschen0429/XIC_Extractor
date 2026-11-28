@@ -66,25 +66,12 @@ def _assess_sample(
             raise RuntimeError(
                 "Targeted MS2 evidence crossed the resolved acquisition source"
             )
-        if product.scan_number is None:
-            raise RuntimeError("Targeted MS2 evidence lost its acquired scan identity")
         evidence.append(
             cid_nl_evidence_observation(
+                scan=product.scan,
                 sample=sample,
                 acquisition_source=acquisition_source,
-                scan_number=product.scan_number,
-                precursor_mz=product.precursor_mz,
-                product_mz=product.product_mz,
-                configured_neutral_loss_da=_neutral_loss(target),
-                observed_neutral_loss_da=product.observed_loss_da,
-                observed_loss_error_ppm=product.observed_loss_error_ppm,
-                scan_rt_min=product.scan_rt,
-                product_intensity=product.product_intensity,
-                precursor_mz_basis=product.precursor_mz_basis,
-                scan_precursor_mz=product.scan_precursor_mz,
-                precursor_metadata=product.precursor_metadata,
                 precursor_inference_tolerance_da=product.precursor_inference_tolerance_da,
-                ms1_precursor_observation=product.ms1_precursor_observation,
             )
         )
     evidence_refs = tuple(evidence)
@@ -110,12 +97,6 @@ def _assess_sample(
         individual_support_refs=support_refs,
         set_relation_refs=set_refs,
     )
-
-
-def _neutral_loss(target: Target) -> float:
-    if target.neutral_loss_da is None:
-        raise RuntimeError("Targeted production requires a neutral-loss definition")
-    return target.neutral_loss_da
 
 
 __all__ = ["assess_targeted_cid_nl_samples"]

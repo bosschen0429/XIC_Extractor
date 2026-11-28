@@ -130,12 +130,12 @@ def test_method_toml_runs_sample_local_cli_to_compatible_csvs(
         (best,) = [
             item.event
             for item in events
-            if item.event.scan_number == candidate.best_ms2_scan_id
+            if item.event.scan.scan_number == candidate.best_ms2_scan_id
             and item.event.neutral_loss_tag == candidate.neutral_loss_tag
         ]
-        assert best.product_mz == pytest.approx(500.0 - tags[0][1])
+        assert best.scan.product_mz == pytest.approx(500.0 - tags[0][1])
         assert {
-            item.event.scan_number
+            item.event.scan.scan_number
             for item in events
             if item.peak_id == candidate.peak_id
         } == {100, 101}
@@ -244,7 +244,7 @@ def test_single_raw_pipeline_groups_strict_ms2_seeds_into_one_peak(
     assert peak.attached_event_count == 2
     assert peak.status == "blank"
     events = stored_events(outputs.store)
-    assert [item.event.scan_number for item in events] == [101, 202]
+    assert [item.event.scan.scan_number for item in events] == [101, 202]
     assert {item.peak_id for item in events} == {peak.peak_id}
 
 
@@ -280,9 +280,9 @@ def test_single_raw_pipeline_writes_inferred_and_direct_same_scan_rows(
     assert len({peak.peak_id for peak in peaks}) == 2
     assert {peak.best_ms2_scan_id for peak in peaks} == {19561}
     basis_by_product = {
-        representative_event(peak).product_mz: representative_event(
+        representative_event(peak).scan.product_mz: representative_event(
             peak
-        ).precursor_mz_basis
+        ).scan.precursor_mz_basis
         for peak in peaks
     }
     assert basis_by_product == {
@@ -331,9 +331,9 @@ def test_pipeline_retains_distinct_inferred_features_from_one_ms2(
 
     peaks = stored_peaks(outputs.store)
     assert len(peaks) == 2
-    assert {round(representative_event(peak).precursor_mz, 4) for peak in peaks} == set(
-        amplitudes
-    )
+    assert {
+        round(representative_event(peak).scan.precursor_mz, 4) for peak in peaks
+    } == set(amplitudes)
     assert len({peak.peak_id for peak in peaks}) == 2
     assert {peak.best_ms2_scan_id for peak in peaks} == {19561}
     assert {peak.status for peak in peaks} == {"no_nl_event"}

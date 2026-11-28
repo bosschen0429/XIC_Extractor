@@ -46,6 +46,7 @@ from xic_extractor.discovery.processing_run_spec_adapter import (
     compile_discovery_processing_run_spec,
 )
 from xic_extractor.discovery.store import read_discovery_batch
+from xic_extractor.precursor_evidence import CidNlScan
 from xic_extractor.presets.apply import apply_to_discovery
 from xic_extractor.presets.loader import load_preset
 from xic_extractor.sample_metadata import SampleMetadata
@@ -145,7 +146,8 @@ def test_configured_composition_runs_discovery_to_owner_matrix(
     if scenario == "one_scan":
         assert all(
             len(assessment.evidence_observations) == 2
-            and len({ref.scan_number for ref in assessment.evidence_observations}) == 1
+            and len({ref.scan.scan_number for ref in assessment.evidence_observations})
+            == 1
             for assessment in by_sample.values()
         )
     completed = complete_dense_partition(
@@ -233,16 +235,18 @@ def _assert_duplicate_loss_evidence_rejected(batch, runtime):
     assessment = fixture_assessment(result)
     measured = assessment.evidence_observations[0]
     duplicate = cid_nl_evidence_observation(
+        scan=CidNlScan(
+            scan_number=measured.scan_number,
+            precursor_mz=measured.precursor_mz,
+            product_mz=measured.product_mz,
+            configured_neutral_loss_da=measured.configured_neutral_loss_da,
+            observed_neutral_loss_da=measured.observed_neutral_loss_da,
+            observed_loss_error_ppm=measured.observed_loss_error_ppm,
+            rt_min=measured.scan_rt_min,
+            product_intensity=measured.product_intensity + 1,
+        ),
         sample=result.job.sample,
         acquisition_source=result.job.acquisition_source_expectation.source,
-        scan_number=measured.scan_number,
-        precursor_mz=measured.precursor_mz,
-        product_mz=measured.product_mz,
-        configured_neutral_loss_da=measured.configured_neutral_loss_da,
-        observed_neutral_loss_da=measured.observed_neutral_loss_da,
-        observed_loss_error_ppm=measured.observed_loss_error_ppm,
-        scan_rt_min=measured.scan_rt_min,
-        product_intensity=measured.product_intensity + 1,
     )
     with pytest.raises(
         CidNlMethodAssessmentContractError, match="duplicate acquisition scan"

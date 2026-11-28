@@ -891,10 +891,12 @@ def test_reduced_discovery_persistence_keeps_inferred_peak_and_qualifies_alignme
         (inferred_event,) = [
             item
             for item in events
-            if item.sample_stem == stem and item.event.precursor_mz == 700.0
+            if item.sample_stem == stem and item.event.scan.precursor_mz == 700.0
         ]
-        assert inferred_event.event.precursor_mz_basis == "product_plus_neutral_loss"
-        assert inferred_event.event.observed_loss_error_ppm is None
+        assert (
+            inferred_event.event.scan.precursor_mz_basis == "product_plus_neutral_loss"
+        )
+        assert inferred_event.event.scan.observed_loss_error_ppm is None
         assert [peak.peak_id for peak in peaks].count(inferred_event.peak_id) == 1
 
 

@@ -64,7 +64,7 @@ def read_direct_cid_nl_seeds(
             for seed in discovery_events_from_scan(
                 scan, raw_file=raw_file, settings=settings
             )
-            if seed.supports_direct_nl
+            if seed.scan.supports_direct_nl
         )
 
 

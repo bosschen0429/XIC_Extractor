@@ -80,7 +80,11 @@ class DiscoveryInputSource(Mapping[str, tuple[DiscoveryPeak, ...]]):
                 cid = by_row.get(peak) if peak is not None else None
                 if cid is not None:
                     pools.setdefault(cid, []).append(
-                        (not reason, _representative_order(event), event.precursor_mz)
+                        (
+                            not reason,
+                            _representative_order(event),
+                            event.scan.precursor_mz,
+                        )
                     )
         for cid, rows in pools.items():
             attached = any(item[0] for item in rows)
@@ -144,12 +148,12 @@ class DiscoveryInputSource(Mapping[str, tuple[DiscoveryPeak, ...]]):
 
 def _representative_order(event: DiscoveryEvent) -> tuple[object, ...]:
     return representative_order_within_tag(
-        product_intensity=event.product_intensity,
-        observed_loss_error_ppm=event.observed_loss_error_ppm,
-        rt=event.rt,
-        scan_number=event.scan_number,
+        product_intensity=event.scan.product_intensity,
+        observed_loss_error_ppm=event.scan.observed_loss_error_ppm,
+        rt=event.scan.rt_min,
+        scan_number=event.scan.scan_number,
         neutral_loss_tag=event.neutral_loss_tag,
-        product_mz=event.product_mz,
+        product_mz=event.scan.product_mz,
     )
 
 

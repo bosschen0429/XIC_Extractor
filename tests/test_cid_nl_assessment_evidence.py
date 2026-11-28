@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import fields, replace
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -35,7 +35,7 @@ from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlEvaluationReceipt,
     mint_cid_nl_method_assessment,
 )
-from xic_extractor.precursor_evidence import precursor_isolation_membership
+from xic_extractor.precursor_evidence import CidNlScan, precursor_isolation_membership
 
 
 @pytest.mark.parametrize(
@@ -71,24 +71,26 @@ def test_recorded_monoisotopic_reference_accepts_isolated_vendor_isotope(
     product = 184.11323547363 if product_matches else 184.21323547363
     loss = 116.0474
     evidence = cid_nl_evidence_observation(
+        scan=CidNlScan(
+            scan_number=19561,
+            precursor_mz=mono,
+            product_mz=product,
+            configured_neutral_loss_da=loss,
+            observed_neutral_loss_da=mono - product,
+            observed_loss_error_ppm=abs(mono - product - loss) / loss * 1e6,
+            rt_min=8.0,
+            product_intensity=278825.7,
+            precursor_mz_basis="scan_monoisotopic",
+            scan_precursor_mz=selected,
+            precursor_metadata=Ms2PrecursorMetadata(
+                monoisotopic_mz=mono,
+                charge=charge,
+                isolation_width_da=width,
+                isolation_offset_da=offset,
+            ),
+        ),
         sample=fixture.sample("s1"),
         acquisition_source=fixture.source(fixture.sample("s1")),
-        scan_number=19561,
-        precursor_mz=mono,
-        product_mz=product,
-        configured_neutral_loss_da=loss,
-        observed_neutral_loss_da=mono - product,
-        observed_loss_error_ppm=abs(mono - product - loss) / loss * 1e6,
-        scan_rt_min=8.0,
-        product_intensity=278825.7,
-        precursor_mz_basis="scan_monoisotopic",
-        scan_precursor_mz=selected,
-        precursor_metadata=Ms2PrecursorMetadata(
-            monoisotopic_mz=mono,
-            charge=charge,
-            isolation_width_da=width,
-            isolation_offset_da=offset,
-        ),
     )
     individual, sets = assessment_module.resolve_cid_nl_method_relations(
         sample=fixture.sample("s1"),
@@ -101,15 +103,15 @@ def test_recorded_monoisotopic_reference_accepts_isolated_vendor_isotope(
     observation = evidence
     assert (
         precursor_isolation_membership(
-            observation.precursor_mz,
-            observation.scan_precursor_mz,
-            observation.precursor_metadata,
+            observation.scan.precursor_mz,
+            observation.scan.scan_precursor_mz,
+            observation.scan.precursor_metadata,
         )
         == membership
     )
-    assert observation.supports_direct_nl is supported
+    assert observation.scan.supports_direct_nl is supported
     if product_matches:
-        assert evidence.observed_loss_error_ppm == pytest.approx(7.44977, abs=1e-5)
+        assert evidence.scan.observed_loss_error_ppm == pytest.approx(7.44977, abs=1e-5)
 
 
 @pytest.mark.parametrize(
@@ -143,32 +145,34 @@ def test_parent_ms1_measurement_qualifies_inference_without_rewriting_origin(
 
     fixture = build_processing_identity_no_raw_fixture(tmp_path, sample_stems=("s1",))
     evidence = cid_nl_evidence_observation(
+        scan=CidNlScan(
+            scan_number=42,
+            precursor_mz=500.0,
+            product_mz=500.0 - 116.0474,
+            configured_neutral_loss_da=116.0474,
+            observed_neutral_loss_da=116.0474,
+            observed_loss_error_ppm=None,
+            rt_min=8.0,
+            product_intensity=400.0,
+            precursor_mz_basis="product_plus_neutral_loss",
+            scan_precursor_mz=selected,
+            precursor_metadata=Ms2PrecursorMetadata(
+                charge=1,
+                isolation_width_da=width,
+                isolation_offset_da=offset,
+                master_scan_number=41,
+            ),
+            ms1_precursor_observation=Ms1PrecursorObservation(41, parent_rt, centroids),
+        ),
         sample=fixture.sample("s1"),
         acquisition_source=fixture.source(fixture.sample("s1")),
-        scan_number=42,
-        precursor_mz=500.0,
-        product_mz=500.0 - 116.0474,
-        configured_neutral_loss_da=116.0474,
-        observed_neutral_loss_da=116.0474,
-        observed_loss_error_ppm=None,
-        scan_rt_min=8.0,
-        product_intensity=400.0,
-        precursor_mz_basis="product_plus_neutral_loss",
-        scan_precursor_mz=selected,
         precursor_inference_tolerance_da=0.8,
-        precursor_metadata=Ms2PrecursorMetadata(
-            charge=1,
-            isolation_width_da=width,
-            isolation_offset_da=offset,
-            master_scan_number=41,
-        ),
-        ms1_precursor_observation=Ms1PrecursorObservation(41, parent_rt, centroids),
     )
     policy = replace(
         cid_nl_support_policy(), precursor_reference_requirement=reference_requirement
     )
     supported = supported and reference_requirement == "independent_mass"
-    verdict = evidence.assess_precursor_loss(policy.neutral_loss_tolerance_ppm)
+    verdict = evidence.scan.assess_precursor_loss(policy.neutral_loss_tolerance_ppm)
     assert verdict.status == status
     peak = cid_nl_peak(fixture, "s1")
     individual, sets = assessment_module.resolve_cid_nl_method_relations(
@@ -199,11 +203,11 @@ def test_parent_ms1_measurement_qualifies_inference_without_rewriting_origin(
     )
     assert assessment.method_result == ("SUPPORT" if supported else "HOLD")
     observation = evidence
-    assert observation.precursor_mz_basis == "product_plus_neutral_loss"
-    assert observation.precursor_mz == 500.0
-    assert observation.observed_loss_error_ppm is None
-    assert observation.ms1_precursor_observation is not None
-    assert observation.ms1_precursor_observation.centroid_mzs == tuple(centroids)
+    assert observation.scan.precursor_mz_basis == "product_plus_neutral_loss"
+    assert observation.scan.precursor_mz == 500.0
+    assert observation.scan.observed_loss_error_ppm is None
+    assert observation.scan.ms1_precursor_observation is not None
+    assert observation.scan.ms1_precursor_observation.centroid_mzs == tuple(centroids)
     if supported:
         assert individual[0].precursor.reference_mz == 500.001
         assert individual[0].precursor.observed_loss_error_ppm == pytest.approx(
@@ -218,33 +222,35 @@ def test_inferred_evidence_persists_scan_provenance_and_exact_projection(
     direct = cid_nl_evidence(fixture, "s1", scan_number=42, scan_rt_min=8.0)
     observation = direct
     inferred = cid_nl_evidence_observation(
+        scan=CidNlScan(
+            scan_number=observation.scan.scan_number,
+            precursor_mz=observation.scan.precursor_mz,
+            product_mz=observation.scan.product_mz,
+            configured_neutral_loss_da=observation.scan.configured_neutral_loss_da,
+            observed_neutral_loss_da=observation.scan.observed_neutral_loss_da,
+            observed_loss_error_ppm=None,
+            rt_min=observation.scan.rt_min,
+            product_intensity=observation.scan.product_intensity,
+            precursor_mz_basis="product_plus_neutral_loss",
+            scan_precursor_mz=observation.scan.precursor_mz + 0.25,
+        ),
         sample=fixture.sample("s1"),
         acquisition_source=fixture.source(fixture.sample("s1")),
-        scan_number=observation.scan_number,
-        precursor_mz=observation.precursor_mz,
-        product_mz=observation.product_mz,
-        configured_neutral_loss_da=observation.configured_neutral_loss_da,
-        observed_neutral_loss_da=observation.observed_neutral_loss_da,
-        observed_loss_error_ppm=None,
-        scan_rt_min=observation.scan_rt_min,
-        product_intensity=observation.product_intensity,
-        precursor_mz_basis="product_plus_neutral_loss",
-        scan_precursor_mz=observation.precursor_mz + 0.25,
         precursor_inference_tolerance_da=0.25,
     )
-    assert inferred.precursor_mz_basis == "product_plus_neutral_loss"
-    assert inferred.observed_loss_error_ppm is None
-    assert inferred.supports_direct_nl is False
+    assert inferred.scan.precursor_mz_basis == "product_plus_neutral_loss"
+    assert inferred.scan.observed_loss_error_ppm is None
+    assert inferred.scan.supports_direct_nl is False
     assert assessment_module.resolve_cid_nl_method_relations(
         sample=fixture.sample("s1"),
         evidence_refs=(inferred,),
         candidate_peaks=(cid_nl_peak(fixture, "s1"),),
         policy=cid_nl_support_policy(),
     ) == ((), ())
-    assert inferred.scan_precursor_mz == observation.precursor_mz + 0.25
+    assert inferred.scan.scan_precursor_mz == observation.scan.precursor_mz + 0.25
     assert inferred.precursor_inference_tolerance_da == 0.25
-    assert direct.precursor_mz_basis == "scan_precursor"
-    assert direct.scan_precursor_mz == observation.precursor_mz
+    assert direct.scan.precursor_mz_basis == "scan_precursor"
+    assert direct.scan.scan_precursor_mz == observation.scan.precursor_mz
     assert direct.precursor_inference_tolerance_da is None
 
 
@@ -269,22 +275,25 @@ def test_inferred_evidence_rejects_unbound_or_crossed_precursor_provenance(
 ) -> None:
     fixture = build_processing_identity_no_raw_fixture(tmp_path, sample_stems=("s1",))
     arguments = {
-        "sample": fixture.sample("s1"),
-        "acquisition_source": fixture.source("s1"),
         "scan_number": 42,
         "precursor_mz": PRECURSOR_MZ,
         "product_mz": PRECURSOR_MZ - NEUTRAL_LOSS_DA,
         "configured_neutral_loss_da": NEUTRAL_LOSS_DA,
         "observed_neutral_loss_da": NEUTRAL_LOSS_DA,
         "observed_loss_error_ppm": None,
-        "scan_rt_min": 8.0,
+        "rt_min": 8.0,
         "product_intensity": 400.0,
         "precursor_mz_basis": "product_plus_neutral_loss",
         "scan_precursor_mz": PRECURSOR_MZ + 0.25,
-        "precursor_inference_tolerance_da": 0.25,
-    }
+    } | changed
+    tolerance = arguments.pop("precursor_inference_tolerance_da", 0.25)
     with pytest.raises(CidNlEvidenceContractError, match=message):
-        cid_nl_evidence_observation(**(arguments | changed))
+        cid_nl_evidence_observation(
+            sample=fixture.sample("s1"),
+            acquisition_source=fixture.source("s1"),
+            scan=CidNlScan(**arguments),
+            precursor_inference_tolerance_da=tolerance,
+        )
 
 
 def test_s1_to_s5_truth_table_preserves_orthogonal_axes(tmp_path: Path) -> None:
@@ -427,11 +436,11 @@ def test_set_relation_reaches_touching_candidates_beyond_the_containing_pair(
         ),
         event_queries=(
             assessment_module.CidNlEventQuery(
-                evidence.assess_precursor_loss(
+                evidence.scan.assess_precursor_loss(
                     cid_nl_support_policy().neutral_loss_tolerance_ppm
                 ),
-                evidence.scan_rt_min,
-                evidence.support_rt_min,
+                evidence.scan.rt_min,
+                evidence.scan.support_rt_min,
             ),
         ),
         policy=cid_nl_support_policy(),
@@ -519,11 +528,11 @@ def test_assessment_distinguishes_adjacent_interior_from_boundary_and_overlap(
                 ),
                 event_queries=(
                     assessment_module.CidNlEventQuery(
-                        evidence.assess_precursor_loss(
+                        evidence.scan.assess_precursor_loss(
                             cid_nl_support_policy().neutral_loss_tolerance_ppm
                         ),
-                        evidence.scan_rt_min,
-                        evidence.support_rt_min,
+                        evidence.scan.rt_min,
+                        evidence.scan.support_rt_min,
                     ),
                 ),
                 policy=cid_nl_support_policy(),
@@ -616,20 +625,20 @@ def test_assessment_requires_qualifying_evidence_before_reject(
     assert target.neutral_loss_da is not None
     observed_loss = target.neutral_loss_da + 1.0
     evidence = cid_nl_evidence_observation(
+        scan=CidNlScan(
+            scan_number=74,
+            precursor_mz=target.mz,
+            product_mz=target.mz - observed_loss,
+            configured_neutral_loss_da=target.neutral_loss_da,
+            observed_neutral_loss_da=observed_loss,
+            observed_loss_error_ppm=abs(observed_loss - target.neutral_loss_da)
+            / target.neutral_loss_da
+            * 1_000_000.0,
+            rt_min=8.0,
+            product_intensity=400.0,
+        ),
         sample=sample,
         acquisition_source=fixture.source(sample),
-        scan_number=74,
-        precursor_mz=target.mz,
-        product_mz=target.mz - observed_loss,
-        configured_neutral_loss_da=target.neutral_loss_da,
-        observed_neutral_loss_da=observed_loss,
-        observed_loss_error_ppm=(
-            abs(observed_loss - target.neutral_loss_da)
-            / target.neutral_loss_da
-            * 1_000_000.0
-        ),
-        scan_rt_min=8.0,
-        product_intensity=400.0,
     )
 
     assessment = mint_cid_nl_method_assessment(
@@ -831,16 +840,18 @@ def _measured_evidence(
 ):
     observed_loss = NEUTRAL_LOSS_DA * (1.0 + loss_error_ppm / 1_000_000.0)
     return cid_nl_evidence_observation(
+        scan=CidNlScan(
+            scan_number=scan_number,
+            precursor_mz=PRECURSOR_MZ,
+            product_mz=PRECURSOR_MZ - observed_loss,
+            configured_neutral_loss_da=NEUTRAL_LOSS_DA,
+            observed_neutral_loss_da=observed_loss,
+            observed_loss_error_ppm=abs(loss_error_ppm),
+            rt_min=8.0,
+            product_intensity=400.0,
+        ),
         sample=fixture.sample(sample_stem),
         acquisition_source=fixture.source(fixture.sample(sample_stem)),
-        scan_number=scan_number,
-        precursor_mz=PRECURSOR_MZ,
-        product_mz=PRECURSOR_MZ - observed_loss,
-        configured_neutral_loss_da=NEUTRAL_LOSS_DA,
-        observed_neutral_loss_da=observed_loss,
-        observed_loss_error_ppm=abs(loss_error_ppm),
-        scan_rt_min=8.0,
-        product_intensity=400.0,
     )
 
 
@@ -888,7 +899,7 @@ def test_monoisotopic_canonical_evidence_binds_vendor_metadata(tmp_path):
     direct = cid_nl_evidence(fixture, "s1", scan_number=42, scan_rt_min=8.0)
     observed = direct
     metadata = Ms2PrecursorMetadata(
-        monoisotopic_mz=observed.precursor_mz,
+        monoisotopic_mz=observed.scan.precursor_mz,
         charge=1,
         isolation_width_da=1.6,
         isolation_offset_da=0.2,
@@ -897,24 +908,14 @@ def test_monoisotopic_canonical_evidence_binds_vendor_metadata(tmp_path):
     mono = cid_nl_evidence_observation(
         sample=fixture.sample("s1"),
         acquisition_source=fixture.source(fixture.sample("s1")),
-        **{
-            field.name: getattr(observed, field.name)
-            for field in fields(observed)
-            if field.name
-            not in {
-                "sample_key",
-                "acquisition_source_id",
-                "acquisition_mode",
-                "precursor_mz_basis",
-                "scan_precursor_mz",
-                "precursor_metadata",
-            }
-        },
-        precursor_mz_basis="scan_monoisotopic",
-        scan_precursor_mz=observed.precursor_mz + 1.0035,
-        precursor_metadata=metadata,
+        scan=replace(
+            observed.scan,
+            precursor_mz_basis="scan_monoisotopic",
+            scan_precursor_mz=observed.scan.precursor_mz + 1.0035,
+            precursor_metadata=metadata,
+        ),
     )
-    assert mono.precursor_metadata is not None
-    assert mono.precursor_metadata.master_scan_number == 40
-    assert mono.precursor_mz_basis == "scan_monoisotopic"
-    assert mono.scan_precursor_mz != mono.precursor_mz
+    assert mono.scan.precursor_metadata is not None
+    assert mono.scan.precursor_metadata.master_scan_number == 40
+    assert mono.scan.precursor_mz_basis == "scan_monoisotopic"
+    assert mono.scan.scan_precursor_mz != mono.scan.precursor_mz

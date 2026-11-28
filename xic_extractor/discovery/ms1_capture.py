@@ -162,11 +162,11 @@ def _event_searches(
                     event,
                     PhysicalPeakSearch(
                         selection_subject_id=_seed_subject_id(event),
-                        query_rt_min=event.rt,
+                        query_rt_min=event.scan.rt_min,
                         request=XICRequest(
                             mz=ion.mz,
-                            rt_min=max(0.0, event.rt - padding_min),
-                            rt_max=event.rt + padding_min,
+                            rt_min=max(0.0, event.scan.rt_min - padding_min),
+                            rt_max=event.scan.rt_min + padding_min,
                             ppm_tol=settings.precursor_mz_tolerance_ppm,
                         ),
                         allow_sparse_reacquisition=sparse[event],
@@ -276,9 +276,9 @@ def _inferred_only(events: Iterable[DiscoveryEvent]) -> bool:
 
 def _event_order_key(event: DiscoveryEvent) -> tuple[int, float, float, str]:
     return (
-        event.scan_number,
-        event.precursor_mz,
-        event.product_mz,
+        event.scan.scan_number,
+        event.scan.precursor_mz,
+        event.scan.product_mz,
         event.neutral_loss_tag,
     )
 
@@ -325,14 +325,14 @@ def _discovery_peak(
         sample_stem=representative.sample_stem,
         peak_mz=peak_mz,
         neutral_loss_tag=representative.neutral_loss_tag,
-        best_ms2_scan_id=representative.scan_number,
+        best_ms2_scan_id=representative.scan.scan_number,
         attached_event_count=len(attached),
         ms1_apex_rt=selected.apex_rt_min,
         status=_peak_status(
             doubly_charged=ion_peak.doubly_charged,
             blank=not ion_peak.doubly_charged
             and is_blank is not None
-            and is_blank(representative.precursor_mz, float(selected.height)),
+            and is_blank(representative.scan.precursor_mz, float(selected.height)),
             attached_event_count=len(attached),
         ),
         ms1_apex_mz=apex_mz,
@@ -372,17 +372,16 @@ def _unattached_reason(
     neighbors: Sequence[PhysicalSegment],
     settings: DiscoverySettings,
 ) -> str:
-    assessment = event.assess_precursor_loss(settings.nl_tolerance_ppm)
+    assessment = event.scan.assess_precursor_loss(settings.nl_tolerance_ppm)
     if not assessment.supports_nl:
         return assessment.status
     if assessment.reference_mz is None or not within_ppm(
         assessment.reference_mz, peak_mz, settings.precursor_mz_tolerance_ppm
     ):
         return "mass_outside_peak"
-    parent = event.ms1_precursor_observation
-    support_rt = event.rt if parent is None else parent.rt_min
     if not all(
-        _event_rt_attaches_to_peak(rt, peak, neighbors) for rt in (support_rt, event.rt)
+        _event_rt_attaches_to_peak(rt, peak, neighbors)
+        for rt in (event.scan.support_rt_min, event.scan.rt_min)
     ):
         return "rt_outside_peak"
     return ""
@@ -408,8 +407,8 @@ def _seed_subject_id(event: DiscoveryEvent) -> str:
     """One physical search per NL event."""
     return (
         "discovery-physical-work:"
-        f"{event.sample_stem}:{event.scan_number}:"
-        f"{float(event.precursor_mz).hex()}:{float(event.product_mz).hex()}"
+        f"{event.sample_stem}:{event.scan.scan_number}:"
+        f"{float(event.scan.precursor_mz).hex()}:{float(event.scan.product_mz).hex()}"
     )
 
 
@@ -427,16 +426,18 @@ def _sparse_reacquisition_by_event(
     allowed: dict[DiscoveryEvent, bool] = {}
     region: list[DiscoveryEvent] = []
     upper = -float("inf")
-    for event in (*sorted(ion.events, key=lambda event: event.rt), None):
-        if event is not None and (not region or event.rt - padding_min <= upper):
+    for event in (*sorted(ion.events, key=lambda event: event.scan.rt_min), None):
+        if event is not None and (
+            not region or event.scan.rt_min - padding_min <= upper
+        ):
             region.append(event)
-            upper = max(upper, event.rt + padding_min)
+            upper = max(upper, event.scan.rt_min + padding_min)
             continue
         if region:
             if _inferred_only(region):
                 value = (
                     len(region) >= 2
-                    and max(item.product_intensity for item in region)
+                    and max(item.scan.product_intensity for item in region)
                     >= SPARSE_REACQUISITION_PRODUCT_INTENSITY_MIN
                 )
             else:
@@ -444,7 +445,7 @@ def _sparse_reacquisition_by_event(
             allowed.update((item, value) for item in region)
         if event is not None:
             region = [event]
-            upper = event.rt + padding_min
+            upper = event.scan.rt_min + padding_min
     return allowed
 
 

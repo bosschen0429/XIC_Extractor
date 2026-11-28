@@ -62,7 +62,7 @@ def test_bounded_capture_recovers_a_tail_window_without_admitting_a_far_tail_nl(
     candidate = result.peaks[0]
     assert candidate.ms1_apex_rt == pytest.approx(5.0, abs=0.03)
     facts = measured_peak_evaluations(result, TEST_PROFILE)[0].answer.selected_segment
-    assert facts.right_rt_min + 0.1 < representative_event(candidate).rt
+    assert facts.right_rt_min + 0.1 < representative_event(candidate).scan.rt_min
     assert candidate.status == "no_nl_event"
     assert len(result.acquisition_batches) == 2
 

@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.discovery_ms1_capture_fixtures import _seed
+from tests.discovery_ms1_capture_fixtures import _seed, with_scan
 from tests.discovery_store_fixtures import (
     SampleRecords,
     acquisition_source,
@@ -40,24 +40,26 @@ def _sample(stem, peaks=(), attachments=()):
 
 def test_events_keep_the_evidence_alignment_assesses(tmp_path: Path) -> None:
     inferred = replace(
-        _seed(scan_number=33623, rt=38.75, precursor_mz=961.4289),
+        with_scan(
+            _seed(scan_number=33623, rt=38.75, precursor_mz=961.4289),
+            observed_loss_error_ppm=None,
+            precursor_mz_basis="product_plus_neutral_loss",
+            scan_precursor_mz=961.4482,
+            precursor_metadata=Ms2PrecursorMetadata(
+                monoisotopic_mz=961.4478,
+                charge=1,
+                isolation_width_da=1.0,
+                isolation_offset_da=-0.25,
+                master_scan_number=33620,
+            ),
+            ms1_precursor_observation=Ms1PrecursorObservation(
+                33620, 38.7412, (961.4281, 961.4302)
+            ),
+        ),
         raw_file=Path("S.raw"),
         sample_stem="S",
-        observed_loss_error_ppm=None,
-        precursor_mz_basis="product_plus_neutral_loss",
-        scan_precursor_mz=961.4482,
-        precursor_metadata=Ms2PrecursorMetadata(
-            monoisotopic_mz=961.4478,
-            charge=1,
-            isolation_width_da=1.0,
-            isolation_offset_da=-0.25,
-            master_scan_number=33620,
-        ),
-        ms1_precursor_observation=Ms1PrecursorObservation(
-            33620, 38.7412, (961.4281, 961.4302)
-        ),
     )
-    empty_parent = replace(
+    empty_parent = with_scan(
         inferred,
         scan_number=33700,
         ms1_precursor_observation=Ms1PrecursorObservation(33698, 38.8, ()),
@@ -71,42 +73,42 @@ def test_events_keep_the_evidence_alignment_assesses(tmp_path: Path) -> None:
         EventAttachment(inferred, located.peak_id, "parent_ms1_ion_ambiguous"),
         EventAttachment(empty_parent, located.peak_id, "parent_ms1_ion_missing"),
         EventAttachment(recorded, other.peak_id),
-        EventAttachment(replace(recorded, scan_number=33800), "", "no_peak_at_rt"),
+        EventAttachment(with_scan(recorded, scan_number=33800), "", "no_peak_at_rt"),
     ]
 
     store = write_discovery(
         tmp_path, [_sample("S", [located, other], written)], neutral_loss_by_tag=_LOSSES
     )
 
-    restored = {item.event.scan_number: item for item in stored_events(store)}
+    restored = {item.event.scan.scan_number: item for item in stored_events(store)}
     for item in written:
-        back = restored[item.event.scan_number]
+        back = restored[item.event.scan.scan_number]
         assert (back.peak_id, back.unattached_reason) == (
             item.peak_id,
             item.unattached_reason,
         )
         expected = item.event
-        if expected.precursor_metadata is not None:
-            expected = replace(
+        if expected.scan.precursor_metadata is not None:
+            expected = with_scan(
                 expected,
                 precursor_metadata=replace(
-                    expected.precursor_metadata, master_scan_number=None
+                    expected.scan.precursor_metadata, master_scan_number=None
                 ),
             )
-        if expected.precursor_mz_basis != "product_plus_neutral_loss":
-            assert back.event.observed_neutral_loss_da == (
-                expected.precursor_mz - expected.product_mz
+        if expected.scan.precursor_mz_basis != "product_plus_neutral_loss":
+            assert back.event.scan.observed_neutral_loss_da == (
+                expected.scan.precursor_mz - expected.scan.product_mz
             )
-            expected = replace(
+            expected = with_scan(
                 expected,
-                observed_neutral_loss_da=back.event.observed_neutral_loss_da,
-                observed_loss_error_ppm=back.event.observed_loss_error_ppm,
+                observed_neutral_loss_da=back.event.scan.observed_neutral_loss_da,
+                observed_loss_error_ppm=back.event.scan.observed_loss_error_ppm,
             )
         assert back.event == expected
-    assert restored[33623].event.observed_loss_error_ppm is None
-    assert restored[33700].event.ms1_precursor_observation.centroid_mzs == ()
-    assert restored[33706].event.ms1_precursor_observation is None
-    assert restored[33706].event.precursor_metadata is None
+    assert restored[33623].event.scan.observed_loss_error_ppm is None
+    assert restored[33700].event.scan.ms1_precursor_observation.centroid_mzs == ()
+    assert restored[33706].event.scan.ms1_precursor_observation is None
+    assert restored[33706].event.scan.precursor_metadata is None
 
 
 def test_peaks_keep_publication_order_and_derive_their_evidence(
@@ -115,11 +117,13 @@ def test_peaks_keep_publication_order_and_derive_their_evidence(
     def located(peak_id, scan, tag, reason=""):
         return EventAttachment(
             replace(
-                _seed(scan_number=scan, rt=7.84),
+                with_scan(
+                    _seed(scan_number=scan, rt=7.84),
+                    configured_neutral_loss_da=_LOSSES[tag],
+                ),
                 raw_file=Path("S.raw"),
                 sample_stem="S",
                 neutral_loss_tag=tag,
-                configured_neutral_loss_da=_LOSSES[tag],
             ),
             peak_id,
             reason,

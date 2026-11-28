@@ -81,13 +81,16 @@ def build_targeted_peak_evidence(
         )
         best = min(
             supported,
-            key=lambda p: (p.observed_loss_error_ppm or 0.0, -p.product_intensity),
+            key=lambda p: (
+                p.scan.observed_loss_error_ppm or 0.0,
+                -p.scan.product_intensity,
+            ),
             default=None,
         )
         related = tuple(
             event
             for event, product in enumerate(products)
-            if interval.rt_left_min <= product.scan_rt <= interval.rt_right_min
+            if interval.rt_left_min <= product.scan.rt_min <= interval.rt_right_min
         )
         reason = ""
         if not supported:
@@ -105,10 +108,10 @@ def build_targeted_peak_evidence(
         trace = summarize_ms2_trace(
             tuple(
                 MS2TracePoint(
-                    p.scan_rt,
-                    p.product_intensity,
+                    p.scan.rt_min,
+                    p.scan.product_intensity,
                     p.product_base_ratio,
-                    p.observed_loss_error_ppm or 0.0,
+                    p.scan.observed_loss_error_ppm or 0.0,
                 )
                 for p in supported
             ),
@@ -126,8 +129,8 @@ def build_targeted_peak_evidence(
                 else "NO_MS2",
                 trigger_scan_count=trigger_count,
                 strict_nl_scan_count=len(supported),
-                best_loss_ppm=best.observed_loss_error_ppm if best else None,
-                best_scan_rt=best.scan_rt if best else None,
+                best_loss_ppm=best.scan.observed_loss_error_ppm if best else None,
+                best_scan_rt=best.scan.rt_min if best else None,
                 best_product_base_ratio=best.product_base_ratio if best else None,
                 alignment_source="region" if trigger_count else "none",
                 diagnostic_product_absence_reason=reason,

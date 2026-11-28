@@ -120,10 +120,10 @@ def owner_from_cid_nl_assessment_support(
         cast(float, relation.precursor.reference_mz) for relation in measured
     ) / len(measured)
     aggregate_product_mz = math.fsum(
-        relation.evidence.product_mz for relation in measured
+        relation.evidence.scan.product_mz for relation in measured
     ) / len(measured)
     aggregate_observed_loss = math.fsum(
-        cast(float, relation.precursor.reference_mz) - relation.evidence.product_mz
+        cast(float, relation.precursor.reference_mz) - relation.evidence.scan.product_mz
         for relation in measured
     ) / len(measured)
     neutral_loss_tag = (
@@ -145,7 +145,7 @@ def owner_from_cid_nl_assessment_support(
         source_scans=tuple(
             sorted(
                 {
-                    (relation.dda_scan_number, relation.evidence.scan_rt_min)
+                    (relation.dda_scan_number, relation.evidence.scan.rt_min)
                     for relation in measured
                 }
             )

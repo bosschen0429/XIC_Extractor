@@ -286,7 +286,7 @@ def profile_replay(tmp_path, monkeypatch, request):
                 assert window_min <= min(query_rts)
                 assert window_max >= max(query_rts)
                 (candidate,) = discovery.peaks
-                observed_nl_rts = tuple(seed.rt for seed in seeds)
+                observed_nl_rts = tuple(seed.scan.rt_min for seed in seeds)
                 assert representative_event_rt(candidate) in observed_nl_rts
             rt_min = min(window_min for window_min, _ in windows)
             rt_max = max(window_max for _, window_max in windows)
@@ -466,7 +466,7 @@ def profile_replay(tmp_path, monkeypatch, request):
                     sample_stem,
                     candidate.peak_id,
                     tuple(
-                        (event.scan_number, event.rt)
+                        (event.scan.scan_number, event.scan.rt_min)
                         for event in candidate.located_events
                     ),
                 )

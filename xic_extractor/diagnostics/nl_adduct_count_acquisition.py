@@ -66,8 +66,8 @@ def count_run(
     losses: set[float] = set()
     for peak in peaks:
         for event in peak.located_events:
-            scans[peak.peak_id].add(event.scan_number)
-            losses.add(event.configured_neutral_loss_da)
+            scans[peak.peak_id].add(event.scan.scan_number)
+            losses.add(event.scan.configured_neutral_loss_da)
     if not losses:
         raise ValueError(f"{discovery_dir}: no event locates an admitted peak")
     if len(losses) > 1:

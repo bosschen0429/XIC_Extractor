@@ -116,7 +116,7 @@ def test_discovery_persists_feature_facts_and_measured_review_support(
         stem = acquisition.raw_path.stem
         candidates, _publication = captured[stem]
         assert {
-            representative_event(item).precursor_mz_basis for item in candidates
+            representative_event(item).scan.precursor_mz_basis for item in candidates
         } == {"scan_precursor", "product_plus_neutral_loss"}
         assert len(candidates) == 2
         assert [p for p in peaks if p.sample_stem == stem] == list(candidates)
@@ -125,7 +125,8 @@ def test_discovery_persists_feature_facts_and_measured_review_support(
             item.peak_id for item in candidates
         }
         assert any(
-            not item.peak_id and item.event.precursor_mz < 600 for item in sample_events
+            not item.peak_id and item.event.scan.precursor_mz < 600
+            for item in sample_events
         )
     assert sorted(path.name for path in outputs.store.parent.iterdir()) == [
         "discovery.sqlite"

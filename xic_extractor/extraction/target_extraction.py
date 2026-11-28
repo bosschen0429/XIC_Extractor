@@ -47,6 +47,7 @@ from xic_extractor.processing_identity import AcquisitionSourceExpectation
 from xic_extractor.raw_reader import open_raw
 
 if TYPE_CHECKING:
+    from xic_extractor.discovery.models import DiscoveryEvent
     from xic_extractor.extraction.result_models import (
         ExtractionResult,
         FileResult,
@@ -227,8 +228,8 @@ def extract_one_target(
     *,
     reference_rt: float | None,
     sample_window: Ms2Window | None = None,
-    method_seeds: tuple | None = None,
-    prepared_method_seeds: dict[float, tuple] | None = None,
+    method_seeds: tuple[DiscoveryEvent, ...] | None = None,
+    prepared_method_seeds: dict[float, tuple[DiscoveryEvent, ...]] | None = None,
     paired_target: Target | None = None,
     sample_drift: float = 0.0,
     strict_preferred_rt: bool = False,
@@ -469,14 +470,16 @@ def _finite_positive(value: float | None) -> bool:
     return value is not None and math.isfinite(value) and value > 0
 
 
-def _target_seeds(seeds_by_loss: dict[float, tuple], target: Target) -> tuple | None:
+def _target_seeds(
+    seeds_by_loss: dict[float, tuple[DiscoveryEvent, ...]], target: Target
+) -> tuple[DiscoveryEvent, ...] | None:
     loss = target.neutral_loss_da
     return None if loss is None else seeds_by_loss.get(loss)
 
 
 def prepare_sample_method_seeds(
     raw: Any, window: Ms2Window, targets: list[Target]
-) -> dict[float, tuple]:
+) -> dict[float, tuple[DiscoveryEvent, ...]]:
     """Read shared parent facts once; retain alternatives for each target's mass."""
     from xic_extractor.discovery.ms2_events import (
         read_parent_ms1_observations,

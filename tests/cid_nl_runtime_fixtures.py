@@ -249,9 +249,9 @@ def representative_precursors(
     """Each candidate's representative MS2 precursor, from its located events."""
     return {
         peak.peak_id: next(
-            event.precursor_mz
+            event.scan.precursor_mz
             for event in peak.located_events
-            if event.scan_number == peak.best_ms2_scan_id
+            if event.scan.scan_number == peak.best_ms2_scan_id
         )
         for peaks in candidates_by_sample.values()
         for peak in peaks

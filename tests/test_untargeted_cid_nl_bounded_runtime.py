@@ -195,7 +195,7 @@ def test_batch_ms1_only_members_are_partition_invariant_and_do_not_supply_cid(
     )
     for stem in ("S20", "S21"):
         peaks[stem] = tuple(
-            c for c in peaks[stem] if representative_event(c).precursor_mz < 500.5
+            c for c in peaks[stem] if representative_event(c).scan.precursor_mz < 500.5
         )
     raws["S21"].scans = tuple(s for s in raws["S21"].scans if s.precursor_mz < 500.5)
     inputs = dict(

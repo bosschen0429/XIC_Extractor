@@ -22,7 +22,7 @@ def _peak(**overrides: object) -> DiscoveryPeak:
 
 def located_scan_ids(peak: DiscoveryPeak) -> tuple[int, ...]:
     """MS2 scans of every event locating the peak, as the event table lists them."""
-    return tuple(sorted({event.scan_number for event in peak.located_events}))
+    return tuple(sorted({event.scan.scan_number for event in peak.located_events}))
 
 
 def representative_event(peak: DiscoveryPeak) -> DiscoveryEvent:
@@ -30,7 +30,7 @@ def representative_event(peak: DiscoveryPeak) -> DiscoveryEvent:
     (event,) = {
         event
         for event in peak.located_events
-        if event.scan_number == peak.best_ms2_scan_id
+        if event.scan.scan_number == peak.best_ms2_scan_id
         and event.neutral_loss_tag == peak.neutral_loss_tag
     }
     return event

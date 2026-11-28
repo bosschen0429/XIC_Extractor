@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
-from tests.discovery_ms1_capture_fixtures import _seed
+from tests.discovery_ms1_capture_fixtures import _seed, with_scan
 from tests.discovery_peak_fixtures import _peak
 from tests.discovery_store_fixtures import (
     SampleRecords,
@@ -41,7 +40,7 @@ def test_representative_precursor_follows_discovery_choice_within_one_scan(
         product_mz=184.0526,
         product_intensity=500.0,
     )
-    stronger = replace(
+    stronger = with_scan(
         weaker, precursor_mz=300.1100, product_mz=184.0626, product_intensity=900.0
     )
     source = DiscoveryInputSource(

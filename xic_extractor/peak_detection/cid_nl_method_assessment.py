@@ -275,9 +275,9 @@ def resolve_cid_nl_method_relations(
     )
     queries = tuple(
         CidNlEventQuery(
-            evidence.assess_precursor_loss(policy.neutral_loss_tolerance_ppm),
-            evidence.scan_rt_min,
-            evidence.support_rt_min,
+            evidence.scan.assess_precursor_loss(policy.neutral_loss_tolerance_ppm),
+            evidence.scan.rt_min,
+            evidence.scan.support_rt_min,
         )
         for evidence in evidence_refs
     )
@@ -308,8 +308,8 @@ def resolve_cid_nl_method_relations(
                 )
             ),
             acquisition_mode=evidence_refs[event_index].acquisition_mode,
-            dda_scan_number=evidence_refs[event_index].scan_number,
-            scan_rt_min=evidence_refs[event_index].scan_rt_min,
+            dda_scan_number=evidence_refs[event_index].scan.scan_number,
+            scan_rt_min=evidence_refs[event_index].scan.rt_min,
             policy=policy,
         )
         for event_index, members in relations.set_relations
@@ -408,7 +408,7 @@ def _method_result(
         return "HOLD", ("set_level_relation",)
     if not candidate_peaks and any(
         evaluation_receipt.support_policy.accepts_precursor(
-            evidence.assess_precursor_loss(
+            evidence.scan.assess_precursor_loss(
                 evaluation_receipt.support_policy.neutral_loss_tolerance_ppm
             )
         )
@@ -496,7 +496,7 @@ def _supported_peaks(
     losses_by_peak: dict[PeakObservation, set[float]] = {}
     for support in individual_support_refs:
         losses_by_peak.setdefault(support.peak_observation, set()).add(
-            support.evidence.configured_neutral_loss_da
+            support.evidence.scan.configured_neutral_loss_da
         )
     required = set(subject.configured_losses)
     return frozenset(
@@ -555,11 +555,11 @@ def _canonical_refs(value: tuple, *, field: str) -> tuple:
         )
         return (
             observation.sample_key,
-            observation.scan_number,
-            observation.configured_neutral_loss_da,
-            observation.scan_rt_min,
-            observation.scan_precursor_mz,
-            observation.product_mz,
+            observation.scan.scan_number,
+            observation.scan.configured_neutral_loss_da,
+            observation.scan.rt_min,
+            observation.scan.scan_precursor_mz,
+            observation.scan.product_mz,
         )
 
     refs = tuple(sorted(value, key=event_key))

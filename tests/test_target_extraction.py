@@ -5,6 +5,7 @@ import numpy as np
 import pytest
 
 import xic_extractor.extraction.target_extraction as target_extraction
+from tests.discovery_ms1_capture_fixtures import with_scan
 from tests.target_extraction_fixtures import (
     _candidate,
     _peak_result,
@@ -531,20 +532,30 @@ def test_targeted_products_use_discovery_seeds_once_per_tag(
         scan, raw_file=Path("sample"), settings=discovery_settings_for_loss(116.0474)
     )
     assert [
-        (p.precursor_mz, p.product_mz, p.precursor_mz_basis, p.observed_loss_error_ppm)
+        (
+            p.scan.precursor_mz,
+            p.scan.product_mz,
+            p.scan.precursor_mz_basis,
+            p.scan.observed_loss_error_ppm,
+        )
         for p in products
     ] == [
-        (s.precursor_mz, s.product_mz, s.precursor_mz_basis, s.observed_loss_error_ppm)
+        (
+            s.scan.precursor_mz,
+            s.scan.product_mz,
+            s.scan.precursor_mz_basis,
+            s.scan.observed_loss_error_ppm,
+        )
         for s in seeds
     ]
-    assert all(p.scan_number == 7 for p in products)
+    assert all(p.scan.scan_number == 7 for p in products)
 
     if precursor_offset:
         assert products
         assert all(
-            p.precursor_mz_basis == "product_plus_neutral_loss" for p in products
+            p.scan.precursor_mz_basis == "product_plus_neutral_loss" for p in products
         )
-        assert all(p.observed_loss_error_ppm is None for p in products)
+        assert all(p.scan.observed_loss_error_ppm is None for p in products)
 
 
 @pytest.mark.parametrize(
@@ -616,8 +627,8 @@ def test_target_identity_does_not_promote_coisolated_mass_compatibility(
     assert bool(result.cid_nl_relations.supported_candidate_indexes) is supported
     assert len(result.cid_nl_products) == 1
     product = result.cid_nl_products[0]
-    assert product.assess_precursor_loss(target.neutral_loss_da, 20).supports_nl
-    assert product.precursor_mz_basis == (
+    assert product.scan.assess_precursor_loss(20).supports_nl
+    assert product.scan.precursor_mz_basis == (
         "scan_precursor" if supported else "product_plus_neutral_loss"
     )
 
@@ -649,13 +660,13 @@ def test_targeted_scan_resolution_keeps_recorded_support_over_precise_inference(
     )
     settings = discovery_settings_for_loss(116.0474)
     seeds = tuple(
-        replace(
+        with_scan(
             seed,
             ms1_precursor_observation=Ms1PrecursorObservation(
-                6, 7.99, (seed.precursor_mz,)
+                6, 7.99, (seed.scan.precursor_mz,)
             ),
         )
-        if seed.precursor_mz_basis == "product_plus_neutral_loss"
+        if seed.scan.precursor_mz_basis == "product_plus_neutral_loss"
         else seed
         for seed in discovery_events_from_scan(
             scan, raw_file=Path("sample"), settings=settings
@@ -663,15 +674,15 @@ def test_targeted_scan_resolution_keeps_recorded_support_over_precise_inference(
     )
     assert len(seeds) == 2
     (discovery_event,) = resolve_discovery_scan_events(seeds, settings=settings)
-    assert discovery_event.precursor_mz_basis == "product_plus_neutral_loss"
+    assert discovery_event.scan.precursor_mz_basis == "product_plus_neutral_loss"
     for events in (seeds, seeds[::-1]):
         (target_event,) = resolve_discovery_scan_events(
             events,
             settings=settings,
             precursor_reference_requirement="recorded_precursor",
         )
-        assert target_event.precursor_mz_basis == "scan_precursor"
-        assert target_event.product_mz == 383.9516
+        assert target_event.scan.precursor_mz_basis == "scan_precursor"
+        assert target_event.scan.product_mz == 383.9516
 
 
 def test_shared_scan_preserves_each_targets_recorded_precursor_support(tmp_path):
@@ -726,7 +737,7 @@ def test_shared_scan_preserves_each_targets_recorded_precursor_support(tmp_path)
         result = results[target.label]
         assert result.selected_cid_nl_supported
         assert result.reported_rt == pytest.approx(8.0, abs=0.03)
-        assert {p.precursor_mz for p in result.cid_nl_products} == {target.mz}
+        assert {p.scan.precursor_mz for p in result.cid_nl_products} == {target.mz}
 
 
 def test_precursor_scoped_ms2_keeps_every_target_evidence_route(tmp_path):
@@ -797,7 +808,7 @@ def test_precursor_scoped_ms2_keeps_every_target_evidence_route(tmp_path):
     scoped = extract(None)
 
     assert reads == [(0.0, 12.0)]
-    assert {p.precursor_mz_basis for p in unscoped.cid_nl_products} == {
+    assert {p.scan.precursor_mz_basis for p in unscoped.cid_nl_products} == {
         "scan_precursor",
         "scan_monoisotopic",
         "product_plus_neutral_loss",

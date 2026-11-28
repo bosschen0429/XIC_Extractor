@@ -37,7 +37,7 @@ from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlEvaluationReceipt,
     mint_cid_nl_method_assessment,
 )
-from xic_extractor.precursor_evidence import Ms1PrecursorObservation
+from xic_extractor.precursor_evidence import CidNlScan, Ms1PrecursorObservation
 
 
 def test_one_assessment_preserves_two_individually_supported_peaks(
@@ -297,55 +297,61 @@ def test_supported_identity_uses_independent_relation_masses_per_sample(
         direct_precursor = 500.002 if stem == "mixed" else 500.003
         direct_product = 383.9536 if stem == "mixed" else 383.9546
         direct = cid_nl_evidence_observation(
+            scan=CidNlScan(
+                scan_number=301,
+                precursor_mz=direct_precursor,
+                product_mz=direct_product,
+                configured_neutral_loss_da=116.0474,
+                observed_neutral_loss_da=116.0484,
+                observed_loss_error_ppm=0.001 / 116.0474 * 1e6,
+                rt_min=8.0,
+                product_intensity=400.0,
+            ),
             sample=sample,
             acquisition_source=fixture.source(sample),
-            scan_number=301,
-            precursor_mz=direct_precursor,
-            product_mz=direct_product,
-            configured_neutral_loss_da=116.0474,
-            observed_neutral_loss_da=116.0484,
-            observed_loss_error_ppm=0.001 / 116.0474 * 1e6,
-            scan_rt_min=8.0,
-            product_intensity=400.0,
         )
         supported: tuple[CidNlEvidenceObservation, ...] = (direct,)
         if stem == "mixed":
             inferred = cid_nl_evidence_observation(
+                scan=CidNlScan(
+                    scan_number=302,
+                    precursor_mz=500.0,
+                    product_mz=383.9526,
+                    configured_neutral_loss_da=116.0474,
+                    observed_neutral_loss_da=116.0474,
+                    observed_loss_error_ppm=None,
+                    rt_min=8.02,
+                    product_intensity=500.0,
+                    precursor_mz_basis="product_plus_neutral_loss",
+                    scan_precursor_mz=500.0,
+                    precursor_metadata=Ms2PrecursorMetadata(
+                        charge=1,
+                        isolation_width_da=1.6,
+                        isolation_offset_da=0.0,
+                        master_scan_number=300,
+                    ),
+                    ms1_precursor_observation=Ms1PrecursorObservation(
+                        scan_number=300, rt_min=8.0, centroid_mzs=(500.006,)
+                    ),
+                ),
                 sample=sample,
                 acquisition_source=fixture.source(sample),
-                scan_number=302,
-                precursor_mz=500.0,
-                product_mz=383.9526,
-                configured_neutral_loss_da=116.0474,
-                observed_neutral_loss_da=116.0474,
-                observed_loss_error_ppm=None,
-                scan_rt_min=8.02,
-                product_intensity=500.0,
-                precursor_mz_basis="product_plus_neutral_loss",
-                scan_precursor_mz=500.0,
                 precursor_inference_tolerance_da=0.8,
-                precursor_metadata=Ms2PrecursorMetadata(
-                    charge=1,
-                    isolation_width_da=1.6,
-                    isolation_offset_da=0.0,
-                    master_scan_number=300,
-                ),
-                ms1_precursor_observation=Ms1PrecursorObservation(
-                    scan_number=300, rt_min=8.0, centroid_mzs=(500.006,)
-                ),
             )
             supported += (inferred,)
         unsupported = cid_nl_evidence_observation(
+            scan=CidNlScan(
+                scan_number=303,
+                precursor_mz=500.007,
+                product_mz=383.9596,
+                configured_neutral_loss_da=116.0474,
+                observed_neutral_loss_da=116.0474,
+                observed_loss_error_ppm=0.0,
+                rt_min=8.3,
+                product_intensity=600.0,
+            ),
             sample=sample,
             acquisition_source=fixture.source(sample),
-            scan_number=303,
-            precursor_mz=500.007,
-            product_mz=383.9596,
-            configured_neutral_loss_da=116.0474,
-            observed_neutral_loss_da=116.0474,
-            observed_loss_error_ppm=0.0,
-            scan_rt_min=8.3,
-            product_intensity=600.0,
         )
         relations = tuple(
             cid_nl_unique_support(fixture, stem, peak=peak, evidence=evidence)

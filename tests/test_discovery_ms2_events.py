@@ -39,15 +39,15 @@ def test_observed_loss_within_tolerance_produces_discovery_seed() -> None:
     seed = seeds[0]
     assert seed.raw_file == RAW_FILE
     assert seed.sample_stem == "TumorBC2312_DNA"
-    assert seed.scan_number == 6095
-    assert seed.rt == 7.83
-    assert seed.precursor_mz == 258.1085
-    assert seed.product_mz == pytest.approx(product_mz)
-    assert seed.product_intensity == 12000.0
+    assert seed.scan.scan_number == 6095
+    assert seed.scan.rt_min == 7.83
+    assert seed.scan.precursor_mz == 258.1085
+    assert seed.scan.product_mz == pytest.approx(product_mz)
+    assert seed.scan.product_intensity == 12000.0
     assert seed.neutral_loss_tag == "DNA_dR"
-    assert seed.configured_neutral_loss_da == NEUTRAL_LOSS_DA
-    assert seed.observed_neutral_loss_da == pytest.approx(258.1085 - product_mz)
-    assert seed.observed_loss_error_ppm == pytest.approx(5.0)
+    assert seed.scan.configured_neutral_loss_da == NEUTRAL_LOSS_DA
+    assert seed.scan.observed_neutral_loss_da == pytest.approx(258.1085 - product_mz)
+    assert seed.scan.observed_loss_error_ppm == pytest.approx(5.0)
 
 
 def test_out_of_neutral_loss_tolerance_product_is_rejected() -> None:
@@ -90,14 +90,16 @@ def test_quadrature_window_accepts_forty_ppm_loss_and_rejects_outside_product() 
         settings=_settings(nl_tolerance_ppm=20.0, product_search_ppm=1.0),
     )
 
-    direct = [seed for seed in seeds if seed.precursor_mz_basis == "scan_precursor"]
+    direct = [
+        seed for seed in seeds if seed.scan.precursor_mz_basis == "scan_precursor"
+    ]
     assert len(direct) == 1
-    assert direct[0].product_mz == pytest.approx(product_inside)
-    assert direct[0].observed_loss_error_ppm == pytest.approx(40.0)
+    assert direct[0].scan.product_mz == pytest.approx(product_inside)
+    assert direct[0].scan.observed_loss_error_ppm == pytest.approx(40.0)
     loss_error_da, loss_window_da, _ = neutral_loss_match(
-        direct[0].precursor_mz,
-        direct[0].product_mz,
-        direct[0].configured_neutral_loss_da,
+        direct[0].scan.precursor_mz,
+        direct[0].scan.product_mz,
+        direct[0].scan.configured_neutral_loss_da,
         20.0,
     )
     assert loss_error_da < loss_window_da
@@ -188,8 +190,8 @@ def test_product_search_ppm_cannot_reject_observed_loss_within_tolerance() -> No
     )
 
     assert len(seeds) == 1
-    assert seeds[0].product_mz == pytest.approx(product_mz)
-    assert seeds[0].observed_loss_error_ppm == pytest.approx(10.0)
+    assert seeds[0].scan.product_mz == pytest.approx(product_mz)
+    assert seeds[0].scan.observed_loss_error_ppm == pytest.approx(10.0)
 
 
 def test_isolation_offset_product_infers_monoisotopic_precursor_seed() -> None:
@@ -215,14 +217,14 @@ def test_isolation_offset_product_infers_monoisotopic_precursor_seed() -> None:
 
     assert len(seeds) == 1
     seed = seeds[0]
-    assert seed.scan_number == 19867
-    assert seed.rt == pytest.approx(23.8043)
-    assert seed.precursor_mz == pytest.approx(product_mz + NEUTRAL_LOSS_DA)
-    assert seed.product_mz == pytest.approx(product_mz)
-    assert seed.observed_neutral_loss_da == pytest.approx(NEUTRAL_LOSS_DA)
-    assert seed.observed_loss_error_ppm is None
-    assert seed.precursor_mz_basis == "product_plus_neutral_loss"
-    assert seed.scan_precursor_mz == pytest.approx(scan_precursor_mz)
+    assert seed.scan.scan_number == 19867
+    assert seed.scan.rt_min == pytest.approx(23.8043)
+    assert seed.scan.precursor_mz == pytest.approx(product_mz + NEUTRAL_LOSS_DA)
+    assert seed.scan.product_mz == pytest.approx(product_mz)
+    assert seed.scan.observed_neutral_loss_da == pytest.approx(NEUTRAL_LOSS_DA)
+    assert seed.scan.observed_loss_error_ppm is None
+    assert seed.scan.precursor_mz_basis == "product_plus_neutral_loss"
+    assert seed.scan.scan_precursor_mz == pytest.approx(scan_precursor_mz)
 
 
 def test_same_ms2_scan_can_emit_direct_and_inferred_precursor_seeds() -> None:
@@ -247,17 +249,17 @@ def test_same_ms2_scan_can_emit_direct_and_inferred_precursor_seeds() -> None:
         settings=_settings(ms2_precursor_tol_da=1.1),
     )
 
-    seeds_by_product = {round(seed.product_mz, 6): seed for seed in seeds}
+    seeds_by_product = {round(seed.scan.product_mz, 6): seed for seed in seeds}
     assert set(seeds_by_product) == {
         round(monoisotopic_product_mz, 6),
         round(isotope_product_mz, 6),
     }
     inferred = seeds_by_product[round(monoisotopic_product_mz, 6)]
     direct = seeds_by_product[round(isotope_product_mz, 6)]
-    assert inferred.precursor_mz == pytest.approx(
+    assert inferred.scan.precursor_mz == pytest.approx(
         monoisotopic_product_mz + NEUTRAL_LOSS_DA
     )
-    assert direct.precursor_mz == pytest.approx(scan_precursor_mz)
+    assert direct.scan.precursor_mz == pytest.approx(scan_precursor_mz)
 
 
 def test_inferred_precursor_seed_respects_ms2_precursor_window() -> None:
@@ -335,7 +337,7 @@ def test_observed_loss_error_equal_to_tolerance_is_accepted() -> None:
     )
 
     assert len(seeds) == 1
-    assert seeds[0].observed_loss_error_ppm == pytest.approx(10.0)
+    assert seeds[0].scan.observed_loss_error_ppm == pytest.approx(10.0)
 
 
 def test_matching_products_rank_by_loss_error_then_intensity() -> None:
@@ -363,9 +365,9 @@ def test_matching_products_rank_by_loss_error_then_intensity() -> None:
     )
 
     assert len(seeds) == 1
-    assert seeds[0].product_mz == pytest.approx(tied_higher_intensity)
-    assert seeds[0].product_intensity == 2000.0
-    assert seeds[0].observed_loss_error_ppm == pytest.approx(3.0)
+    assert seeds[0].scan.product_mz == pytest.approx(tied_higher_intensity)
+    assert seeds[0].scan.product_intensity == 2000.0
+    assert seeds[0].scan.observed_loss_error_ppm == pytest.approx(3.0)
 
 
 def test_iter_ms2_scans_uses_settings_rt_window() -> None:
@@ -510,8 +512,10 @@ def test_inference_uses_scan_isolation_geometry_and_configured_cap(
         raw_file=RAW_FILE,
         settings=_settings(ms2_precursor_tol_da=radius),
     )
-    assert [seed.precursor_mz for seed in seeds] == pytest.approx(expected)
-    assert all(seed.precursor_mz_basis == "product_plus_neutral_loss" for seed in seeds)
+    assert [seed.scan.precursor_mz for seed in seeds] == pytest.approx(expected)
+    assert all(
+        seed.scan.precursor_mz_basis == "product_plus_neutral_loss" for seed in seeds
+    )
 
 
 @pytest.mark.parametrize("charge", (None, 1, 2))
@@ -539,7 +543,9 @@ def test_recorded_mono_and_selected_ions_keep_distinct_direct_evidence(charge):
     if charge == 2:
         assert seeds == ()
         return
-    assert [(seed.precursor_mz, seed.precursor_mz_basis) for seed in seeds] == [
+    assert [
+        (seed.scan.precursor_mz, seed.scan.precursor_mz_basis) for seed in seeds
+    ] == [
         (300.1615, "scan_monoisotopic"),
         (301.165, "scan_precursor"),
     ]
@@ -567,6 +573,6 @@ def test_reference_product_failing_neutral_loss_still_infers_precursor_seed():
         settings=_settings(nl_tolerance_ppm=20.0, ms2_precursor_tol_da=0.8),
     )
 
-    assert [(seed.precursor_mz, seed.precursor_mz_basis) for seed in seeds] == [
-        (pytest.approx(product_mz + NEUTRAL_LOSS_DA), "product_plus_neutral_loss")
-    ]
+    assert [
+        (seed.scan.precursor_mz, seed.scan.precursor_mz_basis) for seed in seeds
+    ] == [(pytest.approx(product_mz + NEUTRAL_LOSS_DA), "product_plus_neutral_loss")]

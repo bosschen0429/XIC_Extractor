@@ -28,7 +28,6 @@ from xic_extractor.peak_detection.cid_nl_candidate_set_relation import (
 )
 from xic_extractor.peak_detection.cid_nl_evidence import (
     CidNlEvidenceObservation,
-    cid_nl_evidence_observation,
 )
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlEvaluationReceipt,
@@ -66,6 +65,9 @@ from xic_extractor.peak_detection.traces import Trace, trace_from_xic_request
 from xic_extractor.processing_identity import AcquisitionSourceIdentity
 from xic_extractor.raw_superwindow_source import RawSuperWindowSource
 from xic_extractor.sample_metadata import SampleMetadata
+from xic_extractor.untargeted_execution.partition.cid_nl_discovery_evidence import (
+    discovery_scan_evidence,
+)
 from xic_extractor.untargeted_execution.partition.cid_nl_raw_source import (
     _ADAPTER_NAMESPACE,
     CidNlAcquisitionError,
@@ -452,7 +454,7 @@ def backfill_untargeted_cid_nl_sample_subject(
         backfill_evidence = tuple(
             ref
             for ref in initial_assessment.evidence_observations
-            if query_rt_min <= ref.scan_rt_min <= query_rt_max
+            if query_rt_min <= ref.scan.rt_min <= query_rt_max
         )
         backfill_support, backfill_sets = resolve_cid_nl_method_relations(
             sample=sample,
@@ -688,7 +690,7 @@ def _composite_backfill_evidence(
             rt_max=query_rt_max,
         )
         if _within_ppm(
-            seed.precursor_mz,
+            seed.scan.precursor_mz,
             method_subject.precursor_mz,
             method_subject.precursor_tolerance_ppm,
         )
@@ -698,20 +700,11 @@ def _composite_backfill_evidence(
         settings=settings,
         preserve_configured_losses=method_subject.composition is not None,
     ):
-        evidence = cid_nl_evidence_observation(
+        evidence = discovery_scan_evidence(
+            seed,
             sample=sample,
             acquisition_source=acquisition_source,
-            scan_number=seed.scan_number,
-            precursor_mz=seed.precursor_mz,
-            product_mz=seed.product_mz,
-            configured_neutral_loss_da=seed.configured_neutral_loss_da,
-            observed_neutral_loss_da=seed.observed_neutral_loss_da,
-            observed_loss_error_ppm=seed.observed_loss_error_ppm,
-            scan_rt_min=seed.rt,
-            product_intensity=seed.product_intensity,
-            precursor_mz_basis=seed.precursor_mz_basis,
-            scan_precursor_mz=seed.scan_precursor_mz,
-            precursor_metadata=seed.precursor_metadata,
+            settings=settings,
         )
         evidence_refs.append(evidence)
         resolved_support, resolved_sets = resolve_cid_nl_method_relations(

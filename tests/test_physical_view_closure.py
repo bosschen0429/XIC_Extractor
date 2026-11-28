@@ -174,7 +174,8 @@ def test_one_ion_in_two_windows_is_one_peak_whatever_the_input_order(
     assert located_scan_ids(peak) == (10, 11)
     assert peak.peak_id == "TumorBC2312_DNA@mz500.0075_rt9.0000"
     reasons = {
-        item.event.scan_number: item.unattached_reason for item in result.attachments
+        item.event.scan.scan_number: item.unattached_reason
+        for item in result.attachments
     }
     assert reasons == {10: "mass_outside_peak", 11: ""}
 

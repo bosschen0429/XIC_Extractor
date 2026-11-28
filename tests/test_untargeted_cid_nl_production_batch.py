@@ -320,7 +320,10 @@ def test_discovery_review_rows_cannot_become_alignment_roots(
             second_raw.scans = (first_raw.scans[0], second_raw.scans[0])
             raws[stem] = second_raw
             peaks[stem] = tuple(
-                sorted(nearby, key=lambda item: representative_event(item).precursor_mz)
+                sorted(
+                    nearby,
+                    key=lambda item: representative_event(item).scan.precursor_mz,
+                )
             )
     if above_threshold:
         peaks["Support2"] = discover(raws["Support2"], paths["Support2"], settings)

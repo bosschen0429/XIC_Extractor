@@ -28,6 +28,7 @@ from xic_extractor.peak_detection.peak_hypothesis_identity import (
     compose_cid_nl_peak_hypothesis,
 )
 from xic_extractor.peak_detection.traces import Trace
+from xic_extractor.precursor_evidence import CidNlScan
 from xic_extractor.processing_identity import (
     AcquisitionSourceIdentity,
     build_acquisition_source_identity,
@@ -375,16 +376,18 @@ def _evidence(
     observed_loss_error_ppm: float = 0.0,
 ) -> CidNlEvidenceObservation:
     return cid_nl_evidence_observation(
+        scan=CidNlScan(
+            scan_number=scan_number,
+            precursor_mz=precursor_mz,
+            product_mz=product_mz,
+            configured_neutral_loss_da=_NEUTRAL_LOSS_DA,
+            observed_neutral_loss_da=observed_neutral_loss_da,
+            observed_loss_error_ppm=observed_loss_error_ppm,
+            rt_min=scan_rt_min,
+            product_intensity=400.0,
+        ),
         sample=sample,
         acquisition_source=source,
-        scan_number=scan_number,
-        precursor_mz=precursor_mz,
-        product_mz=product_mz,
-        configured_neutral_loss_da=_NEUTRAL_LOSS_DA,
-        observed_neutral_loss_da=observed_neutral_loss_da,
-        observed_loss_error_ppm=observed_loss_error_ppm,
-        scan_rt_min=scan_rt_min,
-        product_intensity=400.0,
     )
 
 

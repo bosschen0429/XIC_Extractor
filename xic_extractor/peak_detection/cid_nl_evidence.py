@@ -8,16 +8,9 @@ selection, and delivery authority remain in their respective adapters.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
-from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
-from xic_extractor.precursor_evidence import (
-    Ms1PrecursorObservation,
-    PrecursorLossAssessment,
-    PrecursorMzBasis,
-    assess_precursor_loss,
-    supports_direct_nl,
-)
+from xic_extractor.precursor_evidence import CidNlScan
 from xic_extractor.processing_identity import AcquisitionSourceIdentity
 from xic_extractor.sample_metadata import SampleMetadata
 
@@ -30,111 +23,51 @@ class CidNlEvidenceContractError(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class CidNlEvidenceObservation:
-    """CID-NL facts with an explicit measured or product-derived precursor.
-
-    Inferred loss is a derivation with no independent error measurement.
-    ``scan_precursor_mz`` retains the actual selected scan value.
-    """
+    """One scan bound to its sample, acquisition and method inference tolerance."""
 
     sample_key: str
     acquisition_source_id: str
     acquisition_mode: str
-    scan_number: int
-    precursor_mz: float
-    product_mz: float
-    configured_neutral_loss_da: float
-    observed_neutral_loss_da: float
-    observed_loss_error_ppm: float | None
-    scan_rt_min: float
-    product_intensity: float
-    precursor_mz_basis: PrecursorMzBasis
-    scan_precursor_mz: float
+    scan: CidNlScan
     precursor_inference_tolerance_da: float | None
-    precursor_metadata: Ms2PrecursorMetadata | None = None
-    ms1_precursor_observation: Ms1PrecursorObservation | None = None
-
-    @property
-    def support_rt_min(self) -> float:
-        """Both the parent ion observation and its MS2 event must fit the peak."""
-        parent = self.ms1_precursor_observation
-        return self.scan_rt_min if parent is None else parent.rt_min
-
-    def assess_precursor_loss(self, tolerance_ppm: float) -> PrecursorLossAssessment:
-        return assess_precursor_loss(
-            basis=self.precursor_mz_basis,
-            precursor_mz=self.precursor_mz,
-            product_mz=self.product_mz,
-            neutral_loss_da=self.configured_neutral_loss_da,
-            observed_loss_da=self.observed_neutral_loss_da,
-            observed_loss_error_ppm=self.observed_loss_error_ppm,
-            tolerance_ppm=tolerance_ppm,
-            selected_mz=self.scan_precursor_mz,
-            metadata=self.precursor_metadata,
-            ms1_observation=self.ms1_precursor_observation,
-        )
-
-    @property
-    def supports_direct_nl(self) -> bool:
-        return supports_direct_nl(
-            self.precursor_mz_basis,
-            self.precursor_mz,
-            self.scan_precursor_mz,
-            self.precursor_metadata,
-        )
 
 
 def cid_nl_evidence_observation(
     *,
     sample: SampleMetadata,
     acquisition_source: AcquisitionSourceIdentity,
-    scan_number: int,
-    precursor_mz: float,
-    product_mz: float,
-    configured_neutral_loss_da: float,
-    observed_neutral_loss_da: float,
-    observed_loss_error_ppm: float | None,
-    scan_rt_min: float,
-    product_intensity: float,
-    precursor_mz_basis: PrecursorMzBasis = "scan_precursor",
-    scan_precursor_mz: float | None = None,
+    scan: CidNlScan,
     precursor_inference_tolerance_da: float | None = None,
-    precursor_metadata: Ms2PrecursorMetadata | None = None,
-    ms1_precursor_observation: Ms1PrecursorObservation | None = None,
 ) -> CidNlEvidenceObservation:
-    """Build source-bound evidence without reading an acquisition source.
-
-    Direct callers may omit the scan precursor; inferred callers must supply
-    its actual measured value and the bounded precursor inference tolerance.
-    """
-
-    if scan_precursor_mz is None:
-        if precursor_mz_basis != "scan_precursor":
+    """Bind an acquired scan to a sample and the method's inference tolerance."""
+    if scan.scan_precursor_mz is None:
+        if scan.precursor_mz_basis != "scan_precursor":
             raise CidNlEvidenceContractError(
                 "inferred evidence requires explicit scan_precursor_mz"
             )
-        scan_precursor_mz = precursor_mz
-    if isinstance(scan_number, bool) or scan_number <= 0:
+        scan = replace(scan, scan_precursor_mz=scan.precursor_mz)
+    if isinstance(scan.scan_number, bool) or scan.scan_number <= 0:
         raise CidNlEvidenceContractError("scan_number must be a positive integer")
-    precursor_mz = _finite_float(precursor_mz, field="precursor_mz")
-    product_mz = _finite_float(product_mz, field="product_mz")
-    configured_neutral_loss_da = _finite_float(
-        configured_neutral_loss_da, field="configured_neutral_loss_da"
-    )
-    observed_neutral_loss_da = _finite_float(
-        observed_neutral_loss_da, field="observed_neutral_loss_da"
-    )
-    scan_rt_min = _finite_float(scan_rt_min, field="scan_rt_min")
-    product_intensity = _finite_float(product_intensity, field="product_intensity")
-    scan_precursor_mz = _finite_float(scan_precursor_mz, field="scan_precursor_mz")
-    if precursor_mz <= 0.0 or product_mz <= 0.0:
-        raise CidNlEvidenceContractError("precursor_mz and product_mz must be positive")
-    if scan_precursor_mz <= 0.0:
-        raise CidNlEvidenceContractError("scan_precursor_mz must be positive")
-    if precursor_metadata is not None and precursor_metadata.charge not in (None, 1):
+    for name, value in (
+        ("precursor_mz", scan.precursor_mz),
+        ("product_mz", scan.product_mz),
+        ("scan_precursor_mz", scan.scan_precursor_mz),
+        ("configured_neutral_loss_da", scan.configured_neutral_loss_da),
+        ("observed_neutral_loss_da", scan.observed_neutral_loss_da),
+        ("product_intensity", scan.product_intensity),
+    ):
+        if value is None or _finite_float(value, field=name) <= 0:
+            raise CidNlEvidenceContractError(f"{name} must be positive")
+    if _finite_float(scan.rt_min, field="scan_rt_min") < 0:
+        raise CidNlEvidenceContractError("scan_rt_min must be non-negative")
+    if scan.precursor_metadata is not None and scan.precursor_metadata.charge not in (
+        None,
+        1,
+    ):
         raise CidNlEvidenceContractError(
             "CID-NL evidence requires singly charged or unknown charge"
         )
-    if precursor_mz_basis == "product_plus_neutral_loss":
+    if scan.precursor_mz_basis == "product_plus_neutral_loss":
         tolerance = precursor_inference_tolerance_da
         if tolerance is None:
             raise CidNlEvidenceContractError(
@@ -146,7 +79,7 @@ def cid_nl_evidence_observation(
                 "precursor_inference_tolerance_da must be positive"
             )
         precursor_inference_tolerance_da = tolerance
-        if observed_loss_error_ppm is not None:
+        if scan.observed_loss_error_ppm is not None:
             raise CidNlEvidenceContractError(
                 "inferred precursor has no independent observed_loss_error_ppm"
             )
@@ -155,56 +88,30 @@ def cid_nl_evidence_observation(
             raise CidNlEvidenceContractError(
                 "direct evidence cannot declare precursor inference tolerance"
             )
-        if observed_loss_error_ppm is None:
+        if scan.observed_loss_error_ppm is None:
             raise CidNlEvidenceContractError(
                 "recorded precursor requires observed_loss_error_ppm"
             )
         error_ppm = _finite_float(
-            observed_loss_error_ppm, field="observed_loss_error_ppm"
+            scan.observed_loss_error_ppm, field="observed_loss_error_ppm"
         )
         if error_ppm < 0.0:
             raise CidNlEvidenceContractError(
                 "observed_loss_error_ppm must be non-negative"
             )
-        observed_loss_error_ppm = error_ppm
-    if configured_neutral_loss_da <= 0.0:
-        raise CidNlEvidenceContractError("configured_neutral_loss_da must be positive")
-    if observed_neutral_loss_da <= 0.0:
-        raise CidNlEvidenceContractError("observed_neutral_loss_da must be positive")
-    if scan_rt_min < 0.0:
-        raise CidNlEvidenceContractError("scan_rt_min must be non-negative")
-    if product_intensity <= 0.0:
-        raise CidNlEvidenceContractError("product_intensity must be positive")
     return CidNlEvidenceObservation(
         sample_key=sample.sample_name,
         acquisition_source_id=acquisition_source.acquisition_source_id,
         acquisition_mode=ACQUISITION_MODE,
-        scan_number=scan_number,
-        precursor_mz=precursor_mz,
-        product_mz=product_mz,
-        configured_neutral_loss_da=configured_neutral_loss_da,
-        observed_neutral_loss_da=observed_neutral_loss_da,
-        observed_loss_error_ppm=observed_loss_error_ppm,
-        scan_rt_min=scan_rt_min,
-        product_intensity=product_intensity,
-        precursor_mz_basis=precursor_mz_basis,
-        scan_precursor_mz=scan_precursor_mz,
+        scan=scan,
         precursor_inference_tolerance_da=precursor_inference_tolerance_da,
-        precursor_metadata=precursor_metadata,
-        ms1_precursor_observation=ms1_precursor_observation,
     )
 
 
 def _finite_float(value: float, *, field: str) -> float:
-    if isinstance(value, bool):
+    if isinstance(value, bool) or not math.isfinite(value):
         raise CidNlEvidenceContractError(f"{field} must be a finite number")
-    try:
-        normalized = float(value)
-    except (TypeError, ValueError) as exc:
-        raise CidNlEvidenceContractError(f"{field} must be a finite number") from exc
-    if not math.isfinite(normalized):
-        raise CidNlEvidenceContractError(f"{field} must be a finite number")
-    return 0.0 if normalized == 0.0 else normalized
+    return value
 
 
 __all__ = [

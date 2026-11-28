@@ -81,6 +81,7 @@ from xic_extractor.peak_detection.traces import TraceGroup
 from xic_extractor.precursor_evidence import PrecursorMassScope
 
 if TYPE_CHECKING:
+    from xic_extractor.discovery.models import DiscoveryEvent
     from xic_extractor.evidence.targeted_identification import MethodCandidateEvidence
     from xic_extractor.extraction.result_models import ExtractionResult
 
@@ -335,7 +336,7 @@ def assess_targeted_candidate_population(
     preferred_rt: float | None,
     strict_preferred_rt: bool,
     method_window: Ms2Window | None,
-    method_seeds: tuple | None = None,
+    method_seeds: tuple[DiscoveryEvent, ...] | None = None,
     retained_method_products: tuple[MS2ProductEvidence, ...] | None = None,
     retained_method_receipt: CidNlEvaluationReceipt | None = None,
     retained_trigger_events: tuple[tuple[int, float], ...] | None = None,
@@ -380,7 +381,8 @@ def assess_targeted_candidate_population(
         products = tuple(
             product
             for product in products
-            if abs(product.precursor_mz - target.mz) <= policy.precursor_tolerance_da
+            if abs(product.scan.precursor_mz - target.mz)
+            <= policy.precursor_tolerance_da
         )
         if retained_method_receipt is not None:
             receipt = retained_method_receipt
@@ -412,13 +414,11 @@ def assess_targeted_candidate_population(
             ),
             event_queries=tuple(
                 CidNlEventQuery(
-                    product.assess_precursor_loss(
-                        target.neutral_loss_da, policy.neutral_loss_tolerance_ppm
+                    product.scan.assess_precursor_loss(
+                        policy.neutral_loss_tolerance_ppm
                     ),
-                    product.scan_rt,
-                    product.scan_rt
-                    if product.ms1_precursor_observation is None
-                    else product.ms1_precursor_observation.rt_min,
+                    product.scan.rt_min,
+                    product.scan.support_rt_min,
                 )
                 for product in products
             ),
@@ -642,7 +642,7 @@ def targeted_ms2_precursor_scope(targets: list[Target]) -> PrecursorMassScope | 
 
 def prepare_targeted_method_seeds(
     window: Ms2Window, targets: list[Target]
-) -> dict[float, tuple]:
+) -> dict[float, tuple[DiscoveryEvent, ...]]:
     """Parse each chemistry once for the sample, independent of target count."""
     from pathlib import Path
 
@@ -668,7 +668,7 @@ def prepare_targeted_method_seeds(
 
 
 def _discovery_method_products(
-    window: Ms2Window, target: Target, seeds: tuple | None
+    window: Ms2Window, target: Target, seeds: tuple[DiscoveryEvent, ...] | None
 ) -> tuple[MS2ProductEvidence, ...]:
     """Adapt shared Discovery events, preserving their recorded/inferred basis."""
     from xic_extractor.discovery.event_evidence import (
@@ -687,7 +687,9 @@ def _discovery_method_products(
     tolerance_da = mz_tolerance_da(target.mz, target.ppm_tol)
     seeds = resolve_discovery_scan_events(
         tuple(
-            seed for seed in seeds if abs(seed.precursor_mz - target.mz) <= tolerance_da
+            seed
+            for seed in seeds
+            if abs(seed.scan.precursor_mz - target.mz) <= tolerance_da
         ),
         settings=discovery_settings_for_loss(loss),
         precursor_reference_requirement=TARGETED_PRECURSOR_REFERENCE,
@@ -696,25 +698,16 @@ def _discovery_method_products(
     inference_tolerance = discovery_settings_for_loss(loss).ms2_precursor_tol_da
     return tuple(
         MS2ProductEvidence(
-            scan_rt=seed.rt,
-            precursor_mz=seed.precursor_mz,
-            product_mz=seed.product_mz,
-            product_intensity=seed.product_intensity,
-            product_base_ratio=seed.product_intensity / base_by_scan[seed.scan_number],
-            target_product_ppm=absolute_ppm_error(seed.product_mz, expected_product),
-            observed_loss_da=seed.observed_neutral_loss_da,
-            observed_loss_error_ppm=seed.observed_loss_error_ppm,
-            scan_number=seed.scan_number,
-            acquisition_source_id=seed.acquisition_source_id,
-            precursor_mz_basis=seed.precursor_mz_basis,
-            scan_precursor_mz=seed.scan_precursor_mz,
-            precursor_metadata=seed.precursor_metadata,
-            ms1_precursor_observation=seed.ms1_precursor_observation,
-            precursor_inference_tolerance_da=(
-                inference_tolerance
-                if seed.precursor_mz_basis == "product_plus_neutral_loss"
-                else None
+            scan=seed.scan,
+            product_base_ratio=seed.scan.product_intensity
+            / base_by_scan[seed.scan.scan_number],
+            target_product_ppm=absolute_ppm_error(
+                seed.scan.product_mz, expected_product
             ),
+            acquisition_source_id=seed.acquisition_source_id,
+            precursor_inference_tolerance_da=inference_tolerance
+            if seed.scan.precursor_mz_basis == "product_plus_neutral_loss"
+            else None,
         )
         for seed in seeds
     )

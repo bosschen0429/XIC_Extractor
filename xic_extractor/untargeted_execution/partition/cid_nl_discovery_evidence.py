@@ -19,23 +19,10 @@ def discovery_scan_evidence(
 ) -> CidNlEvidenceObservation:
     """Carry the recorded scan and parent MS1, not an inferred peak identity."""
     return cid_nl_evidence_observation(
+        scan=seed.scan,
         sample=sample,
         acquisition_source=acquisition_source,
-        scan_number=seed.scan_number,
-        precursor_mz=seed.precursor_mz,
-        product_mz=seed.product_mz,
-        configured_neutral_loss_da=seed.configured_neutral_loss_da,
-        observed_neutral_loss_da=seed.observed_neutral_loss_da,
-        observed_loss_error_ppm=seed.observed_loss_error_ppm,
-        scan_rt_min=seed.rt,
-        product_intensity=seed.product_intensity,
-        precursor_mz_basis=seed.precursor_mz_basis,
-        scan_precursor_mz=seed.scan_precursor_mz,
-        precursor_metadata=seed.precursor_metadata,
-        ms1_precursor_observation=seed.ms1_precursor_observation,
-        precursor_inference_tolerance_da=(
-            settings.ms2_precursor_tol_da
-            if seed.precursor_mz_basis == "product_plus_neutral_loss"
-            else None
-        ),
+        precursor_inference_tolerance_da=settings.ms2_precursor_tol_da
+        if seed.scan.precursor_mz_basis == "product_plus_neutral_loss"
+        else None,
     )
