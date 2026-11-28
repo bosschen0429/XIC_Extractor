@@ -185,7 +185,7 @@ def test_group_population_preserves_complete_member_and_nonmember_positions(
         payload, integration = answers[observation.key]
         if observation.evidence_state == "direct_observation":
             assert payload.variant == "not_quantifiable"
-            assert integration is observation.integrations[0]
+            assert integration is observation.value_peaks[0].integration
         else:
             assert payload.variant == "not_searched"
             assert integration is None
@@ -238,7 +238,7 @@ def test_group_closed_state_table_maps_owner_observations_without_reason_parsing
     }
     for observation, (payload, integration) in zip(observations, answers, strict=True):
         if payload.variant == "not_quantifiable":
-            assert integration is observation.integrations[0]
+            assert integration is observation.value_peaks[0].integration
         else:
             assert integration is None
 
@@ -364,7 +364,7 @@ def test_group_merge_selects_one_direct_integration_among_lanes(
     assert all(
         set(item.evidence_states) == {"direct_observation", "not_searched"}
         and item.evidence_state == "mixed"
-        and len(item.integrations) == 1
+        and sum(p.integration is not None for p in item.value_peaks) == 1
         for item in observations
     )
     decisions = tuple(
@@ -374,7 +374,7 @@ def test_group_merge_selects_one_direct_integration_among_lanes(
         observations, decisions, strict=True
     ):
         assert payload.variant == "numeric" and payload.value > 0
-        assert integration is observation.integrations[0]
+        assert integration is observation.value_peaks[0].integration
 
 
 def test_group_split_nonmember_maps_exact_not_searched_closure(

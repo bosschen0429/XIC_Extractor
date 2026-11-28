@@ -187,14 +187,6 @@ class UntargetedSampleResult:
     backfill_attempts: tuple[UntargetedCidNlBackfillAttemptResult, ...] = ()
 
     @property
-    def backfill_attempt(self) -> UntargetedCidNlBackfillAttemptResult | None:
-        if len(self.backfill_attempts) > 1:
-            raise UntargetedPartitionError(
-                "multiple backfill attempts require group selection"
-            )
-        return self.backfill_attempts[0] if self.backfill_attempts else None
-
-    @property
     def effective_assessments(self) -> tuple[CidNlMethodAssessment, ...]:
         return (self.adapter_result.assessment_input.assessment,) + tuple(
             attempt.assessment for attempt in self.backfill_attempts

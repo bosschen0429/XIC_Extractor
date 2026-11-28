@@ -22,10 +22,6 @@ from xic_extractor.peak_detection.observations import (
 RELATIONSHIP = "supports_one_or_more_of"
 
 
-class DdaCidNlCandidateSetRelationContractError(ValueError):
-    """Raised when one scan cannot close a conservative candidate-set relation."""
-
-
 @dataclass(frozen=True, slots=True)
 class DdaCidNlCandidateSetRelation:
     """Immutable set-level relation; it carries no individual vote."""
@@ -47,6 +43,5 @@ class DdaCidNlCandidateSetRelation:
 
 __all__ = [
     "DdaCidNlCandidateSetRelation",
-    "DdaCidNlCandidateSetRelationContractError",
     "RELATIONSHIP",
 ]

@@ -358,13 +358,13 @@ def test_runtime_recovers_from_single_scan_cid_nl_support_owners(
     missing = by_stem["Missing"]
     (peak,) = missing.adapter_result.assessment_input.assessment.candidate_peaks
     assert peak.integration.rt_apex_min == pytest.approx(8.0)
-    assert missing.backfill_attempt is None
+    assert missing.backfill_attempts == ()
     no_peak = by_stem["NoPeak"]
     assert not no_peak.adapter_result.assessment_input.assessment.candidate_peaks
-    assert no_peak.backfill_attempt is not None
+    (attempt,) = no_peak.backfill_attempts
     assert no_peak.backfill_input is None
-    assert not no_peak.backfill_attempt.assessment.candidate_peaks
-    assert by_stem["Blank"].backfill_attempt is None
+    assert not attempt.assessment.candidate_peaks
+    assert by_stem["Blank"].backfill_attempts == ()
     assert {path.stem: len(handles) for path, handles in opened.items()} == {
         "S1": 1,
         "S2": 1,
@@ -589,7 +589,7 @@ def test_runtime_reads_a_region_only_where_its_events_are_when_below_quorum(
     assert support.method_result == "SUPPORT"
     assert empty.technical_state == "not_evaluated"
     assert empty.method_result is None and not empty.candidate_peaks
-    assert all(item.backfill_attempt is None for item in result.sample_results)
+    assert all(item.backfill_attempts == () for item in result.sample_results)
     for path, windows in zip(
         raw_paths, ([(1, len(source_raws[raw_paths[0]].rt))], []), strict=True
     ):

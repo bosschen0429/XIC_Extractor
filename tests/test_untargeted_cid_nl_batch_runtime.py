@@ -105,14 +105,14 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
         assert not assessment.individual_support_refs
         if item is heavier and missing_second_ion:
             assert not assessment.candidate_peaks
-            assert item.backfill_attempt is not None
-            assert not item.backfill_attempt.assessment.candidate_peaks
+            (attempt,) = item.backfill_attempts
+            assert not attempt.assessment.candidate_peaks
         else:
             (peak,) = assessment.candidate_peaks
             assert peak.mz == pytest.approx(item.job.method_subject.precursor_mz)
             assert peak.integration.rt_apex_min == pytest.approx(7.98)
             assert peak.physical_peak_key in selected
-            assert item.backfill_attempt is None
+            assert item.backfill_attempts == ()
     for path in raw_paths[:2]:
         (initial,) = opened[path]
         assert initial.chromatogram_request_counts == [2]

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Iterable, Mapping
+from collections.abc import Mapping
 from dataclasses import replace
 from typing import TYPE_CHECKING, cast
 
@@ -11,7 +11,6 @@ from xic_extractor.configuration.mass_recalibration import resolve_mass_recalibr
 from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.presets.loader import (
     DISCOVERY_TUNING_OVERRIDE_KEYS,
-    load_preset,
     reject_retired_alignment_runtime_options,
     validate_delta_mass_preset_tags,
 )
@@ -76,26 +75,6 @@ def bind_cid_nl_recipe(
         discovery_settings=discovery_settings,
         alignment_config=alignment_config,
     )
-
-
-def filter_cid_nl_recipe_presets(
-    preset_names: Iterable[str],
-    *,
-    route: CidNlRecipeRoute = "discovery_only",
-) -> tuple[str, ...]:
-    """Return only presets accepted by the package-owned CID-NL binder."""
-
-    accepted: list[str] = []
-    for preset_name in preset_names:
-        if not isinstance(preset_name, str) or not preset_name:
-            raise TypeError("preset_names must contain non-empty text")
-        preset = load_preset(preset_name)
-        try:
-            bind_cid_nl_recipe(preset, route)
-        except PresetError, ValueError:
-            continue
-        accepted.append(preset_name)
-    return tuple(accepted)
 
 
 def apply_to_discovery(

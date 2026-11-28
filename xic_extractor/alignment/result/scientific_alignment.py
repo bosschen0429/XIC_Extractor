@@ -23,7 +23,6 @@ from xic_extractor.alignment.cross_sample.grouping_result import (
     CrossSampleGroupingResult,
 )
 from xic_extractor.alignment.cross_sample.peak_groups import (
-    CrossSampleLineageEdge,
     CrossSamplePartitionTransition,
     CrossSamplePeakGroupHypothesis,
 )
@@ -89,10 +88,6 @@ class FinalizedScientificAlignment:
     @property
     def partition_transition(self) -> CrossSamplePartitionTransition:
         return self.grouping_result.partition_transition
-
-    @property
-    def lineage(self) -> tuple[CrossSampleLineageEdge, ...]:
-        return self.partition_transition.lineage
 
 
 def finalize_scientific_alignment(

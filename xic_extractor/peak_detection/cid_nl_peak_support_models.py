@@ -16,10 +16,6 @@ from xic_extractor.precursor_evidence import (
 RELATIONSHIP = "strict_nl_inside_ms1_peak_scope"
 
 
-class DdaCidNlPeakSupportContractError(ValueError):
-    """Raised when a DDA CID-NL event cannot bind to one physical MS1 peak."""
-
-
 @dataclass(frozen=True, slots=True)
 class DdaCidNlPeakSupportPolicy:
     """Owner-normalized matching thresholds already present in method inputs."""
@@ -66,7 +62,6 @@ class DdaCidNlPeakSupport:
 
 __all__ = [
     "DdaCidNlPeakSupport",
-    "DdaCidNlPeakSupportContractError",
     "DdaCidNlPeakSupportPolicy",
     "RELATIONSHIP",
 ]

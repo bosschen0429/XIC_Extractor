@@ -7,11 +7,8 @@ contracts, and persistence envelopes, reducing copy-paste boilerplate.
 from __future__ import annotations
 
 import math
-import re
 from collections.abc import Callable
 from numbers import Integral, Real
-
-_LOWER_SHA256 = re.compile(r"[0-9a-f]{64}")
 
 
 def require_finite_real(
@@ -62,42 +59,6 @@ def require_integer(
     return parsed
 
 
-def require_optional_integer(
-    value: object,
-    *,
-    name: str = "value",
-    field: str | None = None,
-    non_negative: bool = False,
-    positive: bool = False,
-    error_factory: Callable[[str], Exception] = ValueError,
-    type_error_factory: Callable[[str], Exception] | None = None,
-) -> int | None:
-    """Return integer if value is not None, else None."""
-    if value is None:
-        return None
-    return require_integer(
-        value,
-        name=name,
-        field=field,
-        non_negative=non_negative,
-        positive=positive,
-        error_factory=error_factory,
-        type_error_factory=type_error_factory,
-    )
-
-
-def require_boolean(
-    value: object,
-    *,
-    field: str = "field",
-    error_factory: Callable[[str], Exception] = TypeError,
-) -> bool:
-    """Validate that value is a bool."""
-    if not isinstance(value, bool):
-        raise error_factory(f"{field} must be a boolean")
-    return value
-
-
 def require_text(
     value: object,
     *,
@@ -114,26 +75,6 @@ def require_text(
     return value
 
 
-def require_optional_text(
-    value: object,
-    *,
-    field: str = "field",
-    allow_blank: bool = False,
-    error_factory: Callable[[str], Exception] = ValueError,
-    type_error_factory: Callable[[str], Exception] = TypeError,
-) -> str | None:
-    """Return text if value is not None, else None."""
-    if value is None:
-        return None
-    return require_text(
-        value,
-        field=field,
-        allow_blank=allow_blank,
-        error_factory=error_factory,
-        type_error_factory=type_error_factory,
-    )
-
-
 def require_owner_normalized_text(
     value: object,
     *,
@@ -146,35 +87,9 @@ def require_owner_normalized_text(
     return value
 
 
-def is_lower_sha256(value: object) -> bool:
-    """Return whether value is a 64-character lowercase hex SHA-256 digest."""
-    return isinstance(value, str) and _LOWER_SHA256.fullmatch(value) is not None
-
-
-def require_lower_sha256(
-    value: object,
-    *,
-    field: str = "digest",
-    error_factory: Callable[[str], Exception] = ValueError,
-    type_error_factory: Callable[[str], Exception] | None = None,
-) -> str:
-    """Validate that value is a 64-character lowercase hex SHA-256 digest."""
-    if not isinstance(value, str):
-        if type_error_factory is not None:
-            raise type_error_factory(f"{field} must be text")
-        raise error_factory(f"{field} must be a lowercase SHA-256")
-    if not is_lower_sha256(value):
-        raise error_factory(f"{field} must be a lowercase SHA-256")
-    return value
-
-
 __all__ = [
-    "require_boolean",
     "require_finite_real",
     "require_integer",
-    "require_lower_sha256",
-    "require_optional_integer",
-    "require_optional_text",
     "require_owner_normalized_text",
     "require_text",
 ]
