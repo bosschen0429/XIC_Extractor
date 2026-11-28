@@ -73,9 +73,7 @@ def test_measured_istd_binding_uses_observed_peak_not_expected_rt() -> None:
             )
         )
     )
-    assert not bootstrap.has_coordinates
     assert tuple(bootstrap.corrected_rt_min(owner) for owner in owners) == (8.0, 9.0)
-    assert frozen.has_coordinates
     assert tuple(frozen.corrected_rt_min(owner) for owner in owners) == pytest.approx(
         (7.8, 7.8)
     )
@@ -85,7 +83,6 @@ def test_measured_istd_binding_uses_observed_peak_not_expected_rt() -> None:
         }
         assert frame.has_direct_reference_pair(*owners)
         assert frame.corrected_pair_delta_sec(*owners) == pytest.approx(0)
-        assert frame.drift_injection_order_gap("early", "late") is None
     assert tuple(owner.peak.integration.rt_apex_min for owner in owners) == (8.0, 9.0)
 
 

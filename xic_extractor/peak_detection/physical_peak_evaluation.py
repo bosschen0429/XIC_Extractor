@@ -424,17 +424,6 @@ def _raw_component_segments_at_rt(
     )
 
 
-def discovery_raw_peak_context_edges(
-    universe: PhysicalSegmentUniverse, query_rt: float
-) -> tuple[bool, bool]:
-    """Which acquired edges still clip the raw component containing this NL."""
-    segments = _raw_component_segments_at_rt(universe, query_rt)
-    return (
-        any(s.raw_component.clips_left_edge for s in segments if s.raw_component),
-        any(s.raw_component.clips_right_edge for s in segments if s.raw_component),
-    )
-
-
 def _hit_enrichment(raw: np.ndarray, left: int, right: int) -> bool:
     """Compare detections with both local flanks; zeros are left-censored.
 

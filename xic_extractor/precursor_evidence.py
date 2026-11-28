@@ -35,12 +35,6 @@ class Ms1PrecursorObservation:
     centroid_mzs: tuple[float, ...]
 
 
-def validate_ms1_precursor_observation(model: Ms1PrecursorObservation) -> None:
-    validate_ms1_precursor_coordinates(model.scan_number, model.rt_min)
-    if any(not math.isfinite(mz) or mz <= 0 for mz in model.centroid_mzs):
-        raise ValueError("parent MS1 centroids must be positive finite masses")
-
-
 def validate_ms1_precursor_coordinates(scan_number: int, rt_min: float) -> None:
     if isinstance(scan_number, bool) or scan_number <= 0:
         raise ValueError("parent MS1 scan_number must be a positive integer")

@@ -52,7 +52,6 @@ def test_sample_local_owner_exposes_primary_and_supporting_events():
         assignment_reason="same_apex_window",
     )
 
-    assert owner.all_events == (primary, support)
     assert owner.neutral_loss_tag == "DNA_dR"
 
 

@@ -78,9 +78,6 @@ class InjectionSequence:
     def position(self, stem: str) -> int | None:
         return self._positions.get(stem)
 
-    def order_gap(self, left: str, right: str) -> int | None:
-        return _gap(self.order(left), self.order(right))
-
     def position_gap(self, left: str, right: str) -> int | None:
         return _gap(self.position(left), self.position(right))
 

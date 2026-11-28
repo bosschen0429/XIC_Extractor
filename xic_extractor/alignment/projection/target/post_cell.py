@@ -60,10 +60,6 @@ class TargetPostCellProjection:
     def subjects(self) -> tuple[TargetCellSubject, ...]:
         return self.cell_subjects
 
-    @property
-    def decision_count(self) -> int:
-        return len(self.decisions)
-
 
 def project_target_post_cell(
     pre_cell_projection: TargetPreCellProjection,

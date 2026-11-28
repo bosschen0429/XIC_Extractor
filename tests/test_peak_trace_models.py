@@ -5,7 +5,6 @@ from xic_extractor.peak_detection.traces import (
     Trace,
     targeted_trace_group,
     trace_from_xic_request,
-    untargeted_trace_group,
 )
 from xic_extractor.xic_models import XICRequest, XICTrace
 
@@ -43,7 +42,7 @@ def test_trace_rejects_mismatched_arrays() -> None:
         )
 
 
-def test_targeted_and_untargeted_trace_group_adapters_set_context() -> None:
+def test_targeted_trace_group_adapter_sets_context() -> None:
     trace = Trace.from_arrays(
         sample_name="s1",
         mz=269.1388,
@@ -62,17 +61,7 @@ def test_targeted_and_untargeted_trace_group_adapters_set_context() -> None:
         product_mz=153.048,
         role="ISTD",
     )
-    untargeted = untargeted_trace_group(
-        trace,
-        family_id="FAM000123",
-        expected_rt_min=25.0,
-        neutral_loss_tag="DNA_dR",
-        product_mz=153.048,
-    )
 
     assert targeted.trace_group_id == "s1|15N5-8-oxodG"
     assert targeted.analysis_mode == "targeted"
     assert targeted.role == "ISTD"
-    assert untargeted.trace_group_id == "s1|FAM000123|untargeted"
-    assert untargeted.analysis_mode == "untargeted"
-    assert untargeted.neutral_loss_tag == "DNA_dR"

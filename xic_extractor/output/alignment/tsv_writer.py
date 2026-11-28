@@ -519,23 +519,6 @@ def _cell_fields(
     }
 
 
-def _warning(
-    *,
-    has_anchor: bool,
-    sample_count: int,
-    detected_count: int,
-    backfilled_count: int,
-    not_searched_count: int,
-) -> str:
-    if not has_anchor:
-        return "no_anchor"
-    if sample_count > 0 and not_searched_count / sample_count > 0.5:
-        return "high_not_searched"
-    if backfilled_count > 0 and detected_count == 0:
-        return "high_backfill_dependency"
-    return ""
-
-
 @dataclass(frozen=True, slots=True)
 class BatchRowSource:
     """One independently aligned batch's projected rows.

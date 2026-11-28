@@ -315,36 +315,6 @@ def acquire_cid_nl_sample_regions(
     return tuple(results)
 
 
-def relate_region_events(
-    regions: tuple[CidNlSampleRegion, ...],
-    *,
-    sample: SampleMetadata,
-    acquisition_source: AcquisitionSourceIdentity,
-    events: Iterable[DiscoveryEvent],
-    settings: DiscoverySettings,
-) -> tuple[CidNlSampleRegion, ...]:
-    """The same measured peaks related only to the given CID-NL events."""
-    region_events = _region_event_selector(events, sample=sample, settings=settings)
-    related = []
-    for region in regions:
-        evidence, individual, ambiguous = attach_cid_nl_events(
-            sample=sample,
-            acquisition_source=acquisition_source,
-            peaks=region.peaks,
-            events=region_events(region.region),
-            settings=settings,
-        )
-        related.append(
-            replace(
-                region,
-                evidence=evidence,
-                individual_relations=individual,
-                ambiguous_relations=ambiguous,
-            )
-        )
-    return tuple(related)
-
-
 def _region_event_selector(
     events: Iterable[DiscoveryEvent],
     *,

@@ -52,7 +52,6 @@ def test_target_post_cell_projection_closes_fixed_row_counts_and_review_routing(
     )
     assert completed.accepted_cell_count == 1
     assert completed.no_write_count == 1
-    assert completed.decision_count == 2
 
     review_ref = completed.review_queue_references[0]
     no_write = next(item for item in decisions if item.variant != "numeric")

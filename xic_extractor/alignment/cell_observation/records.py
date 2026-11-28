@@ -79,12 +79,6 @@ class CellObservation:
         )
 
     @property
-    def peak_hypothesis_id(self) -> str | None:
-        return (
-            None if self.peak_hypothesis is None else self.peak_hypothesis.hypothesis_id
-        )
-
-    @property
     def reason_codes(self) -> tuple[str, ...]:
         return self.method_assessment.reason_codes
 

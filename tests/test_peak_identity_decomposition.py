@@ -35,8 +35,8 @@ from xic_extractor.peak_detection.models import (
 )
 from xic_extractor.peak_detection.traces import (
     Trace,
+    TraceGroup,
     targeted_trace_group,
-    untargeted_trace_group,
 )
 from xic_extractor.xic_models import XICRequest, XICTrace
 
@@ -53,9 +53,13 @@ def test_one_ms1_observation_can_have_distinct_workflow_hypotheses() -> None:
         target_label="KnownAnalyte",
         neutral_loss_tag="DNA_dR",
     )
-    untargeted_group = untargeted_trace_group(
-        trace,
-        family_id="FAM000123",
+    untargeted_group = TraceGroup(
+        trace_group_id=f"{trace.sample_name}|FAM000123|untargeted",
+        sample_name=trace.sample_name,
+        analysis_mode="untargeted",
+        context_id="FAM000123",
+        traces=(trace,),
+        precursor_mz=trace.mz,
         neutral_loss_tag="DNA_dR",
     )
 

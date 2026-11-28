@@ -777,14 +777,6 @@ def local_apex_prominence(signal: np.ndarray, apex_index: int) -> float:
     return float(signal[apex_index]) - max(float(signal[0]), float(signal[-1]))
 
 
-def supported_contour_apices(
-    contour: np.ndarray, minimum_prominence_fraction: float
-) -> np.ndarray:
-    return find_peaks(
-        contour, prominence=minimum_prominence_fraction * float(np.max(contour))
-    )[0]
-
-
 def _segment_from_seed(
     rt: np.ndarray,
     intensity: np.ndarray,

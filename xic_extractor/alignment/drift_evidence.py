@@ -332,11 +332,6 @@ class DriftEvidenceLookup:
             )
         return self._injections.order(sample_stem)
 
-    def injection_gap(self, left: str, right: str) -> int | None:
-        self.injection_order(left)
-        self.injection_order(right)
-        return self._injections.order_gap(left, right)
-
     @cached_property
     def _injections(self) -> InjectionSequence:
         return InjectionSequence(
