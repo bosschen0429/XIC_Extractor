@@ -28,7 +28,7 @@ from xic_extractor.presets.loader import (
     reject_retired_alignment_runtime_options,
     reject_retired_discovery_options,
 )
-from xic_extractor.presets.models import Preset, PresetError
+from xic_extractor.presets.models import Preset, PresetError, uses_delta_mass
 from xic_extractor.processing_run_spec import validate_cid_nl_discovery_settings
 
 _NL_DISCOVERY_FIELDS = (
@@ -65,8 +65,7 @@ def serialize_preset(
     )
     _validate_discovery_keys(effective_preset)
 
-    has_delta_mass = any(tag.strategy == "delta_mass" for tag in effective_preset.tags)
-    if has_delta_mass:
+    if uses_delta_mass(effective_preset.tags):
         delta_mass_settings = apply_to_delta_mass_discovery(effective_preset)
         effective = asdict(delta_mass_settings)
         effective.pop("pattern_id")
@@ -170,7 +169,7 @@ def _validate_discovery_keys(preset: Preset) -> None:
     reject_retired_discovery_options(preset.discovery_overrides)
     allowed = (
         DELTA_MASS_DISCOVERY_OVERRIDE_KEYS
-        if any(tag.strategy == "delta_mass" for tag in preset.tags)
+        if uses_delta_mass(preset.tags)
         else DISCOVERY_TUNING_OVERRIDE_KEYS
     )
     unknown = sorted(set(preset.discovery_overrides) - allowed)
@@ -179,7 +178,7 @@ def _validate_discovery_keys(preset: Preset) -> None:
 
 
 def _validate_loaded_preset(preset: Preset) -> None:
-    if any(tag.strategy == "delta_mass" for tag in preset.tags):
+    if uses_delta_mass(preset.tags):
         apply_to_delta_mass_discovery(preset)
     else:
         validate_cid_nl_discovery_settings(apply_to_discovery(preset))

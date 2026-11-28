@@ -15,6 +15,7 @@ from xic_extractor.presets.models import (
     PresetError,
     PresetTag,
     checked_tag_name,
+    uses_delta_mass,
 )
 
 _BUILTIN_PACKAGE = "xic_extractor.presets.data"
@@ -159,7 +160,7 @@ def _parse_toml(raw: bytes, *, source: str) -> Preset:
     if combine_mode == "single" and len(tags) != 1:
         raise PresetError('combine_mode "single" requires exactly one tag')
 
-    has_delta_mass_tag = any(tag.strategy == "delta_mass" for tag in tags)
+    has_delta_mass_tag = uses_delta_mass(tags)
     if has_delta_mass_tag:
         validate_delta_mass_preset_tags(tags, combine_mode=combine_mode)
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Literal
 
@@ -31,6 +31,10 @@ class PresetTag:
     name: str
     value: float | None = None
     pattern_id: str | None = None
+
+
+def uses_delta_mass(tags: Iterable[PresetTag]) -> bool:
+    return any(tag.strategy == "delta_mass" for tag in tags)
 
 
 @dataclass(frozen=True)
