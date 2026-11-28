@@ -1,5 +1,5 @@
 import { analysis } from "./analysis_state.js";
-import { api, navigation, openSession, toast } from "./workspace_ui.js";
+import { api, downloadResult, navigation, openSession, toast } from "./workspace_ui.js";
 const $ = (id) => document.getElementById(id);
 const state = {
   page: null,
@@ -978,6 +978,7 @@ for (const [id, step] of [["xic-previous", -1], ["xic-next", 1]]) {
   });
 }
 $("xic-retry").addEventListener("click", () => action(startCurves));
+$("result-download").addEventListener("click", downloadResult);
 $("open-form").addEventListener("submit", (event) => {
   event.preventDefault();
   action(openBatch, "正在讀取批次結果…");

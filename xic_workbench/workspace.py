@@ -32,6 +32,7 @@ from xic_extractor.matrix_curation.published import (
     latest_curation,
     read_published_curation,
 )
+from xic_extractor.tabular_io import file_sha256
 from xic_inspector.api import (
     InspectorCancelled,
     InspectorError,
@@ -83,6 +84,7 @@ class ReviewWorkspace:
         self._targeted_raws: dict[Path, Any] = {}
         self._page: PreparedReport | None = None
         self._curation: PublishedCuration | None = None
+        self._result_artifact: dict[str, str] | None = None
         self._curves: ReviewCurves | None = None
         self._job: dict[str, Any] | None = None
         self._replaced_job: dict[str, Any] | None = None
@@ -140,9 +142,9 @@ class ReviewWorkspace:
     def start_analysis(self, kind: str, values: dict[str, Any]) -> dict[str, Any]:
         with self._lock:
             self._require_open()
-            started = self.analysis.start_job(kind, values)
+            started = self.analysis.jobs.start(kind, values)
             self._replace_job("已停止曲線載入，分析工作已開始。")
-            return started
+            return self.analysis.state(started)
 
     def analysis_action(self, action: str, values: dict[str, Any]) -> dict[str, Any]:
         with self._lock:
@@ -212,6 +214,20 @@ class ReviewWorkspace:
                 ) from cause
             if page.payload["selection"].get("review_scope") != "matrix":
                 curation = None
+            if isinstance(page.source, TargetedWorkbookLocator):
+                artifact = self.analysis.register_artifact(
+                    page.source.workbook_path, sha256=page.source.workbook_sha256
+                )
+            elif isinstance(page.source, EvidenceLocator):
+                artifact = self.analysis.register_artifact(
+                    curation.matrix_path if curation else page.source.matrix_path,
+                    sha256=file_sha256(curation.matrix_path, uppercase=False)
+                    if curation
+                    else page.payload["summary"]["matrix_sha256"],
+                )
+            else:
+                artifact = None
+            self._result_artifact = artifact
             self._report, self._page, self._curation = path, page, curation
             self._targeted_raws = {}
             self._replace_job()
@@ -278,17 +294,6 @@ class ReviewWorkspace:
     def _page_response(self) -> dict[str, Any]:
         assert self._page is not None and self._report is not None
         page = self._page
-        artifact = None
-        curatable = False
-        if isinstance(page.source, TargetedWorkbookLocator):
-            artifact = self.analysis.register_artifact(page.source.workbook_path)
-        elif isinstance(page.source, EvidenceLocator):
-            artifact = self.analysis.register_artifact(
-                self._curation.matrix_path
-                if self._curation
-                else page.source.matrix_path
-            )
-            curatable = _curatable(page.source.matrix_path.parent)
         response = {
             "source": str(self._report),
             "curation": {
@@ -297,8 +302,9 @@ class ReviewWorkspace:
             }
             if self._curation
             else None,
-            "result_artifact": artifact,
-            "curatable": curatable,
+            "result_artifact": self._result_artifact,
+            "curatable": isinstance(page.source, EvidenceLocator)
+            and _curatable(page.source.matrix_path.parent),
             "source_kind": page.payload["summary"].get("source_kind", "evidence"),
             "target_names": page.payload["summary"].get("target_names", []),
             "target_role": page.payload["selection"].get("target_role"),
@@ -405,21 +411,21 @@ class ReviewWorkspace:
             self._require_open()
             item = self._item(item_id)
             assert self._page is not None and self._report is not None
-            self._replace_job()
             payload = dict(self._page.payload, items=[item])
             payload["selection"] = dict(payload["selection"], limit=1)
             prepared = replace(self._page, payload=payload, selected_count=1)
             view_id = uuid.uuid4().hex
-            self._store_view(view_id, prepared)
             summary = self._item_summary(item, self._page.source, None)
-            self._curves = None
-            if summary["group_id"] or summary["candidate_id"]:
+            curves = None
+            if isinstance(self._page.source, EvidenceLocator) and (
+                summary["group_id"] or summary["candidate_id"]
+            ):
                 curves = read_review_curves(
                     self._report,
                     feature_id=summary["group_id"],
                     candidate_id=summary["candidate_id"],
+                    expected_attempt_id=self._page.source.processing_attempt_id,
                 )
-                self._curves = curves
                 summary["curve_sample_ids"] = sorted(
                     {location.sample_key for location in curves.locations}
                 )
@@ -430,6 +436,9 @@ class ReviewWorkspace:
                         if location.curve is not None
                     }
                 )
+            self._store_view(view_id, prepared)
+            self._replace_job()
+            self._curves = curves
             self._detail = {"view_id": view_id, "item": summary}
             return copy.deepcopy(self._detail)
 
@@ -563,10 +572,12 @@ class ReviewWorkspace:
                 from xic_workbench.samples import review_sample_groups
 
                 curves = request["curves"]
+                settings = RunSettings(request["report"], curves.processing_attempt_id)
                 bundle, unusable = review_curve_bundle(
                     request["report"],
                     curves,
                     key=description["group_id"] or description["candidate_id"],
+                    settings=settings,
                     sample_ids=request["samples"],
                     raw_dir=request["raw_dir"],
                     dll_dir=request["dll_dir"],
@@ -588,7 +599,7 @@ class ReviewWorkspace:
                     }
                 ]
                 prepared.payload["samples"] = request["sample_catalog"]
-                folder = request["raw_dir"] or RunSettings(request["report"]).raw_dir
+                folder = request["raw_dir"] or settings.raw_dir
                 if folder is not None:
                     sample_groups = review_sample_groups(
                         self.analysis.config_dir,

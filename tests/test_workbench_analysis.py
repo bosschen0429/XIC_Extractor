@@ -187,6 +187,8 @@ def test_analysis_failure_and_cancel_retain_previous_published_results(
             assert state["results"]["targeted"] == success
             assert request("/api/analysis")[1]["results"]["targeted"] == published
             assert request(artifact["url"])[:2] == (200, b"published-result")
+            (tmp_path / "output" / "results.xlsx").write_bytes(b"a different result")
+            assert request(artifact["url"])[0] == 400
         finally:
             proceed.set()
 
@@ -241,13 +243,13 @@ def test_artifact_urls_serve_only_registered_published_files(tmp_path):
     analysis.jobs._results["targeted"] = {"published_paths": [str(published)]}
     try:
         artifact = analysis.state()["results"]["targeted"]["artifacts"][0]
-        snapshot = analysis.artifact_path(artifact["url"].split("/")[-1])
+        snapshot, data = analysis.read_artifact(artifact["url"].split("/")[-1])
         assert snapshot != published
-        assert snapshot.read_text() == "<h1>Published report</h1>"
+        assert data == b"<h1>Published report</h1>"
         published.write_text("<script>window.parent.fetch('/api/analysis')</script>")
         repeated = analysis.state()["results"]["targeted"]["artifacts"][0]
         assert repeated["url"] == artifact["url"]
-        assert snapshot.read_text() == "<h1>Published report</h1>"
+        assert analysis.read_artifact(artifact["url"].split("/")[-1])[1] == data
         published.write_text("<h1>New job report</h1>")
         analysis.jobs._current = {
             "job_id": "1" * 32,
@@ -257,11 +259,13 @@ def test_artifact_urls_serve_only_registered_published_files(tmp_path):
             "finished_at": 2.0,
         }
         updated = analysis.state()["results"]["targeted"]["artifacts"][0]
-        updated_snapshot = analysis.artifact_path(updated["url"].split("/")[-1])
+        updated_snapshot, updated_data = analysis.read_artifact(
+            updated["url"].split("/")[-1]
+        )
         assert updated["url"] != artifact["url"]
-        assert updated_snapshot.read_text() == "<h1>New job report</h1>"
+        assert updated_data == b"<h1>New job report</h1>"
         with pytest.raises(ValueError):
-            analysis.artifact_path("unregistered")
+            analysis.read_artifact("unregistered")
     finally:
         analysis.close()
     assert not snapshot.exists()

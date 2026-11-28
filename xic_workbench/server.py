@@ -310,8 +310,7 @@ def create_server(
                 if job and job["status"] not in {"running", "cancelling"}:
                     workspace.analysis.jobs.acknowledge_completion(job["job_id"])
             elif match := re.fullmatch(r"/files/([a-f0-9]{32})", url.path):
-                path = workspace.analysis.artifact_path(match[1])
-                data = path.read_bytes()
+                path, data = workspace.analysis.read_artifact(match[1])
                 content_type = (
                     mimetypes.guess_type(path.name)[0] or "application/octet-stream"
                 )
@@ -389,7 +388,8 @@ def create_server(
                 )
                 return
             elif path == "/api/analysis/cancel":
-                result = workspace.analysis.cancel_job(values["job_id"])
+                cancelled = workspace.analysis.jobs.cancel(values["job_id"])
+                result = workspace.analysis.state(cancelled)
             elif path == "/api/evidence-summary":
                 result = workspace.evidence_summary(values["source"])
             elif path == "/api/shutdown":

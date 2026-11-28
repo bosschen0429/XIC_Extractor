@@ -95,16 +95,17 @@ function resultBase(kind, result) {
   const artifacts = result.artifacts || [];
   const downloads = el("div", undefined, "artifact-list");
   const primary = artifacts.find((artifact) => artifact.path === primaryPath);
-  if (primary)
-    downloads.append(
-      artifactLink(primary, {
-        targeted: "下載結果 Excel",
-        untargeted: result.delta_mass
-          ? "下載 Delta Mass 候選表"
-          : "下載 Alignment 矩陣",
-        curation: "下載整理後矩陣",
-      }[kind]),
-    );
+  if (primary) {
+    const link = artifactLink(primary, {
+      targeted: "下載結果 Excel",
+      untargeted: result.delta_mass
+        ? "下載 Delta Mass 候選表"
+        : "下載 Alignment 矩陣",
+      curation: "下載整理後矩陣",
+    }[kind]);
+    link.addEventListener("click", ui.downloadResult);
+    downloads.append(link);
+  }
   const details = artifactDetails(
     artifacts.filter((artifact) => artifact !== primary),
     folder,
