@@ -14,7 +14,7 @@ from xic_extractor.presets.loader import (
     reject_retired_alignment_runtime_options,
     validate_delta_mass_preset_tags,
 )
-from xic_extractor.presets.models import Preset, PresetError, PresetTag
+from xic_extractor.presets.models import Preset, PresetError, PresetTag, uses_delta_mass
 from xic_extractor.presets.recipe_models import (
     BoundCidNlRecipe,
     CidNlRecipeRoute,
@@ -82,7 +82,7 @@ def apply_to_discovery(
     *,
     explicit_tuning_overrides: Mapping[str, object] | None = None,
 ) -> DiscoverySettings:
-    if any(tag.strategy == "delta_mass" for tag in preset.tags):
+    if uses_delta_mass(preset.tags):
         raise PresetError(
             f"preset {preset.name!r} contains a 'delta_mass' tag and is not a "
             "neutral-loss preset; use apply_to_delta_mass_discovery() instead"

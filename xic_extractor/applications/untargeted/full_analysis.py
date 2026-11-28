@@ -36,6 +36,7 @@ from xic_extractor.presets import (
     load_preset,
 )
 from xic_extractor.presets.delta_mass import resolve_delta_mass_discovery
+from xic_extractor.presets.models import uses_delta_mass
 from xic_extractor.raw_sequence import read_analysis_set
 from xic_extractor.sample_metadata import (
     SAMPLE_METADATA_COLUMNS,
@@ -77,7 +78,7 @@ class UntargetedAnalysis:
         request = deepcopy(request)
         preset = request.preset_snapshot or load_preset(request.preset)
         request = replace(request, preset_snapshot=preset)
-        if _is_delta_mass(preset):
+        if uses_delta_mass(preset.tags):
             resolve_delta_mass_discovery(preset, label=request.preset)
             self.recipe = None
         else:
@@ -321,10 +322,6 @@ class UntargetedAnalysis:
         if self.should_cancel():
             self.cancellation_reason = message
             raise InterruptedError(message)
-
-
-def _is_delta_mass(preset: Preset) -> bool:
-    return any(tag.strategy == "delta_mass" for tag in preset.tags)
 
 
 def _alignment_summary(outputs: AlignmentRunOutputs) -> dict[str, Any]:

@@ -22,6 +22,7 @@ from xic_extractor.presets.models import (
     PresetError,
     PresetTag,
     checked_tag_name,
+    uses_delta_mass,
 )
 from xic_extractor.presets.serialization import save_preset, serialize_preset
 from xic_extractor.processing_run_spec import validate_cid_nl_discovery_settings
@@ -75,7 +76,7 @@ def method_details(preset: str | Path | Preset) -> dict[str, Any]:
         for tag in loaded.tags
         if tag.strategy == "neutral_loss"
     ]
-    if _has_delta_mass(loaded):
+    if uses_delta_mass(loaded.tags):
         pattern = apply_to_delta_mass_discovery(loaded)
         return {
             "preset": preset_to_payload(loaded),
@@ -131,7 +132,7 @@ def tuning_controls() -> list[dict[str, Any]]:
 def validate_method(values: dict[str, Any]) -> dict[str, Any]:
     preset, overrides = _draft(values)
     _validate_gui_method(preset, overrides)
-    if _has_delta_mass(preset):
+    if uses_delta_mass(preset.tags):
         effective: dict[str, object] = {}
     else:
         settings = apply_to_discovery(
@@ -266,7 +267,7 @@ def _draft(values: dict[str, Any]) -> tuple[Preset, dict[str, object]]:
         raise TypeError("method overrides must be an object")
     override_keys = (
         DELTA_MASS_DISCOVERY_OVERRIDE_KEYS
-        if any(tag.strategy == "delta_mass" for tag in tags)
+        if uses_delta_mass(tags)
         else DISCOVERY_TUNING_OVERRIDE_KEYS
     )
     unknown_overrides = sorted(set(overrides) - override_keys)
@@ -292,14 +293,10 @@ def _draft(values: dict[str, Any]) -> tuple[Preset, dict[str, object]]:
     )
 
 
-def _has_delta_mass(preset: Preset) -> bool:
-    return any(tag.strategy == "delta_mass" for tag in preset.tags)
-
-
 def _validate_gui_method(
     preset: Preset, overrides: Mapping[str, object] | None = None
 ) -> None:
-    if _has_delta_mass(preset):
+    if uses_delta_mass(preset.tags):
         apply_to_delta_mass_discovery(
             Preset(
                 name=preset.name,
